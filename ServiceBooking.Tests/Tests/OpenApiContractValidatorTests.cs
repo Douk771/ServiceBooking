@@ -101,6 +101,7 @@ public class OpenApiContractValidatorTests
     [Theory]
     [InlineData("cycle26")]
     [InlineData("cycle29")]
+    [InlineData("cycle35")]
     public void Bundled_contracts_load_and_unknown_path_is_reported(string cycle)
     {
         var contract = OpenApiContract.Load(cycle);

@@ -47,7 +47,9 @@ public sealed class DemoHostFactory(string connectionString, IReadOnlyDictionary
 [Collection("Cycle28Generator")]
 public class Cycle28DemoContractTests : IAsyncLifetime
 {
-    private static readonly OpenApiContract C28 = OpenApiContract.Load("cycle28");
+    // ARCHITECTURE_CYCLE35.md §35.15: GET /api/demo/status gained "siteUrls" and POST /api/demo/login six roles, so the form of both is checked against
+    // the cycle 35 schema (the strict cycle 28 one rejects the new field). The 403/503 answers keep their cycle 28 contract, which is unchanged.
+    private static readonly OpenApiContract C35 = OpenApiContract.Load("cycle35");
 
     private TestClassDatabaseLease _lease = null!;
     private DemoHostFactory _factory = null!;
@@ -73,13 +75,13 @@ public class Cycle28DemoContractTests : IAsyncLifetime
     }
 
     [Fact, TestCase("CY28-38")]
-    public async Task DemoStatusLoginRestrictedAndResetting_MatchTheCycle28Contract()
+    public async Task DemoStatusLoginRestrictedAndResetting_MatchTheCycle35Contract()
     {
         var http = _factory.CreateClient();
 
         // before the first reset: status answers, login is 409 text/plain
         var status = await http.GetAsync("/api/demo/status");
-        C28.AssertResponse("GET", "/api/demo/status", 200, await JsonAsync(status, HttpStatusCode.OK));
+        C35.AssertResponse("GET", "/api/demo/status", 200, await JsonAsync(status, HttpStatusCode.OK));
         status.Headers.GetValues("X-Robots-Tag").Single().Should().Contain("noindex");
 
         var notSeeded = await http.PostAsJsonAsync("/api/demo/login", new { role = "owner" });
@@ -96,7 +98,7 @@ public class Cycle28DemoContractTests : IAsyncLifetime
         foreach (var role in new[] { "owner", "master", "client" })
         {
             var body = await JsonAsync(await http.PostAsJsonAsync("/api/demo/login", new { role }), HttpStatusCode.OK);
-            C28.AssertResponse("POST", "/api/demo/login", 200, body);
+            C35.AssertResponse("POST", "/api/demo/login", 200, body);
             tokens[role] = body.GetProperty("token").GetString()!;
         }
 
@@ -146,7 +148,7 @@ public class Cycle28DemoContractTests : IAsyncLifetime
             (await http.PostAsJsonAsync("/api/demo/login", new { role = "owner" })).StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
 
             var during = await JsonAsync(await http.GetAsync("/api/demo/status"), HttpStatusCode.OK);
-            C28.AssertResponse("GET", "/api/demo/status", 200, during);
+            C35.AssertResponse("GET", "/api/demo/status", 200, during);
             during.GetProperty("resetting").GetBoolean().Should().BeTrue();
         }
         finally
