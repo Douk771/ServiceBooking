@@ -132,6 +132,20 @@ public sealed class AccountDeletionService(
                     && s.Status != PhoneVerificationStatus.Pending && s.Status != PhoneVerificationStatus.Linked))
                 .ToListAsync());
 
+        // Step 2e (ARCHITECTURE_CYCLE25.md §498.4, §504.4): same reasoning as 2c/2d — the Cascade FKs never fire on a tombstone, so this person's MAX
+        // link and link sessions are removed explicitly. Shop notes about the number of THIS account are deleted only when the number is proven
+        // (guestMatchPhone, TD-03 gate — an unverified account must not destroy a shop's note about someone else); notes this person AUTHORED stay,
+        // with the author's name replaced by "Удалённый пользователь" (no FK on the author, like the acceptance journal).
+        db.StaffMaxLinks.RemoveRange(await db.StaffMaxLinks.Where(l => l.UserId == userId).ToListAsync());
+        db.StaffMaxLinkSessions.RemoveRange(await db.StaffMaxLinkSessions.Where(s => s.UserId == userId).ToListAsync());
+        if (guestMatchPhone != null)
+            db.ShopCustomerNotes.RemoveRange(await db.ShopCustomerNotes.Where(n => n.Phone == guestMatchPhone).ToListAsync());  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+        foreach (var authored in await db.ShopCustomerNotes.Where(n => n.UpdatedByUserId == userId).ToListAsync())
+        {
+            authored.UpdatedByUserId = null;
+            authored.UpdatedByName = "Удалённый пользователь";
+        }
+
         // Step 3: bookings are anonymized, never deleted — the salon's revenue/commission history for a
         // completed visit must stay intact (US-39 p.3). Matches both the client path and the guest path
         // (a booking made before this person registered, found the same way as step 2's notes).

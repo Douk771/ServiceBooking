@@ -417,7 +417,14 @@ public record ProfileExportDto(
     ExportGuestDataGateDto GuestDataGate,
     // ARCHITECTURE_CYCLE23.md §398.1 — additive, appended at the end: the customer's orders (own account's, plus guest orders on the
     // same VERIFIED number under the cycle-16 SubjectScope gate).
-    List<ServiceBooking.API.DTOs.Orders.ExportOrderDto> Orders);
+    List<ServiceBooking.API.DTOs.Orders.ExportOrderDto> Orders,
+    // ARCHITECTURE_CYCLE25.md §504.4, API_CONTRACT_CYCLE25.md §535 — additive, at the end: the MAX link (status and dates, NEVER the chat id) and the FACT of shop notes
+    // about the subject's verified number (no text) [legal L17].
+    ExportStaffMaxLinkDto? StaffMaxLink = null, List<ExportShopCustomerNoteDto>? ShopCustomerNotes = null);
+
+public record ExportStaffMaxLinkDto(string Status, DateTime LinkedAtUtc, DateTime? StoppedAtUtc);
+
+public record ExportShopCustomerNoteDto(string ShopName, DateTime UpdatedAtUtc);
 
 // API_CONTRACT_CYCLE16.md §273.1. §272/A2: deliberately carries no count or "hasHiddenData" flag — only
 // whether the rule applied, so the response can never be used to infer whether hidden data exists.

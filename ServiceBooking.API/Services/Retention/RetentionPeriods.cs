@@ -92,6 +92,15 @@ public sealed class RetentionPeriods
     /// <summary>§456.4 [legal L16]. Age of a <see cref="Core.Entities.CustomerOrderPushNotification"/> row since it was created. Default 90.</summary>
     public int CustomerOrderPushNotificationDays { get; set; } = 90;
 
+    /// <summary>ARCHITECTURE_CYCLE25.md §508 [legal L20]. Days a staff MAX link stays after the bot was stopped (so the cabinet can say so), then it is deleted. Default 30.</summary>
+    public int StaffMaxStoppedLinkDays { get; set; } = 30;
+
+    /// <summary>§508. Days after a staff MAX link session expired when it is deleted. Default 1.</summary>
+    public int StaffMaxLinkSessionDays { get; set; } = 1;
+
+    /// <summary>§508. Age of a <see cref="Core.Entities.StaffMaxMessage"/> row since it was created. Default 90.</summary>
+    public int StaffMaxMessageDays { get; set; } = 90;
+
     /// <summary>Age of a <see cref="Core.Entities.ChannelStateEvent"/> since it occurred. Default 365.</summary>
     public int ChannelStateEventDays { get; set; } = 365;
 

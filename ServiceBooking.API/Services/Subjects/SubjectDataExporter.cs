@@ -240,6 +240,16 @@ public sealed class SubjectDataExporter(
                 o.NotifyByMessenger, o.MessengerConsentVersion, o.MessengerConsentAtUtc, new ExportOrderPushDto(orderPush.Count, orderPush));
         }).ToList();
 
+        // ARCHITECTURE_CYCLE25.md §504.4, §498.4: the subject's staff MAX link — status and dates only, never the chat id or its key — and the FACT that a
+        // shop keeps a note about the number (no text, [legal L17]), only for a PROVEN number (the TD-03 gate: nothing here is an oracle for a stranger's number).
+        var staffMaxLink = await db.StaffMaxLinks.AsNoTracking().Where(l => l.UserId == userId)
+            .Select(l => new ExportStaffMaxLinkDto(l.Status.ToString(), l.LinkedAtUtc, l.StoppedAtUtc)).FirstOrDefaultAsync(ct);
+        var shopCustomerNotes = guestMatchPhone is null
+            ? new List<ExportShopCustomerNoteDto>()
+            : await db.ShopCustomerNotes.AsNoTracking().Where(n => n.Phone == guestMatchPhone)  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+                .Join(db.Companies, n => n.CompanyId, c => c.Id, (n, c) => new ExportShopCustomerNoteDto(c.Name, n.UpdatedAtUtc))
+                .OrderBy(n => n.ShopName).ToListAsync(ct);
+
         var export = new ProfileExportDto(
             DateTime.UtcNow,
             // ownPhone (§245.4 table): the account's own contact — shown regardless of verification.
@@ -251,7 +261,7 @@ public sealed class SubjectDataExporter(
             "компания — контакты и адрес каждой такой компании перечислены в разделе «operators» этой " +
             "выгрузки. Запрос об их предоставлении, уточнении или удалении направляйте ей напрямую. По " +
             "вопросам обработки ваших данных платформой обращайтесь в поддержку сервиса.",
-            operators, notifications, optOut, healthNotesExport, phoneVerification, guestDataGate, orderExport);
+            operators, notifications, optOut, healthNotesExport, phoneVerification, guestDataGate, orderExport, staffMaxLink, shopCustomerNotes);
 
         return export;
     }

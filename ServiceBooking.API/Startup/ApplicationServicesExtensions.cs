@@ -321,6 +321,13 @@ internal static class ApplicationServicesExtensions
         ServiceBooking.API.Services.Retention.Rules.OrderPushSubscriptionRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.CustomerOrderPushNotificationRule>();
+    // ARCHITECTURE_CYCLE25.md §504.4, §508 [legal L20] — the 24th–26th rules.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StaffMaxLinkRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StaffMaxMessageRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.ShopCustomerNoteRule>();
     builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DataRetentionTask>();
 
     builder.Services.AddHostedService<ScheduledTaskRunner>();

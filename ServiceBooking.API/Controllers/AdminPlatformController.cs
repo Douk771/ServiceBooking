@@ -256,7 +256,8 @@ public class AdminPlatformController(
             p.MailLogDays, p.AppLogDays, dryRun,
             p.PhoneVerificationSessionDays, p.VerifiedPhoneOrphanDays, p.TrialPhoneRegistrationDays,
             p.BookingEventDays, p.GuestDataGateEventDays, p.PlatformNoticeDays,
-            p.OrderPushSubscriptionDays, p.CustomerOrderPushNotificationDays));
+            p.OrderPushSubscriptionDays, p.CustomerOrderPushNotificationDays,
+            p.StaffMaxStoppedLinkDays, p.StaffMaxLinkSessionDays, p.StaffMaxMessageDays));
     }
 
     // ARCHITECTURE_CYCLE20.md §406.2, API_CONTRACT_CYCLE20.md §436.2 (US-20-05, Т20-06) — the journal's
@@ -316,7 +317,9 @@ public record RetentionPolicyDto(
     int PhoneVerificationSessionDays = 0, int VerifiedPhoneOrphanDays = 0, int TrialPhoneRegistrationDays = 0,
     int BookingEventDays = 0, int GuestDataGateEventDays = 0, int PlatformNoticeDays = 0,
     // ARCHITECTURE_CYCLE24.md §456.4, API_CONTRACT_CYCLE24.md §488 [legal L16] — the two rules of order web-push, appended at the end.
-    int OrderPushSubscriptionDays = 0, int CustomerOrderPushNotificationDays = 0);
+    int OrderPushSubscriptionDays = 0, int CustomerOrderPushNotificationDays = 0,
+    // ARCHITECTURE_CYCLE25.md §508, API_CONTRACT_CYCLE25.md §535 [legal L20] — the three periods of MAX for staff (the notes rule has no period of its own).
+    int StaffMaxStoppedLinkDays = 0, int StaffMaxLinkSessionDays = 0, int StaffMaxMessageDays = 0);
 
 // ARCHITECTURE_CYCLE20.md §406.2, API_CONTRACT_CYCLE20.md §436.2 (US-20-05, Т20-06). 🔴 No IP, no
 // User-Agent, no phone in any form, no counts — the schema behind this DTO has no such columns
