@@ -16,7 +16,7 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/shops/{shopId:guid}")]
 [Authorize]
-public class ShopReportsController(ShopAccessResolver access, ShopReportService reports) : ControllerBase
+public class ShopReportsController(ShopAccessResolver access, ShopReportService reports, PickListService pickList) : ControllerBase
 {
     /// <summary>The history of orders with filters; owner and staff. Idempotent, changes nothing.</summary>
     [HttpPost("order-history")]
@@ -42,5 +42,18 @@ public class ShopReportsController(ShopAccessResolver access, ShopReportService 
 
         var (error, summary) = await reports.SummaryAsync(result.Shop!, period, from, to, top, compare, ct);
         return error is not null ? BadRequest(error) : Ok(summary);
+    }
+
+    /// <summary>The pick list of a pickup day and interval; owner and staff. No customer name or phone in the answer.</summary>
+    [HttpGet("picklist")]
+    [EnableRateLimiting("shop-reports")]
+    public async Task<ActionResult<PickListDto>> PickList(
+        Guid shopId, [FromQuery] DateOnly? date, [FromQuery] string? from, [FromQuery] string? to, [FromQuery] bool includeNew = true, CancellationToken ct = default)
+    {
+        var result = await access.ResolveAsync(shopId, User, ShopPermission.ViewOrderReports, asNoTracking: true, ct: ct);
+        if (!result.Ok) return result.Error!;
+
+        var (error, list) = await pickList.BuildAsync(result.Shop!, date, from, to, includeNew, ct);
+        return error is not null ? BadRequest(error) : Ok(list);
     }
 }

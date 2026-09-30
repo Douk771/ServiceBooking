@@ -37,6 +37,15 @@ public static class ShopTimeTexts
     /// <summary>"пт 2 окт".</summary>
     public static string DateShort(DateOnly date) => $"{DayName(date.DayOfWeek)} {DayMonth(date)}";
 
+    private static readonly string[] DayFull =
+        ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
+
+    /// <summary>"2 октября" — the full genitive form ("Дата — не позже 14 октября").</summary>
+    public static string DateLong(DateOnly date) => $"{date.Day} {MonthGenitive[date.Month - 1]}";
+
+    /// <summary>"Среда, 30 сентября".</summary>
+    public static string DateWithWeekday(DateOnly date) => $"{DayFull[(int)date.DayOfWeek]}, {DateLong(date)}";
+
     /// <summary>"Сегодня" / "Завтра" / "пт 2 окт".</summary>
     public static string DateLabel(DateOnly date, DateOnly today) =>
         date == today ? "Сегодня" : date == today.AddDays(1) ? "Завтра" : DateShort(date);
