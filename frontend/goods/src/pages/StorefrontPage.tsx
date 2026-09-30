@@ -108,7 +108,7 @@ export function StorefrontPage() {
 
   if (shopQuery.isLoading)
     return (
-      <main className="max-w-[860px] mx-auto px-4 sm:px-8 pt-10">
+      <main className="max-w-[860px] mx-auto px-3 sm:px-8 pt-10">
         <div className="mb-8">
           <CompanyCardSkeleton />
         </div>
@@ -145,7 +145,7 @@ export function StorefrontPage() {
   const sellerBits = seller ? [seller.legalForm ? (LEGAL_FORM_LABELS[seller.legalForm] ?? seller.legalForm) : null, seller.legalName, seller.inn ? `ИНН ${seller.inn}` : null, seller.ogrn ? `ОГРН ${seller.ogrn}` : null, seller.legalAddress].filter(Boolean) : []
 
   return (
-    <main className={`max-w-[860px] mx-auto px-4 sm:px-8 pt-8 ${cartCount > 0 ? 'pb-28' : 'pb-8'}`}>
+    <main className={`max-w-[860px] mx-auto px-3 sm:px-8 pt-8 ${cartCount > 0 ? 'pb-28' : 'pb-8'}`}>
       {/* ARCHITECTURE_CYCLE26.md §550 — the shared card; the open-state block lives in its module slot. */}
       <div className="mb-6">
         <CompanyCard company={toCardData(shop)}>
@@ -191,7 +191,7 @@ export function StorefrontPage() {
       ) : (
         <>
           {shop.categories.length > 1 && (
-            <nav aria-label="Категории" className="sticky top-[68px] z-20 -mx-4 sm:mx-0 px-4 sm:px-0 py-2.5 mb-4 bg-cream/95 backdrop-blur flex gap-2 overflow-x-auto">
+            <nav aria-label="Категории" className="sticky top-[68px] z-20 -mx-3 sm:mx-0 px-3 sm:px-0 py-2.5 mb-4 bg-cream/95 backdrop-blur flex gap-2 overflow-x-auto">
               {shop.categories.map((c) => (
                 <a key={c.id ?? 'other'} href={`#cat-${c.id ?? 'other'}`} className="whitespace-nowrap rounded-full border border-line bg-white px-4 py-1.5 text-sm font-medium !text-ink-soft hover:!text-ink hover:border-line-strong">
                   {c.name}
