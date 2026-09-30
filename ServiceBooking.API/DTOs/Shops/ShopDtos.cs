@@ -1,3 +1,4 @@
+using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.DTOs.Orders;
 using ServiceBooking.API.Services.Shops;
 using ServiceBooking.Core.Enums;
@@ -45,7 +46,9 @@ public record ShopManageDto(
     string? NotAcceptingReason, bool PhoneVerificationAvailable, int ProductCount,
     // Cycle 24 (API_CONTRACT_CYCLE24.md §472).
     ShopNotAcceptingCode? NotAcceptingCode, PickupSettingsDto PickupSettings, bool WorkingHoursSet, ShopAcceptanceDto Acceptance,
-    ShopOpenStateDto OpenState, List<SetupChecklistItemDto> SetupChecklist, OrderLimitDto OrderLimit, int ProductLimit);
+    ShopOpenStateDto OpenState, List<SetupChecklistItemDto> SetupChecklist, OrderLimitDto OrderLimit, int ProductLimit,
+    // Cycle 26 (API_CONTRACT_CYCLE26.md §562).
+    string? CityRegion, int? UtcOffsetMinutes, bool TimeZoneChangeAllowed, string? TimeZoneChangeLockedText);
 
 public record ShopSlugInput(string? Slug);
 
@@ -96,7 +99,9 @@ public record StorefrontDto(
     List<StorefrontCategoryDto> Categories,
     // Cycle 24 (API_CONTRACT_CYCLE24.md §477.1).
     ShopNotAcceptingCode? NotAcceptingCode, DateOnly Date, string? DateNotice, ShopOpenStateDto OpenState,
-    StorefrontWorkingHoursDto WorkingHours, PickupOptionsDto Pickup, StorefrontCustomerNotificationsDto CustomerNotifications);
+    StorefrontWorkingHoursDto WorkingHours, PickupOptionsDto Pickup, StorefrontCustomerNotificationsDto CustomerNotifications,
+    // Cycle 26 (API_CONTRACT_CYCLE26.md §561).
+    string? Email, List<CompanyPhotoDto> Photos);
 
 public record WorkingHoursSummaryLineDto(string DayLabel, string Text);
 

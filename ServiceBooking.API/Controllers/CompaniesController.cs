@@ -10,6 +10,7 @@ using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Bookings;
 using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Legal;
+using ServiceBooking.API.Services.Shops;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -362,7 +363,32 @@ public class CompaniesController(
             !TimeZoneOffset.TryGetUtcOffsetMinutes(requestedTimeZoneId, DateTime.UtcNow, out _))
             return BadRequest("Неизвестный часовой пояс");
 
-        if (city is not null)
+        if (company.Kind == CompanyKind.Orders)
+        {
+            // ARCHITECTURE_CYCLE26.md §548.2: a shop's zone is its city's zone, and with orders it may only move within one UTC offset.
+            if (city is not null)
+            {
+                if (dto.TimeZoneId is { IsSpecified: true, Value: { } manualZone } && manualZone != city.TimeZoneId)
+                    return BadRequest("Часовой пояс магазина задаётся городом");
+
+                if (cityChanged || dto.TimeZoneId.IsSpecified)
+                {
+                    var now = DateTime.UtcNow;
+                    if (city.TimeZoneId != company.TimeZoneId &&
+                        !ShopTimeZoneChangePolicy.IsAllowed(
+                            company.TimeZoneId, city.TimeZoneId,
+                            await db.Orders.AnyAsync(o => o.CompanyId == id), now))
+                    {
+                        var currentOffset = TimeZoneOffset.TryGetUtcOffsetMinutes(company.TimeZoneId, now, out var minutes) ? minutes : (int?)null;
+                        return Conflict(ShopTimeZoneChangePolicy.LockedText(currentOffset));
+                    }
+
+                    company.TimeZoneId = city.TimeZoneId;
+                    company.TimeZoneIsManual = false;
+                }
+            }
+        }
+        else if (city is not null)
         {
             var (timeZoneId, timeZoneIsManual) = CompanyTimeZoneResolver.ForUpdate(
                 effectiveCityTimeZoneId: city.TimeZoneId,
