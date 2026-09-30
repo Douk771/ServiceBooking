@@ -204,10 +204,10 @@ public class PickupScheduleTests
     public void PickupText_AsapTodayTomorrowLater()
     {
         var start = new DateTime(2026, 9, 30, 9, 30, 0, DateTimeKind.Utc); // 12:30 local
-        PickupSchedule.PickupText(PickupKind.Asap, Today, start, Moscow, Noon).Should().Be("Как можно скорее (≈ 12:30)");
-        PickupSchedule.PickupText(PickupKind.Slot, Today, start, Moscow, Noon).Should().Be("К 12:30");
-        PickupSchedule.PickupText(PickupKind.Slot, Today.AddDays(1), start.AddDays(1), Moscow, Noon).Should().Be("Завтра, к 12:30");
-        PickupSchedule.PickupText(PickupKind.Slot, new DateOnly(2026, 10, 2), start.AddDays(2), Moscow, Noon).Should().Be("пт 2 окт, к 12:30");
+        PickupSchedule.PickupText(PickupKind.Asap, Today, start, Moscow, Noon, Today).Should().Be("Как можно скорее (≈ 12:30)");
+        PickupSchedule.PickupText(PickupKind.Slot, Today, start, Moscow, Noon, Today).Should().Be("К 12:30");
+        PickupSchedule.PickupText(PickupKind.Slot, Today.AddDays(1), start.AddDays(1), Moscow, Noon, Today).Should().Be("Завтра, к 12:30");
+        PickupSchedule.PickupText(PickupKind.Slot, new DateOnly(2026, 10, 2), start.AddDays(2), Moscow, Noon, Today).Should().Be("пт 2 окт, к 12:30");
         // CY24-35: with the working day passed explicitly (after-midnight tail → yesterday), "today"/"tomorrow" count from it.
         PickupSchedule.PickupText(PickupKind.Slot, Today, start, Moscow, Noon, Today.AddDays(-1)).Should().Be("Завтра, к 12:30");
         PickupSchedule.PickupText(PickupKind.Slot, Today.AddDays(-1), start, Moscow, Noon, Today.AddDays(-1)).Should().Be("К 12:30");

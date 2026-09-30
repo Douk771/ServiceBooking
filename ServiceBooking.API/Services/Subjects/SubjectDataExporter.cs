@@ -21,7 +21,7 @@ namespace ServiceBooking.API.Services.Subjects;
 public sealed class SubjectDataExporter(
     UserManager<AppUser> userManager, AppDbContext db, ConsentLedger ledger, SubjectScopeResolver subjectScopeResolver,
     HealthNoteProtector healthNoteProtector, LegalDocumentProvider legalProvider, ILogger<ProfileController> logger,
-    GuestDataGateJournal guestDataGateJournal)
+    GuestDataGateJournal guestDataGateJournal, ServiceBooking.API.Services.Shops.ShopGateLoader gates)
 {
     /// <summary>The export for <paramref name="userId"/>, or null when the account does not exist (404).
     /// <paramref name="requestAborted"/> is what the scope resolver was always given
@@ -218,10 +218,15 @@ public sealed class SubjectDataExporter(
             : await db.OrderPushSubscriptions.AsNoTracking().Where(s => exportedOrderIds.Contains(s.OrderId))
                 .Select(s => new { s.OrderId, s.CreatedAtUtc }).ToListAsync(ct);
         var exportNow = DateTime.UtcNow;
+        // "Сегодня"/"Завтра" of a pickup are counted from the shop's current WORKING day, as on the storefront (CY24-35).
+        var pickupContexts = await gates.PickupContextsAsync(orderShopIds, exportNow, ct);
         var orderExport = orderRows.Select(o =>
         {
             orderShops.TryGetValue(o.CompanyId, out var shop);
             var zone = TimeZoneInfo.FindSystemTimeZoneById(shop?.TimeZoneId ?? "Europe/Moscow");
+            var today = pickupContexts.TryGetValue(o.CompanyId, out var pickupContext)
+                ? pickupContext.WorkingDay
+                : DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(exportNow, zone));
             var orderPush = pushRows.Where(p => p.OrderId == o.Id).Select(p => p.CreatedAtUtc).OrderBy(d => d).ToList();
             orderSellers.TryGetValue(o.CompanyId, out var seller);
             var hasSeller = seller is not null && (!string.IsNullOrWhiteSpace(seller.SellerLegalName) || !string.IsNullOrWhiteSpace(seller.SellerInn));
@@ -236,7 +241,7 @@ public sealed class SubjectDataExporter(
                 // The journal the customer may see: no staff names, no service entries.
                 o.Events.Where(e => e.VisibleToCustomer).OrderBy(e => e.OccurredAtUtc)
                     .Select(e => new ExportOrderEventDto(e.OccurredAtUtc, OrderTexts.EventText(e.Kind, e.ToStatus, e.Reason))).ToList(),
-                new ExportOrderPickupDto(o.PickupKind.ToString(), o.PickupDate, PickupSchedule.PickupText(o.PickupKind, o.PickupDate, o.PickupStartUtc, zone, exportNow)),
+                new ExportOrderPickupDto(o.PickupKind.ToString(), o.PickupDate, PickupSchedule.PickupText(o.PickupKind, o.PickupDate, o.PickupStartUtc, zone, exportNow, today)),
                 o.NotifyByMessenger, o.MessengerConsentVersion, o.MessengerConsentAtUtc, new ExportOrderPushDto(orderPush.Count, orderPush));
         }).ToList();
 

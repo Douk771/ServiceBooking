@@ -114,7 +114,9 @@ public class ShopScheduleController(
 
         if (!input.ConfirmConflicts)
         {
-            var conflicts = await ConflictingOrdersAsync(shop, date, proposed, ct);
+            var now = DateTime.UtcNow;
+            var pickupContext = await gates.PickupContextAsync(shop, settings, now, ct);
+            var conflicts = await ConflictingOrdersAsync(shop, date, proposed, now, pickupContext.WorkingDay, ct);
             if (conflicts.Count > 0)
                 return Conflict(new CatalogConflictDto(CatalogConflictCode.ScheduleConflictsWithOrders,
                     "На этот день уже есть заказы вне новых часов — свяжитесь с покупателями или отмените заказы", conflicts));
@@ -285,14 +287,13 @@ public class ShopScheduleController(
     }
 
     /// <summary>Active orders of the date whose pickup does not fit the proposed hours (a slot must lie inside one interval; "as soon as possible" — its estimate).</summary>
-    private async Task<List<ScheduleConflictOrderDto>> ConflictingOrdersAsync(Company shop, DateOnly date, PickupSchedule proposed, CancellationToken ct)
+    private async Task<List<ScheduleConflictOrderDto>> ConflictingOrdersAsync(Company shop, DateOnly date, PickupSchedule proposed, DateTime now, DateOnly workingDay, CancellationToken ct)
     {
         var orders = await db.Orders.AsNoTracking()
             .Where(o => o.CompanyId == shop.Id && o.PickupDate == date &&
                         (o.Status == OrderStatus.New || o.Status == OrderStatus.Accepted || o.Status == OrderStatus.Ready))
             .OrderBy(o => o.PickupStartUtc).ThenBy(o => o.Number).ToListAsync(ct);
         var intervals = proposed.IntervalsFor(date);
-        var now = DateTime.UtcNow;
         return orders
             .Where(o =>
             {
@@ -300,7 +301,7 @@ public class ShopScheduleController(
                 return !intervals.Any(i => o.PickupStartUtc >= i.StartUtc && end <= i.EndUtc);
             })
             .Select(o => new ScheduleConflictOrderDto(
-                o.Id, o.Number, PickupSchedule.PickupText(o.PickupKind, o.PickupDate, o.PickupStartUtc, proposed.Schedule.Zone, now),
+                o.Id, o.Number, PickupSchedule.PickupText(o.PickupKind, o.PickupDate, o.PickupStartUtc, proposed.Schedule.Zone, now, workingDay),
                 OrderTexts.StatusText(o.Status), o.CustomerName, o.CustomerPhone))
             .ToList();
     }

@@ -16,6 +16,10 @@ namespace ServiceBooking.API.Services.Orders.Reports;
 public sealed class PickListService(
     AppDbContext db, ShopGateLoader gates, ServiceBooking.API.Services.Notifications.INotificationClock clock)
 {
+    private sealed record PickOrderRow(Guid Id, int Number, OrderStatus Status, PickupKind PickupKind, DateTime PickupStartUtc, DateTime CreatedAtUtc, string? Comment);
+
+    private sealed record PickItemRow(Guid OrderId, Guid? ProductId, int Position, string NameSnapshot, ProductUnit Unit, int QuantityOrdered, string? PortionTextSnapshot);
+
     public const string TimeFormatText = "Укажите время в формате ЧЧ:ММ";
     public const string IntervalBothText = "Укажите начало и конец интервала";
     public const string WholeDayLabel = "Весь день";
@@ -30,6 +34,7 @@ public sealed class PickListService(
         var workingDay = context.WorkingDay;
 
         var day = date ?? workingDay;
+        if (!ReportPeriod.IsSaneDate(day)) return (ReportPeriod.DateOutOfRange, null);
         var latest = workingDay.AddDays(Math.Max(0, settings.PreorderDays));
         if (day > latest) return ($"Дата — не позже {ShopTimeTexts.DateLong(latest)}", null);
 
@@ -60,12 +65,20 @@ public sealed class PickListService(
         }
 
         var statuses = includeNew ? new[] { OrderStatus.Accepted, OrderStatus.New } : new[] { OrderStatus.Accepted };
-        var orders = await db.Orders.AsNoTracking().Include(o => o.Items)
+        // Only the fields the list needs: the customer's name and phone are never read (L18).
+        var orders = await db.Orders.AsNoTracking()
             .Where(o => o.CompanyId == shop.Id && o.PickupDate == day && statuses.Contains(o.Status) && o.PickupStartUtc >= fromUtc && o.PickupStartUtc < toUtc)
             .OrderBy(o => o.PickupStartUtc).ThenBy(o => o.CreatedAtUtc).ThenBy(o => o.Number)
-            .AsSplitQuery().ToListAsync(ct);
+            .Select(o => new PickOrderRow(o.Id, o.Number, o.Status, o.PickupKind, o.PickupStartUtc, o.CreatedAtUtc, o.Comment))
+            .ToListAsync(ct);
+        var orderIds = orders.Select(o => o.Id).ToList();
+        var itemsByOrder = orderIds.Count == 0
+            ? new Dictionary<Guid, List<PickItemRow>>()
+            : (await db.OrderItems.AsNoTracking().Where(i => orderIds.Contains(i.OrderId))
+                .Select(i => new PickItemRow(i.OrderId, i.ProductId, i.Position, i.NameSnapshot, i.Unit, i.QuantityOrdered, i.PortionTextSnapshot))
+                .ToListAsync(ct)).GroupBy(i => i.OrderId).ToDictionary(g => g.Key, g => g.ToList());
 
-        var inputs = await ToInputsAsync(shop.Id, orders, ct);
+        var inputs = await ToInputsAsync(shop.Id, orders, itemsByOrder, ct);
         var slots = pickup.DaySlots(day);
         var result = PickListBuilder.Build(inputs, slots, zone);
 
@@ -97,9 +110,10 @@ public sealed class PickListService(
     }
 
     /// <summary>Order lines with the CURRENT name and the catalogue position of their product; a deleted product (or one without a category) goes last, by name.</summary>
-    private async Task<List<PickListOrderInput>> ToInputsAsync(Guid shopId, List<Order> orders, CancellationToken ct)
+    private async Task<List<PickListOrderInput>> ToInputsAsync(
+        Guid shopId, List<PickOrderRow> orders, Dictionary<Guid, List<PickItemRow>> itemsByOrder, CancellationToken ct)
     {
-        var productIds = orders.SelectMany(o => o.Items).Where(i => i.ProductId != null).Select(i => i.ProductId!.Value).Distinct().ToList();
+        var productIds = itemsByOrder.Values.SelectMany(l => l).Where(i => i.ProductId != null).Select(i => i.ProductId!.Value).Distinct().ToList();
         var products = productIds.Count == 0
             ? []
             : await db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id))
@@ -109,7 +123,7 @@ public sealed class PickListService(
 
         return orders.Select(o => new PickListOrderInput(
             o.Id, o.Number, o.Status, o.PickupKind, o.PickupStartUtc, o.CreatedAtUtc, o.Comment,
-            o.Items.OrderBy(i => i.Position).Select(i =>
+            itemsByOrder.GetValueOrDefault(o.Id, []).OrderBy(i => i.Position).Select(i =>
             {
                 var product = i.ProductId is { } id ? products.GetValueOrDefault(id) : null;
                 var live = product is { Deleted: false };
