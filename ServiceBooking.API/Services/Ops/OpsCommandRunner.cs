@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.API.Services.Showcase.Tariffs;
 using ServiceBooking.Infrastructure.Data;
 
@@ -82,6 +83,11 @@ public static class OpsCommandRunner
         return ExitRefused;
     }
 
-    private static Task<int> RunShowcaseAsync(IServiceProvider sp, OpsCommandLine cli, TextWriter output, CancellationToken ct) =>
-        Task.FromResult(OpsCommandLine.ExitUnknownCommand);
+    private static async Task<int> RunShowcaseAsync(IServiceProvider sp, OpsCommandLine cli, TextWriter output, CancellationToken ct)
+    {
+        var commands = sp.GetRequiredService<ShowcaseCommands>();
+        var result = await commands.RunAsync(cli.Action!.Value, cli.PlanOf, cli.Confirmed, DateTime.UtcNow, ct);
+        foreach (var line in result.Lines) await output.WriteLineAsync(line);
+        return result.ExitCode;
+    }
 }

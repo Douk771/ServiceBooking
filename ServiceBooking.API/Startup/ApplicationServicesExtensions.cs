@@ -41,6 +41,11 @@ internal static class ApplicationServicesExtensions
     builder.Services.Configure<ServiceBooking.API.Services.Demo.DemoModeOptions>(
         builder.Configuration.GetSection(ServiceBooking.API.Services.Demo.DemoModeOptions.SectionName));
     builder.Services.AddScoped<ServiceBooking.API.Services.Showcase.ShowcaseOutboundGuard>();
+    // Cycle 28 (§575): the showcase generator and its operator commands (`ops showcase …`) — no HTTP route exists for any of it.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Showcase.ShowcaseAssetStore>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Showcase.ShowcaseGenerator>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Showcase.ShowcaseEraser>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Showcase.ShowcaseCommands>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Billing.TrialStateReader>();
     // Cycle 4 (ARCHITECTURE_CYCLE4.md §25.3, T4-B7): the other backend developer's queueing service, called
     // directly from BookingsController (create/cancel/reschedule) — registered here because Program.cs is

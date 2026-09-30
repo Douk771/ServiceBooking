@@ -80,6 +80,33 @@ public class FileStorage
         return $"/uploads/{folder}/{fileName}";
     }
 
+    /// <summary>ARCHITECTURE_CYCLE28.md §575.6 — writes a public file under a caller-chosen NAME (content-addressed for the showcase, so re-copying the same asset is
+    /// idempotent) and returns its URL. The name must be a plain file name; anything with a path separator is refused.</summary>
+    public async Task<string> SavePublicNamedAsync(PublicArea area, string fileName, byte[] bytes)
+    {
+        if (fileName.Length == 0 || fileName != Path.GetFileName(fileName))
+            throw new ArgumentException("A plain file name is required.", nameof(fileName));
+        var folder = AreaFolder(area);
+        var dir = Path.Combine(_publicRoot, folder);
+        Directory.CreateDirectory(dir);
+        await File.WriteAllBytesAsync(Path.Combine(dir, fileName), bytes);
+        return $"/uploads/{folder}/{fileName}";
+    }
+
+    /// <summary>Removes a whole public area folder (the showcase's <c>uploads/showcase/</c>). A no-op when it does not exist.</summary>
+    public void DeletePublicAreaFolder(PublicArea area)
+    {
+        var dir = Path.Combine(_publicRoot, AreaFolder(area));
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+    }
+
+    /// <summary>How many files a public area folder holds (0 when it does not exist).</summary>
+    public int CountPublicAreaFiles(PublicArea area)
+    {
+        var dir = Path.Combine(_publicRoot, AreaFolder(area));
+        return Directory.Exists(dir) ? Directory.EnumerateFiles(dir).Count() : 0;
+    }
+
     /// <summary>Deletes a previously-saved public file by its URL. A no-op for null/empty, for a URL
     /// this class didn't produce (e.g. a legacy external logo URL), or for anything that would resolve
     /// outside the public root — mirrors <see cref="ResolvePrivatePath"/>'s containment check (code

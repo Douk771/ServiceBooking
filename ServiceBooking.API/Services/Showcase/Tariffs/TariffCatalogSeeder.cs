@@ -97,6 +97,30 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
         return new TariffCatalogReport(lines, created.Count, rulesAdded, aligned, LockBusy: false);
     }
 
+    /// <summary>
+    /// The hidden service tariff "Витрина (служебный)" (§573.2): created by <c>ops showcase create</c>, NOT by <c>ops tariffs apply</c> — it is a service row, not a
+    /// product. Idempotent, and it never changes an existing row. Runs inside the caller's transaction and saves; the caller commits. Like every new tariff it gets
+    /// an explicit "unavailable" rule for each option of the catalog.
+    /// </summary>
+    public async Task<bool> EnsureShowcasePlanAsync(CancellationToken ct = default)
+    {
+        var plan = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.Id == ShowcaseCatalog.ShowcasePlanId, ct);
+        var created = plan is null;
+        if (plan is null)
+        {
+            plan = ToEntity(ZapisTariffCatalog.Showcase);
+            db.SubscriptionPlanConfigs.Add(plan);
+        }
+
+        var options = await db.SubscriptionOptions.WhereNotRetired().ToListAsync(ct);
+        var have = (await db.PlanOptionRules.Where(r => r.PlanConfigId == plan.Id).Select(r => r.OptionId).ToListAsync(ct)).ToHashSet();
+        foreach (var option in options.Where(o => !have.Contains(o.Id)))
+            db.PlanOptionRules.Add(new PlanOptionRule { Id = Guid.NewGuid(), PlanConfigId = plan.Id, OptionId = option.Id, Availability = OptionAvailability.Unavailable });
+
+        await db.SaveChangesAsync(ct);
+        return created;
+    }
+
     private async Task<int> AddMissingUnavailableRulesAsync(
         bool apply, List<SubscriptionPlanConfig> created, List<SubscriptionPlanConfig> existingTargets, CancellationToken ct)
     {
