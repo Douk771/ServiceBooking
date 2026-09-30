@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { PhoneInput } from '../components/ui/PhoneInput'
 import { Icon } from '../components/ui/Icon'
+import { DemoRoleButtons } from '../components/demo/DemoRoleButtons'
 import { getAuthErrorMessage } from '../utils/authError'
 import { safeReturnTo, withReturnTo } from '../utils/returnTo'
 import { useState } from 'react'
@@ -122,6 +123,9 @@ export function LoginPage() {
               Зарегистрироваться
             </Link>
           </p>
+
+          {/* API_CONTRACT_CYCLE28.md §598 — only on the demo stand; production renders nothing here. */}
+          <DemoRoleButtons />
         </div>
       </div>
     </div>
