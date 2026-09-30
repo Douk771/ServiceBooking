@@ -21,7 +21,7 @@ const HELP = `Засев демо-данных goods для съёмки скр�
   SHOTS_CITY         город магазина (по умолчанию Москва)
 
 Хост должен быть localhost/127.0.0.1/::1 или совпадать с SHOTS_ALLOW_HOST; *.ezbook.ru отклоняется всегда.
-Перед записью проверяется GET /swagger/index.html = 200 (Swagger UI включён только в Development;
+Перед записью проверяется, что GET /swagger/index.html отдаёт Swagger UI (он включён только в Development;
 swagger.json не годится: в Development он отдаёт 500 из-за двух WorkingHoursDto).
 Сначала поднимите стек: frontend/scripts/screenshots/stack.sh reset
 
@@ -93,6 +93,12 @@ export function isWithinShootingWindow(date, timeZone) {
   return minutes >= 7 * 60 && minutes <= 20 * 60 + 30
 }
 
+function assertShootingWindow(timeZone) {
+  if (!isWithinShootingWindow(new Date(), timeZone)) {
+    throw new ExitError(4, 'Слоты на +2 ч не поместятся в рабочие часы; запустите днём или задайте SHOTS_CITY с другим поясом.')
+  }
+}
+
 // ---------- HTTP ----------
 
 function makeClient(base) {
@@ -159,9 +165,8 @@ export async function main(env = process.env) {
   // Сам swagger.json проверять нельзя: в dev он отвечает 500 (коллизия schemaId WorkingHoursDto), поэтому берём UI.
   try {
     const html = await call('GET', '/swagger/index.html', { expected: [200] })
-    if (!isSwaggerUiHtml(html)) throw new ExitError(3, 'x')
-  } catch (e) {
-    if (e.code === 1) throw e
+    if (!isSwaggerUiHtml(html)) throw new Error('not swagger ui')
+  } catch {
     throw new ExitError(3, 'Это не стенд разработки: /swagger/index.html не отдаёт Swagger UI (возможно, SPA-фолбэк боевого хоста).')
   }
 
@@ -170,9 +175,7 @@ export async function main(env = process.env) {
   const city = (cities.items ?? cities).find((c) => c.name === cityName)
   if (!city) throw new ExitError(5, `Город «${cityName}» не найден в /api/cities`)
 
-  if (city.timeZoneId && !isWithinShootingWindow(new Date(), city.timeZoneId)) {
-    throw new ExitError(4, 'Слоты на +2 ч не поместятся в рабочие часы; запустите днём или задайте SHOTS_CITY с другим поясом.')
-  }
+  if (city.timeZoneId) assertShootingWindow(city.timeZoneId)
 
   const legal = await call('GET', '/api/legal/documents')
   const version = (type) => {
@@ -212,9 +215,7 @@ export async function main(env = process.env) {
   if (created.token) token = created.token
   const shopId = created.shop.id
   const timeZoneId = created.shop.timeZoneId || city.timeZoneId
-  if (!isWithinShootingWindow(new Date(), timeZoneId)) {
-    throw new ExitError(4, 'Слоты на +2 ч не поместятся в рабочие часы; запустите днём или задайте SHOTS_CITY с другим поясом.')
-  }
+  assertShootingWindow(timeZoneId)
   const shopPath = `/api/shops/${shopId}`
 
   await call('PUT', `${shopPath}/settings`, {

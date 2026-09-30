@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "types": ["vite/client", "vitest/globals"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
@@ -8,5 +9,5 @@
     }
   },
   "include": ["goods/src", "src"],
-  "exclude": ["**/shots.test.ts"]
+  "exclude": ["**/shots.test.ts", "**/seed-goods-demo.test.ts", "**/BuyersBlock.qa.test.tsx"]
 }

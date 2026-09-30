@@ -13,6 +13,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "eslint .",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "format": "prettier --write .",
     "types:api": "openapi-typescript ../contracts/cycle7/openapi.yaml -o src/types/api-cycle7.generated.ts",
     "types:api9": "openapi-typescript ../contracts/cycle9/openapi.yaml -o src/types/api-cycle9.generated.ts",

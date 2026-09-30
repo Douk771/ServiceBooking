@@ -211,7 +211,7 @@ async function shootOrder(browser, state, webUrl, tmp) {
     height = Math.min((bottom ?? 0) + 20, 900)
     await checkForbidden(page, 'order-page', height)
     const statusText = state.orderPage.statusText
-    const bodyText = (await page.textContent('main')) ?? ''
+    const bodyText = await visibleTextAbove(page, height)
     if (!bodyText.includes(statusText)) throw new Exit(5, `Статус «${statusText}» не найден на странице заказа.`)
     const enc = await encode(page, { name: `order-page-${dpr}x`, width: 390, height, dpr, budget: 120 * KB })
     result[`${dpr}x`] = enc.buf

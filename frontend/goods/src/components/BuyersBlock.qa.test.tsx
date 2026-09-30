@@ -5,6 +5,8 @@ import { BuyersBlock } from './BuyersBlock'
 import { BusinessBlock } from './BusinessBlock'
 import { useAuthStore } from '@/store/authStore'
 import { statSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 
 // QA-тесты цикла 30, написаны по SPEC.md (US-30-01..05, §6), независимо от реализации.
 const setup = (ui = <BuyersBlock />) => render(<MemoryRouter>{ui}</MemoryRouter>)
@@ -137,7 +139,7 @@ describe('BusinessBlock screenshot QA (cycle 30)', () => {
   })
 
   it('QA30-10 image weight budget: desktop<=200KB, phone<=120KB, total<=450KB', () => {
-    const dir = `${process.cwd()}/goods/src/assets/screenshots/`
+    const dir = resolve(fileURLToPath(import.meta.url), '../../assets/screenshots') + '/'
     const kb = (f: string) => statSync(dir + f).size / 1024
     expect(kb('board-desktop-2x.webp')).toBeLessThanOrEqual(200)
     expect(kb('board-phone-2x.webp')).toBeLessThanOrEqual(120)
