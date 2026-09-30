@@ -1,0 +1,650 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ServiceBooking API — цикл 32 (настройки салона на общем блоке профиля)",
+    "version": "32.1.0",
+    "license": {
+      "name": "Proprietary"
+    },
+    "description": "Конвенции проекта без изменений: camelCase; enum — строкой; 400 — голая строка по-русски (text/plain);\n401/403/404 — пустое тело; 451 — правовой гейт. Текст, который видит человек, собирает сервер.\n\nПРАВИЛА ЦИКЛА, ЗАКРЕПЛЁННЫЕ ФОРМОЙ:\n  1. Профиль и правила записи — два независимых частичных PUT одного ресурса. Поле, которого нет в теле, сервер\n     не трогает (кроме явно названных исключений: пустая строка у ссылок карт — «удалить», timeZoneId: null —\n     «пояс города»).\n  2. Профиль никогда не шлёт поля правил, адрес и showInPublicListing. Правила никогда не шлют поля профиля.\n  3. Адрес пишется только через PUT /api/companies/{id}/address, после успешного PUT профиля.\n  4. Телефон сервер хранит байт в байт, без нормализации: нетронутое значение уходит как было.\n"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "dev (dotnet run)"
+    },
+    {
+      "url": "http://localhost:4032",
+      "description": "prism mock по этой схеме"
+    }
+  ],
+  "tags": [
+    {
+      "name": "company-settings",
+      "description": "Кабинет компании — чтение своих компаний, профиль, правила записи, адрес, логотип. Маршруты существующие."
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "CompanyId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Id компании (салона или магазина).",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "responses": {
+      "PlainTextError": {
+        "description": "Осознанный отказ — голая строка по-русски. Тексты, по которым фронт выбирает поле, — API_CONTRACT_CYCLE32.md §32.26.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PlainTextConflict": {
+        "description": "409 маршрута /api/companies/* — голая строка по-русски (у салона на PUT профиля не бывает).",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Нет или недействителен токен. Тело пустое."
+      },
+      "Forbidden": {
+        "description": "Не владелец и не SuperAdmin. Тело пустое."
+      },
+      "NotFound": {
+        "description": "Компании нет. Тело пустое."
+      },
+      "PayloadTooLarge": {
+        "description": "Тело больше RequestSizeLimit (5 МБ). Тело пустое."
+      },
+      "LegalGate": {
+        "description": "Требуется принять новую редакцию правовых документов владельца.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          },
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Превышен лимит частоты — голая строка.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "CompanyKind": {
+        "type": "string",
+        "enum": [
+          "Services",
+          "Orders"
+        ]
+      },
+      "CompanyProfileUpdateInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "description",
+          "phone",
+          "email"
+        ],
+        "description": "Тело, которое шлёт общий блок «Профиль компании» (CompanyProfileCard) — салон и магазин.\nname, description, phone, email — всегда (значения формы; name и description обрезаны по краям).\ncityId — только если город сменили. timeZoneId — только салон и только если меняли ручной пояс.\nyandexMapsUrl / twoGisUrl — только изменённые; очищенная ссылка уходит как \"\".\nАдреса, полей правил и showInPublicListing здесь нет и быть не может.\n",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Нетронутое поле — сохранённое значение как есть (любой формат, в том числе с «доб.»); изменённое — канонические\n11 цифр 7XXXXXXXXXX (маска PhoneInput); пустое поле — \"\". Сервер не нормализует.\n"
+          },
+          "email": {
+            "type": "string"
+          },
+          "cityId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "timeZoneId": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Только салон. IANA-пояс — ручной пояс; null — сбросить к поясу города. Магазин ключ не шлёт."
+          },
+          "yandexMapsUrl": {
+            "type": "string",
+            "maxLength": 600,
+            "description": "\"\" — удалить ссылку."
+          },
+          "twoGisUrl": {
+            "type": "string",
+            "maxLength": 600,
+            "description": "\"\" — удалить ссылку."
+          }
+        }
+      },
+      "BookingRulesUpdateInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bookingHorizonDays"
+        ],
+        "description": "Тело карточки «Правила записи» (только салон). bookingHorizonDays — всегда (0 — «по умолчанию, 90 дней»).\nclientRescheduleMinHours — только если поле не пустое. allowSelfBooking / requirePrepayment — только если флаг не\nзаблокирован тарифом (planAllowsOnlineBooking / planAllowsOnlinePayment).\n",
+        "properties": {
+          "bookingHorizonDays": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 365
+          },
+          "clientRescheduleMinHours": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 168
+          },
+          "allowSelfBooking": {
+            "type": "boolean"
+          },
+          "requirePrepayment": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SaveCompanyAddressInput": {
+        "type": "object",
+        "required": [
+          "address"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Пишется байт в байт; \"\" — очистить."
+          },
+          "verify": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Принимается и игнорируется (цикл 19). Кабинет не шлёт."
+          }
+        }
+      },
+      "MultipartImageUpload": {
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "JPEG, PNG или WEBP, до 5 МБ."
+          }
+        }
+      },
+      "CompanySettingsDto": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Подмножество CompanyDto, которое читает вкладка «Настройки» салона (полная форма — API_DOCUMENTATION.md).\nТа же форма у GET /api/companies/my (элемент массива), PUT /api/companies/{id}, POST …/logo и в поле company\nответа PUT …/address. Кабинет ответы PUT не читает: после успеха перечитывает ['my-companies'].\nutcOffsetMinutes — смещение ДЕЙСТВУЮЩЕГО пояса (в том числе ручного), не пояса города. Пояса самого города\nпри ручном поясе в DTO нет (ARCHITECTURE_CYCLE32.md §32.3).\n",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "allowSelfBooking",
+          "requirePrepayment",
+          "onlineBookingEnabled",
+          "showInPublicListing",
+          "planAllowsOnlineBooking",
+          "planAllowsOnlinePayment",
+          "timeZoneId",
+          "timeZoneIsManual",
+          "utcOffsetMinutes",
+          "bookingHorizonDays",
+          "clientRescheduleMinHours",
+          "kind",
+          "publicUrl"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "logoUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "description": "Как сохранено, байт в байт."
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "allowSelfBooking": {
+            "type": "boolean"
+          },
+          "requirePrepayment": {
+            "type": "boolean"
+          },
+          "onlineBookingEnabled": {
+            "type": "boolean"
+          },
+          "showInPublicListing": {
+            "type": "boolean"
+          },
+          "planAllowsOnlineBooking": {
+            "type": "boolean"
+          },
+          "planAllowsOnlinePayment": {
+            "type": "boolean"
+          },
+          "cityId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "cityName": {
+            "type": "string",
+            "nullable": true
+          },
+          "cityRegion": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeZoneId": {
+            "type": "string"
+          },
+          "timeZoneIsManual": {
+            "type": "boolean"
+          },
+          "utcOffsetMinutes": {
+            "type": "integer"
+          },
+          "bookingHorizonDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365,
+            "description": "Уже нормализовано: 0 в БД → 90."
+          },
+          "clientRescheduleMinHours": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 168
+          },
+          "yandexMapsUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "twoGisUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CompanyKind"
+          },
+          "publicUrl": {
+            "type": "string"
+          }
+        }
+      },
+      "CompanySettingsList": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CompanySettingsDto"
+        }
+      },
+      "CompanyAddressUpdateResultDto": {
+        "type": "object",
+        "required": [
+          "company"
+        ],
+        "properties": {
+          "company": {
+            "$ref": "#/components/schemas/CompanySettingsDto"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/companies/my": {
+      "get": {
+        "tags": [
+          "company-settings"
+        ],
+        "operationId": "getMyCompaniesCycle32",
+        "summary": "Компании, где вызывающий — владелец (кабинет ezbook читает отсюда настройки салона)",
+        "description": "Без изменений. Без параметра kind — только салоны (Services), только активные, только членство CompanyOwner.\nВкладка «Настройки» находит салон по id в этом списке (ключ кеша ['my-companies']).\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "Services (по умолчанию) или Orders. Кабинет ezbook не шлёт.",
+            "schema": {
+              "$ref": "#/components/schemas/CompanyKind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список компаний (CompanyDto).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanySettingsList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/companies/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CompanyId"
+        }
+      ],
+      "put": {
+        "tags": [
+          "company-settings"
+        ],
+        "operationId": "updateCompanyCycle32",
+        "summary": "Частичное обновление компании — профиль ИЛИ правила записи, никогда вместе",
+        "description": "Без изменений на сервере. Отсутствующее поле (или null для plain-полей) не меняется. Любой 400 — до сохранения:\nничего из тела не записывается. Порядок 400 (первый отказ выигрывает): горизонт → Яндекс → 2ГИС → окно переноса\n→ «Город не найден» → «Неизвестный часовой пояс». Для магазина — ещё правила цикла 26 (409 при смене пояса с\nзаказами, 400 при ручном поясе). Права: 404 для несуществующего id, 403 для чужой компании.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/CompanyProfileUpdateInput"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BookingRulesUpdateInput"
+                  }
+                ]
+              },
+              "examples": {
+                "salonProfileUntouched": {
+                  "summary": "Салон, правка только текстовых полей",
+                  "value": {
+                    "name": "Салон Ромашка",
+                    "description": "Стрижки и окрашивание",
+                    "phone": "8 (3852) 12-34-56 доб. 5",
+                    "email": "hello@romashka.ru"
+                  }
+                },
+                "salonProfileManualZone": {
+                  "summary": "Салон, смена города и ручной пояс",
+                  "value": {
+                    "name": "Салон Ромашка",
+                    "description": "",
+                    "phone": "79001234567",
+                    "email": "",
+                    "cityId": 3,
+                    "timeZoneId": "Asia/Omsk"
+                  }
+                },
+                "salonProfileResetZone": {
+                  "summary": "Салон, ручной пояс выключен — пояс города",
+                  "value": {
+                    "name": "Салон Ромашка",
+                    "description": "",
+                    "phone": "79001234567",
+                    "email": "",
+                    "timeZoneId": null
+                  }
+                },
+                "shopProfileClearedLink": {
+                  "summary": "Магазин, очищена ссылка Яндекс Карт",
+                  "value": {
+                    "name": "Шаурма",
+                    "description": "Свежая",
+                    "phone": "79001234567",
+                    "email": "",
+                    "yandexMapsUrl": ""
+                  }
+                },
+                "salonRules": {
+                  "summary": "Салон, правила записи",
+                  "value": {
+                    "bookingHorizonDays": 30,
+                    "clientRescheduleMinHours": 12,
+                    "allowSelfBooking": true,
+                    "requirePrepayment": false
+                  }
+                },
+                "salonRulesLockedByPlan": {
+                  "summary": "Салон на тарифе без онлайн-записи и оплаты, окно переноса очищено",
+                  "value": {
+                    "bookingHorizonDays": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Компания после сохранения (CompanyDto).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanySettingsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/PlainTextConflict"
+          },
+          "451": {
+            "$ref": "#/components/responses/LegalGate"
+          }
+        }
+      }
+    },
+    "/api/companies/{id}/address": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CompanyId"
+        }
+      ],
+      "put": {
+        "tags": [
+          "company-settings"
+        ],
+        "operationId": "saveCompanyAddressCycle32",
+        "summary": "Адрес компании — второй шаг сохранения профиля, только после успешного PUT профиля",
+        "description": "Без изменений (цикл 19). Кабинет шлёт { address } после подтверждения PublicAddressNotice\n(POST /api/companies/address/notice — API_CONTRACT_CYCLE19.md, без изменений). Политика частоты address-verify.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveCompanyAddressInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Компания после сохранения.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyAddressUpdateResultDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/companies/{id}/logo": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CompanyId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "company-settings"
+        ],
+        "operationId": "uploadCompanyLogoCycle32",
+        "summary": "Логотип — сразу при выборе файла, отдельно от кнопки «Сохранить»",
+        "description": "Без изменений (порядок проверок — API_CONTRACT_CYCLE29.md). Политика частоты uploads.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/MultipartImageUpload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Логотип заменён; компания после сохранения (CompanyDto).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanySettingsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "451": {
+            "$ref": "#/components/responses/LegalGate"
+          }
+        }
+      }
+    }
+  }
+}
