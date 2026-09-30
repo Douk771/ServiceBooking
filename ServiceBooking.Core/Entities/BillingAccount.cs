@@ -25,6 +25,9 @@ public class BillingAccount
     // Reset to 0 only by an admin action.
     public int GrandfatheredEmployeeBonus { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE28.md §572.1 — the billing account of showcase (fictional) companies.</summary>
+    public bool IsShowcase { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 
