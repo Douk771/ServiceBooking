@@ -23,7 +23,7 @@ public sealed class DemoHostFactory(string connectionString, IReadOnlyDictionary
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        Identity = TestHostSettings.Apply(builder, "demo", connectionString);
+        Identity = TestHostSettings.Apply(builder, "demo", connectionString, factoryType: GetType().Name);
         builder.UseSetting("Notifications:EncryptionKey", NotificationDispatchTestFactory.TestEncryptionKeyBase64);
         builder.UseSetting("Trial:PhoneKeyHmac", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=");
         builder.UseSetting("Trial:PhoneKeyId", "qa-test-key");

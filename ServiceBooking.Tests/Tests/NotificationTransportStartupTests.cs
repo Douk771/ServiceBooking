@@ -46,7 +46,7 @@ public class NotificationTransportStartupTests
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            TestHostSettings.Apply(builder, "startup-qa9", connectionString);
+            TestHostSettings.Apply(builder, "startup-qa9", connectionString, factoryType: GetType().Name);
             builder.UseSetting("Notifications:Provider", "definitely-not-a-real-provider");
         }
     }

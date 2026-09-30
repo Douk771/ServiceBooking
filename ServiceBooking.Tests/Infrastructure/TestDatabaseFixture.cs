@@ -61,6 +61,8 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
         if (Interlocked.Exchange(ref _testClassRecorded, 1) == 1)
             return;
 
+        TestRunMetrics.ClassRecorded(ClassSlot, TestRunMetrics.ResolveFullClassName(testClassName));
+
         // Fire-and-forget: this is diagnostics, not part of the test's own behaviour, and every test
         // constructor is synchronous — nothing here may block or fail the test.
         _ = _lease.RecordTestClassAsync(testClassName);

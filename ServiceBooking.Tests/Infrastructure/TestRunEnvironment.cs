@@ -107,7 +107,9 @@ public static class TestRunEnvironment
         // "connection limit exceeded" 300 tests into a run is expensive to diagnose; this is not.
         await EnsureConnectionBudgetCheckedOnceAsync(cancellationToken);
 
+        var createWatch = System.Diagnostics.Stopwatch.StartNew();
         var databaseName = await databases.CreateClassDatabaseAsync(classSlot, cancellationToken);
+        TestRunMetrics.ClassDb("class-db-created", classSlot, createWatch.Elapsed.TotalMilliseconds);
         var connectionString = databases.ConnectionStringFor(classSlot);
         Console.WriteLine($"[sb-test] class-db slot={classSlot} db={databaseName}");
         return new TestClassDatabaseLease(classSlot, connectionString);
@@ -124,7 +126,11 @@ public static class TestRunEnvironment
         try
         {
             if (_databases is not null)
+            {
+                var dropWatch = System.Diagnostics.Stopwatch.StartNew();
                 await _databases.DropClassDatabaseAsync(classSlot, cancellationToken);
+                TestRunMetrics.ClassDb("class-db-dropped", classSlot, dropWatch.Elapsed.TotalMilliseconds);
+            }
         }
         finally
         {
@@ -152,9 +158,16 @@ public static class TestRunEnvironment
             {
                 try
                 {
+                    var serverWatch = System.Diagnostics.Stopwatch.StartNew();
                     _server = await TestServerLease.AcquireAsync(cancellationToken);
+                    TestRunMetrics.RunStart(
+                        _server.Mode == TestServerMode.Container ? "container" : "external",
+                        TestParallelism.MaxParallelThreads);
+                    TestRunMetrics.Timed("server-ready", serverWatch.Elapsed.TotalMilliseconds);
                     _databases = new TestDatabaseLease(_server);
+                    var templateWatch = System.Diagnostics.Stopwatch.StartNew();
                     await _databases.EnsureTemplateAsync(MigrateTemplateAsync, cancellationToken);
+                    TestRunMetrics.Timed("template-ready", templateWatch.Elapsed.TotalMilliseconds);
                     PrintBanner(_server);
                     RegisterProcessExitTeardown();
                 }

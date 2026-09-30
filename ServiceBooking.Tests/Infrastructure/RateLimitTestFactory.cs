@@ -66,7 +66,7 @@ public sealed class RateLimitTestFactory : WebApplicationFactory<Program>
                 _ => new FakeRemoteIpStartupFilter(IPAddress.Parse(_simulatedRealPeer))));
 
 
-        TestHostSettings.Apply(builder, "ratelimit", _connectionString);
+        TestHostSettings.Apply(builder, "ratelimit", _connectionString, factoryType: GetType().Name);
 
         // WindowMinutes intentionally left at their (long) production defaults everywhere below — only
         // PermitLimit is tightened, so a test needs a handful of calls, not a real clock, to trip 429.

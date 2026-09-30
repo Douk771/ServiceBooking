@@ -39,7 +39,8 @@ public static class TestHostSettings
     /// the closed set of valid values</param>
     /// <param name="connectionString">the class database's connection string, from
     /// <see cref="TestDatabaseFixture"/></param>
-    public static TestHostIdentity Apply(IWebHostBuilder builder, string factoryTag, string connectionString)
+    public static TestHostIdentity Apply(IWebHostBuilder builder, string factoryTag, string connectionString,
+        string factoryType = "unknown")
     {
         if (!SuperAdmins.TryGetValue(factoryTag, out var admin))
         {
@@ -96,6 +97,8 @@ public static class TestHostSettings
 
         // §71.4: logs move out of the process' working directory.
         builder.UseSetting("Logs:Directory", logDirectory);
+
+        TestRunMetrics.Instrument(builder, classSlot, factoryTag, factoryType);
 
         return new TestHostIdentity(
             connectionString, admin.Phone, admin.Email, SuperAdminPassword,

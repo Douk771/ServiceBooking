@@ -45,7 +45,7 @@ public sealed class PushDispatchTestFactory(string connectionString, bool disabl
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        Identity = TestHostSettings.Apply(builder, "dispatch", connectionString);
+        Identity = TestHostSettings.Apply(builder, "dispatch", connectionString, factoryType: GetType().Name);
 
         // disableAutomaticTicking: the runner's own BackgroundService.ExecuteAsync returns immediately
         // when ScheduledTasks:Enabled=false (see ScheduledTaskRunner.cs) — the task itself stays fully

@@ -20,7 +20,7 @@ public class Cycle31GalleryRateLimitTests(TestDatabaseFixture fixture) : Cycle25
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            TestHostSettings.Apply(builder, "api", connectionString);
+            TestHostSettings.Apply(builder, "api", connectionString, factoryType: GetType().Name);
             builder.UseSetting("Uploads:PerUserPerMinute", "10");
             builder.UseSetting("RateLimits:company-photos:PermitLimit", "20");
             builder.UseSetting("RateLimits:company-photos-edit:PermitLimit", "60");

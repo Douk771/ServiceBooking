@@ -27,7 +27,7 @@ public sealed class StaffMaxTestFactory(string connectionString, bool platformEn
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        TestHostSettings.Apply(builder, "api", connectionString);
+        TestHostSettings.Apply(builder, "api", connectionString, factoryType: GetType().Name);
         builder.UseSetting("PhoneVerification:Provider", "max-bot");
         builder.UseSetting("PhoneVerification:SessionTtlMinutes", "10");
         builder.UseSetting("PhoneVerification:VerifiedSessionUsableMinutes", "30");
