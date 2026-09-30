@@ -10,6 +10,11 @@ function axiosErrorWith(status: number, data: unknown): AxiosError {
 }
 
 describe('getUploadErrorMessage', () => {
+  it.each(['салона', 'магазина'])('returns the gallery limit text for a %s as is', (kind) => {
+    const text = `В галерее ${kind} может быть не больше 10 фотографий`
+    expect(getUploadErrorMessage(axiosErrorWith(400, text))).toBe(text)
+  })
+
   it('400 "Слишком больш…" (byte-size limit) → file-size message', () => {
     expect(getUploadErrorMessage(axiosErrorWith(400, 'Слишком большой файл — максимум 5 МБ.'))).toBe(
       'Файл больше 5 МБ. Уменьшите изображение и попробуйте снова.',
