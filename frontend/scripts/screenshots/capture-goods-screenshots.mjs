@@ -74,11 +74,11 @@ function missingShotsPlugin() {
       if (!importer || !/\.(webp|json)$/.test(id) || !id.startsWith('./')) return null
       const full = join(dirname(importer), id).replaceAll('\\', '/')
       if (!full.startsWith(dirNorm) || existsSync(full)) return null
-      return prefix + id
+      return `${prefix}${id}.js`
     },
     load(id) {
       if (!id.startsWith(prefix)) return null
-      if (id.endsWith('.webp')) return 'export default ""'
+      if (id.endsWith('.webp.js')) return 'export default ""'
       return `export default ${JSON.stringify({
         orderPage: { cssWidth: 390, cssHeight: 600, orderNumber: 1, pickupClock: '00:00' },
         boardDesktop: { cssWidth: 1280, cssHeight: 800 },
@@ -93,7 +93,6 @@ async function startWeb(state) {
   process.env.VITE_API_TARGET = state.apiUrl
   const { createServer } = await import('vite')
   const server = await createServer({
-    root: frontendRoot,
     configFile: join(frontendRoot, 'vite.goods.config.ts'),
     plugins: [missingShotsPlugin()],
     server: { port: 55174, strictPort: true },
@@ -128,7 +127,7 @@ const newContext = (browser, state, width, height, dpr) =>
 
 async function settle(page) {
   await page.evaluate(() => document.fonts.ready)
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {}) // доска опрашивает API, тишины может не быть
   if ((await page.locator('[role="dialog"]').count()) > 0) throw new Exit(4, 'На странице открыто модальное окно ([role="dialog"]).')
   await page.waitForTimeout(400)
 }
@@ -176,7 +175,7 @@ async function encode(page, { name, width, height, dpr, budget }) {
       const { data } = await cdp.send('Page.captureScreenshot', {
         format: 'webp',
         quality: q,
-        clip: { x: 0, y: 0, width, height, scale: 1 },
+        clip: { x: 0, y: 0, width, height, scale: dpr },
         captureBeyondViewport: true,
       })
       const buf = Buffer.from(data, 'base64')
@@ -265,11 +264,11 @@ async function shootBoards(browser, state, webUrl, tmp) {
     await signIn(page, webUrl, state)
     await openBoard(page, webUrl, state)
     for (const col of ['Новые', 'Принятые', 'Готовы к выдаче']) {
-      const n = await page.locator(`section[aria-label="${col}"] article, section[aria-label="${col}"] li`).count()
+      const n = await page.locator(`section[aria-label="${col}"] article`).count()
       if (n === 0) throw new Exit(5, `В колонке «${col}» нет карточек.`)
     }
     orderCount = await page.locator('section[aria-label="Новые"], section[aria-label="Принятые"], section[aria-label="Готовы к выдаче"]').evaluateAll(
-      (cols) => cols.reduce((sum, c) => sum + c.querySelectorAll('article, li').length, 0),
+      (cols) => cols.reduce((sum, c) => sum + c.querySelectorAll('article').length, 0),
     )
     const gridBottom = await page.evaluate(() => {
       const el = document.querySelector('section[aria-label="Новые"]')?.parentElement
