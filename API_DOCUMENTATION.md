@@ -23,11 +23,12 @@
 > **Цикл 24 (время, приём, уведомления, тарифы магазинов; НЕ ВЫПУЩЕНО):** дополнение к §4.20 — часы работы и пауза, слоты и предзаказы,
 > меню на дату, push, мессенджер, линейка тарифов «Заказы» (`line`), `site` у push-подписок.
 
-> **Цикл 28 (тарифы «Записи», витринные данные; проход A; НЕ ВЫПУЩЕНО):** новый раздел §4.21 — витрина (вымышленные компании «Пример»),
+> **Цикл 28 (тарифы «Записи», витринные данные; проходы A и B; НЕ ВЫПУЩЕНО):** новый раздел §4.21 — витрина (вымышленные компании «Пример»),
 > команды оператора `ops …`, новые поля `CompanyDto.isShowcase`/`showcaseBookingOpen` и `BookingDto.companyIsShowcase`, 409 `ShowcaseBookingClosed`
 > в `POST /api/bookings`, фильтр `showcase` и поля `isShowcase` в админке, запрет смешивания (409), префикс слага `primer-`.
-> **Меняется поведение бесплатного тарифа «Старт» у всех компаний** (онлайн-запись включена, 2 сотрудника, §3.1). Демо-стенд (`/api/demo/*`) — проход B,
-> в коде его нет. Форма — `contracts/cycle28/openapi.yaml`, порядок проверок и тексты — `API_CONTRACT_CYCLE28.md`.
+> **Меняется поведение бесплатного тарифа «Старт» у всех компаний** (онлайн-запись включена, 2 сотрудника, §3.1). Демо-стенд (проход B, §4.21.8): два маршрута
+> `GET /api/demo/status` и `POST /api/demo/login` (на боевой конфигурации оба 404), 403 с телом `X-Demo-Restricted` для демо-ролей, 503 «Демо обновляется» во время сброса,
+> команда `ops demo reset`. Форма — `contracts/cycle28/openapi.yaml`, порядок проверок и тексты — `API_CONTRACT_CYCLE28.md`.
 
 ## Содержание
 
@@ -4269,7 +4270,7 @@ curl "http://localhost:5000/api/companies/$COMPANY_ID/clients/phone:79991234567/
 | `ops showcase create [--yes]` | да, только с `--yes` | 0; 2 витрина уже есть / нет города справочника |
 | `ops showcase recreate [--yes]` | да, только с `--yes`; удаление и создание в **одной** транзакции | 0; 2 |
 | `ops showcase delete [--yes]` | да, только с `--yes`; включая файлы `uploads/showcase/` | 0 (в том числе если удалять нечего) |
-| `ops demo reset [--yes]` | (проход B) сейчас всегда отказ | 2 |
+| `ops demo reset [--yes]` | да, только с `--yes`; только демо-режим (§4.21.8) | 0; 1 ошибка (всё откатено); 2 не демо-режим или нет метки `instance.kind = demo`; 4 занят замок |
 
 Общие коды: 3 — есть непримененные миграции (сначала перезапустите API); 4 — занят замок `ops:showcase`/`ops:tariffs`; 64 — неизвестная команда (печатается справка). Без `--yes`
 изменяющая команда только печатает план. Формат отчёта построчный: `будет создано: companies=9 users=158 billingAccounts=8 services=75 bookings=9062 bookingEvents=17551 photos=0 files=0`;
@@ -4295,8 +4296,55 @@ curl "http://localhost:5000/api/companies/$COMPANY_ID/clients/phone:79991234567/
 #### 4.21.7. Сверка с `contracts/cycle28/openapi.yaml`
 
 Реализованы все пути прохода A: `CompanyDto`, `BookingDto`, `POST /api/bookings` (409 JSON), `POST /api/Companies/{id}/members`, `PUT /api/admin/companies/{id}/owner`, transfer, `PUT …/subscription`, `POST /api/companies` (слаг), `POST /api/auth/login`,
-`POST /api/companies/{id}/mail`, три админских списка и `stats`. **Не реализованы by design (проход B):** `GET /api/demo/status`, `POST /api/demo/login`, запреты демо-ролей (`X-Demo-Restricted`),
-503 во время сброса. `GET /api/pricing` форму не меняет.
+`POST /api/companies/{id}/mail`, три админских списка и `stats`. Проход B: `GET /api/demo/status`, `POST /api/demo/login`, запреты демо-ролей (`X-Demo-Restricted`), 503 во время сброса — реализованы (§4.21.8). `GET /api/pricing` форму не меняет.
+
+#### 4.21.8. Демо-стенд — **проход B, НЕ ВЫПУЩЕНО**
+
+*Источники: `API_CONTRACT_CYCLE28.md` §597–§600a, `ARCHITECTURE_CYCLE28.md` §579–§581. Отклонений формы от контракта нет.*
+
+**Что это.** Отдельный экземпляр API (свой compose-проект, своя БД и хранилище) с включённым `DemoMode:Enabled`: на нём можно войти без пароля под готовой ролью и потрогать кабинет,
+а каждую ночь всё возвращается в исходное состояние. **На боевой конфигурации (`DemoMode:Enabled=false`, по умолчанию) маршрутов `/api/demo/*` «нет»: оба отвечают 404 с пустым телом
+до любого кода действия, а их лимит частоты не включается (нет и 429).**
+
+**Настройки** (секция `DemoMode`): `Enabled` (false), `ResetLocalTime` (`04:00`), `TimeZoneId` (`Europe/Moscow`), `MaintenanceFlagPath` (`App_Data/state/demo-resetting`). Лимит `RateLimits:demo-login` — 30 в минуту на IP.
+
+**Два замка от запуска демо на боевых данных.**
+1. *Конфигурация* (`DeploymentSafetyChecks.ValidateDemoMode`, при `Enabled=true` в любом окружении; все нарушения — одним сообщением при старте): `PublicSites:ServicesBaseUrl` и каждый `AllowedOrigins` на хосте `demo.*`;
+   имя БД в `DefaultConnection` оканчивается на `_demo`; `Jwt:Issuer` оканчивается на `.Demo` (боевой токен не пройдёт на демо и наоборот); `Notifications:Provider` и `Notifications:StaffPush:Provider` — `logging`,
+   `Notifications:StaffMax:Enabled=false`, `PhoneVerification:Provider=stub`; `Showcase:Reseed:Enabled=false`.
+2. *Данные* (`DemoInstanceGuard`, после миграций, до сидирования): ключ `PlatformSettings` `instance.kind`. `demo` — можно; другое значение — отказ; ключа нет — можно, только если в БД нет ни одной невитринной
+   компании и ни одной записи с `ShowcaseKind = None` (тогда ключ пишется), иначе «БД содержит настоящие данные — это не демо-БД». Боевой экземпляр ключ не читает и не пишет.
+
+**`GET /api/demo/status`** — анонимный, 200 `DemoStatusDto { demoMode: true, resetting, resetLocalTime, timeZoneId, lastResetAtUtc (null до первого сброса), roles: [{ role, label }] }`. Во время сброса отвечает 200 с
+`resetting: true`, а не 503. Вне демо — 404.
+
+**`POST /api/demo/login`** — анонимный, тело `{ "role": "owner" | "master" | "client" }`, лимит `demo-login`. 200 — `AuthResponseDto` (как у `POST /api/auth/login`; `roles`: `["CompanyOwner"]`, `["Master"]`, `["Client"]`).
+400 `text/plain` «Неизвестная демо-роль.» (роль не из списка или нет тела); 409 `text/plain` «Демо-данные ещё не созданы. Зайдите чуть позже.» (до первого `ops demo reset --yes`); 404 вне демо.
+Токен несёт claim `sb_demo = 1` и **текущие** версии документов (Privacy, TermsClient, у владельца ещё TermsOwner), в журнал согласий ничего не пишется — гейт 451 демо-роль не останавливает.
+Учётки — обычные строки профиля «demo» со стабильными Id (UUIDv5), поэтому выданный до ночного сброса токен после него остаётся рабочим (те же Id и `SecurityStamp`); всё, что посетитель сделал под ролью, исчезает.
+Витринные учётки через `POST /api/auth/login` не входят ни на демо, ни на бою (401).
+
+| Роль | Кто | Что видно |
+|---|---|---|
+| `owner` | владелец салона «Лаванда» (Москва, 6 мастеров), тариф «Салон», оплачен на 30 дней вперёд | «Ваша подписка» показывает настоящий публичный тариф; отчёты, услуги, мастера, расписание |
+| `master` | мастер этого салона | «Мои записи», клиенты с заметками коллег |
+| `client` | клиент с визитами в трёх компаниях («Лаванда», «Жемчуг», «Взгляд»: прошлые и будущие) | «Мои визиты»; есть завершённые визиты без отзыва |
+
+**Запреты демо-ролей (403 с телом).** В демо-режиме для токена с `sb_demo = 1` эти действия отвечают **403 `text/plain` «В демо-версии это действие недоступно.» и заголовком `X-Demo-Restricted: 1`** — до модели и до действия
+(невалидное тело не превращает отказ в 400; аноним по-прежнему получает 401): `POST /api/profile/change-password`, `…/change-phone`, `…/delete-account`, `POST /api/billing/subscription/request`,
+`POST /api/billing/trial`, `POST /api/admin/companies/{companyId}/transfer`, `PUT /api/admin/companies/{id}/owner`. Это единственный 403 с телом в проекте. Посетитель, зарегистрировавшийся сам, `sb_demo` не имеет
+и не ограничен (его данные стираются ночью). Вне демо-режима маршруты не меняются.
+
+**Во время сброса** любой `/api/*`, кроме `/api/health/*` и `GET /api/demo/status`, отвечает **503 `text/plain` «Демо обновляется, зайдите через минуту»** с `Retry-After: 60` и `X-Demo-Resetting: 1`; статика и SPA не затрагиваются.
+Флаг — файл `MaintenanceFlagPath` (общий для процесса API и процесса `ops`), ответ кешируется на секунду; флаг старше 10 минут считается зависшим и игнорируется с `LogError`. В демо-режиме все ответы API
+несут `X-Robots-Tag: noindex, nofollow`. `Retry-After`, `X-Demo-Resetting`, `X-Demo-Restricted` объявлены в CORS как читаемые заголовки.
+
+**Сброс** (`ops demo reset --yes` и фоновая задача `demo-reset`, период 10 минут, регистрируется только в демо-режиме; запускает ту же процедуру, когда локальное время прошло `ResetLocalTime`, а последний сброс был раньше
+сегодняшнего слота; первый сброс на пустой БД — только командой оператора). Проверяет оба замка (иначе код 2, ничего не тронуто) и берёт замок `ops:showcase` (код 4). Одна транзакция: флаг, `TRUNCATE` всех таблиц модели
+кроме `__EFMigrationsHistory`, `Cities`, `AspNetRoles`, `SubscriptionPlanConfigs`, `SubscriptionOptions`, `PlanOptionRules`, `PlatformSettings` и `ScheduledTaskStates`; тарифы сетки; профиль «demo»
+(те же 9 компаний и ~9 тыс. записей, плюс ~650 отзывов с рейтингами, ~290 нейтральных заметок мастеров и история переносов; сведений о здоровье и фото нет); `pricing.public-enabled = true`. Сбой в любом месте откатывает **всё**
+(вчерашнее демо остаётся). После коммита: очистка хранилищ (кроме картинок новых данных), SuperAdmin из конфигурации (тем же кодом, что при старте), метка `demo.last-reset-utc`, снятие флага.
+Вывод: `выполнено: очищено таблиц=66 файлов=N; создано: companies=9 users=159 … reviews=659 clientNotes=288 за 00:07`.
 
 ---
 
