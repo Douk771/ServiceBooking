@@ -92,6 +92,7 @@ public class ShowcaseCommands(
             {
                 await generator.PersistAsync(graph!, cityIds!, profile.Name, ct);
                 (photos, files) = generator.CountAssets(graph!);
+                await StampLastReseedAsync(nowUtc, ct);
             }
 
             await transaction.CommitAsync(ct);
@@ -111,6 +112,22 @@ public class ShowcaseCommands(
         lines.Add($"выполнено: {string.Join("; ", summary)} за {stopwatch.Elapsed:mm\\:ss}");
         logger.LogInformation("ops showcase {Kind} done in {Elapsed}", kind, stopwatch.Elapsed);
         return new ShowcaseCommandResult(ExitOk, lines);
+    }
+
+    /// <summary>Records when the showcase was last (re)created, in the same transaction — the weekly re-seed task counts from it (§575.7).</summary>
+    private async Task StampLastReseedAsync(DateTime nowUtc, CancellationToken ct)
+    {
+        var value = nowUtc.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+        var setting = await db.PlatformSettings.FirstOrDefaultAsync(s => s.Key == ShowcaseCatalog.LastReseedKey, ct);
+        if (setting is null)
+            db.PlatformSettings.Add(new Core.Entities.PlatformSetting { Key = ShowcaseCatalog.LastReseedKey, Value = value, UpdatedAt = nowUtc, UpdatedByUserId = "ops" });
+        else
+        {
+            setting.Value = value;
+            setting.UpdatedAt = nowUtc;
+            setting.UpdatedByUserId = "ops";
+        }
+        await db.SaveChangesAsync(ct);
     }
 
     private Task<bool> ExistsAsync(CancellationToken ct) => db.Companies.AnyAsync(c => c.IsShowcase, ct);

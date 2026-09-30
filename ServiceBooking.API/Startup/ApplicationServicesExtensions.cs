@@ -269,6 +269,11 @@ internal static class ApplicationServicesExtensions
     // account's own snapshot, and materializes trial expiry onto the system Free plan (fail-closed if none
     // is configured).
     builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.TrialLifecycleTask>();
+    // Cycle 28, BE-7 (ARCHITECTURE_CYCLE28.md §575.7) — "showcase-reseed" (period 1 hour): weekly re-seed of the showcase; returns "disabled" at once
+    // while Showcase:Reseed:Enabled is off (the default).
+    builder.Services.Configure<ServiceBooking.API.Services.Showcase.ShowcaseReseedOptions>(
+        builder.Configuration.GetSection(ServiceBooking.API.Services.Showcase.ShowcaseReseedOptions.SectionName));
+    builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.ShowcaseReseedTask>();
 
     // T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.1): the fourth task, "data-retention". Every IRetentionRule below
     // is registered individually (not discovered by reflection) so the list here IS the list of what runs —
