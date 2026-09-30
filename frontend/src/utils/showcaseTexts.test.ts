@@ -46,4 +46,18 @@ describe('resolveShowcaseText (API_CONTRACT_CYCLE28.md §600)', () => {
     expect(r.isLive).toBe(false)
     expect(r.text).toBe(SHOWCASE_FALLBACK_TEXTS.ShowcaseNotice)
   })
+
+  it('decodes HTML entities so «&laquo;» never reaches the screen or the screen reader literally', () => {
+    const r = resolveShowcaseText(
+      'ShowcaseBookingClosed',
+      live('<p>&laquo;Пример&raquo; &mdash; салон &amp; студия&nbsp;&#8470;1.</p>'),
+    )
+    expect(r.text).toBe('«Пример» — салон & студия №1.')
+    expect(r.text).not.toContain('&')
+  })
+
+  it('an escaped tag stays text and is not turned into markup', () => {
+    const r = resolveShowcaseText('ShowcaseNotice', live('<p>a &lt;b&gt; c</p>'))
+    expect(r.text).toBe('a <b> c')
+  })
 })

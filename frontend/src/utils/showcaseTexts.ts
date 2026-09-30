@@ -29,10 +29,16 @@ export interface ShowcaseText {
   isLive: boolean
 }
 
+/** Decodes HTML entities (`&laquo;`, `&mdash;`, `&amp;`, numeric ones) without executing or attaching anything:
+ *  `DOMParser` builds an inert document, and only the text of an already tag-free string is read from it. */
+function decodeEntities(text: string): string {
+  if (!text.includes('&')) return text
+  return new DOMParser().parseFromString(text, 'text/html').body.textContent ?? text
+}
+
 function stripTags(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
+  return decodeEntities(html.replace(/<[^>]+>/g, ' '))
+    .replace(/\u00a0/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
