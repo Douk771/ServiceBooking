@@ -294,8 +294,12 @@ public class ShowcaseDatasetTests
         var g = Graph.Value;
 
         // Not generated (US-28-04): health notes, note photos, consent journal, subject requests, channels, outbound queues, change logs — the graph has no such lists at all.
+        // Reviews and client notes (pass B, US-28-13) exist for the DEMO profile only: the lists are there, and empty for the production showcase (D-4: no reviews on production).
         typeof(ShowcaseGraph).GetProperties().Select(p => p.Name).Should().NotContain(
-            n => n.Contains("Health") || n.Contains("Consent") || n.Contains("Channel") || n.Contains("Outbound") || n.Contains("Push") || n.Contains("Review") || n.Contains("Note"));
+            n => n.Contains("Health") || n.Contains("Consent") || n.Contains("Channel") || n.Contains("Outbound") || n.Contains("Push")
+                 || (n.Contains("Review") && n != nameof(ShowcaseGraph.Reviews)) || (n.Contains("Note") && n != nameof(ShowcaseGraph.ClientNotes)));
+        g.Reviews.Should().BeEmpty();
+        g.ClientNotes.Should().BeEmpty();
         g.Users.Should().OnlyContain(u => u.AvatarUrl == null, "masters have no photo, the frontend draws initials");
     }
 

@@ -25,6 +25,12 @@ public sealed class ShowcaseGraph
     public List<BookingService> BookingServices { get; } = [];
     public List<BookingEvent> BookingEvents { get; } = [];
 
+    /// <summary>Only the demo profile (US-28-13): reviews of completed visits of registered clients.</summary>
+    public List<Review> Reviews { get; } = [];
+
+    /// <summary>Only the demo profile (US-28-13): neutral notes of masters about clients.</summary>
+    public List<ClientNote> ClientNotes { get; } = [];
+
     /// <summary>Company id → the name of its city in the directory (the generator resolves the id, and refuses if the city is missing).</summary>
     public Dictionary<Guid, string> CityNameByCompany { get; } = [];
 

@@ -1,3 +1,4 @@
+using ServiceBooking.API.Services.Showcase.Tariffs;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 
@@ -43,13 +44,16 @@ public static class ShowcaseDataset
                     UpdatedAtUtc = ownerUser.CreatedAt,
                 };
                 graph.BillingAccounts.Add(account);
+                // The demo owner sits on the PUBLIC "Салон" tariff, paid 30 days ahead, so that "Ваша подписка" shows a real tariff (§579.4); every other
+                // owner sits on the hidden service tariff of the showcase with no end date.
+                var isDemoOwner = profile.DemoRoles && spec.OwnerKey == ShowcaseDemoRoles.OwnerUserKey;
                 graph.Subscriptions.Add(new AccountSubscription
                 {
                     Id = ShowcaseIds.For(p, "subscription", spec.OwnerKey),
                     OwnerUserId = ownerUser.Id,
                     BillingAccountId = account.Id,
-                    PlanConfigId = ShowcaseCatalog.ShowcasePlanId,
-                    PaidUntil = null,
+                    PlanConfigId = isDemoOwner ? ZapisTariffCatalog.SalonId : ShowcaseCatalog.ShowcasePlanId,
+                    PaidUntil = isDemoOwner ? todayStartUtc.AddDays(30) : null,
                     IsActive = true,
                     CreatedAt = ownerUser.CreatedAt,
                     UpdatedAt = ownerUser.CreatedAt,
@@ -171,6 +175,12 @@ public static class ShowcaseDataset
             guests.Add(($"{first} {last}", phones.Next()));
         }
 
+        // The demo client (§579.4) is made AFTER the pool, so no other phone shifts; his visits are taken from existing bookings below.
+        AppUser? demoClient = null;
+        if (profile.DemoRoles)
+            demoClient = NewUser(graph, phones, p, ShowcaseDemoRoles.ClientUserKey, "Мария", "Климова",
+                LocalToUtc(DateOnly.FromDateTime(nowUtc), TimeOnly.MinValue, TimeZoneInfo.Utc).AddDays(-240), "Client");
+
         // ── Bookings: per master and day, deterministic in (profile, date). ──
         var ci = 0;
         foreach (var spec in ShowcaseSpecs.Companies)
@@ -184,6 +194,10 @@ public static class ShowcaseDataset
             BuildBookings(graph, profile, spec, company, tz, localToday, pool, schedulesByKey[spec.Key]);
             ci++;
         }
+
+        if (demoClient is not null) AttachDemoClient(graph, profile, demoClient, companiesByKey, nowUtc);
+        if (profile.Reviews) BuildReviews(graph, profile, nowUtc, demoClient);
+        if (profile.ClientNotes) BuildClientNotes(graph, profile, nowUtc);
 
         return graph;
     }
@@ -490,18 +504,41 @@ public static class ShowcaseDataset
         else
             Append(BookingEventKind.Created, BookingActorKind.Guest, null, guest!.Value.Name, null, createdAt);
 
-        // One booking in twenty was moved once.
-        if (rng.Chance(0.05) && status != BookingStatus.Cancelled)
+        // One booking in twenty was moved once (the demo profile: more of them, and some twice — US-28-13).
+        if (rng.Chance(profile.RescheduleChance) && status != BookingStatus.Cancelled)
         {
             var movedAt = createdAt.AddHours(Math.Max(1, (visitStartUtc - createdAt).TotalHours * rng.NextDouble() * 0.5));
             var previousDate = date.AddDays(-rng.Next(1, 4));
             var previousTime = new TimeOnly(rng.Next(10, 19), rng.Chance(0.5) ? 0 : 30);
-            if (client is not null)
-                Append(BookingEventKind.Rescheduled, BookingActorKind.Client, client.Id, $"{client.FirstName} {client.LastName}", UserRole.Client, movedAt,
-                    prevDate: previousDate, prevTime: previousTime, newDate: date, newTime: start);
-            else
-                Append(BookingEventKind.Rescheduled, BookingActorKind.Staff, master.User.Id, masterName, UserRole.Master, movedAt,
-                    prevDate: previousDate, prevTime: previousTime, newDate: date, newTime: start);
+            var twice = profile.RichHistory && rng.Chance(0.25);
+            var midDate = date;
+            var midTime = start;
+            if (twice)
+            {
+                midDate = date.AddDays(-rng.Next(0, 2));
+                midTime = new TimeOnly(rng.Next(10, 19), rng.Chance(0.5) ? 0 : 30);
+                // A move that moves nothing would be a lie in the journal: shift the intermediate slot by half-hours until it differs from both its neighbours.
+                for (var attempt = 0; attempt < 4 && ((midDate, midTime) == (previousDate, previousTime) || (midDate, midTime) == (date, start)); attempt++)
+                    midTime = midTime.AddMinutes(30);
+            }
+
+            void AppendMove(DateTime at, DateOnly fromDate, TimeOnly fromTime, DateOnly toDate, TimeOnly toTime)
+            {
+                if (client is not null)
+                    Append(BookingEventKind.Rescheduled, BookingActorKind.Client, client.Id, $"{client.FirstName} {client.LastName}", UserRole.Client, at,
+                        prevDate: fromDate, prevTime: fromTime, newDate: toDate, newTime: toTime);
+                else
+                    Append(BookingEventKind.Rescheduled, BookingActorKind.Staff, master.User.Id, masterName, UserRole.Master, at,
+                        prevDate: fromDate, prevTime: fromTime, newDate: toDate, newTime: toTime);
+            }
+
+            AppendMove(movedAt, previousDate, previousTime, midDate, midTime);
+            if (twice)
+            {
+                var movedAgainAt = movedAt.AddHours(Math.Max(1, (visitStartUtc - movedAt).TotalHours * (0.2 + 0.4 * rng.NextDouble())));
+                if (movedAgainAt > visitStartUtc) movedAgainAt = visitStartUtc;
+                AppendMove(movedAgainAt, midDate, midTime, date, start);
+            }
         }
 
         switch (status)
@@ -523,5 +560,183 @@ public static class ShowcaseDataset
         }
 
         booking.UpdatedAt = lastEventAt;
+    }
+
+    // ── Demo profile only (§579.4, US-28-13) ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Gives the demo client his visits: a few completed ones in the past and a few confirmed ones ahead in each of the companies of
+    /// <see cref="ShowcaseDemoRoles.ClientCompanyKeys"/>. They are NOT new bookings: existing walk-in/guest bookings are re-assigned to him (the slots stay valid
+    /// and nothing is booked twice); the "created" event of the journal is rewritten to say that the client made them himself.
+    /// </summary>
+    private static void AttachDemoClient(ShowcaseGraph graph, ShowcaseProfile profile, AppUser client, IReadOnlyDictionary<string, Company> companies, DateTime nowUtc)
+    {
+        var createdEvents = graph.BookingEvents.Where(e => e.Kind == BookingEventKind.Created).ToDictionary(e => e.BookingId);
+        var clientName = $"{client.FirstName} {client.LastName}";
+
+        foreach (var key in ShowcaseDemoRoles.ClientCompanyKeys)
+        {
+            var company = companies[key];
+            var tz = TimeZoneInfo.FindSystemTimeZoneById(company.TimeZoneId);
+            var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(nowUtc, tz));
+            var rng = new ShowcaseRandom($"{profile.Name}:demo-client:{key}");
+
+            var guestBookings = graph.Bookings
+                .Where(b => b.CompanyId == company.Id && b.ClientId == null)
+                .OrderBy(b => b.Date).ThenBy(b => b.StartTime).ThenBy(b => b.Id)
+                .ToList();
+            var past = guestBookings.Where(b => b.Status == BookingStatus.Completed && b.Date < today).ToList();
+            var future = guestBookings.Where(b => b.Status == BookingStatus.Confirmed && b.Date > today).ToList();
+            var flagship = key == ShowcaseDemoRoles.FlagshipCompanyKey;
+
+            foreach (var booking in Spread(past, flagship ? 4 : 3, rng).Concat(Spread(future, flagship ? 2 : 1, rng)))
+            {
+                booking.ClientId = client.Id;
+                booking.GuestName = null;
+                booking.GuestPhone = null;
+                var created = createdEvents[booking.Id];
+                created.ActorKind = BookingActorKind.Client;
+                created.ActorUserId = client.Id;
+                created.ActorNameSnapshot = clientName;
+                created.ActorRoleSnapshot = UserRole.Client;
+            }
+        }
+    }
+
+    /// <summary>Takes <paramref name="count"/> items spread over the whole list (one from each equal slice), deterministically.</summary>
+    private static List<T> Spread<T>(List<T> items, int count, ShowcaseRandom rng)
+    {
+        var result = new List<T>();
+        if (items.Count == 0 || count <= 0) return result;
+        count = Math.Min(count, items.Count);
+        var slice = items.Count / count;
+        for (var i = 0; i < count; i++)
+            result.Add(items[i * slice + rng.Next(slice)]);
+        return result;
+    }
+
+    private static readonly IReadOnlyList<string> ReviewComments5 =
+    [
+        "Всё понравилось, обязательно вернусь.", "Отличный мастер, результат превзошёл ожидания.", "Очень аккуратная работа и приятная атмосфера.",
+        "Записалась онлайн, приняли точно в назначенное время. Спасибо!", "Уже не первый раз, всегда на высоте.",
+    ];
+
+    private static readonly IReadOnlyList<string> ReviewComments4 =
+    [
+        "Хорошо, всё сделали аккуратно. Немного подождала в начале.", "Результатом доволен, приду ещё.", "Приятный сервис, цены адекватные.",
+        "Мастер внимательный, есть небольшие пожелания по времени записи.",
+    ];
+
+    private static readonly IReadOnlyList<string> ReviewComments3 =
+    [
+        "В целом нормально, но ожидала чуть большего.", "Работа выполнена, по времени вышло дольше обещанного.", "Обычный визит, без восторга, но и без претензий.",
+    ];
+
+    private static readonly IReadOnlyList<string> ReviewComments2 =
+    [
+        "Пришлось ждать, результат средний.", "Не совсем то, что обсуждали заранее.",
+    ];
+
+    private static readonly IReadOnlyList<string> ReviewComments1 =
+    [
+        "Визит не оправдал ожиданий.", "Остались вопросы по качеству, надеюсь, администрация отреагирует.",
+    ];
+
+    private static (int Rating, string? Comment) RollReview(ShowcaseRandom rng)
+    {
+        var roll = rng.NextDouble();
+        var rating = roll < 0.55 ? 5 : roll < 0.83 ? 4 : roll < 0.93 ? 3 : roll < 0.98 ? 2 : 1;
+        var pool = rating switch { 5 => ReviewComments5, 4 => ReviewComments4, 3 => ReviewComments3, 2 => ReviewComments2, _ => ReviewComments1 };
+        var comment = rng.Chance(0.6) ? rng.Pick(pool) : null;
+        return (rating, comment);
+    }
+
+    /// <summary>
+    /// Reviews on a share of completed visits of registered clients (only those can review, like in the product: the review names the client's own booking).
+    /// The demo client keeps his earliest completed visit unreviewed, so "Оставить отзыв" has something to offer.
+    /// </summary>
+    private static void BuildReviews(ShowcaseGraph graph, ShowcaseProfile profile, DateTime nowUtc, AppUser? demoClient)
+    {
+        var users = graph.Users.ToDictionary(u => u.Id);
+        var zones = graph.Companies.ToDictionary(c => c.Id, c => TimeZoneInfo.FindSystemTimeZoneById(c.TimeZoneId));
+        Guid? keepForDemoClient = demoClient is null ? null : graph.Bookings
+            .Where(b => b.ClientId == demoClient.Id && b.Status == BookingStatus.Completed)
+            .OrderBy(b => b.Date).ThenBy(b => b.StartTime).Select(b => (Guid?)b.Id).FirstOrDefault();
+
+        foreach (var booking in graph.Bookings)
+        {
+            if (booking.Status != BookingStatus.Completed || booking.ClientId is not { } clientId) continue;
+            if (booking.Id == keepForDemoClient) continue;
+
+            var rng = new ShowcaseRandom($"{profile.Name}:review:{booking.Id}");
+            var chance = demoClient is not null && clientId == demoClient.Id ? 0.5 : 0.30;
+            if (!rng.Chance(chance)) continue;
+
+            var (rating, comment) = RollReview(rng);
+            var visitEndUtc = LocalToUtc(booking.Date, booking.EndTime, zones[booking.CompanyId]);
+            var createdAt = visitEndUtc.AddHours(rng.Next(2, 72));
+            if (createdAt > nowUtc) createdAt = nowUtc;
+            if (createdAt < visitEndUtc) createdAt = visitEndUtc;
+
+            var author = users[clientId];
+            graph.Reviews.Add(new Review
+            {
+                Id = ShowcaseIds.For(profile.Name, "review", booking.Id.ToString()),
+                BookingId = booking.Id,
+                CompanyId = booking.CompanyId,
+                MasterId = booking.MasterId,
+                ClientId = clientId,
+                ReviewerName = $"{author.FirstName} {author.LastName}",
+                Rating = rating,
+                Comment = comment,
+                CreatedAt = DateTime.SpecifyKind(createdAt, DateTimeKind.Utc),
+            });
+        }
+    }
+
+    // Neutral work notes. No health details, no photos, nothing a client would not expect a salon to write down (US-28-04).
+    private static readonly IReadOnlyList<string> ClientNoteTexts =
+    [
+        "Предпочитает утреннее время, приходит вовремя.", "Любит спокойную обстановку без лишних разговоров.", "Обычно приходит с подругой, записывать на соседние окна.",
+        "Постоянный клиент, оставлять за ним ближайшее свободное окно.", "В прошлый раз понравился выбранный оттенок, повторить.", "Просила напомнить о коррекции через три недели.",
+        "Предпочитает оплату картой.", "Интересуется новинками, показать каталог процедур.", "Приходит после работы, лучше вечерние окна.", "Любит чай без сахара.",
+        "Просит сразу озвучивать итоговую стоимость.", "Опаздывает на 5–10 минут, закладывать запас в записи.",
+    ];
+
+    /// <summary>
+    /// Notes of masters about clients, written just after a completed visit: about one visit in fourteen of a registered client and one in thirty of a guest
+    /// (a guest's note is keyed by his phone, like in the product). The demo master gets noticeably more, so his "Клиенты" is not empty.
+    /// </summary>
+    private static void BuildClientNotes(ShowcaseGraph graph, ShowcaseProfile profile, DateTime nowUtc)
+    {
+        var zones = graph.Companies.ToDictionary(c => c.Id, c => TimeZoneInfo.FindSystemTimeZoneById(c.TimeZoneId));
+        var demoMasterId = ShowcaseDemoRoles.UserIdOf(ShowcaseDemoRoles.Master);
+
+        foreach (var booking in graph.Bookings)
+        {
+            if (booking.Status != BookingStatus.Completed) continue;
+            var registered = booking.ClientId is not null;
+            if (!registered && booking.GuestPhone is null) continue;
+
+            var rng = new ShowcaseRandom($"{profile.Name}:client-note:{booking.Id}");
+            var chance = booking.MasterId == demoMasterId ? 0.30 : registered ? 1.0 / 14 : 1.0 / 30;
+            if (!rng.Chance(chance)) continue;
+
+            var visitEndUtc = LocalToUtc(booking.Date, booking.EndTime, zones[booking.CompanyId]);
+            var createdAt = visitEndUtc.AddMinutes(rng.Next(5, 90));
+            if (createdAt > nowUtc) createdAt = visitEndUtc;
+
+            graph.ClientNotes.Add(new ClientNote
+            {
+                Id = ShowcaseIds.For(profile.Name, "client-note", booking.Id.ToString()),
+                CompanyId = booking.CompanyId,
+                MasterId = booking.MasterId,
+                ClientId = booking.ClientId,
+                GuestPhone = registered ? null : booking.GuestPhone,
+                Note = rng.Pick(ClientNoteTexts),
+                BookingId = booking.Id,
+                CreatedAt = DateTime.SpecifyKind(createdAt, DateTimeKind.Utc),
+            });
+        }
     }
 }

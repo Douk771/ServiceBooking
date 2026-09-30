@@ -111,7 +111,10 @@ public class ShowcaseGenerator(
             await SaveAsync(graph.Bookings, ct);
             await SaveAsync(graph.BookingServices, ct);
             await SaveAsync(graph.BookingEvents, ct);
-            logger.LogInformation("showcase create: {Counts}", graph.Counts(photos.Count));
+            // The demo profile only (US-28-13): empty lists for the production showcase.
+            await SaveAsync(graph.Reviews, ct);
+            await SaveAsync(graph.ClientNotes, ct);
+            logger.LogInformation("showcase create: {Counts} reviews={Reviews} clientNotes={Notes}", graph.Counts(photos.Count), graph.Reviews.Count, graph.ClientNotes.Count);
         }
         finally
         {
