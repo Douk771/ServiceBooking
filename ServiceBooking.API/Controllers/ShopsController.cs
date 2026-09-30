@@ -144,11 +144,13 @@ public class ShopsController(
         var result = await access.ResolveAsync(shopId, User, ShopPermission.ManageShop, ct: ct);
         if (!result.Ok) return result.Error!;
         var shop = result.Shop!;
+        if (input?.ShowInCatalog is not { } showInCatalog)
+            return BadRequest(new ProblemDetails { Title = "Не указано, показывать ли магазин в каталоге", Status = 400 });
 
-        if (input.ShowInCatalog && !(await ordersPlans.GetForCompanyAsync(shop.Id, ct)).AllowPublicListing)
+        if (showInCatalog && !(await ordersPlans.GetForCompanyAsync(shop.Id, ct)).AllowPublicListing)
             return Conflict(new CatalogConflictDto(CatalogConflictCode.CatalogListingNotAllowedByPlan, CatalogListingRules.NotAllowedByPlanText));
 
-        shop.ShowInPublicListing = input.ShowInCatalog;
+        shop.ShowInPublicListing = showInCatalog;
         await db.SaveChangesAsync(ct);
         return Ok(await BuildCatalogListingAsync(shop, ct));
     }

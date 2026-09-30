@@ -18,4 +18,4 @@ public sealed record CatalogListingCheckDto(CatalogListingCheckCode Code, string
 public sealed record CatalogListingDto(
     bool ShowInCatalog, bool AllowedByPlan, bool Visible, string StatusText, string? NotAllowedByPlanText, List<CatalogListingCheckDto> Checklist);
 
-public sealed record CatalogListingInputDto(bool ShowInCatalog);
+public sealed record CatalogListingInputDto(bool? ShowInCatalog);

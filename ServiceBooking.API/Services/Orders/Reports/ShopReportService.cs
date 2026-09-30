@@ -49,7 +49,7 @@ public sealed class ShopReportService(
         if (!TryResolvePeriod(query.Period, query.From, query.To, ReportPeriodPreset.Last7Days, context.WorkingDay, out var period, out var error))
             return (error, null);
 
-        var customerText = query.Customer is { Length: > CustomerSearchTerm.MaxLength } long_ ? long_[..CustomerSearchTerm.MaxLength] : query.Customer;
+        var customerText = TruncateWithoutSplittingPair(query.Customer, CustomerSearchTerm.MaxLength);
         var customer = CustomerSearchTerm.Parse(customerText);
         if (customer.Kind == CustomerSearchKind.TooShort) return (CustomerSearchTerm.TooShortText, null);
         if (query.AmountFrom is < 0 || query.AmountTo is < 0) return (AmountNegativeText, null);
@@ -69,6 +69,14 @@ public sealed class ShopReportService(
             ReportPeriodDto.Of(period), result.Rows.Select(r => ToRowDto(r, context.Zone, includePhone: true)).ToList(), page, criteria.PageSize,
             result.TotalCount, result.IssuedCount, result.IssuedAmount, SummaryText(result.TotalCount, result.IssuedAmount),
             result.TotalCount == 0 ? (hasFilters ? EmptyFilteredText : EmptyPeriodText) : null));
+    }
+
+    /// <summary>Cuts the text to <paramref name="max"/> chars without leaving a lone high surrogate (Npgsql cannot encode it).</summary>
+    public static string? TruncateWithoutSplittingPair(string? text, int max)
+    {
+        if (text is null || text.Length <= max) return text;
+        var end = char.IsHighSurrogate(text[max - 1]) ? max - 1 : max;
+        return text[..end];
     }
 
     /// <summary>"Найдено 128 заказов, выдано на 54 300 ₽".</summary>
