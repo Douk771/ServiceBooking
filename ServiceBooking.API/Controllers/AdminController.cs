@@ -8,6 +8,7 @@ using ServiceBooking.API.DTOs.Legal;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Bookings;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -29,13 +30,19 @@ public class AdminController(
     [HttpGet("stats")]
     public async Task<ActionResult<AdminStatsDto>> GetStats(CancellationToken ct)
     {
-        var totalCompanies = await db.Companies.CountAsync(ct);
-        var totalUsers = await db.Users.CountAsync(ct);
-        var totalBookings = await db.Bookings.CountAsync(ct);
-        var completedBookings = await db.Bookings.CountAsync(b => b.Status == BookingStatus.Completed, ct);
+        // ARCHITECTURE_CYCLE28.md §578, API_CONTRACT_CYCLE28.md §594.3: the platform totals are WITHOUT the showcase (fictional companies, their
+        // users and bookings); three new counters carry the showcase itself.
+        var totalCompanies = await db.Companies.CountAsync(c => !c.IsShowcase, ct);
+        var totalUsers = await db.Users.CountAsync(u => !u.IsShowcase, ct);
+        var totalBookings = await db.Bookings.CountAsync(b => b.ShowcaseKind == ShowcaseBookingKind.None, ct);
+        var completedBookings = await db.Bookings.CountAsync(
+            b => b.Status == BookingStatus.Completed && b.ShowcaseKind == ShowcaseBookingKind.None, ct);
+        var showcaseCompanies = await db.Companies.CountAsync(c => c.IsShowcase, ct);
+        var showcaseUsers = await db.Users.CountAsync(u => u.IsShowcase, ct);
+        var showcaseBookings = await db.Bookings.CountAsync(b => b.ShowcaseKind != ShowcaseBookingKind.None, ct);
 
         var revenueByService = await db.Bookings
-            .Where(b => b.Status == BookingStatus.Completed)
+            .Where(b => b.Status == BookingStatus.Completed && b.ShowcaseKind == ShowcaseBookingKind.None)
             .GroupBy(b => 1)
             .Select(g => g.Sum(b => b.Price))
             .FirstOrDefaultAsync(ct);
@@ -46,7 +53,8 @@ public class AdminController(
         var overdueSubjectRequests = await db.SubjectRequests.CountAsync(r =>
             r.DueAtUtc < nowUtc && r.Status != SubjectRequestStatus.Answered && r.Status != SubjectRequestStatus.Rejected, ct);
 
-        return Ok(new AdminStatsDto(totalCompanies, totalUsers, totalBookings, completedBookings, revenueByService, overdueSubjectRequests));
+        return Ok(new AdminStatsDto(totalCompanies, totalUsers, totalBookings, completedBookings, revenueByService, overdueSubjectRequests,
+            showcaseCompanies, showcaseUsers, showcaseBookings));
     }
 
     // ── Subject requests (T5-B10, ARCHITECTURE_CYCLE5.md §50.1, US-74) ─────────────────────────────
@@ -259,11 +267,19 @@ public class AdminController(
     [HttpGet("users")]
     public async Task<ActionResult<PagedResult<AdminUserDto>>> GetUsers(
         [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize,
+        [FromQuery] string? showcase,
         CancellationToken ct)
     {
+        if (!ShowcaseFilterParser.TryParse(showcase, out var showcaseFilter)) return BadRequest(ShowcaseFilterParser.InvalidText);
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         search = Pagination.SanitizeSearch(search);
         var query = db.Users.AsQueryable();
+        query = showcaseFilter switch
+        {
+            ShowcaseFilter.Only => query.Where(u => u.IsShowcase),
+            ShowcaseFilter.Exclude => query.Where(u => !u.IsShowcase),
+            _ => query,
+        };
         if (!string.IsNullOrWhiteSpace(search))
         {
             // Phones are stored canonical (digits only, US-26), so a search string that LOOKS like a
@@ -328,7 +344,7 @@ public class AdminController(
             var ownedCount = accountId != Guid.Empty ? ownedCounts.FirstOrDefault(x => x.BillingAccountId == accountId)?.Count ?? 0 : 0;
             return new AdminUserDto(u.Id, u.PhoneNumber ?? "", u.Email, u.FirstName, u.LastName, u.AvatarUrl, u.CreatedAt,
                 rolesByUser.GetValueOrDefault(u.Id, []), ownedCount, sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Free",
-                sub?.PaidUntil, sub?.IsActive ?? true);
+                sub?.PaidUntil, sub?.IsActive ?? true, u.IsShowcase);
         }).ToList();
 
         return Ok(Pagination.Create(result, currentPage, currentPageSize, total));
@@ -368,11 +384,18 @@ public class AdminController(
     [HttpGet("companies")]
     public async Task<ActionResult<PagedResult<AdminCompanyDto>>> GetCompanies(
         [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize,
-        [FromQuery] string? kind, CancellationToken ct)
+        [FromQuery] string? kind, [FromQuery] string? showcase, CancellationToken ct)
     {
+        if (!ShowcaseFilterParser.TryParse(showcase, out var showcaseFilter)) return BadRequest(ShowcaseFilterParser.InvalidText);
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         search = Pagination.SanitizeSearch(search);
         var query = db.Companies.AsNoTracking();
+        query = showcaseFilter switch
+        {
+            ShowcaseFilter.Only => query.Where(c => c.IsShowcase),
+            ShowcaseFilter.Exclude => query.Where(c => !c.IsShowcase),
+            _ => query,
+        };
         // Cycle 23 (§408.6): unlike the cabinet lists, "not passed" means ALL kinds here — the admin panel
         // manages both products.
         if (!string.IsNullOrWhiteSpace(kind))
@@ -391,7 +414,7 @@ public class AdminController(
             .Select(c => new
             {
                 c.Id, c.Name, c.Slug, c.Email, c.Phone, c.IsActive, c.AllowSelfBooking, c.CreatedAt,
-                c.OwnerUserId, c.BillingAccountId, MemberCount = c.Members.Count, c.Kind,
+                c.OwnerUserId, c.BillingAccountId, MemberCount = c.Members.Count, c.Kind, c.IsShowcase, c.ShowcaseBookingOpen,
             })
             .ToListAsync(ct);
         var ids = companies.Select(c => c.Id).ToList();
@@ -418,7 +441,7 @@ public class AdminController(
             return new AdminCompanyDto(c.Id, c.Name, c.Slug, c.Email, c.Phone, c.IsActive, c.AllowSelfBooking, c.CreatedAt,
                 c.MemberCount, count, c.OwnerUserId, ownerEmails.GetValueOrDefault(c.OwnerUserId, c.OwnerUserId),
                 sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Free", sub?.PaidUntil, sub?.IsActive ?? true,
-                c.Kind.ToString(), siteLinks.CompanyPageUrl(c.Kind, c.Slug));
+                c.Kind.ToString(), siteLinks.CompanyPageUrl(c.Kind, c.Slug), c.IsShowcase, c.ShowcaseBookingOpen);
         }).ToList();
 
         return Ok(Pagination.Create(result, currentPage, currentPageSize, total));
@@ -546,6 +569,10 @@ public class AdminController(
         // company to an account nobody can ever log into again.
         if (newOwner.DeletedAtUtc is not null) return BadRequest("User account has been deleted");
 
+        // ARCHITECTURE_CYCLE28.md §574.2, API_CONTRACT_CYCLE28.md §595: after existence checks, before any write.
+        if (ShowcaseMixingGuard.CheckMember(company.IsShowcase, newOwner.IsShowcase) is { } mixing)
+            return new ContentResult { StatusCode = StatusCodes.Status409Conflict, Content = mixing, ContentType = "text/plain; charset=utf-8" };
+
         // ARCHITECTURE_CYCLE20.md §407.2, API_CONTRACT_CYCLE20.md §437.3 (US-20-07, LG6) — same rule and
         // same source (CompanyTransferService.ValidateNewOwnerAsync) as CompanyTransferController's own
         // owner-change branch, "один источник правила". Skipped when the company has no billing account
@@ -635,12 +662,16 @@ public class AdminController(
 // сводку") — appended at the end with a default so any existing positional construction keeps compiling.
 public record AdminStatsDto(
     int TotalCompanies, int TotalUsers, int TotalBookings, int CompletedBookings, decimal TotalRevenue,
-    int OverdueSubjectRequests = 0);
+    int OverdueSubjectRequests = 0,
+    // ARCHITECTURE_CYCLE28.md §594.3 — additive: the showcase's own counters (the totals above exclude it).
+    int ShowcaseCompanies = 0, int ShowcaseUsers = 0, int ShowcaseBookings = 0);
 
 // CommissionPercent removed (US-22): commission became per-company (CompanyMember.CommissionPercent)
 // back in cycle A; this account-level field means nothing any more and AdminPage.tsx never showed it.
 public record AdminUserDto(string Id, string Phone, string? Email, string FirstName, string LastName, string? AvatarUrl, DateTime CreatedAt,
-    List<string> Roles, int OwnedCompanyCount, Guid? PlanConfigId, string PlanName, DateTime? PaidUntil, bool SubscriptionActive);
+    List<string> Roles, int OwnedCompanyCount, Guid? PlanConfigId, string PlanName, DateTime? PaidUntil, bool SubscriptionActive,
+    // ARCHITECTURE_CYCLE28.md §594.2 — additive: the account was created by the showcase generator.
+    bool IsShowcase = false);
 
 // AllowSelfBooking is included (additive) so the admin UI can read the company's CURRENT value before
 // re-sending it unchanged to PUT /api/admin/companies/{id} — that endpoint overwrites all three of its
@@ -652,7 +683,9 @@ public record AdminCompanyDto(Guid Id, string Name, string Slug, string? Email, 
     // ARCHITECTURE_CYCLE23.md §408.6 — additive, appended with defaults: the company's product type and the
     // absolute link to its public page (PublicSiteLinks).
     // Kind: the enum's name as a string, for the same reason as CompanyDto.Kind (readable without the enum converter).
-    string Kind = nameof(CompanyKind.Services), string PublicUrl = "");
+    string Kind = nameof(CompanyKind.Services), string PublicUrl = "",
+    // ARCHITECTURE_CYCLE28.md §594.2 — additive: showcase mark and whether the showcase company takes online booking.
+    bool IsShowcase = false, bool ShowcaseBookingOpen = false);
 
 
 public record SubscriptionDiagnosticsDto(

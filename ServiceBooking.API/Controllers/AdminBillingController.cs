@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -37,8 +38,11 @@ public class AdminBillingController(
     public async Task<IActionResult> GetBillingAccounts(
         [FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? trial,
         [FromQuery] int? page, [FromQuery] int? pageSize,
+        [FromQuery] string? showcase,
         CancellationToken ct)
     {
+        if (!ShowcaseFilterParser.TryParse(showcase, out var showcaseFilter)) return BadRequest(ShowcaseFilterParser.InvalidText);
+
         // Cycle 18 (API_CONTRACT_CYCLE18.md §369) — unlike `status` above (which quietly matches nothing
         // on an unrecognized value, same as the pre-cycle-18 behaviour), `trial` is a NEW parameter with
         // no legacy caller to stay silently compatible with, so an unrecognized value is a 400 rather
@@ -62,6 +66,14 @@ public class AdminBillingController(
             join s in db.AccountSubscriptions.Include(s => s.PlanConfig) on a.Id equals s.BillingAccountId into subGroup
             from sub in subGroup.DefaultIfEmpty()
             select new { a, sub };
+
+        // ARCHITECTURE_CYCLE28.md §594.1 — composes with search/status/trial below.
+        joined = showcaseFilter switch
+        {
+            ShowcaseFilter.Only => joined.Where(x => x.a.IsShowcase),
+            ShowcaseFilter.Exclude => joined.Where(x => !x.a.IsShowcase),
+            _ => joined,
+        };
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -188,6 +200,7 @@ public class AdminBillingController(
                 hasPendingRequest = a.RequestedAtUtc is not null,
                 trialState = x.trialState,
                 trialEndsAt = a.TrialEndsAtUtc,
+                isShowcase = a.IsShowcase,
             };
         }).ToList();
 
@@ -256,6 +269,10 @@ public class AdminBillingController(
                 return Conflict(new DTOs.Billing.TrialRefusalDto(
                     "TrialPlanNotAssignableHere",
                     "Пробный тариф нельзя назначить через это действие — используйте выдачу/повторную выдачу пробного периода."));
+
+            // ARCHITECTURE_CYCLE28.md §574.2, API_CONTRACT_CYCLE28.md §595 — the hidden service tariff of the showcase never goes to a real account.
+            if (ShowcaseMixingGuard.CheckServicePlan(plan.Id, account.IsShowcase) is { } servicePlanRefusal)
+                return Conflict(servicePlanRefusal);
         }
 
         // ARCHITECTURE_CYCLE20.md §403.2 (US-20-02, Т20-01) — runs AFTER the trial refusal above (Р6:
