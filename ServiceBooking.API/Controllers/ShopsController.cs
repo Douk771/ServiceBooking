@@ -145,7 +145,7 @@ public class ShopsController(
         if (!result.Ok) return result.Error!;
         var shop = result.Shop!;
         if (input?.ShowInCatalog is not { } showInCatalog)
-            return BadRequest(new ProblemDetails { Title = "Не указано, показывать ли магазин в каталоге", Status = 400 });
+            return BadRequest("Не указано, показывать ли магазин в каталоге"); // plain text, like every 400 in the contract
 
         if (showInCatalog && !(await ordersPlans.GetForCompanyAsync(shop.Id, ct)).AllowPublicListing)
             return Conflict(new CatalogConflictDto(CatalogConflictCode.CatalogListingNotAllowedByPlan, CatalogListingRules.NotAllowedByPlanText));
