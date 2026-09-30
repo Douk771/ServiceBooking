@@ -1,10 +1,94 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `4739e0b` (`develop` = `origin/develop`, итог цикла 25 «Заказы», цикл 3), дата: 2026-09-30.**
+**Актуально по состоянию на коммит: `0d41df4` (`develop`, merge `fix/goods-catalog-cards-sound`; ветка `cycle/026-company-card-unified` стартовала с него же), дата: 2026-09-30.**
+Прошлая отметка — `4739e0b` (📊25). Правка 🪪26-вход описывает `git diff 4739e0b..0d41df4` (4 коммита: состояние цикла 25,
+правка DEPLOY.md, фикс каталога/звука goods; кода — 2 файла) и отдельно — сверенное по коду состояние **карточки
+компании** в услугах и в товарах перед циклом 26. **Следующий diff отсчитывайте от `0d41df4`.**
+Метки 📊25 / ⏰24 / 🛒23+ / 🛒23 / 🧮19 / ⚖️20✅ / 🚀20 ниже остаются в силе, кроме мест, где рядом стоит 🪪26-вход.
+Остальные разделы заново не сканировались.
+
+### 🪪26-вход Что изменилось в `4739e0b..0d41df4` и как устроена карточка компании сейчас (сверено по коду)
+
+**А. Diff `4739e0b..0d41df4`.** Без миграций, без новых эндпоинтов, без новых зависимостей.
+- `aae5b44` `frontend/goods/src/pages/CatalogHomePage.tsx` — каталог магазинов на главной goods теперь **сетка
+  карточек** (`grid`, `minmax(320px, 1fr)` — та же сетка, что у каталога салонов в `frontend/src/pages/HomePage.tsx`),
+  а не список строк. Карточка `ShopRow`: иконка `store` в плашке 56×56 (**логотип не показывается** —
+  в `GoodsCatalogShopDto` поля `LogoUrl` нет), название, `openState.text`, строка «город, адрес» с иконкой `map-pin`
+  (город — только когда фильтр города не выбран, `showCity`), бейдж приёма заказов. Тестов на `CatalogHomePage` нет.
+- `aae5b44` `frontend/goods/src/hooks/useNewOrderSound.ts` — `AudioContext` и флаг «звук включён» вынесены на уровень
+  модуля (`sharedCtx`/`sharedEnabled`), чтобы звук не выключался при переходе по вкладкам кабинета (SPA-размонтирование).
+  При размонтировании контекст больше не закрывается. Тестов на хук нет.
+- `99d8823` DEPLOY.md §23.4 — полоса `realtime` планировщика: тик 1 с, период задач 5 с (только текст).
+- В CHANGELOG фикс `aae5b44` не отражён.
+
+**Б. Карточка компании — общая модель.** Магазин goods — это та же сущность `Company` (`Kind = Orders`), салон —
+`Kind = Services` (`ServiceBooking.Core/Entities/Company.cs`). Поля карточки общие для обоих: `Name`, `Description`,
+`LogoUrl`, `Address` (свободный текст), `Phone`, `Email`, `CityId`/`City`, `YandexMapsUrl`, `TwoGisUrl`, коллекция
+`Photos` (`CompanyPhoto`, галерея, цикл 10). Отдельных колонок для магазина нет.
+
+**В. Запись полей (бэкенд).**
+- `PUT /api/companies/{id}` (`CompaniesController.Update`, `[RequiresOwnerTerms]`) — **без проверки `Kind`**, т.е. для
+  магазина уже принимает `name/description/phone/email/cityId/timeZoneId/yandexMapsUrl/twoGisUrl`. Ссылки карт —
+  трёхсостоянийные (null — не трогать, "" — очистить, иначе `MapLinkValidation.TryNormalize`; Яндекс проверяется
+  первым). `cityId` меняет и часовой пояс через `CompanyTimeZoneResolver.ForUpdate`.
+- `PUT /api/companies/{id}/address` (`CompanyAddressController`) и `POST /api/companies/{id}/logo` — без проверки `Kind`,
+  обе витрины ими пользуются.
+- Галерея `CompanyPhotosController`: `POST /api/companies/{id}/photos`, `DELETE …/photos/{photoId}`,
+  `PUT …/photos/order` — **для магазина отвечают 409** `CompanyKindGuard.ShopRefusalText` («Это магазин: записи, услуги
+  и расписание для него недоступны.», комментарий «the photo gallery is salon-only in cycle 1»). `GET …/photos` проверки
+  `Kind` не имеет. Лимит галереи на фронте — `MAX_PHOTOS = 10` (`CompanyPhotosSection.tsx`). Отказ 409 для фото-маршрутов
+  магазина **тестами не покрыт** — в `Cycle23ShopsCatalogTests.BookingRoutes_RefuseShop_With409Text_AfterRightsCheck`
+  (CY23-04) фото-маршрутов нет, есть только `photo-usage`.
+- DTO: салон — `CompanyDto` (есть `CityName`, `Photos`, `YandexMapsUrl`, `TwoGisUrl`; `photos` приходит вместе с
+  компанией в `GET /api/companies/{slug}`, `CompanyDtoAssembler`). Магазин — `ShopManageDto` (кабинет, `GET /api/shops/{id}`)
+  и `StorefrontDto` (`GET /api/storefront/{slug}`) — `CityName`, `YandexMapsUrl`, `TwoGisUrl` есть, **поля фото нет ни в одном**.
+  В `ServiceBooking.API/DTOs/Shops/ShopDtos.cs` нет отдельного эндпоинта правки профиля магазина — goods ходит в
+  `PUT /api/companies/{id}`.
+
+**Г. Публичная карточка — две независимые реализации, общего компонента нет.**
+| | Услуги — `frontend/src/pages/CompanyPage.tsx` (шапка ~стр. 140–220) | Товары — `frontend/goods/src/pages/StorefrontPage.tsx` (`<header>` ~стр. 134–161) |
+|---|---|---|
+| Галерея | `CompanyPhotoGallery` (карусель, `components/company/`) над шапкой | нет |
+| Логотип | 64×64, наезжает на галерею (`-mt-[52px]`), заглушка — иконка `store` | 80–96px, заглушка — первая буква названия |
+| Адрес | только `company.address`, **город не подставляется** (хотя `cityName` в DTO есть) | `[cityName, address].join(', ')` |
+| Телефон | `telHref`/`formatPhone`, ссылка ≥44px | `dialHref` (`goods/src/utils/dial.ts`)/`formatPhone` |
+| Email | показывается | не показывается |
+| Карты | `CompanyMapLinks` (общий, `frontend/src/components/company/CompanyMapLinks.tsx`) | тот же `CompanyMapLinks` через `@/` |
+| Прочее | бейдж «Запись только через мастера» | ниже шапки: `openState`, часы работы, реквизиты продавца |
+
+Переиспользуемые куски уже общие: `CompanyMapLinks`, `CompanyAddressField`, `Icon`, `formatPhone` — goods импортирует
+их из `frontend/src` через алиас `@` (`frontend/vite.goods.config.ts`). Это действующая конвенция совместного кода.
+
+**Д. Форма карточки в кабинете владельца.**
+- Услуги — `frontend/src/pages/owner/CompanyManagePage.tsx`, вкладка «Настройки» (`SettingsTab`, ~стр. 700–1000; react-hook-form):
+  одна карточка «Настройки компании» (название, описание, `CompanyAddressField`, телефон, email, горизонт записи, окно
+  переноса, ссылки Яндекс Карт и 2ГИС с разбором ошибок `utils/mapLinksFieldError.ts`, флаги самозаписи/предоплаты/каталога),
+  затем отдельные карточки `CityTimeZoneCard` («Город и часовой пояс»), `CompanyPhotosSection` (галерея), `WidgetCard`,
+  `PhotoUsageCard`. Логотип загружается там же.
+- Товары — `frontend/goods/src/pages/cabinet/SettingsPage.tsx`, `ProfileSection` (useState, без react-hook-form): логотип,
+  название, описание, телефон, email → `companiesApi.update`; ниже `CompanyAddressField` и подпись «Город: …».
+  **Нет:** полей ссылок Яндекс/2ГИС, галереи фото, смены города (город задаётся только при создании в `CreateShopPage.tsx`
+  через `CityCombobox`, сменить из UI goods нельзя).
+
+**Е. Тесты, завязанные на карточку.** `frontend/src/pages/CompanyPage.test.tsx` (галерея/карусель, `CompanyMapLinks`;
+тест «shows a map link next to the address» ищет **точный текст `'Ленина, 5'`** при `cityName: 'Барнаул'` — подстановка города
+в адрес его сломает), `components/company/{CompanyPhotoGallery,CompanyMapLinks,CompanyAddressField}.test.tsx`,
+`pages/owner/CompanyPhotosSection.test.tsx`, `frontend/goods/src/pages/StorefrontPage.test.tsx`,
+`frontend/goods/src/pages/cabinet/SettingsPage.test.tsx`. API: `ServiceBooking.Tests/Tests/CompaniesTests.cs`,
+`Cycle23ShopsCatalogTests.cs`. Команды запуска — §7 без изменений.
+
+**Ж. Хрупкие места карточки (🪪26-вход).**
+- Город в адресе: `Address` — свободный текст; владельцы могли уже вписать город в адрес → при склейке `cityName + address`
+  возможен дубль «Барнаул, Барнаул, …» (так уже сейчас на витрине goods и в каталоге goods). Проверки на это в коде нет.
+- Фото-маршруты для магазина закрыты 409 только через `CompanyKindGuard.RejectShop` в трёх методах; снятие запрета
+  затронет и `GET /api/storefront/{slug}` (фото там нет) и тарифные/хранилищные правила (`ImageUploadService`, публичное
+  хранилище `wwwroot/uploads/companies`).
+- Витрина goods показывает шапку без email, салон — без города; стили карточек разные (размер логотипа, заглушки).
+
+### 📊25 Итог цикла 25 — прежняя шапка раздела
+
 Прошлая отметка — `f739382` (⏰24). Эта правка описывает `git diff f739382..4739e0b`: цикл 25 и коммит состояния
-цикла 24 `066ad91`. Всего 38 коммитов, 191 файл, +20 879 / −862. Сверено по коду. **Следующий diff отсчитывайте от `4739e0b`.**
-Метка блоков этой правки — 📊25. Предыдущие метки ⏰24 / 🛒23+ / 🛒23 / 🧮19 / ⚖️20✅ / 🚀20 ниже остаются в силе,
-кроме мест, где рядом стоит 📊25. Остальные разделы заново не сканировались.
+цикла 24 `066ad91`. Всего 38 коммитов, 191 файл, +20 879 / −862. Сверено по коду.
 
 ### 📊25 Итог цикла 25 «Заказы», цикл 3 «Аналитика, каталог по городу и MAX для персонала» (goods.ezbook.ru) — `f739382..4739e0b`
 
