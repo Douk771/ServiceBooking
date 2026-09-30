@@ -8,7 +8,9 @@ public sealed record CatalogCityDto(int Id, string Name, string Region, string L
 
 public sealed record GoodsCatalogShopDto(
     string Slug, string Path, string Name, string? Address, string CityName, ServiceBooking.API.DTOs.Shops.ShopOpenStateDto OpenState,
-    CatalogAcceptance Acceptance, string AcceptanceText);
+    CatalogAcceptance Acceptance, string AcceptanceText,
+    // Cycle 29 (API_CONTRACT_CYCLE29.md §29.22): Company.LogoUrl as stored, null when empty.
+    string? LogoUrl = null);
 
 public sealed record GoodsCatalogPageDto(
     List<GoodsCatalogShopDto> Items, int Page, int PageSize, int TotalCount, CatalogCityDto? City, string? EmptyText);

@@ -98,4 +98,20 @@ public class ModelValidationErrorFormatterTests
 
         result.Content.Should().Contain("номер телефона").And.Contain("другие");
     }
+
+    [Theory]
+    [InlineData(RequestTexts.MalformedFormFieldName)]
+    [InlineData(RequestTexts.MalformedQueryParameterName)]
+    public void BuildResponse_MalformedKeyText_IsReturnedVerbatim(string text)
+    {
+        var modelState = new ModelStateDictionary();
+        modelState.AddModelError("phone", "The phone field is required.");
+        modelState.AddModelError(string.Empty, text);
+
+        var result = (ContentResult)ModelValidationErrorFormatter.BuildResponse(BuildContext(modelState));
+
+        result.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        result.ContentType.Should().StartWith("text/plain");
+        result.Content.Should().Be(text);
+    }
 }

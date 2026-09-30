@@ -48,6 +48,17 @@ public static class ModelValidationErrorFormatter
 
     public static IActionResult BuildResponse(ActionContext context)
     {
+        // Cycle 29 (ARCHITECTURE_CYCLE29.md §29.4): the malformed-key guard already produced a human text.
+        foreach (var (_, modelEntry) in context.ModelState)
+            foreach (var error in modelEntry.Errors)
+                if (error.ErrorMessage is RequestTexts.MalformedFormFieldName or RequestTexts.MalformedQueryParameterName)
+                    return new ContentResult
+                    {
+                        StatusCode = StatusCodes.Status400BadRequest,
+                        Content = error.ErrorMessage,
+                        ContentType = "text/plain; charset=utf-8"
+                    };
+
         var fieldMessages = new List<string>();
         var hadUnmappedField = false;
 
