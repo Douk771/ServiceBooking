@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.DTOs.Catalog;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.DTOs.Orders;
 using ServiceBooking.API.DTOs.Shops;
@@ -27,7 +28,7 @@ namespace ServiceBooking.API.Controllers;
 [Authorize]
 public class ShopsController(
     AppDbContext db, CompanyCreationService companyCreation, ShopAccessResolver access, ShopManageMapper manageMapper,
-    PublicSiteLinks links, PhoneVerificationAvailability phoneVerification) : ControllerBase
+    PublicSiteLinks links, PhoneVerificationAvailability phoneVerification, ServiceBooking.API.Services.Billing.OrdersPlanResolver ordersPlans) : ControllerBase
 {
     /// <summary>§409.1 — POST /api/shops. The same checks as POST /api/companies, plus the shop address policy.</summary>
     [HttpPost]
@@ -121,6 +122,47 @@ public class ShopsController(
         await db.SaveChangesAsync(ct);
 
         return Ok(await manageMapper.BuildAsync(result.Shop!, result.Role, ct));
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE25.md §505.2, API_CONTRACT_CYCLE25.md §532 — whether the shop is in the goods catalog and why not: the owner's switch, the tariff and the
+    /// checklist, from the ONE rule (<see cref="CatalogListingRules"/>) the catalog itself uses. Owner and staff read it.
+    /// </summary>
+    [HttpGet("{shopId:guid}/catalog-listing")]
+    public async Task<ActionResult<CatalogListingDto>> GetCatalogListing(Guid shopId, CancellationToken ct)
+    {
+        var result = await access.ResolveAsync(shopId, User, ShopPermission.ViewShop, asNoTracking: true, ct: ct);
+        if (!result.Ok) return result.Error!;
+        return Ok(await BuildCatalogListingAsync(result.Shop!, ct));
+    }
+
+    /// <summary>The owner's switch "Показывать магазин в каталоге goods". Switching ON is refused (409, JSON) when the tariff does not allow it; OFF always works.</summary>
+    [HttpPut("{shopId:guid}/catalog-listing")]
+    [RequiresOwnerTerms]
+    public async Task<ActionResult<CatalogListingDto>> PutCatalogListing(Guid shopId, CatalogListingInputDto input, CancellationToken ct)
+    {
+        var result = await access.ResolveAsync(shopId, User, ShopPermission.ManageShop, ct: ct);
+        if (!result.Ok) return result.Error!;
+        var shop = result.Shop!;
+
+        if (input.ShowInCatalog && !(await ordersPlans.GetForCompanyAsync(shop.Id, ct)).AllowPublicListing)
+            return Conflict(new CatalogConflictDto(CatalogConflictCode.CatalogListingNotAllowedByPlan, CatalogListingRules.NotAllowedByPlanText));
+
+        shop.ShowInPublicListing = input.ShowInCatalog;
+        await db.SaveChangesAsync(ct);
+        return Ok(await BuildCatalogListingAsync(shop, ct));
+    }
+
+    private async Task<CatalogListingDto> BuildCatalogListingAsync(Company shop, CancellationToken ct)
+    {
+        var hasHours = await db.ShopSettings.AsNoTracking().AnyAsync(s => s.CompanyId == shop.Id && s.WorkingHoursJson != null, ct);
+        var hasProduct = await db.Products.AsNoTracking().AnyAsync(p => p.CompanyId == shop.Id && p.IsPublished && p.DeletedAtUtc == null, ct);
+        var allowed = (await ordersPlans.GetForCompanyAsync(shop.Id, ct)).AllowPublicListing;
+        var verdict = CatalogListingRules.Evaluate(new CatalogListingInput(shop.IsActive, hasHours, hasProduct, allowed, shop.ShowInPublicListing));
+        return new CatalogListingDto(
+            shop.ShowInPublicListing, allowed, verdict.Visible, CatalogListingRules.StatusText(verdict.Visible),
+            allowed ? null : CatalogListingRules.NotAllowedByPlanText,
+            verdict.Checklist.Select(c => new CatalogListingCheckDto(c.Code, c.Text, c.Done)).ToList());
     }
 
     /// <summary>§409.6 — seller details (owner) [legal L2]. Full replacement: an empty or missing field is cleared.</summary>

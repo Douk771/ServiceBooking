@@ -91,6 +91,8 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Reports.ShopReportService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Reports.PickListService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Reports.ShopCustomerService>();
+    // ARCHITECTURE_CYCLE25.md §505: the anonymous goods catalog.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Shops.GoodsCatalogService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.CustomerOrderPushQueue>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.OrderMessageScheduler>();
     builder.Services.AddHttpClient<CaptchaService>();

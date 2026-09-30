@@ -141,7 +141,9 @@ public sealed class CompanyCreationService(
             Email = request.Email,
             // A shop takes no bookings and is not in the salon directory (§388.4).
             AllowSelfBooking = !isShop && request.AllowSelfBooking,
-            ShowInPublicListing = !isShop && request.ShowInPublicListing,
+            // Cycle 25 (§505.2, Q-25-7): a shop is created visible in the goods catalog (it still needs hours, a product and a plan that allows it);
+            // a salon keeps the owner's own choice.
+            ShowInPublicListing = isShop || request.ShowInPublicListing,
             OwnerUserId = userId,
             BillingAccountId = accountId,
             CityId = city.Id,

@@ -46,7 +46,9 @@ public enum CatalogConflictCode
     CategoryLimitReached,
     PhoneVerificationUnavailable,
     ScheduleConflictsWithOrders,
-    MessengerUnavailable
+    MessengerUnavailable,
+    // Cycle 25 (API_CONTRACT_CYCLE25.md §532), appended at the end.
+    CatalogListingNotAllowedByPlan
 }
 
 /// <summary><c>ConflictingOrders</c> — only for <see cref="CatalogConflictCode.ScheduleConflictsWithOrders"/> (API_CONTRACT_CYCLE24.md §473.3).</summary>

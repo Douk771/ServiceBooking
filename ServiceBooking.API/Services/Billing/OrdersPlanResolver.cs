@@ -11,7 +11,9 @@ namespace ServiceBooking.API.Services.Billing;
 /// </summary>
 public sealed record OrdersPlan(
     Guid? PlanId, string PlanName, bool IsFreeTier, bool Usable, bool AllowOrders, int? MaxShops, int? MaxSeats,
-    int? MaxProductsPerShop, int? MaxOrdersPerMonth, bool AllowNotificationChannel)
+    int? MaxProductsPerShop, int? MaxOrdersPerMonth, bool AllowNotificationChannel,
+    // ARCHITECTURE_CYCLE25.md §505.1 (Q-25-7): whether the plan lets the account's shops appear in the goods catalog (the plan's own AllowPublicListing).
+    bool AllowPublicListing = true)
 {
     /// <summary>The numbers of the seeded free tariff (§448.3) — used when the system free tariff of the line is missing from the database.</summary>
     public static OrdersPlan FallbackFree { get; } = new(
@@ -37,7 +39,7 @@ public class OrdersPlanResolver(AppDbContext db)
 
     private static OrdersPlan From(SubscriptionPlanConfig plan, bool isFree) => new(
         plan.Id, plan.Name, isFree, Usable: true, plan.AllowOrders, plan.MaxCompanies, plan.MaxEmployees, plan.MaxProductsPerShop,
-        plan.MaxOrdersPerMonth, plan.AllowNotificationChannel);
+        plan.MaxOrdersPerMonth, plan.AllowNotificationChannel, plan.AllowPublicListing);
 
     /// <summary>The plans of many accounts with two queries (subscriptions with their tariffs + the system free tariff).</summary>
     public async Task<Dictionary<Guid, OrdersPlan>> GetForAccountsAsync(IEnumerable<Guid> accountIds, CancellationToken ct = default)
