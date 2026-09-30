@@ -283,7 +283,12 @@ internal static class ApplicationServicesExtensions
     // Cycle 28, pass B (ARCHITECTURE_CYCLE28.md §580) — "demo-reset" (period 10 minutes): the nightly reset of the demo. Registered ONLY in demo mode, so a production
     // machine does not list it at all (and its state row never appears in the admin's list of tasks).
     if (builder.Configuration.GetValue("DemoMode:Enabled", false))
+    {
         builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DemoResetTask>();
+        // Cycle 35 (ARCHITECTURE_CYCLE35.md §35.10.3) — "demo-board-tick" (every 2 minutes): the live board of the demo shops. Same rule: demo mode only.
+        builder.Services.AddScoped<ServiceBooking.API.Services.Demo.DemoBoardTicker>();
+        builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DemoBoardTickTask>();
+    }
 
     // T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.1): the fourth task, "data-retention". Every IRetentionRule below
     // is registered individually (not discovered by reflection) so the list here IS the list of what runs —
