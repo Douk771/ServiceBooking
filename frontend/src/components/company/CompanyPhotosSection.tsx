@@ -113,8 +113,13 @@ export function CompanyPhotosSection({
   companyId,
   kind = 'salon',
   onChanged,
+  headingAs: Heading = 'h3',
+  headingClassName = 'text-lg font-semibold text-ink',
 }: {
   companyId: string
+  /** ARCHITECTURE_CYCLE32.md §32.9.2 — level and class of the card title; defaults keep the goods gallery as it was. */
+  headingAs?: 'h2' | 'h3'
+  headingClassName?: string
   /** ARCHITECTURE_CYCLE26.md §551 — only the heading and the empty state differ; ezbook keeps the default. */
   kind?: 'salon' | 'shop'
   /** Called after the existing cache resets (goods drops its `['storefront']` cache here). */
@@ -200,7 +205,7 @@ export function CompanyPhotosSection({
   return (
     <Card className="p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-ink">{kind === 'shop' ? 'Фотографии магазина' : 'Фотографии салона'}</h3>
+        <Heading className={headingClassName}>{kind === 'shop' ? 'Фотографии магазина' : 'Фотографии салона'}</Heading>
         <span className="text-xs text-muted">{photos?.length ?? 0} / {MAX_PHOTOS}</span>
       </div>
 

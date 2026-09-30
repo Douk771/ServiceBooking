@@ -89,6 +89,8 @@ interface UpdateCompanyPayload {
    * Omitted/undefined = leave unchanged; `0` = reset to the server default (90 days), never "closed".
    */
   bookingHorizonDays?: number
+  /** API_CONTRACT_CYCLE32.md §32.23 — 0–168 hours; absent = unchanged (accepted by the server since cycle 15). */
+  clientRescheduleMinHours?: number
 }
 
 interface CompanyPhotoUsage {

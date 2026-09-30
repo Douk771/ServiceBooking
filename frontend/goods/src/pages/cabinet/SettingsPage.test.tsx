@@ -15,7 +15,6 @@ vi.mock('../../api/shops', () => ({
 }))
 vi.mock('@/api/companyPhotos', () => ({ companyPhotosApi: { list: () => new Promise(() => {}) } }))
 vi.mock('@/api/companies', () => ({ companiesApi: { update: vi.fn(), uploadLogo: vi.fn() } }))
-vi.mock('@/components/company/CompanyAddressField', () => ({ CompanyAddressField: () => <div>address-field</div> }))
 
 const shop = (over: Partial<ShopManageDto> = {}): ShopManageDto =>
   ({
