@@ -39,7 +39,21 @@ public sealed class DemoResetTask(
         if (!DemoResetSchedule.IsDue(now, last, localTime, zone))
             return new ScheduledTaskOutcome(1, 0, 0, $"not due (last reset {last:yyyy-MM-dd HH:mm}Z)");
 
-        var result = await reset.ResetAsync(now, confirmed: true, ct);
+        DemoResetResult result;
+        try
+        {
+            result = await reset.ResetAsync(now, confirmed: true, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // The runner would record a cancelled task as a «partial success» (time budget reached), but for the reset that is a lie: the transaction is rolled
+            // back, no reset was made, and the next tick would silently repeat it every 10 minutes. Make it an explicit error of the task.
+            logger.LogError("demo-reset: cancelled (time budget or host shutdown) before it finished; the transaction is rolled back, the data were not reset");
+            return new ScheduledTaskOutcome(1, 0, 0, "cancelled")
+            {
+                Error = "demo reset was cancelled (run-time budget or host shutdown) before it finished; nothing was reset — run `ops demo reset --yes` or raise the task's MaxRunMinutes",
+            };
+        }
         logger.LogInformation("demo-reset: exit {Exit}", result.ExitCode);
         var summary = string.Join(" | ", result.Lines.TakeLast(1));
         return result.ExitCode switch

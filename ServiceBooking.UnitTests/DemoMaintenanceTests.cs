@@ -99,6 +99,25 @@ public class DemoMaintenanceTests : IDisposable
         flag.IsResetting(Now.AddMinutes(11)).Should().BeFalse("a dead reset must not hold the demo in 503 forever (R28-15)");
     }
 
+    [Fact]
+    public void Flag_UnreadableForPermissions_IsIgnored_NotAnExceptionOnEveryRequest()
+    {
+        if (OperatingSystem.IsWindows() || Environment.UserName == "root") return; // file modes are not enforced there
+
+        var flag = NewFlag();
+        Directory.CreateDirectory(Path.GetDirectoryName(flag.FullPath)!);
+        File.WriteAllText(flag.FullPath, Now.ToString("o"));
+        File.SetUnixFileMode(flag.FullPath, UnixFileMode.None);
+        try
+        {
+            ((Func<bool>)(() => flag.IsResetting(Now))).Should().NotThrow().Which.Should().BeFalse();
+        }
+        finally
+        {
+            File.SetUnixFileMode(flag.FullPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+    }
+
     [Theory]
     [InlineData(false, null, 0, false, false)]                 // no file
     [InlineData(true, "2026-10-01T01:00:00.0000000Z", 5, true, false)]
@@ -169,6 +188,47 @@ public class DemoMaintenanceTests : IDisposable
         var (context, nextCalled) = await RunMaintenanceAsync(demo: true, resetting: true, path, method);
 
         nextCalled.Should().BeTrue();
+        context.Response.StatusCode.Should().Be(200);
+    }
+
+    [Theory]
+    [InlineData(true, "/api/demo/status", "GET", false)]
+    [InlineData(true, "/API/Demo/Status", "GET", false)]
+    [InlineData(true, "/api/companies", "GET", true)]
+    [InlineData(true, "/api/demo/login", "POST", true)]
+    [InlineData(false, "/api/demo/status", "GET", true)]
+    public async Task Middleware_StatusPoll_LosesTheBearerToken_SoAuthenticationCannotHangOnTheLockedUsersTable(bool demo, string path, string method, bool headerKept)
+    {
+        var flag = NewFlag();
+        string? seenByNext = null;
+        var middleware = new DemoMaintenanceMiddleware(ctx => { seenByNext = ctx.Request.Headers.Authorization.ToString(); return Task.CompletedTask; },
+            Options.Create(new DemoModeOptions { Enabled = demo }), flag);
+        var context = new DefaultHttpContext();
+        context.Request.Path = path;
+        context.Request.Method = method;
+        context.Request.Headers.Authorization = "Bearer token";
+
+        await middleware.InvokeAsync(context);
+
+        (seenByNext == "Bearer token").Should().Be(headerKept);
+    }
+
+    [Fact]
+    public async Task Middleware_StatusPoll_WhileResetting_PassesThroughWithoutTheToken()
+    {
+        var flag = NewFlag();
+        flag.Begin(DateTime.UtcNow);
+        string? seenByNext = "unset";
+        var middleware = new DemoMaintenanceMiddleware(ctx => { seenByNext = ctx.Request.Headers.Authorization.ToString(); return Task.CompletedTask; },
+            Options.Create(new DemoModeOptions { Enabled = true }), flag);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/demo/status";
+        context.Request.Method = "GET";
+        context.Request.Headers.Authorization = "Bearer token";
+
+        await middleware.InvokeAsync(context);
+
+        seenByNext.Should().BeEmpty();
         context.Response.StatusCode.Should().Be(200);
     }
 
@@ -315,6 +375,43 @@ public class DemoMaintenanceTests : IDisposable
 
         nextCalled.Should().BeTrue();
         context.Result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DemoForbidden_ReissuedTokenWithoutTheClaim_OfADemoUser_IsStillRefused()
+    {
+        // POST /api/legal/accept and POST /api/companies issue a fresh token to the same user, without sb_demo.
+        foreach (var role in new[] { "owner", "master", "client" })
+        {
+            var id = ServiceBooking.API.Services.Showcase.ShowcaseDemoRoles.UserIdOf(role)!;
+            var user = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, id)], "test"));
+
+            var (context, nextCalled) = await RunForbiddenAsync(demo: true, marked: true, user);
+
+            nextCalled.Should().BeFalse(role);
+            context.Result.Should().BeOfType<ContentResult>().Which.StatusCode.Should().Be(403);
+        }
+    }
+
+    [Fact]
+    public async Task DemoForbidden_DemoUserId_OutsideDemoMode_IsNotTouched()
+    {
+        var id = ServiceBooking.API.Services.Showcase.ShowcaseDemoRoles.UserIdOf("owner")!;
+        var user = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, id)], "test"));
+
+        var (context, nextCalled) = await RunForbiddenAsync(demo: false, marked: true, user);
+
+        nextCalled.Should().BeTrue();
+        context.Result.Should().BeNull();
+    }
+
+    [Fact]
+    public void ShowcaseDemoRoles_IsDemoUserId_KnowsExactlyTheThreeAccounts()
+    {
+        foreach (var role in new[] { "owner", "master", "client" })
+            ServiceBooking.API.Services.Showcase.ShowcaseDemoRoles.IsDemoUserId(ServiceBooking.API.Services.Showcase.ShowcaseDemoRoles.UserIdOf(role)).Should().BeTrue(role);
+        ServiceBooking.API.Services.Showcase.ShowcaseDemoRoles.IsDemoUserId("u1").Should().BeFalse();
+        ServiceBooking.API.Services.Showcase.ShowcaseDemoRoles.IsDemoUserId(null).Should().BeFalse();
     }
 
     [Fact]

@@ -31,6 +31,12 @@ public static class ShowcaseDemoRoles
 
     public static bool IsKnown(string? role) => role is Owner or Master or Client;
 
+    private static readonly Lazy<IReadOnlySet<string>> DemoUserIds = new(() =>
+        All.Select(r => UserIdOf(r.Role)!).ToHashSet(StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>True when <paramref name="userId"/> is one of the three demo accounts (decided by the user, not by anything the token claims).</summary>
+    public static bool IsDemoUserId(string? userId) => userId is not null && DemoUserIds.Value.Contains(userId);
+
     /// <summary>The id of the demo account of a role; null for an unknown role.</summary>
     public static string? UserIdOf(string? role) => role switch
     {

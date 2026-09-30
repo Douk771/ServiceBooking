@@ -8,7 +8,7 @@ namespace ServiceBooking.API.Services.Demo;
 /// <c>/api/health/*</c> (the deploy smoke test and the container health check) and <c>GET /api/demo/status</c> (answers 200 with <c>resetting: true</c>).
 /// Everything outside <c>/api/*</c> (static files, the SPA) is not touched: the front end draws its own maintenance screen.
 ///
-/// Registered first after <c>UseForwardedHeaders</c>, before authentication and any database access: the tables are locked by the reset's TRUNCATE
+/// Registered right after <c>UseCors</c> (so the 503 carries the CORS headers), before authentication and any database access: the tables are locked by the reset's TRUNCATE
 /// for its whole duration. A no-op unless <see cref="DemoModeOptions.Enabled"/>.
 /// </summary>
 public sealed class DemoMaintenanceMiddleware(RequestDelegate next, IOptions<DemoModeOptions> options, DemoMaintenanceFlag flag)
@@ -18,6 +18,11 @@ public sealed class DemoMaintenanceMiddleware(RequestDelegate next, IOptions<Dem
 
     public async Task InvokeAsync(HttpContext context)
     {
+        // GET /api/demo/status is anonymous. A token sent with it would be validated by the JWT handler against AspNetUsers, which the reset's TRUNCATE holds locked
+        // until the commit: the request would hang (and past the command timeout answer 500) instead of saying «resetting: true». So the header is dropped.
+        if (options.Value.Enabled && IsStatusRequest(context.Request.Path, context.Request.Method))
+            context.Request.Headers.Remove("Authorization");
+
         if (options.Value.Enabled && IsBlockedPath(context.Request.Path, context.Request.Method) && flag.IsResetting(DateTime.UtcNow))
         {
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
@@ -31,12 +36,16 @@ public sealed class DemoMaintenanceMiddleware(RequestDelegate next, IOptions<Dem
         await next(context);
     }
 
+    /// <summary>Pure: is this the anonymous status poll.</summary>
+    public static bool IsStatusRequest(PathString path, string method) =>
+        path.StartsWithSegments("/api/demo/status", StringComparison.OrdinalIgnoreCase) && HttpMethods.IsGet(method);
+
     /// <summary>Pure: does this request fall under the maintenance answer while a reset is on.</summary>
     public static bool IsBlockedPath(PathString path, string method)
     {
         if (!path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase)) return false;
         if (path.StartsWithSegments("/api/health", StringComparison.OrdinalIgnoreCase)) return false;
-        if (path.StartsWithSegments("/api/demo/status", StringComparison.OrdinalIgnoreCase) && HttpMethods.IsGet(method)) return false;
+        if (IsStatusRequest(path, method)) return false;
         return true;
     }
 }

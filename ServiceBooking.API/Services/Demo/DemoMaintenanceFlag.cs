@@ -54,6 +54,7 @@ public sealed class DemoMaintenanceFlag(IOptions<DemoModeOptions> options, IHost
             var exists = File.Exists(path);
             string? content = null;
             DateTime? lastWrite = null;
+            var unreadable = false;
             if (exists)
             {
                 try
@@ -65,9 +66,20 @@ public sealed class DemoMaintenanceFlag(IOptions<DemoModeOptions> options, IHost
                 {
                     // The writer is replacing the file at this very moment: it exists, so the reset is on.
                 }
+                catch (UnauthorizedAccessException ex)
+                {
+                    // Wrong permissions on the state volume: the flag can neither be read nor (by this account) ever be written, so it says nothing about a reset.
+                    // Answering 503 to every /api/* request forever would be worse than an unannounced reset: treat it as lowered and report it (throttled).
+                    unreadable = true;
+                    if (nowUtc - _lastStaleLogUtc > StaleLogEvery)
+                    {
+                        _lastStaleLogUtc = nowUtc;
+                        logger.LogError(ex, "The demo reset flag {Path} cannot be read (permissions): it is ignored. Fix the access rights of the state volume.", path);
+                    }
+                }
             }
 
-            var state = Evaluate(exists, content, lastWrite, nowUtc);
+            var state = unreadable ? new FlagState(Resetting: false, Stale: false) : Evaluate(exists, content, lastWrite, nowUtc);
             if (state.Stale && nowUtc - _lastStaleLogUtc > StaleLogEvery)
             {
                 _lastStaleLogUtc = nowUtc;

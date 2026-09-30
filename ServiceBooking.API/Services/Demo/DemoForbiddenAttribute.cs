@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Options;
+using ServiceBooking.API.Services.Showcase;
 
 namespace ServiceBooking.API.Services.Demo;
 
@@ -15,12 +16,16 @@ public sealed class DemoForbiddenAttribute : Attribute
 }
 
 /// <summary>
-/// The global filter behind <see cref="DemoForbiddenAttribute"/> (API_CONTRACT_CYCLE28.md §599). In demo mode, for a token that carries <c>sb_demo = 1</c>
-/// (issued by <c>POST /api/demo/login</c>) the marked actions answer 403 <c>text/plain</c> «В демо-версии это действие недоступно.» with
+/// The global filter behind <see cref="DemoForbiddenAttribute"/> (API_CONTRACT_CYCLE28.md §599). In demo mode, for a caller that is a demo account — a token that
+/// carries <c>sb_demo = 1</c> (issued by <c>POST /api/demo/login</c>) OR a token of one of the three demo users (<see cref="ShowcaseDemoRoles.IsDemoUserId"/>) —
+/// the marked actions answer 403 <c>text/plain</c> «В демо-версии это действие недоступно.» with
 /// <c>X-Demo-Restricted: 1</c> — the one 403 in the project that has a body (SPEC asks for a clear refusal). It is a RESOURCE filter: the refusal comes
 /// before model binding, so an invalid body cannot turn it into a 400. Authorization stays ahead of it (an anonymous caller still gets 401).
 ///
-/// A visitor who registered himself has no <c>sb_demo</c> and is not restricted (his data is wiped at night anyway); outside demo mode nothing changes.
+/// The user id is checked as well as the claim because other endpoints re-issue a token to the same user without the claim (<c>POST /api/legal/accept</c>,
+/// <c>POST /api/companies</c>): the restriction follows the account, so such a token cannot shed it.
+///
+/// A visitor who registered himself is neither of those and is not restricted (his data is wiped at night anyway); outside demo mode nothing changes.
 /// </summary>
 public sealed class DemoForbiddenFilter(IOptions<DemoModeOptions> options) : IAsyncResourceFilter
 {
@@ -47,7 +52,8 @@ public sealed class DemoForbiddenFilter(IOptions<DemoModeOptions> options) : IAs
         return next();
     }
 
-    /// <summary>Pure: does the caller's token carry the demo claim.</summary>
+    /// <summary>Pure: is the caller a demo account — it carries the demo claim, or it is one of the demo users (a re-issued token has no claim).</summary>
     public static bool IsDemoToken(ClaimsPrincipal user) =>
-        user.Identity is { IsAuthenticated: true } && user.FindFirst(ClaimType)?.Value == "1";
+        user.Identity is { IsAuthenticated: true }
+        && (user.FindFirst(ClaimType)?.Value == "1" || ShowcaseDemoRoles.IsDemoUserId(user.FindFirst(ClaimTypes.NameIdentifier)?.Value));
 }
