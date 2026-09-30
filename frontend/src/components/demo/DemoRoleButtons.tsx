@@ -14,13 +14,16 @@ const ROLE_ICONS: Record<DemoRole, ComponentProps<typeof Icon>['name']> = {
   owner: 'store',
   master: 'scissors',
   client: 'user',
+  'shop-owner': 'store',
+  'shop-staff': 'users',
+  'shop-customer': 'shopping-bag',
 }
 
 /**
- * API_CONTRACT_CYCLE28.md §598 — passwordless sign-in under one of three demo roles, on the login screen. Shown only
- * on the demo stand (`GET /api/demo/status` = 200); on production the block does not exist. The labels come from the
- * server (`roles[].label`), the route after signing in from the contract (owner → /cabinet, master → /my-bookings,
- * client → /my-visits).
+ * API_CONTRACT_CYCLE35.md §35.21–§35.22 — passwordless sign-in under one of three demo roles of this product
+ * (`DemoProductProvider`: ezbook «Запись» or goods «Заказы»), on the login screen. Shown only on the demo stand
+ * (`GET /api/demo/status` = 200); on production the block does not exist. The labels come from the server
+ * (`roles[].label`), the route after signing in from the contract (`demoRoleHome`).
  */
 export function DemoRoleButtons() {
   const { status, isDemo } = useDemoStatus()

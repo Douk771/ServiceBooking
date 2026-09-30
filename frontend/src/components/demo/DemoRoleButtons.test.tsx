@@ -5,7 +5,8 @@ import userEvent from '@testing-library/user-event'
 import { AxiosError } from 'axios'
 import { DemoRoleButtons } from './DemoRoleButtons'
 import { useAuthStore } from '../../store/authStore'
-import { demoStatus, renderWithProviders } from './testUtils'
+import { DemoProductProvider } from './DemoProductContext'
+import { demoOrdersStatus, demoStatus, renderWithProviders } from './testUtils'
 
 const getStatus = vi.fn()
 const login = vi.fn()
@@ -100,5 +101,57 @@ describe('DemoRoleButtons (API_CONTRACT_CYCLE28.md §598)', () => {
     renderWithProviders(ui)
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Войти как клиент' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Слишком много запросов')
+  })
+
+  it('ezbook (no provider): asks for the salon roles and shows no shop buttons', async () => {
+    renderWithProviders(ui)
+    await screen.findByRole('button', { name: 'Войти как владелец салона' })
+    expect(getStatus).toHaveBeenCalledWith('services')
+    expect(screen.queryByRole('button', { name: 'Войти как покупатель' })).toBeNull()
+  })
+})
+
+describe('DemoRoleButtons on goods (DemoProductProvider product="orders", API_CONTRACT_CYCLE35.md §35.22)', () => {
+  const goodsUi = <DemoProductProvider product="orders">{ui}</DemoProductProvider>
+
+  beforeEach(() => {
+    getStatus.mockResolvedValue(demoOrdersStatus())
+  })
+
+  it('asks for the orders roles and renders exactly the three shop buttons (no salon ones)', async () => {
+    renderWithProviders(goodsUi)
+    expect(await screen.findByRole('button', { name: 'Войти как владелец магазина' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Войти как сотрудник магазина' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Войти как покупатель' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Войти как владелец салона' })).toBeNull()
+    expect(getStatus).toHaveBeenCalledWith('orders')
+  })
+
+  it.each([
+    ['Войти как владелец магазина', 'shop-owner', ['CompanyOwner'], '/cabinet'],
+    ['Войти как сотрудник магазина', 'shop-staff', ['Master'], '/cabinet'],
+    ['Войти как покупатель', 'shop-customer', ['Client'], '/orders'],
+  ])('%s: signs in under the role and opens its start screen', async (label, role, roles, path) => {
+    login.mockResolvedValue(authResponse(roles))
+    renderWithProviders(goodsUi)
+    await userEvent.setup().click(await screen.findByRole('button', { name: label }))
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent(path))
+    expect(login).toHaveBeenCalledWith(role)
+    expect(useAuthStore.getState().token).toBe('demo-token')
+  })
+
+  it('409 before the first reset after the release: the server text is shown, nobody is signed in', async () => {
+    login.mockRejectedValue(plainError(409, 'Демо-данные ещё не созданы. Зайдите чуть позже.'))
+    renderWithProviders(goodsUi)
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Войти как владелец магазина' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Демо-данные ещё не созданы. Зайдите чуть позже.')
+    expect(useAuthStore.getState().token).toBeNull()
+  })
+
+  it('production (status 404 → null): no block', async () => {
+    getStatus.mockResolvedValue(null)
+    renderWithProviders(goodsUi)
+    await waitFor(() => expect(getStatus).toHaveBeenCalled())
+    expect(screen.queryByTestId('demo-role-buttons')).toBeNull()
   })
 })

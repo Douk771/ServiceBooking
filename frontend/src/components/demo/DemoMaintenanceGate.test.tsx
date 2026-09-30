@@ -99,7 +99,7 @@ describe('DemoMaintenanceScreen polling (§600a)', () => {
         }),
     )
     const { qc } = renderWithProviders(<div />)
-    qc.setQueryData(['demo-status'], demoStatus({ resetting: false }))
+    qc.setQueryData(['demo-status', 'services'], demoStatus({ resetting: false }))
     // cache is older than the screen mount
     renderWithProviders(<DemoMaintenanceScreen onReload={onReload} />, qc)
     await new Promise((r) => setTimeout(r, 20))

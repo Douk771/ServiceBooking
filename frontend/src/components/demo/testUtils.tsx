@@ -15,8 +15,19 @@ export const demoStatus = (over: Partial<DemoStatusDto> = {}): DemoStatusDto => 
     { role: 'master', label: 'Войти как мастер' },
     { role: 'client', label: 'Войти как клиент' },
   ],
+  siteUrls: { services: 'https://demo.visit.ezbook.ru', orders: 'https://demo.zakaz.ezbook.ru' },
   ...over,
 })
+
+export const demoOrdersStatus = (over: Partial<DemoStatusDto> = {}): DemoStatusDto =>
+  demoStatus({
+    roles: [
+      { role: 'shop-owner', label: 'Войти как владелец магазина' },
+      { role: 'shop-staff', label: 'Войти как сотрудник магазина' },
+      { role: 'shop-customer', label: 'Войти как покупатель' },
+    ],
+    ...over,
+  })
 
 export function renderWithProviders(
   ui: ReactElement,

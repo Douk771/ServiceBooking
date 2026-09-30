@@ -29,6 +29,28 @@ describe('demoApi.getStatus (API_CONTRACT_CYCLE28.md §597)', () => {
     expect(get).toHaveBeenCalledWith('/demo/status')
   })
 
+  it('orders (goods): asks for ?product=orders, the 200 body comes back as is', async () => {
+    const dto = {
+      demoMode: true,
+      resetting: false,
+      roles: [{ role: 'shop-owner', label: 'Войти как владелец магазина' }],
+    }
+    get.mockResolvedValue({ data: dto })
+    await expect(demoApi.getStatus('orders')).resolves.toEqual(dto)
+    expect(get).toHaveBeenCalledWith('/demo/status', { params: { product: 'orders' } })
+  })
+
+  it('services passed explicitly still sends no parameter', async () => {
+    get.mockResolvedValue({ data: {} })
+    await demoApi.getStatus('services')
+    expect(get).toHaveBeenCalledWith('/demo/status')
+  })
+
+  it('orders: 404 (production) → null as well', async () => {
+    get.mockRejectedValue(axiosError(404))
+    await expect(demoApi.getStatus('orders')).resolves.toBeNull()
+  })
+
   it('404 (production) → null, not an error', async () => {
     get.mockRejectedValue(axiosError(404))
     await expect(demoApi.getStatus()).resolves.toBeNull()
@@ -47,5 +69,11 @@ describe('demoApi.login (§598)', () => {
     post.mockResolvedValue({ data: { token: 't' } })
     await expect(demoApi.login('master')).resolves.toEqual({ token: 't' })
     expect(post).toHaveBeenCalledWith('/demo/login', { role: 'master' })
+  })
+
+  it('a shop role goes through the same route (role names are unique across products, no product parameter)', async () => {
+    post.mockResolvedValue({ data: { token: 't' } })
+    await demoApi.login('shop-customer')
+    expect(post).toHaveBeenCalledWith('/demo/login', { role: 'shop-customer' })
   })
 })
