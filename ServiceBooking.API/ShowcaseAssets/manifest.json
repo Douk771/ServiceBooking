@@ -544,6 +544,798 @@
       "thumbnail": null,
       "width": 800,
       "height": 600
+    },
+    {
+      "key": "logo.shop.coffee",
+      "role": "logo",
+      "file": "logos/shop-coffee.jpg",
+      "thumbnail": null,
+      "width": 600,
+      "height": 600
+    },
+    {
+      "key": "photo.shop.coffee.1",
+      "role": "photo",
+      "file": "photos/shop-coffee-1.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.coffee.2",
+      "role": "photo",
+      "file": "photos/shop-coffee-2.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.coffee.3",
+      "role": "photo",
+      "file": "photos/shop-coffee-3.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.coffee.4",
+      "role": "photo",
+      "file": "photos/shop-coffee-4.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.coffee.5",
+      "role": "photo",
+      "file": "photos/shop-coffee-5.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.coffee.6",
+      "role": "photo",
+      "file": "photos/shop-coffee-6.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.espresso",
+      "role": "product",
+      "file": "products/coffee/espresso.jpg",
+      "thumbnail": "products/coffee/espresso.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.americano",
+      "role": "product",
+      "file": "products/coffee/americano.jpg",
+      "thumbnail": "products/coffee/americano.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.cappuccino",
+      "role": "product",
+      "file": "products/coffee/cappuccino.jpg",
+      "thumbnail": "products/coffee/cappuccino.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.latte",
+      "role": "product",
+      "file": "products/coffee/latte.jpg",
+      "thumbnail": "products/coffee/latte.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.flat-white",
+      "role": "product",
+      "file": "products/coffee/flat-white.jpg",
+      "thumbnail": "products/coffee/flat-white.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.raf",
+      "role": "product",
+      "file": "products/coffee/raf.jpg",
+      "thumbnail": "products/coffee/raf.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.tea-black",
+      "role": "product",
+      "file": "products/coffee/tea-black.jpg",
+      "thumbnail": "products/coffee/tea-black.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.tea-green",
+      "role": "product",
+      "file": "products/coffee/tea-green.jpg",
+      "thumbnail": "products/coffee/tea-green.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.tea-herbal",
+      "role": "product",
+      "file": "products/coffee/tea-herbal.jpg",
+      "thumbnail": "products/coffee/tea-herbal.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.cocoa",
+      "role": "product",
+      "file": "products/coffee/cocoa.jpg",
+      "thumbnail": "products/coffee/cocoa.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.croissant",
+      "role": "product",
+      "file": "products/coffee/croissant.jpg",
+      "thumbnail": "products/coffee/croissant.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.muffin",
+      "role": "product",
+      "file": "products/coffee/muffin.jpg",
+      "thumbnail": "products/coffee/muffin.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.cookie",
+      "role": "product",
+      "file": "products/coffee/cookie.jpg",
+      "thumbnail": "products/coffee/cookie.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.cheesecake",
+      "role": "product",
+      "file": "products/coffee/cheesecake.jpg",
+      "thumbnail": "products/coffee/cheesecake.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.sandwich",
+      "role": "product",
+      "file": "products/coffee/sandwich.jpg",
+      "thumbnail": "products/coffee/sandwich.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.toast-avocado",
+      "role": "product",
+      "file": "products/coffee/toast-avocado.jpg",
+      "thumbnail": "products/coffee/toast-avocado.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.coffee.granola",
+      "role": "product",
+      "file": "products/coffee/granola.jpg",
+      "thumbnail": "products/coffee/granola.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "logo.shop.bakery",
+      "role": "logo",
+      "file": "logos/shop-bakery.jpg",
+      "thumbnail": null,
+      "width": 600,
+      "height": 600
+    },
+    {
+      "key": "photo.shop.bakery.1",
+      "role": "photo",
+      "file": "photos/shop-bakery-1.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.bakery.2",
+      "role": "photo",
+      "file": "photos/shop-bakery-2.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.bakery.3",
+      "role": "photo",
+      "file": "photos/shop-bakery-3.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.bakery.4",
+      "role": "photo",
+      "file": "photos/shop-bakery-4.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.bakery.5",
+      "role": "photo",
+      "file": "photos/shop-bakery-5.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.bakery.6",
+      "role": "photo",
+      "file": "photos/shop-bakery-6.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "product.bakery.loaf",
+      "role": "product",
+      "file": "products/bakery/loaf.jpg",
+      "thumbnail": "products/bakery/loaf.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.bakery.baguette",
+      "role": "product",
+      "file": "products/bakery/baguette.jpg",
+      "thumbnail": "products/bakery/baguette.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.bakery.rye-bread",
+      "role": "product",
+      "file": "products/bakery/rye-bread.jpg",
+      "thumbnail": "products/bakery/rye-bread.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.bakery.bun",
+      "role": "product",
+      "file": "products/bakery/bun.jpg",
+      "thumbnail": "products/bakery/bun.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.bakery.cinnamon-roll",
+      "role": "product",
+      "file": "products/bakery/cinnamon-roll.jpg",
+      "thumbnail": "products/bakery/cinnamon-roll.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.bakery.pie-apple",
+      "role": "product",
+      "file": "products/bakery/pie-apple.jpg",
+      "thumbnail": "products/bakery/pie-apple.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.bakery.pie-cabbage",
+      "role": "product",
+      "file": "products/bakery/pie-cabbage.jpg",
+      "thumbnail": "products/bakery/pie-cabbage.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.bakery.pie-meat",
+      "role": "product",
+      "file": "products/bakery/pie-meat.jpg",
+      "thumbnail": "products/bakery/pie-meat.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.bakery.cake-honey",
+      "role": "product",
+      "file": "products/bakery/cake-honey.jpg",
+      "thumbnail": "products/bakery/cake-honey.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.bakery.cake-chocolate",
+      "role": "product",
+      "file": "products/bakery/cake-chocolate.jpg",
+      "thumbnail": "products/bakery/cake-chocolate.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.bakery.eclair",
+      "role": "product",
+      "file": "products/bakery/eclair.jpg",
+      "thumbnail": "products/bakery/eclair.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.bakery.cookies",
+      "role": "product",
+      "file": "products/bakery/cookies.jpg",
+      "thumbnail": "products/bakery/cookies.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "logo.shop.canteen",
+      "role": "logo",
+      "file": "logos/shop-canteen.jpg",
+      "thumbnail": null,
+      "width": 600,
+      "height": 600
+    },
+    {
+      "key": "photo.shop.canteen.1",
+      "role": "photo",
+      "file": "photos/shop-canteen-1.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.canteen.2",
+      "role": "photo",
+      "file": "photos/shop-canteen-2.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.canteen.3",
+      "role": "photo",
+      "file": "photos/shop-canteen-3.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.canteen.4",
+      "role": "photo",
+      "file": "photos/shop-canteen-4.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.canteen.5",
+      "role": "photo",
+      "file": "photos/shop-canteen-5.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.canteen.6",
+      "role": "photo",
+      "file": "photos/shop-canteen-6.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.soup-borsch",
+      "role": "product",
+      "file": "products/canteen/soup-borsch.jpg",
+      "thumbnail": "products/canteen/soup-borsch.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.soup-chicken",
+      "role": "product",
+      "file": "products/canteen/soup-chicken.jpg",
+      "thumbnail": "products/canteen/soup-chicken.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.cutlet",
+      "role": "product",
+      "file": "products/canteen/cutlet.jpg",
+      "thumbnail": "products/canteen/cutlet.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.goulash",
+      "role": "product",
+      "file": "products/canteen/goulash.jpg",
+      "thumbnail": "products/canteen/goulash.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.fish",
+      "role": "product",
+      "file": "products/canteen/fish.jpg",
+      "thumbnail": "products/canteen/fish.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.buckwheat",
+      "role": "product",
+      "file": "products/canteen/buckwheat.jpg",
+      "thumbnail": "products/canteen/buckwheat.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.rice",
+      "role": "product",
+      "file": "products/canteen/rice.jpg",
+      "thumbnail": "products/canteen/rice.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.mashed-potato",
+      "role": "product",
+      "file": "products/canteen/mashed-potato.jpg",
+      "thumbnail": "products/canteen/mashed-potato.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.pasta",
+      "role": "product",
+      "file": "products/canteen/pasta.jpg",
+      "thumbnail": "products/canteen/pasta.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.salad-vinaigrette",
+      "role": "product",
+      "file": "products/canteen/salad-vinaigrette.jpg",
+      "thumbnail": "products/canteen/salad-vinaigrette.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.salad-fresh",
+      "role": "product",
+      "file": "products/canteen/salad-fresh.jpg",
+      "thumbnail": "products/canteen/salad-fresh.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.compote",
+      "role": "product",
+      "file": "products/canteen/compote.jpg",
+      "thumbnail": "products/canteen/compote.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.tea",
+      "role": "product",
+      "file": "products/canteen/tea.jpg",
+      "thumbnail": "products/canteen/tea.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.canteen.pancakes",
+      "role": "product",
+      "file": "products/canteen/pancakes.jpg",
+      "thumbnail": "products/canteen/pancakes.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "logo.shop.flowers",
+      "role": "logo",
+      "file": "logos/shop-flowers.jpg",
+      "thumbnail": null,
+      "width": 600,
+      "height": 600
+    },
+    {
+      "key": "photo.shop.flowers.1",
+      "role": "photo",
+      "file": "photos/shop-flowers-1.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.flowers.2",
+      "role": "photo",
+      "file": "photos/shop-flowers-2.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.flowers.3",
+      "role": "photo",
+      "file": "photos/shop-flowers-3.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.flowers.4",
+      "role": "photo",
+      "file": "photos/shop-flowers-4.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.flowers.5",
+      "role": "photo",
+      "file": "photos/shop-flowers-5.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.flowers.6",
+      "role": "photo",
+      "file": "photos/shop-flowers-6.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "product.flowers.bouquet-roses",
+      "role": "product",
+      "file": "products/flowers/bouquet-roses.jpg",
+      "thumbnail": "products/flowers/bouquet-roses.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.flowers.bouquet-mixed",
+      "role": "product",
+      "file": "products/flowers/bouquet-mixed.jpg",
+      "thumbnail": "products/flowers/bouquet-mixed.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.flowers.bouquet-tulips",
+      "role": "product",
+      "file": "products/flowers/bouquet-tulips.jpg",
+      "thumbnail": "products/flowers/bouquet-tulips.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.flowers.bouquet-peonies",
+      "role": "product",
+      "file": "products/flowers/bouquet-peonies.jpg",
+      "thumbnail": "products/flowers/bouquet-peonies.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.flowers.arrangement-box",
+      "role": "product",
+      "file": "products/flowers/arrangement-box.jpg",
+      "thumbnail": "products/flowers/arrangement-box.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.flowers.orchid",
+      "role": "product",
+      "file": "products/flowers/orchid.jpg",
+      "thumbnail": "products/flowers/orchid.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.flowers.succulent",
+      "role": "product",
+      "file": "products/flowers/succulent.jpg",
+      "thumbnail": "products/flowers/succulent.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.flowers.plant-pot",
+      "role": "product",
+      "file": "products/flowers/plant-pot.jpg",
+      "thumbnail": "products/flowers/plant-pot.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.flowers.card",
+      "role": "product",
+      "file": "products/flowers/card.jpg",
+      "thumbnail": "products/flowers/card.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "logo.shop.farm",
+      "role": "logo",
+      "file": "logos/shop-farm.jpg",
+      "thumbnail": null,
+      "width": 600,
+      "height": 600
+    },
+    {
+      "key": "photo.shop.farm.1",
+      "role": "photo",
+      "file": "photos/shop-farm-1.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.farm.2",
+      "role": "photo",
+      "file": "photos/shop-farm-2.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.farm.3",
+      "role": "photo",
+      "file": "photos/shop-farm-3.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.farm.4",
+      "role": "photo",
+      "file": "photos/shop-farm-4.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.farm.5",
+      "role": "photo",
+      "file": "photos/shop-farm-5.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.shop.farm.6",
+      "role": "photo",
+      "file": "photos/shop-farm-6.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "product.farm.tomatoes",
+      "role": "product",
+      "file": "products/farm/tomatoes.jpg",
+      "thumbnail": "products/farm/tomatoes.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.farm.cucumbers",
+      "role": "product",
+      "file": "products/farm/cucumbers.jpg",
+      "thumbnail": "products/farm/cucumbers.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.farm.potatoes",
+      "role": "product",
+      "file": "products/farm/potatoes.jpg",
+      "thumbnail": "products/farm/potatoes.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.farm.carrots",
+      "role": "product",
+      "file": "products/farm/carrots.jpg",
+      "thumbnail": "products/farm/carrots.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.farm.apples",
+      "role": "product",
+      "file": "products/farm/apples.jpg",
+      "thumbnail": "products/farm/apples.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.farm.berries",
+      "role": "product",
+      "file": "products/farm/berries.jpg",
+      "thumbnail": "products/farm/berries.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.farm.milk",
+      "role": "product",
+      "file": "products/farm/milk.jpg",
+      "thumbnail": "products/farm/milk.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.farm.cheese",
+      "role": "product",
+      "file": "products/farm/cheese.jpg",
+      "thumbnail": "products/farm/cheese.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.farm.meat-beef",
+      "role": "product",
+      "file": "products/farm/meat-beef.jpg",
+      "thumbnail": "products/farm/meat-beef.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.farm.honey",
+      "role": "product",
+      "file": "products/farm/honey.jpg",
+      "thumbnail": "products/farm/honey.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.farm.eggs",
+      "role": "product",
+      "file": "products/farm/eggs.jpg",
+      "thumbnail": "products/farm/eggs.thumb.jpg",
+      "width": 800,
+      "height": 800
+    },
+    {
+      "key": "product.farm.bread-farm",
+      "role": "product",
+      "file": "products/farm/bread-farm.jpg",
+      "thumbnail": "products/farm/bread-farm.thumb.jpg",
+      "width": 800,
+      "height": 800
     }
   ]
 }

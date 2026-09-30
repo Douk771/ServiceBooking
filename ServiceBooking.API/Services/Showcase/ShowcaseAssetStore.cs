@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace ServiceBooking.API.Services.Showcase;
 
-/// <summary>One entry of <c>ShowcaseAssets/manifest.json</c> (§575.6). <see cref="Role"/> is <c>logo</c>, <c>photo</c> or <c>service</c>.</summary>
+/// <summary>One entry of <c>ShowcaseAssets/manifest.json</c> (§575.6). <see cref="Role"/> is <c>logo</c>, <c>photo</c>, <c>service</c> or (cycle 35, ARCHITECTURE_CYCLE35.md §35.11) <c>product</c>, the only role with a thumbnail.</summary>
 public sealed record ShowcaseAsset(string Key, string Role, string File, string? Thumbnail, int Width, int Height);
 
 /// <summary>A showcase asset copied into <c>uploads/showcase/</c>: what the rows need (url, thumbnail, size, hash).</summary>
