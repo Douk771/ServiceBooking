@@ -2337,6 +2337,65 @@ docker-compose.demo.yml --env-file .env.demo up -d` (тот же новый об
 
 Правовые тексты для демо (C28-3), картинки витрины (C28-4) и диапазон телефонов `+7 (200)` (C28-7) — отдельные долги.
 
+## 26. Тарифы «Записи» и витрина на бою (цикл 28, проход A; ARCHITECTURE_CYCLE28.md §573, §575, SPEC US-28-01…08)
+
+Выкат `develop` сам **не создаёт** ни тарифов, ни витринных компаний: это отдельные команды оператора внутри контейнера API. Каталог `/pricing` остаётся закрытым,
+пока SuperAdmin сам не включит `pricing.public-enabled`. Все шаги выполняются на машине, каталог `/opt/ezbook/app`.
+
+**Шаг 26.1. Резервная копия перед изменением данных.**
+
+```bash
+sudo systemctl start servicebooking-backup.service && ls -lt /opt/ezbook/backups | head -3
+```
+
+Должно получиться: свежий файл дампа базы и архив томов за сегодня.
+
+**Шаг 26.2. Тарифы: посмотреть план (ничего не меняет).**
+
+```bash
+cd /opt/ezbook/app
+docker compose -f docker-compose.prod.yml exec -T api dotnet ServiceBooking.API.dll ops tariffs plan
+```
+
+Должно получиться: список «будет создано»: Пробный период, Студия, Салон, Сеть и правила «недоступна» по опциям; бесплатный тариф выравнивается в «Старт»
+(онлайн-запись, 2 сотрудника) — **это затронет все существующие бесплатные компании**: у них появится приём записи без подписи. Код возврата 0.
+Код 3 — есть непримененные миграции, перезапустите API и повторите.
+
+**Шаг 26.3. Тарифы: применить.**
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T api dotnet ServiceBooking.API.dll ops tariffs apply
+```
+
+Команда только создаёт недостающее и не перетирает правки из админки. Изменения видны в течение 60 секунд.
+
+**Шаг 26.4. Витрина: посмотреть план.**
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T api dotnet ServiceBooking.API.dll ops showcase plan create
+```
+
+Должно получиться: `будет создано: companies=9 users=158 … photos=46 files=58`. Диапазон телефонов `+7 (200)` перед первым созданием сверьте с реестром
+Россвязи (долг C28-7): код 200 не должен быть выделен операторам.
+
+**Шаг 26.5. Витрина: создать.** Пишет данные на бой, операция в одной транзакции под замком; занимает до ~15 секунд.
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T api dotnet ServiceBooking.API.dll ops showcase create --yes
+```
+
+Должно получиться: `выполнено: … создано: companies=9 …`, код 0. Код 2 — витрина уже есть. Проверка:
+
+```bash
+curl -s "https://ezbook.ru/api/companies/public?pageSize=20" | grep -o '"isShowcase":true' | wc -l   # 9
+```
+
+**Шаг 26.6. Включить `/pricing`.** Только когда цены утверждены: войдите SuperAdmin-ом и выставите `pricing.public-enabled` через админку
+(`PUT /api/admin/platform-settings`). Страница `https://ezbook.ru/pricing` должна показать Старт, Студию, Салон, Сеть и пробный период.
+
+**Откат.** Витрину удаляет `ops showcase delete --yes` (вместе с файлами `uploads/showcase/`), пересоздаёт с датами от «сегодня» `ops showcase recreate --yes`.
+Перед откатом миграции цикла 28 **обязательно** выполните `ops showcase delete --yes`. Тарифы откатывают в админке (деактивировать, не удалять).
+
 ## Почему так сделано
 
 ### Docker не из snap
