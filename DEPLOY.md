@@ -2170,7 +2170,7 @@ SELECT "ShopId", "Number", COUNT(*) FROM "Orders" GROUP BY "ShopId", "Number" HA
   провален (`rollback_hint`, код 1). Отключается тем же `GOODS_SMOKE=0`.
 - **CI** (DO-1): линт `contracts/cycle25/openapi.yaml` и сверка `src/types/api-cycle25.generated.ts` с контрактом.
 - **Планировщик:** диспетчеры `staff-push-dispatch`, `customer-order-push-dispatch`, `staff-max-dispatch` идут в отдельной
-  полосе `realtime` (тик 5 с) и не ждут долгих задач полосы `main`; значения — в закоммиченном `appsettings.json`.
+  полосе `realtime` (тик 1 с, период задач 5 с) и не ждут долгих задач полосы `main`; значения — в закоммиченном `appsettings.json`.
 
 ### 23.5 Ручной шаг человека после выката на стенд (DO-6, агенты не выполняют)
 
