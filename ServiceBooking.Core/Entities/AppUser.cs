@@ -18,6 +18,11 @@ public class AppUser : IdentityUser
     // from data corruption.
     public DateTime? DeletedAtUtc { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE28.md §572.1 — the account was created by the showcase generator (owner, master or
+    /// client of a fictional company). Such an account has no password and cannot log in on the production instance
+    /// (§574.3). Everything else showcase-related is marked by ownership chain from the three root entities.</summary>
+    public bool IsShowcase { get; set; }
+
     public ICollection<CompanyMember> CompanyMemberships { get; set; } = [];
     public ICollection<Booking> ClientBookings { get; set; } = [];
     public ICollection<Booking> MasterBookings { get; set; } = [];

@@ -194,6 +194,14 @@ internal static class RateLimitingExtensions
         // staff-max-link: a one-time link to connect MAX — 10/hour per user.
         o.AddPolicy("staff-max-link", ctx => UserWindowPolicy(ctx, "staff-max-link", defaultPermitLimit: 10, defaultWindowMinutes: 60));
 
+        // ── Cycle 28, pass B (ARCHITECTURE_CYCLE28.md §579.4) ──────────────────────────────────────────────
+        // demo-login: POST /api/demo/login — 30/min per IP. Outside demo mode the route must answer a plain 404 (it "does not exist"), and the limiter runs BEFORE
+        // the endpoint filter that says so, so there it lets everything through: a flood of requests to a route that is not there must not turn into 429s.
+        o.AddPolicy("demo-login", ctx =>
+            ctx.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<ServiceBooking.API.Services.Demo.DemoModeOptions>>().Value.Enabled
+                ? IpWindowPolicy(ctx, "demo-login", defaultPermitLimit: 30, defaultWindowMinutes: 1)
+                : RateLimitPartition.GetNoLimiter("demo-off"));
+
         // Cycle 31 (ARCHITECTURE_CYCLE31.md §31.6): the gallery leaves the shared "uploads" window. A 10-photo batch must
         // not starve "make cover"/delete, and gallery traffic must not starve logo/avatar/product uploads either.
         o.AddPolicy("company-photos", ctx => UserWindowPolicy(ctx, "company-photos", defaultPermitLimit: 20, defaultWindowMinutes: 1));
@@ -209,7 +217,7 @@ internal static class RateLimitingExtensions
             var policyName = ctx.HttpContext.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName;
             var message = policyName switch
             {
-                "auth-login" => "Слишком много попыток входа. Повторите через минуту.",
+                "auth-login" or "demo-login" => "Слишком много попыток входа. Повторите через минуту.",
                 "auth-register" => "Слишком много регистраций с этого адреса. Повторите позже.",
                 "booking-create" => "Слишком много записей с этого адреса. Повторите позже.",
                 "availability" => "Слишком много запросов. Повторите через минуту.",

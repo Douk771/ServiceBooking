@@ -295,13 +295,14 @@ public class TrialActivationService(
                     existingOption.ActivatedByUserId = request.ActorUserId;
                 }
             }
-            else
+            else if (TrialMailingRulePolicy.IsMisconfiguration(plan))
             {
                 // Н2 (code review, cycle 18 3rd pass) — no PlanOptionRule for notifications.whatsapp on
                 // the trial plan, or an Extra one: fail-closed per §333.3/§0.2 п.4, no row created, so the
                 // owner gets a "mailings included" terms text and a mailing-window countdown while every
                 // mailing attempt silently hits NotOnPaidPlan in NotificationGate. That misconfiguration
                 // must be visible to an operator, not just consistent with the contract on paper.
+                // Cycle 28 (§573.3): only when the plan itself is designed with mailings (AllowNotificationChannel).
                 logger.LogError(
                     "trial-lifecycle: trial plan {PlanId} has no Included PlanOptionRule for {OptionCode} " +
                     "— account {AccountId} granted a trial with no paid notification numbers materialized",
@@ -309,6 +310,14 @@ public class TrialActivationService(
                 misconfigurationSignal =
                     $"Пробный тариф {plan.Id} не даёт правило Included на {SubscriptionResolver.WhatsAppOptionCode} " +
                     $"— у аккаунта {account.Id} рассылки не будут работать несмотря на активный триал.";
+            }
+            else
+            {
+                // Cycle 28 (§573.3, Q28-4): the trial plan is intentionally without mailings — nothing to alert about.
+                logger.LogInformation(
+                    "trial-lifecycle: trial plan {PlanId} is intentionally without mailings ({OptionCode} not Included) " +
+                    "— account {AccountId} granted a trial without a mailing option row",
+                    plan.Id, SubscriptionResolver.WhatsAppOptionCode, account.Id);
             }
         }
 
@@ -372,10 +381,13 @@ public class TrialActivationService(
         if (string.IsNullOrWhiteSpace(termsVersion))
             return new TrialGrantResult(false, "TrialTermsVersionRequired", "Не указана версия условий.");
 
-        if (termsVersion != TrialTermsRegistry.CurrentVersion)
+        var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId, ct);
+
+        // The edition shown to the owner is the one recorded in the account (GET /api/billing/trial), which for a trial granted before an edition change is
+        // not the current one — that edition must be acknowledgeable too, or the owner could never confirm the terms.
+        if (!TrialTermsRegistry.IsAcknowledgeable(termsVersion, account?.TrialTermsVersion))
             return new TrialGrantResult(false, "TrialTermsVersionMismatch", TrialLegalNotices.TrialTermsVersionMismatchNotice);
 
-        var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId, ct);
         // §363.1: 404 (empty body) — "у аккаунта нет ни одной выдачи триала, подтверждать нечего". No
         // billing account at all, or a billing account that has never had a trial granted, are both
         // that case — this must not silently stamp AcknowledgedAtUtc on an account with nothing to

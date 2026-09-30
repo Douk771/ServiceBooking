@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -28,6 +29,8 @@ public enum TransferFailureKind
     // ARCHITECTURE_CYCLE20.md §407.2, API_CONTRACT_CYCLE20.md §437.2 (Т20-09 п. 1) — ConfirmRightsTransfer
     // was not true. Checked FIRST, before any calculation (§437.2's own ordering).
     RightsTransferNotConfirmed,
+    // ARCHITECTURE_CYCLE28.md §574.2 — showcase (fictional) and real accounts may not be mixed by a transfer.
+    ShowcaseMixing,
 }
 
 public sealed record TransferFailure(TransferFailureKind Kind, string Message);
@@ -128,11 +131,16 @@ public class CompanyTransferService(
         if (company.BillingAccountId == targetBillingAccountId)
             return TransferPreviewResult.Fail(TransferFailureKind.SameAccount, "Компания уже в этом аккаунте");
 
+        if (ShowcaseMixingGuard.CheckTransfer(company.IsShowcase, targetAccount.IsShowcase) is { } mixing)
+            return TransferPreviewResult.Fail(TransferFailureKind.ShowcaseMixing, mixing);
+
         var newOwnerAddsSeat = false;
         if (!string.IsNullOrEmpty(newOwnerUserId))
         {
             var (newOwner, failure) = await ValidateNewOwnerAsync(newOwnerUserId, targetBillingAccountId);
             if (failure is not null) return new TransferPreviewResult(false, failure, null);
+            if (ShowcaseMixingGuard.CheckTransfer(company.IsShowcase, targetAccount.IsShowcase, newOwner!.IsShowcase) is { } ownerMixing)
+                return TransferPreviewResult.Fail(TransferFailureKind.ShowcaseMixing, ownerMixing);
             var isAlreadyMember = await db.CompanyMembers.AnyAsync(cm => cm.CompanyId == companyId && cm.UserId == newOwner!.Id);
             newOwnerAddsSeat = !isAlreadyMember;
         }
@@ -207,6 +215,10 @@ public class CompanyTransferService(
         if (company.BillingAccountId == targetBillingAccountId)
             return TransferResult.Fail(TransferFailureKind.SameAccount, "Компания уже в этом аккаунте");
 
+        // ARCHITECTURE_CYCLE28.md §574.2 — after existence checks, before any write.
+        if (ShowcaseMixingGuard.CheckTransfer(company.IsShowcase, targetAccount.IsShowcase) is { } mixing)
+            return TransferResult.Fail(TransferFailureKind.ShowcaseMixing, mixing);
+
         var sourceBillingAccountId = company.BillingAccountId;
 
         // §52: two account locks in ascending Guid order first (dedlock avoidance for two concurrent
@@ -234,6 +246,8 @@ public class CompanyTransferService(
             var (validatedOwner, failure) = await ValidateNewOwnerAsync(newOwnerUserId, targetBillingAccountId);
             if (failure is not null) return new TransferResult(false, failure);
             newOwner = validatedOwner;
+            if (ShowcaseMixingGuard.CheckTransfer(company.IsShowcase, targetAccount.IsShowcase, newOwner!.IsShowcase) is { } ownerMixing)
+                return TransferResult.Fail(TransferFailureKind.ShowcaseMixing, ownerMixing);
 
             var isAlreadyMember = await db.CompanyMembers.AnyAsync(cm => cm.CompanyId == companyId && cm.UserId == newOwner!.Id);
             newOwnerAddsSeat = !isAlreadyMember;

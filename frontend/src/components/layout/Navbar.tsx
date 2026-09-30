@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../store/authStore'
+import { clearUserCache } from '../../utils/clearUserCache'
 import { unsubscribeCurrentDeviceOnLogout } from '../../hooks/useWebPush'
 import { Icon } from '../ui/Icon'
 import { PricingNavLink } from '../pricing/PricingNavLink'
@@ -31,7 +32,7 @@ export function Navbar() {
       // Logout must proceed regardless — see comment above.
     }
     logout()
-    qc.clear()
+    clearUserCache(qc)
     navigate('/')
   }
 

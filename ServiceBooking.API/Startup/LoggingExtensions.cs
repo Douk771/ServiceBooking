@@ -12,7 +12,10 @@ namespace ServiceBooking.API.Startup;
 /// </summary>
 internal static class LoggingExtensions
 {
-    public static void AddServiceBookingSerilog(this WebApplicationBuilder builder)
+    /// <param name="builder">The web application builder.</param>
+    /// <param name="opsMode">Operator command run (<c>ops …</c>, ARCHITECTURE_CYCLE28.md §575.1): stdout belongs to the command's report, so the
+    /// console sink writes to stderr, only Warning and above, and the rolling file (owned by the running API in the same container) is skipped.</param>
+    public static void AddServiceBookingSerilog(this WebApplicationBuilder builder, bool opsMode = false)
     {
     // Serilog replaces the host logger entirely (US-45, ARCHITECTURE.md §11.1) — both stdout (docker logs)
     // and a rolling file (survives container recreation, docker logs doesn't). CompactJsonFormatter on
@@ -39,10 +42,21 @@ internal static class LoggingExtensions
             .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
             .Enrich.FromLogContext()
             .Enrich.With<PhoneMaskingEnricher>()
-            .WriteTo.Console(new CompactJsonFormatter())
-            .WriteTo.File(new CompactJsonFormatter(), Path.Combine(LogDirectory(context.Configuration), "app-.json"),
-                rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14,
-                fileSizeLimitBytes: 100 * 1024 * 1024, rollOnFileSizeLimit: true);
+            ;
+
+        if (opsMode)
+        {
+            loggerConfig.MinimumLevel.Warning()
+                .WriteTo.Console(new CompactJsonFormatter(), standardErrorFromLevel: LogEventLevel.Verbose);
+        }
+        else
+        {
+            loggerConfig
+                .WriteTo.Console(new CompactJsonFormatter())
+                .WriteTo.File(new CompactJsonFormatter(), Path.Combine(LogDirectory(context.Configuration), "app-.json"),
+                    rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14,
+                    fileSizeLimitBytes: 100 * 1024 * 1024, rollOnFileSizeLimit: true);
+        }
 
         // Sink to GlitchTip via the Sentry protocol (ARCHITECTURE.md §11.4). Empty DSN → sink not
         // registered at all, same pattern as CaptchaService.IsEnforced: Development/Testing carry no DSN by

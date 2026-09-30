@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Notifications.WebPush;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -22,6 +23,7 @@ public sealed class StaffPushDispatchTask(
     IOptions<WebPushOptions> options,
     IOptions<NotificationOptions> notificationOptions,
     INotificationClock clock,
+    ShowcaseOutboundGuard showcaseGuard,
     ILogger<StaffPushDispatchTask> logger) : IScheduledTask
 {
     public string Name => "staff-push-dispatch";
@@ -49,6 +51,7 @@ public sealed class StaffPushDispatchTask(
         var failed = 0;
         var skipped = 0;
         var partial = false;
+        var suppressed = 0;
         var results = new ConcurrentBag<(int Sent, int Failed, int Skipped)>();
 
         try
@@ -74,9 +77,21 @@ public sealed class StaffPushDispatchTask(
 
             var visitStartByRowId = await ResolveVisitStartTimesAsync(candidates, linkedCt);
 
+            // ARCHITECTURE_CYCLE28.md §576 — safety net: a push row of a showcase company (or any row on the demo stand) is never sent.
+            var showcaseCompanyIds = await showcaseGuard.SuppressedCompanyIdsAsync(
+                candidates.Select(n => n.CompanyId).Distinct().ToList(), linkedCt);
+
             var readyToSend = new List<StaffPushNotification>();
             foreach (var row in candidates)
             {
+                if (showcaseCompanyIds.Contains(row.CompanyId))
+                {
+                    row.Status = NotificationStatus.Skipped;
+                    row.Reason = NotificationReason.ShowcaseSuppressed;
+                    suppressed++;
+                    continue;
+                }
+
                 if (row.ExpiresAtUtc >= now)
                 {
                     readyToSend.Add(row);
@@ -112,7 +127,7 @@ public sealed class StaffPushDispatchTask(
 
             sent = results.Sum(r => r.Sent);
             failed = results.Sum(r => r.Failed);
-            skipped = results.Sum(r => r.Skipped);
+            skipped = results.Sum(r => r.Skipped) + suppressed;
 
             if (linkedCt.IsCancellationRequested && !ct.IsCancellationRequested) partial = true;
         }
@@ -120,7 +135,7 @@ public sealed class StaffPushDispatchTask(
         {
             sent = results.Sum(r => r.Sent);
             failed = results.Sum(r => r.Failed);
-            skipped = results.Sum(r => r.Skipped);
+            skipped = results.Sum(r => r.Skipped) + suppressed;
             partial = true;
         }
 

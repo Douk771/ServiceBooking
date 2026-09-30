@@ -6,6 +6,7 @@ import { useLegalStore } from '../../store/legalStore'
 import { useExportData } from '../../hooks/useExportData'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
+import { clearUserCache } from '../../utils/clearUserCache'
 import { getLegalErrorMessage } from '../../utils/legalError'
 import type { ConsentStatus } from '../../types'
 
@@ -53,7 +54,7 @@ export function ConsentGate({ status }: Props) {
 
   const handleLogout = () => {
     logout()
-    qc.clear()
+    clearUserCache(qc)
     navigate('/login')
   }
 

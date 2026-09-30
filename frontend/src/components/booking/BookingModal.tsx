@@ -15,12 +15,15 @@ import { Link } from 'react-router-dom'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import { useLegalText } from '../../hooks/useLegalText'
 import { getBookingErrorMessage } from '../../utils/bookingError'
+import { getShowcaseRefusalMessage } from '../../utils/showcaseRefusal'
+import { useShowcaseText } from '../../hooks/useShowcaseText'
+import { ShowcaseNotice } from '../showcase/ShowcaseNotice'
 import { isRussianPhone } from '../../utils/phone'
 import { findSection, splitLegalSections } from '../../utils/legalSections'
 import { applyLegalRuntimeValues } from '../../utils/legalRuntimeValues'
 import { SmartCaptcha, smartCaptchaEnabled } from './SmartCaptcha'
 import { BookingCalendar } from './BookingCalendar'
-import type { Company, Service } from '../../types'
+import type { Booking, Company, Service } from '../../types'
 import { formatRub } from '../../utils/money'
 
 // US-67 (API_CONTRACT_CYCLE6.md §41.1/§43.1) — server rejects a visit of more than 5 services.
@@ -110,6 +113,8 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
   const [notes, setNotes] = useState('')
   const [captchaToken, setCaptchaToken] = useState('')
   const [bookedForOther, setBookedForOther] = useState(false)
+  // API_CONTRACT_CYCLE28.md §593 — the created booking says whether it sits in a showcase company (drives the success screen).
+  const [createdBooking, setCreatedBooking] = useState<Booking | null>(null)
 
   // API_CONTRACT_CYCLE5.md §46.3 — informational ст. 18 notice; §41.2 — guardian-confirmation text.
   // §108.3 — neither applies to a staff booking (GuardianConfirmation is a self-booking concept).
@@ -120,6 +125,9 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
   const bookingNoticeFull = findSection(bookingNoticeSections, 'Полный текст')
   const guardianSections = guardianText ? splitLegalSections(guardianText.contentHtml) : []
   const guardianRevealText = findSection(guardianSections, 'Текст, который появляется после отметки')
+
+  // API_CONTRACT_CYCLE28.md §592/§600 — the live uiText wins over the server's `message` of the closed-showcase 409.
+  const showcaseClosedText = useShowcaseText('ShowcaseBookingClosed', !!effectiveCompany?.isShowcase)
 
   // ── Company step (only rendered when `company` prop is absent) ──────────────────────────────
   const { data: companies, isLoading: companiesLoading } = useQuery({
@@ -272,13 +280,22 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
             ? { textVersion: guardianText.version, confirmed: true }
             : undefined,
       }),
-    onSuccess: () => {
+    onSuccess: (created) => {
+      setCreatedBooking(created ?? null)
       // §108.4 item 14 — must survive the merge: "Мои записи" (staff list) needs to see a booking
       // made through this modal immediately. A no-op when the query doesn't exist (client flow).
       qc.invalidateQueries({ queryKey: ['master-bookings'] })
       setStep('done')
     },
   })
+
+  // §592: a closed-showcase refusal shows the live uiText when there is one, else the server's own `message`
+  // (already what `getBookingErrorMessage` returns for that 409); every other failure keeps its usual text.
+  const submitError = !mutation.isError
+    ? null
+    : getShowcaseRefusalMessage(mutation.error) !== null && showcaseClosedText.isLive
+      ? showcaseClosedText.text
+      : getBookingErrorMessage(mutation.error)
 
   // ── Steps / progress ─────────────────────────────────────────────────────────────────────────
   const baseSteps: Step[] = showMasterStep ? ['master', 'date', 'slot', 'info'] : ['date', 'slot', 'info']
@@ -771,6 +788,10 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                 </>
               )}
 
+              {/* API_CONTRACT_CYCLE28.md §591/§600 — before the confirm button of an OPEN showcase company: the visitor
+                  is told it's a fictional salon. A closed one stays silent here — the server refuses at confirm (§592). */}
+              {effectiveCompany?.isShowcase && effectiveCompany.showcaseBookingOpen && <ShowcaseNotice />}
+
               <Button
                 size="lg"
                 loading={mutation.isPending}
@@ -839,8 +860,10 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                 </div>
               )}
 
-              {mutation.isError && (
-                <p className="text-sm text-danger text-center">{getBookingErrorMessage(mutation.error)}</p>
+              {submitError && (
+                <p role="alert" className="text-sm text-danger text-center">
+                  {submitError}
+                </p>
               )}
             </div>
           )}
@@ -859,6 +882,9 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                   ? `${guestName} · ${formattedSelectedDate} в ${selectedSlot.slice(0, 5)}`
                   : `Ждём вас ${formattedSelectedDate} в ${selectedSlot.slice(0, 5)}`}
               </p>
+              {(createdBooking?.companyIsShowcase ?? effectiveCompany?.isShowcase) && (
+                <ShowcaseNotice className="mb-6 text-left" />
+              )}
               <Button onClick={onClose} variant="secondary" size="lg">
                 Закрыть
               </Button>

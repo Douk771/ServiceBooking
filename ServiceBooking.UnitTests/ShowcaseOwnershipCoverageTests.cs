@@ -1,0 +1,90 @@
+using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.Services.Showcase;
+using ServiceBooking.Core.Entities;
+using ServiceBooking.Infrastructure.Data;
+
+namespace ServiceBooking.UnitTests;
+
+/// <summary>
+/// ARCHITECTURE_CYCLE28.md §572.3 — a table added in a future cycle must not silently escape the showcase eraser. Reads the EF model only (no connection, no database):
+/// every table that references a company, a user, a billing account or a booking is either in <see cref="ShowcaseOwnership.DeleteSteps"/> or explicitly declared
+/// "never written for a showcase". A new table without a decision fails here.
+/// </summary>
+public class ShowcaseOwnershipCoverageTests
+{
+    private static AppDbContext NewModelOnlyContext() =>
+        new(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql("Host=model-only").Options);
+
+    private static readonly Type[] Roots = [typeof(Company), typeof(AppUser), typeof(BillingAccount), typeof(Booking)];
+
+    [Fact]
+    public void EveryTableReferencingARoot_IsErasedOrDeclaredNeverWritten()
+    {
+        using var db = NewModelOnlyContext();
+        var referencing = db.Model.GetEntityTypes()
+            .Where(e => e.GetForeignKeys().Any(fk => Roots.Contains(fk.PrincipalEntityType.ClrType)))
+            .Select(e => e.GetTableName()!)
+            .Distinct()
+            .ToList();
+
+        var known = ShowcaseOwnership.Tables.Concat(ShowcaseOwnership.NeverWritten.Keys).ToHashSet(StringComparer.Ordinal);
+
+        referencing.Where(t => !known.Contains(t)).Should().BeEmpty(
+            "a new table that references Company/AppUser/BillingAccount/Booking needs a decision in ShowcaseOwnership: an erase step, or NeverWritten with the reason");
+    }
+
+    [Fact]
+    public void EveryStepAndDeclaration_NamesARealTable()
+    {
+        using var db = NewModelOnlyContext();
+        var tables = db.Model.GetEntityTypes().Select(e => e.GetTableName()).ToHashSet();
+
+        ShowcaseOwnership.Tables.Where(t => !tables.Contains(t)).Should().BeEmpty();
+        ShowcaseOwnership.NeverWritten.Keys.Where(t => !tables.Contains(t)).Should().BeEmpty();
+        ShowcaseOwnership.NeverWritten.Keys.Should().NotIntersectWith(ShowcaseOwnership.Tables, "a table is either erased or never written, not both");
+    }
+
+    [Fact]
+    public void EveryStepQuotesOnlyColumnsThatExist()
+    {
+        using var db = NewModelOnlyContext();
+        var columns = db.Model.GetEntityTypes()
+            .SelectMany(e => e.GetProperties().Select(p => p.GetColumnName()))
+            .ToHashSet();
+        var tables = db.Model.GetEntityTypes().Select(e => e.GetTableName()).ToHashSet();
+
+        foreach (var step in ShowcaseOwnership.DeleteSteps)
+        {
+            var quoted = System.Text.RegularExpressions.Regex.Matches(step.Where, "\"([A-Za-z]+)\"").Select(m => m.Groups[1].Value).Distinct();
+            foreach (var name in quoted)
+                (columns.Contains(name) || tables.Contains(name)).Should().BeTrue($"step '{step.Report}' quotes \"{name}\", which is neither a column nor a table of the model");
+        }
+    }
+
+    [Fact]
+    public void StepsRunChildrenBeforeParents_ForTheRestrictForeignKeys()
+    {
+        var order = ShowcaseOwnership.DeleteSteps.Select(s => s.Table).ToList();
+        int At(string table) => order.IndexOf(table);
+
+        At("Bookings").Should().BeLessThan(At("Companies"));
+        At("Reviews").Should().BeLessThan(At("Bookings"));
+        At("BookingEvents").Should().BeLessThan(At("Bookings"));
+        At("BookingServices").Should().BeLessThan(At("Bookings"));
+        At("Services").Should().BeGreaterThan(At("MasterServices"));
+        At("Bookings").Should().BeLessThan(At("AspNetUsers"), "Bookings.MasterId is Restrict");
+        At("Companies").Should().BeLessThan(At("AspNetUsers"), "Companies.OwnerUserId is Restrict");
+        At("Companies").Should().BeLessThan(At("BillingAccounts"), "Companies.BillingAccountId is Restrict");
+        At("ScheduleBreaks").Should().BeLessThan(At("WorkingHours"));
+        At("CompanyMembers").Should().BeLessThan(At("Companies"));
+        At("AspNetUserRoles").Should().BeLessThan(At("AspNetUsers"));
+    }
+
+    [Fact]
+    public void ErasingNeverTouchesAnUnmarkedRow_EveryStepIsScopedByAMark()
+    {
+        foreach (var step in ShowcaseOwnership.DeleteSteps)
+            step.Where.Should().Contain("IsShowcase", $"step '{step.Report}' must be scoped through a showcase mark");
+    }
+}

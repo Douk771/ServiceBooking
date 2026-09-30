@@ -120,6 +120,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(c => c.BillingAccount).WithMany().HasForeignKey(c => c.BillingAccountId)
                 .IsRequired().OnDelete(DeleteBehavior.Restrict);
             e.HasAlternateKey(c => new { c.Id, c.BillingAccountId });
+            // Cycle 28 (ARCHITECTURE_CYCLE28.md §572.1): showcase marks. Partial indexes — on production almost empty.
+            e.HasIndex(c => c.Id).HasDatabaseName("IX_Companies_IsShowcase").HasFilter("\"IsShowcase\"");
+            e.ToTable(t => t.HasCheckConstraint("CK_Companies_ShowcaseBookingOpen", "NOT \"ShowcaseBookingOpen\" OR \"IsShowcase\""));
             // Cycle 9 (ARCHITECTURE_CYCLE9.md §103.5) — GET /api/companies/public filters/sorts/pages
             // in SQL on exactly this shape (ShowInPublicListing, then CityId equality, then Name order);
             // partial on the same "IsActive AND ShowInPublicListing" predicate the query itself applies,
@@ -427,6 +430,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(a => a.Owner).WithMany().HasForeignKey(a => a.OwnerUserId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(a => a.OwnerUserId).IsUnique();
             e.Property(a => a.Name).HasMaxLength(100);
+            // Cycle 28 (§572.1).
+            e.HasIndex(a => a.Id).HasDatabaseName("IX_BillingAccounts_IsShowcase").HasFilter("\"IsShowcase\"");
             // Cycle 5, stage 5 (§49) — the owner's single pending plan/options request; see the
             // entity's own remarks for why this isn't a separate SubscriptionRequest table.
             e.HasOne(a => a.RequestedPlan).WithMany().HasForeignKey(a => a.RequestedPlanId).OnDelete(DeleteBehavior.SetNull);
@@ -486,6 +491,16 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // IX_Bookings_MasterId once an index with MasterId as its prefix exists. No IncludeProperties
             // (§379: extra size for little gain).
             e.HasIndex(b => new { b.MasterId, b.Date });
+            // Cycle 28 (ARCHITECTURE_CYCLE28.md §572.1, §577.4): the retention rule for visitor bookings of showcase companies
+            // scans exactly this shape; partial, so on production the index is empty.
+            e.HasIndex(b => b.CreatedAt).HasDatabaseName("IX_Bookings_ShowcaseVisitor")
+                .HasFilter("\"ShowcaseKind\" = 2");
+        });
+
+        // Cycle 28 (§572.1): users of the showcase. AppUser has no other Fluent configuration (Identity owns it).
+        builder.Entity<AppUser>(e =>
+        {
+            e.HasIndex(u => u.Id).HasDatabaseName("IX_AspNetUsers_IsShowcase").HasFilter("\"IsShowcase\"");
         });
 
         builder.Entity<BookingService>(e =>

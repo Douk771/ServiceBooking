@@ -4,12 +4,14 @@ import { useNavigate, Link } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { profileApi } from '../api/profile'
 import { useAuthStore } from '../store/authStore'
+import { clearUserCache } from '../utils/clearUserCache'
 import { GuestDataGateNotice } from '../components/profile/GuestDataGateNotice'
 import { TrialRegistryDeletionNotice } from '../components/profile/TrialRegistryDeletionNotice'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Icon } from '../components/ui/Icon'
+import { getDemoRestrictedMessage } from '../utils/demoHeaders'
 
 /**
  * US-39. POST /api/profile/delete-account is in the 451 allow-list (API_CONTRACT.md §0.4) — this page
@@ -33,14 +35,15 @@ export function DeleteAccountPage() {
     mutationFn: () => profileApi.deleteAccount(password),
     onSuccess: () => {
       logout()
-      qc.clear()
+      clearUserCache(qc)
       navigate('/')
     },
     onError: (err: unknown) => {
       const message =
-        err instanceof AxiosError && typeof err.response?.data === 'string'
+        getDemoRestrictedMessage(err) ??
+        (err instanceof AxiosError && typeof err.response?.data === 'string'
           ? err.response.data
-          : 'Не удалось удалить аккаунт. Попробуйте снова.'
+          : 'Не удалось удалить аккаунт. Попробуйте снова.')
       setError(message)
     },
   })

@@ -75,8 +75,15 @@ public class OpenApiContractValidatorTests
     [Fact]
     public void Unknown_keyword_throws_instead_of_passing_silently()
     {
-        var act = () => Run("""{"type":"string","pattern":"^a$"}""", "\"a\"");
-        act.Should().Throw<NotSupportedException>().WithMessage("*pattern*");
+        var act = () => Run("""{"type":"string","oneOf":[{"type":"string"}]}""", "\"a\"");
+        act.Should().Throw<NotSupportedException>().WithMessage("*oneOf*");
+    }
+
+    [Fact]
+    public void Pattern_is_checked()
+    {
+        Run("""{"type":"string","pattern":"^\\d{2}:\\d{2}$"}""", "\"04:00\"").Should().BeEmpty();
+        Run("""{"type":"string","pattern":"^\\d{2}:\\d{2}$"}""", "\"4:00\"").Should().ContainSingle().Which.Should().Contain("pattern");
     }
 
     [Fact]

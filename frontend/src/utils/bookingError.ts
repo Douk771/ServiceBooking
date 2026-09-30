@@ -1,4 +1,6 @@
 import { AxiosError } from 'axios'
+import { getShowcaseRefusalMessage } from './showcaseRefusal'
+import { SHOWCASE_FALLBACK_TEXTS } from './showcaseTexts'
 
 /**
  * Maps a failed booking request to a clear, actionable Russian message.
@@ -8,6 +10,11 @@ import { AxiosError } from 'axios'
  * the user knows what to do next (e.g. log in, pick another slot).
  */
 export function getBookingErrorMessage(error: unknown): string {
+  // API_CONTRACT_CYCLE28.md §592 — the closed-showcase 409 is JSON, not the "slot taken" text/plain one; it must be
+  // told apart BEFORE the generic 409 branch below. Screens with the live uiText prefer it over this server message.
+  const showcaseRefusal = getShowcaseRefusalMessage(error)
+  if (showcaseRefusal !== null) return showcaseRefusal || SHOWCASE_FALLBACK_TEXTS.ShowcaseBookingClosed
+
   const ax = error as AxiosError
   const status = ax?.response?.status
   const serverMsg = typeof ax?.response?.data === 'string' ? ax.response.data : ''

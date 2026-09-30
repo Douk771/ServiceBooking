@@ -660,6 +660,84 @@ public static class DeploymentSafetyChecks
     }
 
     /// <summary>
+    /// ARCHITECTURE_CYCLE28.md §579.2, lock 1 — the CONFIGURATION lock of demo mode. Runs only when <c>DemoMode:Enabled</c> is true, in EVERY environment (a
+    /// developer machine included: a demo flag on a machine pointed at real addresses is exactly the accident this exists for). A production instance cannot be
+    /// started as a demo by flipping one switch: every address, the database, the token issuer and the outside world (providers) must look like a demo one.
+    /// All problems are collected and reported together, so the operator fixes the file once.
+    ///
+    /// <list type="number">
+    /// <item><c>PublicSites:ServicesBaseUrl</c> is on a host that starts with <c>demo.</c>;</item>
+    /// <item>every <c>AllowedOrigins</c> entry is on a host that starts with <c>demo.</c>;</item>
+    /// <item>the database name in <c>ConnectionStrings:DefaultConnection</c> ends with <c>_demo</c>;</item>
+    /// <item><c>Jwt:Issuer</c> ends with <c>.Demo</c> — a production token cannot pass on the demo and vice versa, even if the keys happen to coincide;</item>
+    /// <item>nothing leaves the building: <c>Notifications:Provider</c> and <c>Notifications:StaffPush:Provider</c> are <c>logging</c>, MAX messages to staff are off,
+    /// <c>PhoneVerification:Provider</c> is <c>stub</c>;</item>
+    /// <item>the weekly showcase re-seed is off (the demo is reset every night).</item>
+    /// </list>
+    /// </summary>
+    public static void ValidateDemoMode(IConfiguration configuration)
+    {
+        if (!configuration.GetValue($"{Demo.DemoModeOptions.SectionName}:Enabled", false)) return;
+
+        var problems = new List<string>();
+
+        var servicesBaseUrl = configuration["PublicSites:ServicesBaseUrl"];
+        if (!IsDemoHost(servicesBaseUrl))
+            problems.Add($"PublicSites:ServicesBaseUrl is '{servicesBaseUrl}' — the host must start with 'demo.' (for example https://demo.visit.ezbook.ru)");
+
+        var origins = (configuration["AllowedOrigins"] ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (origins.Length == 0)
+            problems.Add("AllowedOrigins is empty — it must list only hosts that start with 'demo.'");
+        foreach (var origin in origins.Where(o => !IsDemoHost(o)))
+            problems.Add($"AllowedOrigins contains '{origin}' — every origin must be on a host that starts with 'demo.'");
+
+        var databaseName = DatabaseNameOf(configuration.GetConnectionString("DefaultConnection"));
+        if (databaseName is null || !databaseName.EndsWith("_demo", StringComparison.OrdinalIgnoreCase))
+            problems.Add($"the database name in ConnectionStrings:DefaultConnection is '{databaseName}' — it must end with '_demo'");
+
+        var issuer = configuration["Jwt:Issuer"];
+        if (issuer is null || !issuer.EndsWith(".Demo", StringComparison.Ordinal))
+            problems.Add($"Jwt:Issuer is '{issuer}' — it must end with '.Demo' (for example ServiceBooking.Demo), so that tokens of the two instances never mix");
+
+        var notificationsProvider = configuration["Notifications:Provider"] ?? "logging";
+        if (!string.Equals(notificationsProvider, "logging", StringComparison.OrdinalIgnoreCase))
+            problems.Add($"Notifications:Provider is '{notificationsProvider}' — the demo sends nothing to anybody, it must be 'logging'");
+        var staffPushProvider = configuration["Notifications:StaffPush:Provider"] ?? "logging";
+        if (!string.Equals(staffPushProvider, "logging", StringComparison.OrdinalIgnoreCase))
+            problems.Add($"Notifications:StaffPush:Provider is '{staffPushProvider}' — it must be 'logging'");
+        if (configuration.GetValue($"{Services.StaffMax.StaffMaxOptions.SectionName}:Enabled", false))
+            problems.Add("Notifications:StaffMax:Enabled is true — MAX messages to staff must be off on the demo");
+        var phoneProvider = configuration[$"{PhoneVerificationOptions.SectionName}:Provider"] ?? "stub";
+        if (!string.Equals(phoneProvider.Trim(), "stub", StringComparison.OrdinalIgnoreCase))
+            problems.Add($"PhoneVerification:Provider is '{phoneProvider}' — the production bot must not be connected to the demo, it must be 'stub'");
+
+        if (configuration.GetValue($"{Showcase.ShowcaseReseedOptions.SectionName}:Enabled", false))
+            problems.Add("Showcase:Reseed:Enabled is true — the demo is reset every night, the weekly re-seed must be off");
+
+        if (problems.Count > 0)
+            throw new InvalidOperationException(
+                "DemoMode:Enabled is true, but this configuration looks like a production instance (ARCHITECTURE_CYCLE28.md §579.2):\n - " +
+                string.Join("\n - ", problems) + "\nThe demo does not start.");
+    }
+
+    private static bool IsDemoHost(string? url) =>
+        Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) && uri.Host.StartsWith("demo.", StringComparison.OrdinalIgnoreCase);
+
+    private static string? DatabaseNameOf(string? connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString)) return null;
+        try
+        {
+            return new Npgsql.NpgsqlConnectionStringBuilder(connectionString).Database;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Code-review finding (cycle 18) — <see cref="TrialOptions.UniquenessCheckOptions.Enabled"/>'s own
     /// doc comment already claims "DeploymentSafetyChecks refuses to start a Production instance with
     /// this off", but nothing enforced it: a Production box could boot with the once-only check silently

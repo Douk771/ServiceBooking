@@ -23,6 +23,9 @@ vi.mock('../api/auth', () => ({
   },
 }))
 
+// Cycle 28: LoginPage asks the demo status; here it is production (404 → null), so no real request leaves the test.
+vi.mock('../api/demo', () => ({ demoApi: { getStatus: vi.fn().mockResolvedValue(null), login: vi.fn() } }))
+
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(

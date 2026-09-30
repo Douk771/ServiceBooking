@@ -6,6 +6,7 @@ using ServiceBooking.API.DTOs.Orders;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Shops;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -45,6 +46,9 @@ public sealed class CompanyCreationService(
         // Salons: the slug is checked first, exactly as before (ezbook behaviour unchanged).
         if (!isShop && await db.Companies.AnyAsync(c => c.Slug == slug))
             return Refuse(new ConflictObjectResult(SlugTakenSalonText));
+        // ARCHITECTURE_CYCLE28.md §577.3: "primer-" is the showcase prefix nginx marks as noindex; a real company may not take it.
+        if (!isShop && ShowcaseMixingGuard.IsReservedSlug(slug))
+            return Refuse(new ConflictObjectResult(ShowcaseMixingGuard.ReservedSlugText));
 
         // ARCHITECTURE_CYCLE5.md §42.1, API_CONTRACT_CYCLE5.md §42.1 (BREAKING № 3). Checked by hand
         // (RegisterDto.Legal's own note explains why), before anything else touches the database — an
@@ -130,6 +134,10 @@ public sealed class CompanyCreationService(
             }
         }
 
+        // ARCHITECTURE_CYCLE28.md §574.2: a company inherits the showcase mark of its billing account (on the demo stand an owner may
+        // create one more company; on production the mark is always false).
+        var accountIsShowcase = await db.BillingAccounts.Where(a => a.Id == accountId).Select(a => a.IsShowcase).FirstAsync();
+
         var company = new Company
         {
             Id = Guid.NewGuid(),
@@ -149,7 +157,8 @@ public sealed class CompanyCreationService(
             CityId = city.Id,
             TimeZoneId = timeZoneId,
             TimeZoneIsManual = timeZoneIsManual,
-            Kind = kind
+            Kind = kind,
+            IsShowcase = accountIsShowcase,
         };
 
         var member = new CompanyMember
@@ -215,6 +224,10 @@ public sealed class CompanyCreationService(
             case SlugCheck.Reserved:
                 return new CatalogConflictDto(CatalogConflictCode.SlugReserved, ShopTexts.SlugReserved);
         }
+        // The showcase prefix is reserved for shops too: a slug is unique across ALL companies, so a shop holding "primer-…" would make
+        // `ops showcase create/recreate` (and the weekly re-seed) fail on the unique index.
+        if (ShowcaseMixingGuard.IsReservedSlug(normalizedSlug))
+            return new CatalogConflictDto(CatalogConflictCode.SlugReserved, ShopTexts.SlugReserved);
         var taken = await db.Companies.AsNoTracking()
             .AnyAsync(c => c.Slug.ToLower() == normalizedSlug && (exceptCompanyId == null || c.Id != exceptCompanyId));
         return taken ? new CatalogConflictDto(CatalogConflictCode.SlugTaken, ShopTexts.SlugTaken) : null;

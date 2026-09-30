@@ -4,6 +4,8 @@ import type { components as Cycle18Schemas } from '../types/api-cycle18.generate
 import type { components as Cycle19Schemas } from '../types/api-cycle19.generated'
 import type { components as Cycle20Schemas } from '../types/api-cycle20.generated'
 import type { components as Cycle24Schemas } from '../types/api-cycle24.generated'
+import type { components as Cycle28Schemas } from '../types/api-cycle28.generated'
+import type { ShowcaseFilter } from '../utils/showcaseFilter'
 import type { SubscriptionRequestDto } from './billing'
 
 type Schemas = components['schemas']
@@ -11,6 +13,7 @@ type Cycle18 = Cycle18Schemas['schemas']
 type Cycle19 = Cycle19Schemas['schemas']
 type Cycle20 = Cycle20Schemas['schemas']
 type Cycle24 = Cycle24Schemas['schemas']
+type Cycle28 = Cycle28Schemas['schemas']
 
 /** Cycle 24 (API_CONTRACT_CYCLE24.md §485.3) — the account's «Заказы» subscription block and the request line. Additive. */
 export type AdminOrdersSubscription = Cycle24['AdminOrdersSubscriptionDto']
@@ -22,7 +25,10 @@ type TrialRegrantInput = Cycle18['TrialRegrantInput']
 /** Cycle 7 shapes + cycle 18 `trial`/`trialState`/`trialEndsAt` (additive — §369, §372) + cycle 19
  *  `pendingRequest` overridden to the cycle19 shape (`items[].retired`/`retiredOptionsNotice`,
  *  API_CONTRACT_CYCLE19.md §407). */
-export type AdminBillingAccountListItem = Schemas['AdminBillingAccountListItemDto'] & Cycle18['AdminBillingAccountListItemTrialPatch']
+export type AdminBillingAccountListItem = Schemas['AdminBillingAccountListItemDto'] &
+  Cycle18['AdminBillingAccountListItemTrialPatch'] &
+  // Cycle 28 (API_CONTRACT_CYCLE28.md §594.2) — the list item gets `isShowcase`; optional so an older server still type-checks.
+  Partial<Pick<Cycle28['AdminBillingAccountItem'], 'isShowcase'>>
 export type AdminBillingAccount = Omit<Schemas['AdminBillingAccountDto'], 'pendingRequest'> &
   Cycle18['AdminBillingAccountDtoTrialPatch'] & { pendingRequest?: SubscriptionRequestDto | null; ordersSubscription?: AdminOrdersSubscription | null }
 export type AdminSubscribedOption = Schemas['AdminSubscribedOptionDto']
@@ -59,6 +65,8 @@ export const adminBillingApi = {
     search?: string
     status?: SubscriptionStatus
     trial?: TrialAccountFilter
+    /** Cycle 28 (§594.1) — `all` (default, not sent) / `only` / `exclude`. */
+    showcase?: ShowcaseFilter
     page?: number
     pageSize?: number
   }) => api.get<PagedResult<AdminBillingAccountListItem>>('/admin/billing-accounts', { params }).then((r) => r.data),

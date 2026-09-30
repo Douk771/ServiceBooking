@@ -8,6 +8,7 @@ import { reviewsApi } from '../api/reviews'
 import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/Badge'
 import { Icon } from '../components/ui/Icon'
+import { ShowcaseNotice } from '../components/showcase/ShowcaseNotice'
 import { ReviewModal } from '../components/review/ReviewModal'
 import { RescheduleModal } from '../components/booking/RescheduleModal'
 import { getCancelErrorMessage } from '../utils/cancelError'
@@ -252,6 +253,9 @@ export function ClientBookingsPage() {
                         )}
                       </div>
                     </div>
+
+                    {/* API_CONTRACT_CYCLE28.md §593 — a visit in a showcase (fictional) company says so on its own card. */}
+                    {b.companyIsShowcase && <ShowcaseNotice compact className="mt-3" />}
 
                     {cancellingId === b.id && (
                       <ClientCancelForm

@@ -7,6 +7,7 @@ using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Legal;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -218,6 +219,12 @@ public class CompanyMembersController(
 
         // Accounts are identified by phone (UserName == phone), so look the member up by phone.
         var user = await userManager.FindByNameAsync(canonicalPhone);
+
+        // ARCHITECTURE_CYCLE28.md §574.2: a showcase company takes only showcase staff and a real one only real staff. A phone with no
+        // account yet would be auto-created below as a REAL user, so it counts as one here — before anything is written.
+        var companyIsShowcase = await db.Companies.Where(c => c.Id == id).Select(c => c.IsShowcase).FirstOrDefaultAsync();
+        if (ShowcaseMixingGuard.CheckMember(companyIsShowcase, user?.IsShowcase ?? false) is { } mixing)
+            return Conflict(mixing);
 
         if (user is null)
         {

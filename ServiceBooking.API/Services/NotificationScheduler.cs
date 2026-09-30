@@ -2,8 +2,10 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Demo;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -29,7 +31,8 @@ public sealed class NotificationScheduler(
     AppDbContext db,
     SubscriptionResolver subscriptionResolver,
     ConsentLedger consentLedger,
-    IOptions<NotificationOptions> options)
+    IOptions<NotificationOptions> options,
+    IOptions<DemoModeOptions> demoOptions)
 {
     /// <param name="booking">The booking just created (not yet saved).</param>
     /// <param name="serviceNames">The visit's service names, known at Create time.</param>
@@ -127,6 +130,10 @@ public sealed class NotificationScheduler(
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == booking.CompanyId, ct);
         var master = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == booking.MasterId, ct);
         if (company is null || master is null) return null;
+
+        // ARCHITECTURE_CYCLE28.md §576: a showcase company (or any company on the demo stand) queues nothing — this one early exit
+        // covers creation, cancellation, reschedule and the reminder, so OutboundNotifications stays empty for it.
+        if (ShowcaseOutboundGuard.IsSuppressed(company, demoOptions.Value.Enabled)) return null;
 
         List<string> names;
         if (serviceNames is { Count: > 0 })

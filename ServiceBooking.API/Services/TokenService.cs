@@ -17,8 +17,11 @@ public class TokenService(IConfiguration config)
     // does the same for ownerTermsVersion (ARCHITECTURE_CYCLE5.md §46.3). null (no consent recorded — an
     // account predating cycle C, a non-owner for ownerTermsVersion, or Dev/Testing without a loaded
     // manifest) simply omits the claim, which both checks treat as "does not match".
+    //
+    // demo (ARCHITECTURE_CYCLE28.md §579.4): true ONLY for the token that POST /api/demo/login issues — adds the claim `sb_demo = 1`, which the demo
+    // filter reads to refuse the actions a demo role must not perform (DemoForbiddenFilter). Every other call site keeps the default and the token is unchanged.
     public string GenerateToken(
-        AppUser user, IList<string> roles, string? privacyVersion = null, string? termsVersion = null, string? ownerTermsVersion = null)
+        AppUser user, IList<string> roles, string? privacyVersion = null, string? termsVersion = null, string? ownerTermsVersion = null, bool demo = false)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:Key"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -45,6 +48,7 @@ public class TokenService(IConfiguration config)
         if (privacyVersion is not null) claims.Add(new Claim("lcp", privacyVersion));
         if (termsVersion is not null) claims.Add(new Claim("lct", termsVersion));
         if (ownerTermsVersion is not null) claims.Add(new Claim("lco", ownerTermsVersion));
+        if (demo) claims.Add(new Claim(Demo.DemoForbiddenFilter.ClaimType, "1"));
 
         claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
 

@@ -6,6 +6,7 @@ import { CityCombobox } from '../components/ui/CityCombobox'
 import { Icon } from '../components/ui/Icon'
 import { CompanyLogoMark } from '../components/company/CompanyLogoMark'
 import { Pagination } from '../components/ui/Pagination'
+import { ShowcaseBadge } from '../components/showcase/ShowcaseBadge'
 import { PricingTeaser } from '../components/pricing/PricingTeaser'
 import type { City, Company } from '../types'
 import salonHero from '../assets/salon-hero.jpg'
@@ -45,6 +46,8 @@ function CompanyCard({ company }: { company: Company }) {
         <CompanyLogoMark size="catalog" name={company.name} logoUrl={company.logoUrl} />
         <div className="min-w-0 flex-1">
           <h3 className="font-serif text-[19px] font-medium text-ink truncate">{company.name}</h3>
+          {/* API_CONTRACT_CYCLE28.md §591 — fictional showcase company: the catalog card is one of the three places for the mark. */}
+          {company.isShowcase && <ShowcaseBadge className="mt-1.5" />}
         </div>
       </div>
       {company.description && (
@@ -59,7 +62,9 @@ function CompanyCard({ company }: { company: Company }) {
             </>
           )}
         </div>
-        {company.onlineBookingEnabled && (
+        {/* A closed showcase company shows «Онлайн-запись» in the catalog while the server refuses every booking
+            (§592) — the pill would promise what the confirm step then denies, so it is not shown for them. */}
+        {company.onlineBookingEnabled && !(company.isShowcase && !company.showcaseBookingOpen) && (
           <span className="inline-flex items-center gap-1 text-xs font-semibold text-success bg-success-bg px-2.5 py-1 rounded-full shrink-0">
             <Icon name="check" size={11} strokeWidth={2.2} />
             Онлайн-запись
