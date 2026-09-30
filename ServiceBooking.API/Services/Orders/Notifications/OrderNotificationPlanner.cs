@@ -15,7 +15,8 @@ namespace ServiceBooking.API.Services.Orders.Notifications;
 /// The recipients of staff notifications are chosen here and nowhere else, which is where a future "staff chat in MAX" target (cycle 25) joins.
 /// </summary>
 public sealed class OrderNotificationPlanner(
-    AppDbContext db, OrderStaffPushQueue staffQueue, CustomerOrderPushQueue customerQueue, OrderMessageScheduler messenger)
+    AppDbContext db, OrderStaffPushQueue staffQueue, CustomerOrderPushQueue customerQueue, OrderMessageScheduler messenger,
+    ShopGateLoader gates, ServiceBooking.API.Services.Notifications.INotificationClock clock)
 {
     public async Task OnEventAsync(Order order, OrderEvent orderEvent, CancellationToken ct = default)
     {
@@ -30,7 +31,9 @@ public sealed class OrderNotificationPlanner(
         if (plan.IsEmpty) return;
 
         var shop = await db.Companies.AsNoTracking().FirstAsync(c => c.Id == order.CompanyId, ct);
-        var facts = BuildFacts(order, orderEvent, shop);
+        // T-25-04: "today" in every text is the shop's WORKING day (the same value the storefront and "Мои заказы" use).
+        var pickupContext = await gates.PickupContextAsync(shop, settings, clock.UtcNow, ct);
+        var facts = BuildFacts(order, orderEvent, shop, pickupContext.WorkingDay);
 
         if (plan.StaffType is { } staffType)
         {
@@ -51,11 +54,10 @@ public sealed class OrderNotificationPlanner(
     }
 
     /// <summary>The facts every text needs, from what the caller already loaded (no customer name or phone — [legal L10, L11]).</summary>
-    public static OrderTextFacts BuildFacts(Order order, OrderEvent orderEvent, Company shop)
+    public static OrderTextFacts BuildFacts(Order order, OrderEvent orderEvent, Company shop, DateOnly today)
     {
         var zone = TimeZoneInfo.FindSystemTimeZoneById(shop.TimeZoneId);
         var start = TimeZoneInfo.ConvertTimeFromUtc(AsUtc(order.PickupStartUtc), zone);
-        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone));
         int? previousNumber = orderEvent.Kind == OrderEventKind.PickupChanged
             ? OrderChangeLog.ParsePickup(orderEvent.ChangesJson)?.Before.Number
             : null;

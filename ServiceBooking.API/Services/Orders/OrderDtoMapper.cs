@@ -8,19 +8,16 @@ using ServiceBooking.Core.Enums;
 namespace ServiceBooking.API.Services.Orders;
 
 /// <summary>
-/// The shop's clock as the pickup texts need it: its time zone, "now" (one value for a whole response) and — when the caller loaded the
-/// shop's hours — the current WORKING day (<see cref="Shops.PickupSchedule.CurrentWorkingDay"/>). In the after-midnight tail of an
-/// overnight interval the working day is yesterday's date; the storefront labels "Сегодня"/"Завтра" from it, so the order's
-/// "pre-order" flag and pickup text must count from the same day (CY24-35). Without it (lists of many shops) the calendar date is used.
+/// The shop's clock as the pickup texts need it: its time zone, "now" (one value for a whole response) and the current WORKING day
+/// (<see cref="Shops.PickupSchedule.CurrentWorkingDay"/>). In the after-midnight tail of an overnight interval the working day is
+/// yesterday's date; the storefront labels "Сегодня"/"Завтра" from it, so every text and flag ("pre-order", "к 12:30" vs "пт 2 окт")
+/// must count from the same day (CY24-35, T-25-04, ARCHITECTURE_CYCLE25.md §507.4). <see cref="WorkingDay"/> is mandatory and the only
+/// producers are <c>ShopGateLoader.PickupContextAsync</c> / <c>PickupContextsAsync</c> — nothing else may count "today" by the calendar.
 /// </summary>
-public sealed record OrderPickupContext(TimeZoneInfo Zone, DateTime NowUtc, DateOnly? WorkingDay = null)
+public sealed record OrderPickupContext(TimeZoneInfo Zone, DateTime NowUtc, DateOnly WorkingDay)
 {
-    public static OrderPickupContext For(Company shop, DateTime nowUtc) =>
-        new(TimeZoneInfo.FindSystemTimeZoneById(shop.TimeZoneId), nowUtc);
-
-    /// <summary>What "today", "tomorrow" and "pre-order" are counted from: the working day when known, else the shop's calendar date.</summary>
-    public DateOnly Today => WorkingDay ?? DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(
-        NowUtc.Kind == DateTimeKind.Utc ? NowUtc : DateTime.SpecifyKind(NowUtc, DateTimeKind.Utc), Zone));
+    /// <summary>What "today", "tomorrow" and "pre-order" are counted from: the shop's working day.</summary>
+    public DateOnly Today => WorkingDay;
 }
 
 /// <summary>
@@ -79,7 +76,7 @@ public sealed class OrderDtoMapper(PublicSiteLinks links)
     // ── Customer ─────────────────────────────────────────────────────────────────────────────────────────────────
 
     public PublicOrderDto ToPublic(
-        Order order, Company shop, string? cityName, OrderCustomerNotificationsDto notifications, OrderPickupContext? pickupContext = null)
+        Order order, Company shop, string? cityName, OrderCustomerNotificationsDto notifications, OrderPickupContext pickupContext)
     {
         var items = order.Items.OrderBy(i => i.Position).Select(i => new PublicOrderItemDto(
             i.NameSnapshot, i.Unit, i.UnitPrice, i.PortionTextSnapshot, i.QuantityOrdered, i.QuantityActual,
@@ -100,7 +97,7 @@ public sealed class OrderDtoMapper(PublicSiteLinks links)
             order.CustomerPhone is null ? null : PhoneDisplayMask.Mask(order.CustomerPhone), order.StatusReason,
             OrderStateMachine.CanCustomerCancel(order.Status, order.AllowCustomerCancelSnapshot),
             ToShopInfo(shop, cityName), shopChanges, order.Version, order.CustomerKind == OrderActorKind.Guest,
-            ToPickup(order, pickupContext ?? OrderPickupContext.For(shop, DateTime.UtcNow)), notifications);
+            ToPickup(order, pickupContext), notifications);
     }
 
     public OrderShopInfoDto ToShopInfo(Company shop, string? cityName) => new(

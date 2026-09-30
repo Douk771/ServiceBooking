@@ -172,7 +172,7 @@ public class OrderDomainTests
         OrderDtoMapper.TotalIsApproximate(issued).Should().BeFalse();
     }
 
-    private static readonly OrderPickupContext PickupCtx = new(TimeZoneInfo.Utc, new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc));
+    private static readonly OrderPickupContext PickupCtx = new(TimeZoneInfo.Utc, new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc), new DateOnly(2026, 10, 1));
     private static readonly OrderCustomerNotificationsDto NoNotifications = new(new OrderWebPushInfoDto(false, null, null), false);
 
     [Fact]
@@ -197,7 +197,7 @@ public class OrderDomainTests
         });
         order.Events.Add(new OrderEvent { Kind = OrderEventKind.Accepted, OccurredAtUtc = T0, ActorKind = OrderActorKind.Staff, ActorNameSnapshot = "Анна Кассир" });
 
-        var dto = Mapper.ToPublic(order, new Company { Name = "Шаурма", Slug = "shaurma", Kind = CompanyKind.Orders }, "Барнаул", NoNotifications);
+        var dto = Mapper.ToPublic(order, new Company { Name = "Шаурма", Slug = "shaurma", Kind = CompanyKind.Orders }, "Барнаул", NoNotifications, PickupCtx);
 
         dto.CustomerPhoneMasked.Should().Be("+7 900 ***-**-67");
         dto.CustomerPhoneMasked.Should().NotContain("1234");
@@ -216,7 +216,7 @@ public class OrderDomainTests
     {
         var order = NewOrder(OrderStatus.Issued);
         OrderPersonalData.Erase(order);
-        var dto = Mapper.ToPublic(order, new Company { Name = "Ш", Slug = "shaurma", Kind = CompanyKind.Orders }, null, NoNotifications);
+        var dto = Mapper.ToPublic(order, new Company { Name = "Ш", Slug = "shaurma", Kind = CompanyKind.Orders }, null, NoNotifications, PickupCtx);
         dto.CustomerName.Should().BeNull();
         dto.CustomerPhoneMasked.Should().BeNull();
         dto.Comment.Should().BeNull();

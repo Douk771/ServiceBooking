@@ -18,7 +18,7 @@ namespace ServiceBooking.API.Services.Orders;
 /// </summary>
 public class PublicOrderService(
     AppDbContext db, OrderDtoMapper mapper, OrderEventLog eventLog, OrderActorResolver actorResolver, PublicSiteLinks links,
-    CustomerOrderNotificationsBuilder notificationsBuilder, Shops.ShopGateLoader gates)
+    CustomerOrderNotificationsBuilder notificationsBuilder, Shops.ShopGateLoader gates, ServiceBooking.API.Services.Notifications.INotificationClock clock)
 {
     public async Task<PublicOrderDto?> GetAsync(string token, CancellationToken ct)
     {
@@ -94,11 +94,13 @@ public class PublicOrderService(
             {
                 o.PublicToken, o.Number, o.BusinessDate, o.Status, o.EstimatedTotal, o.FinalTotal, o.HasWeightItems,
                 o.CreatedAtUtc, o.CompletedAtUtc, o.PickupKind, o.PickupDate, o.PickupStartUtc, o.PickupEndUtc,
-                ShopName = db.Companies.Where(c => c.Id == o.CompanyId).Select(c => c.Name).FirstOrDefault(),
-                TimeZoneId = db.Companies.Where(c => c.Id == o.CompanyId).Select(c => c.TimeZoneId).FirstOrDefault()
+                o.CompanyId,
+                ShopName = db.Companies.Where(c => c.Id == o.CompanyId).Select(c => c.Name).FirstOrDefault()
             })
             .ToListAsync(ct);
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow;
+        // The working day of each shop (T-25-04): three queries for the whole list.
+        var contexts = await gates.PickupContextsAsync(rows.Select(r => r.CompanyId).Distinct().ToList(), now, ct);
 
         return rows
             .OrderBy(r => OrderStateMachine.IsActive(r.Status) ? 0 : 1)
@@ -109,7 +111,7 @@ public class PublicOrderService(
                 OrderTexts.StatusText(r.Status), r.Status == OrderStatus.Issued ? r.FinalTotal ?? r.EstimatedTotal : r.EstimatedTotal,
                 r.HasWeightItems && r.Status != OrderStatus.Issued, r.CreatedAtUtc, OrderStateMachine.IsActive(r.Status),
                 OrderDtoMapper.ToPickup(r.PickupKind, r.PickupDate, r.PickupStartUtc, r.PickupEndUtc, r.Status,
-                    new OrderPickupContext(TimeZoneInfo.FindSystemTimeZoneById(r.TimeZoneId ?? "Europe/Moscow"), now))))
+                    contexts[r.CompanyId])))
             .ToList();
     }
 
@@ -118,7 +120,7 @@ public class PublicOrderService(
         var shop = await db.Companies.AsNoTracking().FirstAsync(c => c.Id == order.CompanyId, ct);
         var cityName = shop.CityId is null ? null : await db.Cities.AsNoTracking().Where(c => c.Id == shop.CityId).Select(c => c.Name).FirstOrDefaultAsync(ct);
         var settings = await db.ShopSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == shop.Id, ct) ?? new ShopSettings { CompanyId = shop.Id };
-        var pickupContext = await gates.PickupContextAsync(shop, settings, DateTime.UtcNow, ct);
+        var pickupContext = await gates.PickupContextAsync(shop, settings, clock.UtcNow, ct);
         return mapper.ToPublic(order, shop, cityName, notificationsBuilder.Build(order, settings), pickupContext);
     }
 

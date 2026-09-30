@@ -136,4 +136,21 @@ public class OrderNotificationTextsTests
             .Select(t => OrderNotificationTexts.Messenger(t, Facts(reason: "r"), "https://goods.ezbook.ru/o/tok", "https://ezbook.ru/u/abc"));
         foreach (var text in all) text.Should().NotMatchRegex(@"\+?7\d{10}").And.NotContain("Иван");
     }
+
+    // ── T-25-04: "today" is the working day, not the calendar date ────────────────────────────────
+
+    [Fact]
+    public void BuildFacts_AfterMidnightTail_UsesWorkingDayAsToday()
+    {
+        // Hours "Fri 18:00–03:00"; the order was placed on Saturday 01:00 for the 01:30 slot: PickupDate is the working day (Friday).
+        var shop = new ServiceBooking.Core.Entities.Company { Name = "Ночная", TimeZoneId = "UTC" };
+        var friday = new DateOnly(2026, 10, 2);
+        var order = new ServiceBooking.Core.Entities.Order
+        {
+            Number = 5, PickupKind = PickupKind.Slot, PickupDate = friday, PickupStartUtc = new DateTime(2026, 10, 3, 1, 30, 0, DateTimeKind.Utc),
+            EstimatedTotal = 100m
+        };
+        var facts = OrderNotificationPlanner.BuildFacts(order, new ServiceBooking.Core.Entities.OrderEvent(), shop, friday);
+        OrderNotificationTexts.StaffOrderCreated(facts, Shop, Order).Body.Should().StartWith("к 1:30 · ");
+    }
 }
