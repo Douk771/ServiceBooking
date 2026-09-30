@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Icon } from '../ui/Icon'
 import { CompanyPhotoGallery } from './CompanyPhotoGallery'
 import { CompanyMapLinks } from './CompanyMapLinks'
+import { CompanyLogoMark } from './CompanyLogoMark'
 import { formatPhone, telHref } from '../../utils/phone'
 import { publicAddress } from '../../utils/publicAddress'
 import type { CompanyPhoto } from '../../types'
@@ -28,7 +29,7 @@ export function CompanyCard({ company, children }: { company: CompanyCardData; c
   const phoneHref = telHref(company.phone)
   const address = publicAddress(company.cityName, company.address)
   const email = company.email?.trim()
-  const overlap = hasGallery ? ' -mt-[52px]' : ''
+  const overlap = hasGallery ? '-mt-[52px]' : ''
 
   return (
     <div className="bg-white border border-line rounded-3xl p-2 overflow-hidden">
@@ -36,20 +37,7 @@ export function CompanyCard({ company, children }: { company: CompanyCardData; c
       {/* ARCHITECTURE_CYCLE13.md §204: `relative z-10` on this row is always present — a positioned row
           paints over the unpositioned gallery whatever the source order. The carousel gets no z-index. */}
       <div className="px-6 pb-6 pt-7 flex items-start gap-5 relative z-10">
-        {company.logoUrl ? (
-          <img
-            src={company.logoUrl}
-            alt=""
-            className={`w-16 h-16 rounded-[18px] object-cover border-4 border-white shrink-0${overlap}`}
-          />
-        ) : (
-          <div
-            aria-hidden="true"
-            className={`w-16 h-16 rounded-[18px] bg-cream-deep text-gold-dark font-serif text-2xl flex items-center justify-center border-4 border-white shrink-0${overlap}`}
-          >
-            {company.name.trim()[0]?.toUpperCase() ?? ''}
-          </div>
-        )}
+        <CompanyLogoMark size="card" name={company.name} logoUrl={company.logoUrl} className={overlap} />
         <div className="flex-1 min-w-0">
           <h1 className="font-serif text-[30px] font-medium text-ink mb-1.5 break-words">{company.name}</h1>
           {company.description && (

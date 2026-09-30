@@ -5,6 +5,7 @@ import { CityCombobox } from '@/components/ui/CityCombobox'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { Pagination } from '@/components/ui/Pagination'
+import { CompanyLogoMark } from '@/components/company/CompanyLogoMark'
 import type { City } from '@/types'
 import { goodsCatalogApi } from '../api/goodsCatalog'
 import { BusinessBlock } from '../components/BusinessBlock'
@@ -152,10 +153,8 @@ function ShopRow({ shop, showCity }: { shop: GoodsCatalogShopDto; showCity: bool
         data-testid="catalog-shop"
       >
         <div className="flex items-start gap-4 mb-4">
-          <div className="w-14 h-14 rounded-2xl bg-cream-deep flex items-center justify-center shrink-0">
-            <Icon name="store" size={24} className="text-gold-dark" />
-          </div>
-          <div className="min-w-0">
+          <CompanyLogoMark size="catalog" name={shop.name} logoUrl={shop.logoUrl} />
+          <div className="min-w-0 flex-1">
             <h3 className="font-serif text-[19px] font-medium text-ink truncate">{shop.name}</h3>
             <p className="text-sm text-muted mt-0.5">{shop.openState.text}</p>
           </div>
