@@ -6,6 +6,9 @@ import { servicesApi } from '../api/services'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
+import { ShowcaseBadge } from '../components/showcase/ShowcaseBadge'
+import { ShowcaseNotice } from '../components/showcase/ShowcaseNotice'
+import { useNoindexMeta } from '../hooks/useNoindexMeta'
 import { CompanyPhotoGallery } from '../components/company/CompanyPhotoGallery'
 import { CompanyMapLinks } from '../components/company/CompanyMapLinks'
 import { BookingModal } from '../components/booking/BookingModal'
@@ -22,6 +25,9 @@ export function EmbedPage() {
     queryFn: () => companiesApi.getBySlug(slug!),
     enabled: !!slug,
   })
+
+  // API_CONTRACT_CYCLE28.md §591 — the widget of a showcase company is not indexed either.
+  useNoindexMeta(!!company?.isShowcase)
 
   const { data: services, isLoading: servicesLoading } = useQuery({
     queryKey: ['services', company?.id],
@@ -61,7 +67,10 @@ export function EmbedPage() {
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="font-serif text-lg font-medium text-ink break-words">{company.name}</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="font-serif text-lg font-medium text-ink break-words">{company.name}</h1>
+            {company.isShowcase && <ShowcaseBadge />}
+          </div>
           {company.address && (
             <p className="text-sm text-muted flex items-center gap-1">
               <Icon name="map-pin" size={12} strokeWidth={1.8} /> {company.address}
@@ -71,6 +80,7 @@ export function EmbedPage() {
         </div>
       </div>
 
+      {company.isShowcase && <ShowcaseNotice compact className="mb-4" />}
       {company.photos?.length ? (
         <div className="mb-4">
           <CompanyPhotoGallery photos={company.photos} companyName={company.name} />

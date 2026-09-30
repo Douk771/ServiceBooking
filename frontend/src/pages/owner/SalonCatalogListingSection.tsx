@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { companyCatalogListingApi } from '../../api/companyCatalogListing'
 import { CatalogListingCard } from '../../components/company/CatalogListingCard'
+import { CARD_TITLE_CLASS } from '../../components/company/cardTitle'
 import { getCatalogListingErrorMessage } from '../../utils/catalogListingError'
 
 /**
@@ -26,7 +27,8 @@ export function SalonCatalogListingSection({ companyId }: { companyId: string })
       title="Каталог ezbook.ru"
       switchLabel="Показывать салон в каталоге ezbook.ru"
       headingId="salon-listing-title"
-      headingAs="h3"
+      headingAs="h2"
+      headingClassName={CARD_TITLE_CLASS}
       data={q.data}
       isLoading={q.isLoading}
       loadError={

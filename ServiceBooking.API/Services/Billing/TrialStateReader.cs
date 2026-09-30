@@ -70,15 +70,7 @@ public class TrialStateReader(
             // account, not a date the background task doesn't look at.
             var trialEndsAt = account.TrialEndsAtUtc ?? sub!.PaidUntil!.Value;
             var daysLeft = (int)Math.Ceiling((trialEndsAt - now).TotalDays);
-            var termsDto = new TrialActivationTermsDto(
-                account.TrialTermsVersion ?? TrialTermsRegistry.CurrentVersion,
-                TrialTermsRegistry.Sha256Of(account.TrialTermsVersion ?? TrialTermsRegistry.CurrentVersion) ?? string.Empty,
-                account.TrialTermsVersion == TrialTermsRegistry.CurrentVersion
-                    ? TrialTermsRegistry.RenderCurrent(plan!.Name, account.TrialDurationDays ?? 0, trialEndsAt, account.TrialMailingWindowDays ?? 0)
-                    : TrialTermsRegistry.TryGetTemplate(account.TrialTermsVersion ?? string.Empty) ?? string.Empty,
-                AcknowledgementRequired: account.TrialTermsAcknowledgedAtUtc is null,
-                ShownAt: account.TrialTermsAcknowledgedAtUtc is null ? null : account.TrialStartedAtUtc,
-                AcknowledgedAt: account.TrialTermsAcknowledgedAtUtc);
+            var termsDto = BuildActivationTerms(account, plan!.Name, trialEndsAt);
 
             return new TrialStateDto(
                 State: "Active",
@@ -158,7 +150,7 @@ public class TrialStateReader(
         var message = refusal is not null
             ? refusal.Message
             : plan is null ? string.Empty
-                : TrialTermsRegistry.RenderCurrent(plan.Name, durationDays!.Value, now.AddDays(durationDays.Value), windowDays!.Value);
+                : TrialTermsRegistry.RenderCurrent(plan.Name, durationDays!.Value, now.AddDays(durationDays.Value));
 
         var available = refusalCode is null;
         var endsAtPreview = available ? now.AddDays(durationDays!.Value) : (DateTime?)null;
@@ -166,7 +158,7 @@ public class TrialStateReader(
         TrialMailingWindowDto mailingWindow = NotApplicableMailingWindow();
         if (available)
         {
-            var text = TrialTermsRegistry.RenderCurrent(plan!.Name, durationDays!.Value, endsAtPreview!.Value, windowDays!.Value);
+            var text = TrialTermsRegistry.RenderCurrent(plan!.Name, durationDays!.Value, endsAtPreview!.Value);
             availableTerms = new TrialActivationTermsDto(
                 TrialTermsRegistry.CurrentVersion, TrialTermsRegistry.Sha256Of(TrialTermsRegistry.CurrentVersion) ?? string.Empty,
                 text, AcknowledgementRequired: false, ShownAt: null, AcknowledgedAt: null);
@@ -198,6 +190,21 @@ public class TrialStateReader(
             Warning: null,
             Includes: includes,
             Limits: limits);
+    }
+
+    /// <summary>The activation terms of an account on the trial: the edition recorded in the account, rendered with ITS OWN substitutions (an account granted the
+    /// trial under the released edition 2026-09-26 must not get the raw template with literal {0}…{3}); an account with no recorded edition gets the current one.</summary>
+    public static TrialActivationTermsDto BuildActivationTerms(BillingAccount account, string planName, DateTime trialEndsAt)
+    {
+        var version = account.TrialTermsVersion ?? TrialTermsRegistry.CurrentVersion;
+        var text = TrialTermsRegistry.Render(version, planName, account.TrialDurationDays ?? 0, trialEndsAt, account.TrialMailingWindowDays) ?? string.Empty;
+        return new TrialActivationTermsDto(
+            version,
+            TrialTermsRegistry.Sha256Of(version) ?? string.Empty,
+            text,
+            AcknowledgementRequired: account.TrialTermsAcknowledgedAtUtc is null,
+            ShownAt: account.TrialTermsAcknowledgedAtUtc is null ? null : account.TrialStartedAtUtc,
+            AcknowledgedAt: account.TrialTermsAcknowledgedAtUtc);
     }
 
     /// <summary>§337.1 phase 3 / §338.2 — the "N days left" banner. <c>TrialWarnedAtThresholdDays</c> is

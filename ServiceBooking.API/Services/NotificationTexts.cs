@@ -96,6 +96,8 @@ public static class NotificationTexts
             NotificationReason.OrderMessageOutdated => "не отправлено: сообщение о заказе устарело",
             NotificationReason.CustomerPushDisabledByShop => "магазин отключил уведомления в браузере",
             NotificationReason.MessengerDisabledByShop => "магазин отключил сообщения в мессенджер",
+            // ARCHITECTURE_CYCLE28.md §576 — showcase companies and the demo stand send nothing.
+            NotificationReason.ShowcaseSuppressed => "не отправлено: демонстрационная компания",
             null => status == NotificationStatus.Failed ? "не удалось отправить" : "пропущено",
             _ => "пропущено",
         };

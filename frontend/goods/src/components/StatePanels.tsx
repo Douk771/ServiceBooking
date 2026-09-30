@@ -41,10 +41,4 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   )
 }
 
-export function InlineError({ children }: { children: ReactNode }) {
-  return (
-    <div role="alert" className="bg-danger-bg text-danger text-sm px-4 py-2.5 rounded-xl">
-      {children}
-    </div>
-  )
-}
+export { InlineError } from '@/components/ui/InlineError'

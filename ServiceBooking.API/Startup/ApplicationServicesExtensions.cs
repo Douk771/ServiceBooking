@@ -35,6 +35,23 @@ internal static class ApplicationServicesExtensions
     builder.Services.Configure<ServiceBooking.API.Services.Billing.TrialOptions>(
         builder.Configuration.GetSection(ServiceBooking.API.Services.Billing.TrialOptions.SectionName));
     builder.Services.AddScoped<ServiceBooking.API.Services.Billing.TrialActivationService>();
+    // Cycle 28 (ARCHITECTURE_CYCLE28.md §573.1): `ops tariffs plan|apply` — created by the operator command, never at startup.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Showcase.Tariffs.TariffCatalogSeeder>();
+    // Cycle 28 (§576, §579.1): demo mode is off by default (the demo stand itself is pass B); the guard holds on the showcase mark alone.
+    builder.Services.Configure<ServiceBooking.API.Services.Demo.DemoModeOptions>(
+        builder.Configuration.GetSection(ServiceBooking.API.Services.Demo.DemoModeOptions.SectionName));
+    builder.Services.AddScoped<ServiceBooking.API.Services.Showcase.ShowcaseOutboundGuard>();
+    // Cycle 28, pass B (ARCHITECTURE_CYCLE28.md §579–§580): the demo stand. Everything below is inert unless DemoMode:Enabled — the routes answer 404, the middleware and
+    // the global filter pass through, the reset refuses. The flag file is shared with the `ops demo reset` process, so the flag is a singleton (one second of cache).
+    builder.Services.AddSingleton<ServiceBooking.API.Services.Demo.DemoMaintenanceFlag>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Demo.DemoLoginService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Demo.DemoResetService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Startup.SuperAdminSeeder>();
+    // Cycle 28 (§575): the showcase generator and its operator commands (`ops showcase …`) — no HTTP route exists for any of it.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Showcase.ShowcaseAssetStore>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Showcase.ShowcaseGenerator>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Showcase.ShowcaseEraser>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Showcase.ShowcaseCommands>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Billing.TrialStateReader>();
     // Cycle 4 (ARCHITECTURE_CYCLE4.md §25.3, T4-B7): the other backend developer's queueing service, called
     // directly from BookingsController (create/cancel/reschedule) — registered here because Program.cs is
@@ -258,6 +275,15 @@ internal static class ApplicationServicesExtensions
     // account's own snapshot, and materializes trial expiry onto the system Free plan (fail-closed if none
     // is configured).
     builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.TrialLifecycleTask>();
+    // Cycle 28, BE-7 (ARCHITECTURE_CYCLE28.md §575.7) — "showcase-reseed" (period 1 hour): weekly re-seed of the showcase; returns "disabled" at once
+    // while Showcase:Reseed:Enabled is off (the default).
+    builder.Services.Configure<ServiceBooking.API.Services.Showcase.ShowcaseReseedOptions>(
+        builder.Configuration.GetSection(ServiceBooking.API.Services.Showcase.ShowcaseReseedOptions.SectionName));
+    builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.ShowcaseReseedTask>();
+    // Cycle 28, pass B (ARCHITECTURE_CYCLE28.md §580) — "demo-reset" (period 10 minutes): the nightly reset of the demo. Registered ONLY in demo mode, so a production
+    // machine does not list it at all (and its state row never appears in the admin's list of tasks).
+    if (builder.Configuration.GetValue("DemoMode:Enabled", false))
+        builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DemoResetTask>();
 
     // T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.1): the fourth task, "data-retention". Every IRetentionRule below
     // is registered individually (not discovered by reflection) so the list here IS the list of what runs —
@@ -274,6 +300,9 @@ internal static class ApplicationServicesExtensions
         ServiceBooking.API.Services.Retention.Rules.ConsentRecordRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.InactiveAccountRule>();
+    // ARCHITECTURE_CYCLE28.md §577.4 — deletes bookings made by site visitors in open showcase companies after Retention:ShowcaseVisitorBookingHours (24).
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.ShowcaseVisitorBookingRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.BookingPersonalizationRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,

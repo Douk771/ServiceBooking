@@ -152,4 +152,9 @@ public sealed class RetentionPeriods
     /// Соглашения — this is not a "reasonable default", it is the number those documents already commit
     /// to; shortening it in configuration would make the product's own texts false.</summary>
     public int TrialPhoneRegistrationDays { get; set; } = 1095;
+
+    /// <summary>ARCHITECTURE_CYCLE28.md §577.4 (D-1). Hours after which a booking that a site VISITOR made in an open showcase (fictional) company is deleted,
+    /// with its services and journal — a visitor typed a real name and phone into a fictional salon's form, so the data must not linger. Default 24 (the
+    /// "example" notice tells the visitor "within a day"; change both together). 0 or less = rule off. Read by <see cref="Rules.ShowcaseVisitorBookingRule"/>.</summary>
+    public int ShowcaseVisitorBookingHours { get; set; } = 24;
 }

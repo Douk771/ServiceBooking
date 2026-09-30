@@ -138,6 +138,12 @@ export interface Company {
    * a product constant.
    */
   clientRescheduleMinHours?: number
+  /** API_CONTRACT_CYCLE28.md §591 — company created by the showcase generator (a fictional "Пример"
+   *  salon). Sent to any caller; absent on older servers = `false`. */
+  isShowcase?: boolean
+  /** API_CONTRACT_CYCLE28.md §591 — a showcase company that accepts online booking. When
+   *  `isShowcase && !showcaseBookingOpen` the booking UI stays visible and the server refuses at confirm (§592). */
+  showcaseBookingOpen?: boolean
 }
 
 /** API_CONTRACT_CYCLE10.md §125 */
@@ -502,6 +508,9 @@ export interface Booking {
    *  The "Отменить можно не позже чем за N ч" text must read THIS field, never
    *  `clientRescheduleMinHours` (that one is the reschedule window, 0–168, unrelated since cycle 20). */
   clientCancelMinHours?: number | null
+  /** API_CONTRACT_CYCLE28.md §593 — the booking is in a showcase (fictional) company; the card shows the
+   *  `ShowcaseNotice` line. Absent on older servers = `false`. */
+  companyIsShowcase?: boolean
 }
 
 export type BookingStatus = 'Pending' | 'Confirmed' | 'Cancelled' | 'Completed' | 'NoShow'
@@ -574,6 +583,12 @@ export type LegalTextKey =
   | 'CompanyPhotoPeopleNotice'
   /** API_CONTRACT_CYCLE25.md §530 [legal L17] — warning under the shop's note about a buyer (goods). */
   | 'ShopCustomerNoteNotice'
+  /** API_CONTRACT_CYCLE28.md §600 [L28-1, L28-3] — cycle 28 keys OUTSIDE the server's `LegalTextKey.All`: until the
+   *  text is published in the live legal.json, `GET /api/legal/texts/{key}` answers 404 and the frontend shows
+   *  its own verbatim fallback (`utils/showcaseTexts.ts`). */
+  | 'ShowcaseNotice'
+  | 'ShowcaseBookingClosed'
+  | 'DemoBanner'
 export type ConsentPurpose = 'ProviderDelivery' | 'WorkPhotos' | 'HealthData' | 'ChannelOffer'
 type ConsentAct = 'Acknowledged' | 'Accepted' | 'Consented' | 'Confirmed'
 export type ConsentSource =

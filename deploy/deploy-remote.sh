@@ -324,5 +324,56 @@ ls -1t "$RELEASES_DIR" 2>/dev/null | tail -n +$((KEEP_RELEASES + 1)) | while rea
   echo "    removed release $old"
 done
 
+# ARCHITECTURE_CYCLE28.md §581.1 (DO-4) — optional demo stand refresh (demo.visit.ezbook.ru, DEPLOY.md §25).
+# OFF by default: it runs only when DEMO_ENABLED=true is set in the environment or in the host's .env (a person turns it on
+# once the stand is installed by hand, §25). It never changes the verdict of a production deploy: any failure here is a
+# WARNING in the log, not a rollback — the production API is already up and verified by this point. The API image is the one
+# just built above (docker-compose.demo.yml has no `build:`), so the demo runs the same code; migrations apply on its start.
+# Value of KEY from an env file (last occurrence, surrounding quotes/whitespace stripped); empty if absent.
+env_file_value() {
+  local v
+  v="$(grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
+  v="${v//[\"\' $'\t\r']/}"
+  printf '%s' "$v"
+}
+
+update_demo_stand() {
+  local enabled="${DEMO_ENABLED:-}"
+  if [ -z "$enabled" ] && [ -f .env ]; then
+    enabled="$(env_file_value .env DEMO_ENABLED)"
+  fi
+  [ "$enabled" = "true" ] || return 0
+
+  echo "==> Demo stand: updating (DEMO_ENABLED=true)"
+  if [ ! -f .env.demo ]; then
+    echo "WARNING: DEMO_ENABLED=true, but .env.demo does not exist — demo stand NOT updated (DEPLOY.md §25, step 'первый запуск')." >&2
+    return 0
+  fi
+  local dc=(docker compose -f docker-compose.demo.yml --env-file .env.demo)
+  if ! "${dc[@]}" up -d; then
+    echo "WARNING: demo stand: 'docker compose up' failed — production deploy is NOT affected. Logs: docker compose -f docker-compose.demo.yml --env-file .env.demo logs api-demo" >&2
+    return 0
+  fi
+  local demo_port
+  demo_port="$(env_file_value .env.demo DEMO_API_PORT)"
+  demo_port="${demo_port:-5001}"
+  local deadline=$((SECONDS + READY_TIMEOUT_SECONDS)) code
+  until code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$demo_port/api/health/ready" 2>/dev/null) && [ "$code" = "200" ]; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      echo "WARNING: demo stand did not become ready within ${READY_TIMEOUT_SECONDS}s (last code: ${code:-none}) — production deploy is NOT affected." >&2
+      "${dc[@]}" logs --no-color --tail=40 api-demo 2>&1 || true
+      return 0
+    fi
+    sleep 2
+  done
+  if bash deploy/ci/demo-smoke.sh "http://127.0.0.1:$demo_port"; then
+    echo "    demo stand OK"
+  else
+    echo "WARNING: demo smoke failed — production deploy is NOT affected. If it says 409, run the first reset: DEPLOY.md §25." >&2
+  fi
+  return 0
+}
+update_demo_stand || echo "WARNING: demo stand step failed unexpectedly — production deploy is NOT affected." >&2
+
 echo "==> Deploy OK. Container status:"
 docker compose -f docker-compose.prod.yml ps

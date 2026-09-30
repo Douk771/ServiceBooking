@@ -1,0 +1,1278 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 28 (тарифы «Записи», витринные данные, демо-стенд).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл, порядок проверок и тексты — API_CONTRACT_CYCLE28.md (§590–§603),
+# решения — ARCHITECTURE_CYCLE28.md (§570–§583), требования — корневой SPEC.md цикла 28.
+# При расхождении по ФОРМЕ прав ЭТОТ файл.
+#
+#   frontend  npx @stoplight/prism mock contracts/cycle28/openapi.yaml --port 4028
+#             npm run types:api:cycle28   (openapi-typescript -> src/types/api-cycle28.generated.ts)
+#   QA        schemathesis run contracts/cycle28/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle28/openapi.yaml
+#
+# Новые маршруты (2): GET /api/demo/status, POST /api/demo/login — на боевой конфигурации оба 404.
+# Существующие маршруты, у которых меняется форма или поведение:
+#   * CompanyDto (+ isShowcase, showcaseBookingOpen) — описан ЦЕЛИКОМ;
+#   * POST /api/bookings — новый 409 application/json ShowcaseRefusalDto;
+#   * BookingDto (+ companyIsShowcase) — описан ЧАСТИЧНО (additionalProperties: true), остальная форма не меняется;
+#   * админка: параметр showcase, поля isShowcase, счётчики stats;
+#   * запрет смешивания — новые 409 text/plain;
+#   * запреты демо-ролей — 403 text/plain + X-Demo-Restricted (единственный 403 с телом в проекте).
+# GET /api/pricing форму НЕ меняет (цикл 7/18) и здесь не описан.
+
+info:
+  title: ServiceBooking API — цикл 28 (тарифы, витрина, демо-стенд)
+  version: "28.1.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта без изменений: camelCase; enum — строкой; DateTime — ISO-8601 UTC; DateOnly — "YYYY-MM-DD";
+    TimeOnly — "HH:mm:ss"; 400/402/409/429 — голая строка по-русски (text/plain), кроме явно описанных JSON-отказов;
+    401/403 — пустое тело (исключение — DemoRestricted); 404 — пустое тело, не оракул.
+
+    ГЛАВНЫЕ ПРАВИЛА ЦИКЛА, ЗАКРЕПЛЁННЫЕ ФОРМОЙ:
+      1. Витринная компания отличается ТОЛЬКО полем CompanyDto.isShowcase; принимает ли она запись —
+         CompanyDto.showcaseBookingOpen. У настоящих компаний оба поля false.
+      2. Запись в закрытую витрину отклоняется 409 application/json { code: "ShowcaseBookingClosed", message }.
+         Все прочие 409 записи — text/plain, как раньше.
+      3. Демо-маршруты существуют только в демо-режиме; на бою — 404 с пустым телом.
+      4. Во время сброса демо любой /api/* (кроме /api/health/* и GET /api/demo/status) отвечает 503 DemoResetting.
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4028
+    description: prism mock по этой схеме
+
+tags:
+  - name: companies
+    description: Каталог и страница салона. С цикла 28 — пометка витрины.
+  - name: bookings
+    description: Онлайн-запись. С цикла 28 — отказ закрытой витрины и пометка записи.
+  - name: members
+    description: Сотрудники компании. С цикла 28 — запрет смешивания витрины и настоящих учёток.
+  - name: admin
+    description: Админка SuperAdmin. С цикла 28 — фильтр и метка витрины, счётчики без витрины, запреты смешивания.
+  - name: auth
+    description: Вход. Витринные учётки не входят паролем никогда.
+  - name: demo
+    description: Демо-режим экземпляра (проход B). На боевой конфигурации маршруты отвечают 404.
+  - name: demo-restricted
+    description: Действия, недоступные демо-ролям (токен с claim sb_demo) в демо-режиме. Вне демо — без изменений.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CompanyId:
+      name: id
+      in: path
+      required: true
+      description: Id компании.
+      schema: { type: string, format: uuid }
+    CompanyIdAlt:
+      name: companyId
+      in: path
+      required: true
+      description: Id компании.
+      schema: { type: string, format: uuid }
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      description: Id биллинг-аккаунта.
+      schema: { type: string, format: uuid }
+    Slug:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    Search:
+      name: search
+      in: query
+      required: false
+      schema: { type: string, maxLength: 200 }
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Номер страницы с 1. Невалидное значение нормализуется, а не отвергается.
+      schema: { type: string }
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      description: Размер страницы, клампится к [1, 100].
+      schema: { type: string }
+    AdminPage:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1 }
+    AdminPageSize:
+      name: pageSize
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100 }
+    ShowcaseFilter:
+      name: showcase
+      in: query
+      required: false
+      description: |
+        Цикл 28. all (по умолчанию) — все строки; only — только витрина; exclude — без витрины.
+        Любое другое значение — 400 text/plain «showcase должен быть одним из: all, only, exclude.»
+      schema:
+        type: string
+        enum: [all, only, exclude]
+
+  headers:
+    RetryAfter:
+      description: Через сколько секунд повторить.
+      schema: { type: integer, example: 60 }
+    DemoResettingFlag:
+      description: Идёт сброс демо — фронт показывает экран «Демо обновляется».
+      schema: { type: string, enum: ["1"] }
+    DemoRestrictedFlag:
+      description: Отказ демо-роли — фронт показывает тело ответа.
+      schema: { type: string, enum: ["1"] }
+
+  responses:
+    PlainTextError:
+      description: Осознанный отказ — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    PlainTextConflict:
+      description: 409 — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    PaymentRequired:
+      description: Тариф не разрешает действие — голая строка.
+      content:
+        text/plain:
+          schema: { type: string }
+    TooManyRequests:
+      description: Лимит частоты — голая строка.
+      content:
+        text/plain:
+          schema: { type: string }
+    Unauthorized:
+      description: Нет или недействителен токен (или неверные учётные данные). Тело пустое либо голая строка.
+      content:
+        text/plain:
+          schema: { type: string }
+    Forbidden:
+      description: Нет прав. Тело пустое.
+    NotFound:
+      description: Не найдено. Тело пустое.
+    NoContent:
+      description: Выполнено, тела нет.
+    LegalGate:
+      description: Требуется принять новую редакцию правовых документов.
+      content:
+        text/plain:
+          schema: { type: string }
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    ServiceUnavailable:
+      description: Правовые документы временно недоступны (голая строка).
+      content:
+        text/plain:
+          schema: { type: string }
+    DemoResetting:
+      description: |
+        Только демо-режим: идёт сброс. Тело — «Демо обновляется, зайдите через минуту».
+      headers:
+        Retry-After: { $ref: '#/components/headers/RetryAfter' }
+        X-Demo-Resetting: { $ref: '#/components/headers/DemoResettingFlag' }
+      content:
+        text/plain:
+          schema: { type: string, example: "Демо обновляется, зайдите через минуту" }
+    DemoRestricted:
+      description: |
+        Демо-режим, токен демо-роли (claim sb_demo = 1): действие недоступно. ЕДИНСТВЕННЫЙ 403 с телом в проекте.
+        Тело — «В демо-версии это действие недоступно.» Без демо-режима этот ответ невозможен (403 прежний, пустой).
+      headers:
+        X-Demo-Restricted: { $ref: '#/components/headers/DemoRestrictedFlag' }
+      content:
+        text/plain:
+          schema: { type: string, example: "В демо-версии это действие недоступно." }
+    AnyJson:
+      description: Успех. Форма не меняется в цикле 28 (описана в контрактах прежних циклов).
+      content:
+        application/json:
+          schema: {}
+
+  schemas:
+    CompanyPhotoDto:
+      type: object
+      additionalProperties: false
+      required: [id, url, thumbnailUrl, width, height, position, isCover]
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string }
+        thumbnailUrl: { type: string }
+        width: { type: integer }
+        height: { type: integer }
+        position: { type: integer, minimum: 0 }
+        isCover: { type: boolean }
+
+    CompanyDto:
+      type: object
+      description: |
+        Полная форма CompanyDto после цикла 28. Новые поля — isShowcase и showcaseBookingOpen (в конце).
+        У витринной компании phone, email, yandexMapsUrl, twoGisUrl — null; slug начинается с "primer-".
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - slug
+        - allowSelfBooking
+        - requirePrepayment
+        - onlineBookingEnabled
+        - allowAnalytics
+        - allowMailing
+        - showInPublicListing
+        - publicListingEnabled
+        - prepaymentEnabled
+        - planAllowsOnlineBooking
+        - planAllowsOnlinePayment
+        - planAllowsPublicListing
+        - employeeCount
+        - reviewCount
+        - timeZoneId
+        - timeZoneIsManual
+        - utcOffsetMinutes
+        - bookingHorizonDays
+        - clientRescheduleMinHours
+        - kind
+        - publicUrl
+        - isShowcase
+        - showcaseBookingOpen
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        allowSelfBooking: { type: boolean }
+        requirePrepayment: { type: boolean }
+        onlineBookingEnabled: { type: boolean }
+        allowAnalytics: { type: boolean }
+        allowMailing: { type: boolean }
+        showInPublicListing: { type: boolean }
+        publicListingEnabled: { type: boolean }
+        prepaymentEnabled: { type: boolean }
+        planAllowsOnlineBooking: { type: boolean }
+        planAllowsOnlinePayment: { type: boolean }
+        planAllowsPublicListing: { type: boolean }
+        maxEmployees:
+          type: integer
+          nullable: true
+          deprecated: true
+          description: Устарело с цикла 7 — используйте accountSeatsUsed/accountSeatsLimit/canAddEmployee.
+        employeeCount: { type: integer, minimum: 0 }
+        accountSeatsUsed: { type: integer, nullable: true }
+        accountSeatsLimit: { type: integer, nullable: true }
+        canAddEmployee: { type: boolean, nullable: true }
+        averageRating: { type: number, nullable: true }
+        reviewCount: { type: integer, minimum: 0 }
+        cityId: { type: integer, nullable: true }
+        cityName: { type: string, nullable: true }
+        cityRegion: { type: string, nullable: true }
+        timeZoneId: { type: string }
+        timeZoneIsManual: { type: boolean }
+        utcOffsetMinutes: { type: integer }
+        bookingHorizonDays: { type: integer, minimum: 1 }
+        coverPhotoUrl: { type: string, nullable: true }
+        coverThumbnailUrl: { type: string, nullable: true }
+        photos:
+          type: array
+          nullable: true
+          description: Заполнен только в GET /api/companies/{slug}; в списках — null.
+          items: { $ref: '#/components/schemas/CompanyPhotoDto' }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+        clientRescheduleMinHours: { type: integer, minimum: 0 }
+        kind:
+          type: string
+          enum: [Services, Orders]
+        publicUrl: { type: string }
+        isShowcase:
+          type: boolean
+          description: Цикл 28. Компания создана генератором витрины. У настоящих — всегда false.
+        showcaseBookingOpen:
+          type: boolean
+          description: |
+            Цикл 28. Витринная компания принимает онлайн-запись. У настоящих — всегда false.
+            isShowcase && !showcaseBookingOpen → POST /api/bookings отвечает 409 ShowcaseBookingClosed.
+
+    PagedCompanyDto:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, total, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CompanyDto' }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+        hasNext: { type: boolean }
+
+    OwnerTermsDto:
+      type: object
+      properties:
+        version: { type: string, nullable: true }
+
+    CreateCompanyDto:
+      type: object
+      description: Форма не меняется. Цикл 28 добавляет 409 для слага с префиксом "primer-".
+      additionalProperties: true
+      required: [name, slug]
+      properties:
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        cityId: { type: integer, nullable: true }
+        timeZoneId: { type: string, nullable: true }
+        allowSelfBooking: { type: boolean }
+        showInPublicListing: { type: boolean }
+        ownerTerms: { $ref: '#/components/schemas/OwnerTermsDto' }
+
+    CreateCompanyResponseDto:
+      type: object
+      additionalProperties: false
+      required: [company, token]
+      properties:
+        company: { $ref: '#/components/schemas/CompanyDto' }
+        token: { type: string }
+
+    CreateBookingDto:
+      type: object
+      description: Форма не меняется (циклы 3, 5, 6). Описаны обязательные и гостевые поля.
+      additionalProperties: true
+      required: [companyId, serviceId, masterId, date, startTime]
+      properties:
+        companyId: { type: string, format: uuid }
+        serviceId: { type: string, format: uuid }
+        masterId: { type: string }
+        date: { type: string, format: date }
+        startTime: { type: string, example: "14:30:00" }
+        notes: { type: string, nullable: true, maxLength: 2000 }
+        guestName: { type: string, nullable: true, maxLength: 200 }
+        guestPhone: { type: string, nullable: true, maxLength: 32 }
+        guestEmail: { type: string, nullable: true, maxLength: 256 }
+        captchaToken: { type: string, nullable: true }
+        serviceIds:
+          type: array
+          nullable: true
+          minItems: 1
+          maxItems: 5
+          items: { type: string, format: uuid }
+
+    ShowcaseRefusalDto:
+      type: object
+      description: Цикл 28 — отказ записи в закрытую витринную компанию (409 application/json).
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [ShowcaseBookingClosed]
+        message:
+          type: string
+          description: Запасной текст сервера. Фронт предпочитает uiText ShowcaseBookingClosed, если он есть.
+          example: "Это пример страницы салона: компания вымышленная, запись к ней не принимается."
+
+    BookingDto:
+      type: object
+      description: |
+        ЧАСТИЧНОЕ описание: цикл 28 добавляет только companyIsShowcase. Остальные поля BookingDto не меняются
+        (циклы 3–20) и здесь не перечислены полностью — отсюда additionalProperties: true.
+      additionalProperties: true
+      required: [id, companyId, companyName, companySlug, date, startTime, endTime, status, companyIsShowcase]
+      properties:
+        id: { type: string, format: uuid }
+        companyId: { type: string, format: uuid }
+        companyName: { type: string }
+        companySlug: { type: string }
+        date: { type: string, format: date }
+        startTime: { type: string, example: "14:30:00" }
+        endTime: { type: string, example: "15:30:00" }
+        status:
+          type: string
+          enum: [Pending, Confirmed, Cancelled, Completed, NoShow]
+        companyIsShowcase:
+          type: boolean
+          description: Цикл 28. Запись в витринной компании — фронт показывает строку ShowcaseNotice в карточке записи.
+
+    AddMemberDto:
+      type: object
+      additionalProperties: true
+      required: [phone, firstName, lastName, role]
+      properties:
+        phone: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        role: { type: string }
+        bio: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+
+    AdminUserDto:
+      type: object
+      additionalProperties: false
+      required: [id, phone, firstName, lastName, createdAt, roles, ownedCompanyCount, planName, subscriptionActive, isShowcase]
+      properties:
+        id: { type: string }
+        phone: { type: string }
+        email: { type: string, nullable: true }
+        firstName: { type: string }
+        lastName: { type: string }
+        avatarUrl: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        roles:
+          type: array
+          items: { type: string }
+        ownedCompanyCount: { type: integer, minimum: 0 }
+        planConfigId: { type: string, format: uuid, nullable: true }
+        planName: { type: string }
+        paidUntil: { type: string, format: date-time, nullable: true }
+        subscriptionActive: { type: boolean }
+        isShowcase:
+          type: boolean
+          description: Цикл 28. Учётка создана генератором витрины (бейдж «Витрина»).
+
+    PagedAdminUserDto:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, total, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminUserDto' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        hasNext: { type: boolean }
+
+    AdminCompanyDto:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - slug
+        - isActive
+        - allowSelfBooking
+        - createdAt
+        - memberCount
+        - bookingCount
+        - ownerUserId
+        - ownerEmail
+        - planName
+        - subscriptionActive
+        - kind
+        - publicUrl
+        - isShowcase
+        - showcaseBookingOpen
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        email: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        isActive: { type: boolean }
+        allowSelfBooking: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        memberCount: { type: integer, minimum: 0 }
+        bookingCount: { type: integer, minimum: 0 }
+        ownerUserId: { type: string }
+        ownerEmail: { type: string }
+        planConfigId: { type: string, format: uuid, nullable: true }
+        planName: { type: string }
+        paidUntil: { type: string, format: date-time, nullable: true }
+        subscriptionActive: { type: boolean }
+        kind:
+          type: string
+          enum: [Services, Orders]
+        publicUrl: { type: string }
+        isShowcase:
+          type: boolean
+          description: Цикл 28. Витринная компания (бейдж «Витрина»).
+        showcaseBookingOpen:
+          type: boolean
+          description: Цикл 28. Витринная компания принимает запись.
+
+    PagedAdminCompanyDto:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, total, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminCompanyDto' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        hasNext: { type: boolean }
+
+    AdminBillingAccountItem:
+      type: object
+      description: |
+        ЧАСТИЧНОЕ описание: элемент списка аккаунтов циклов 7/18/24 не меняется, кроме нового поля isShowcase.
+      additionalProperties: true
+      required: [id, isShowcase]
+      properties:
+        id: { type: string, format: uuid }
+        isShowcase:
+          type: boolean
+          description: Цикл 28. Биллинг-аккаунт витрины.
+
+    PagedAdminBillingAccounts:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, totalCount]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminBillingAccountItem' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalCount: { type: integer }
+
+    AdminStatsDto:
+      type: object
+      description: |
+        Цикл 28: прежние счётчики считаются БЕЗ витрины; три новых поля — отдельно витрина.
+      additionalProperties: false
+      required:
+        - totalCompanies
+        - totalUsers
+        - totalBookings
+        - completedBookings
+        - totalRevenue
+        - overdueSubjectRequests
+        - showcaseCompanies
+        - showcaseUsers
+        - showcaseBookings
+      properties:
+        totalCompanies: { type: integer, minimum: 0 }
+        totalUsers: { type: integer, minimum: 0 }
+        totalBookings: { type: integer, minimum: 0 }
+        completedBookings: { type: integer, minimum: 0 }
+        totalRevenue: { type: number }
+        overdueSubjectRequests: { type: integer, minimum: 0 }
+        showcaseCompanies: { type: integer, minimum: 0 }
+        showcaseUsers: { type: integer, minimum: 0 }
+        showcaseBookings: { type: integer, minimum: 0 }
+
+    UpdateCompanyOwnerDto:
+      type: object
+      additionalProperties: false
+      required: [newOwnerUserId]
+      properties:
+        newOwnerUserId: { type: string }
+
+    CompanyTransferInput:
+      type: object
+      additionalProperties: false
+      required: [targetBillingAccountId]
+      properties:
+        targetBillingAccountId: { type: string, format: uuid }
+        newOwnerUserId: { type: string, nullable: true }
+        confirmSeatOverflow: { type: boolean }
+        comment: { type: string, nullable: true }
+        confirmRightsTransfer: { type: boolean }
+
+    AssignSubscriptionInput:
+      type: object
+      description: Форма не меняется (циклы 7, 20, 24). Цикл 28 добавляет 409 для тарифа «Витрина (служебный)».
+      additionalProperties: true
+      required: [isActive]
+      properties:
+        planId: { type: string, format: uuid, nullable: true }
+        isActive: { type: boolean }
+        paidUntil: { type: string, format: date, nullable: true }
+
+    LoginDto:
+      type: object
+      additionalProperties: false
+      required: [phone, password]
+      properties:
+        phone: { type: string }
+        password: { type: string }
+
+    AuthResponseDto:
+      type: object
+      additionalProperties: false
+      required: [token, userId, phone, firstName, lastName, roles, phoneVerified]
+      properties:
+        token: { type: string }
+        userId: { type: string }
+        phone: { type: string }
+        email: { type: string, nullable: true }
+        firstName: { type: string }
+        lastName: { type: string }
+        roles:
+          type: array
+          items: { type: string }
+        phoneVerified: { type: boolean }
+
+    DemoRole:
+      type: string
+      enum: [owner, master, client]
+
+    DemoRoleDto:
+      type: object
+      additionalProperties: false
+      required: [role, label]
+      properties:
+        role: { $ref: '#/components/schemas/DemoRole' }
+        label:
+          type: string
+          example: "Войти как владелец салона"
+
+    DemoStatusDto:
+      type: object
+      additionalProperties: false
+      required: [demoMode, resetting, resetLocalTime, timeZoneId, roles]
+      properties:
+        demoMode:
+          type: boolean
+          description: Всегда true (вне демо маршрут отвечает 404).
+        resetting:
+          type: boolean
+          description: Идёт сброс — фронт показывает «Демо обновляется, зайдите через минуту».
+        resetLocalTime:
+          type: string
+          pattern: '^\d{2}:\d{2}$'
+          example: "04:00"
+        timeZoneId:
+          type: string
+          example: Europe/Moscow
+        lastResetAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        roles:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { $ref: '#/components/schemas/DemoRoleDto' }
+
+    DemoLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role: { $ref: '#/components/schemas/DemoRole' }
+
+    TrialActivationInput:
+      type: object
+      additionalProperties: true
+      properties:
+        termsVersion: { type: string }
+
+paths:
+  # ── Каталог и страница салона ───────────────────────────────────────────────────────────────────
+  /api/companies:
+    get:
+      tags: [companies]
+      operationId: companiesGetAll
+      summary: Каталог салонов (все города) — витринные компании включены, с пометкой isShowcase
+      responses:
+        '200':
+          description: Список салонов каталога.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CompanyDto' }
+    post:
+      tags: [companies]
+      operationId: companiesCreate
+      summary: Создать салон — цикл 28 резервирует слаги с префиксом "primer-"
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCompanyDto' }
+      responses:
+        '200':
+          description: Создано (исторический код).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateCompanyResponseDto' }
+        '201':
+          description: Создано.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateCompanyResponseDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { $ref: '#/components/responses/PaymentRequired' }
+        '409':
+          description: |
+            «Slug already taken» (прежний) или, с цикла 28, «Адрес, начинающийся с «primer-», зарезервирован.
+            Выберите другой.», или «Соглашение было обновлено ещё раз…» (прежний).
+          content:
+            text/plain:
+              schema: { type: string }
+        '451': { $ref: '#/components/responses/LegalGate' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/companies/public:
+    get:
+      tags: [companies]
+      operationId: companiesGetPublic
+      summary: Каталог салонов по городу с поиском и страницами — витринные компании включены
+      parameters:
+        - name: cityId
+          in: query
+          required: false
+          schema: { type: integer }
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Страница каталога.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PagedCompanyDto' }
+        '503': { $ref: '#/components/responses/DemoResetting' }
+
+  /api/companies/my:
+    get:
+      tags: [companies]
+      operationId: companiesGetMy
+      summary: Компании владельца (кабинет) — CompanyDto с пометкой витрины
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Компании, где вызывающий — владелец.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CompanyDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/DemoResetting' }
+
+  /api/companies/{slug}:
+    get:
+      tags: [companies]
+      operationId: companiesGetBySlug
+      summary: Публичная страница салона — isShowcase включает бейдж «Пример», строку ShowcaseNotice и noindex
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: Салон с галереей (photos заполнен).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/DemoResetting' }
+
+  /api/companies/{id}/members:
+    post:
+      tags: [members]
+      operationId: companyMembersAdd
+      summary: Добавить сотрудника — цикл 28 запрещает смешивать витрину и настоящие учётки
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddMemberDto' }
+      responses:
+        '200': { $ref: '#/components/responses/AnyJson' }
+        '201': { $ref: '#/components/responses/AnyJson' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { $ref: '#/components/responses/PaymentRequired' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            Прежние 409 маршрута либо, с цикла 28, «Витринную компанию и настоящие учётные записи смешивать нельзя.»
+          content:
+            text/plain:
+              schema: { type: string }
+        '451': { $ref: '#/components/responses/LegalGate' }
+
+  # ── Запись ──────────────────────────────────────────────────────────────────────────────────────
+  /api/bookings:
+    post:
+      tags: [bookings]
+      operationId: bookingsCreate
+      summary: Онлайн-запись — закрытая витрина отвечает 409 ShowcaseBookingClosed (JSON)
+      description: |
+        Порядок: 404 компания → 409 магазин (text) → 403 allowSelfBooking → 409 ShowcaseBookingClosed (JSON,
+        если isShowcase && !showcaseBookingOpen и вызывающий не персонал) → капча → … (прежний порядок).
+      security:
+        - {}
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBookingDto' }
+      responses:
+        '201':
+          description: Запись создана. В открытой витрине companyIsShowcase = true, исходящих сообщений нет.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookingDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '402': { $ref: '#/components/responses/PaymentRequired' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: Компания или услуга не найдены (голая строка, исторически).
+          content:
+            text/plain:
+              schema: { type: string }
+        '409':
+          description: |
+            text/plain — прежние отказы («Time slot is no longer available», магазин, правовые версии).
+            application/json ShowcaseRefusalDto — цикл 28, запись в закрытую витрину.
+          content:
+            text/plain:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ShowcaseRefusalDto' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+        '503':
+          description: Правовые документы недоступны или (демо) идёт сброс — голая строка.
+          headers:
+            X-Demo-Resetting: { $ref: '#/components/headers/DemoResettingFlag' }
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /api/bookings/client:
+    get:
+      tags: [bookings]
+      operationId: bookingsGetClient
+      summary: «Мои визиты» клиента — BookingDto с companyIsShowcase
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Записи клиента.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BookingDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+        '503': { $ref: '#/components/responses/DemoResetting' }
+
+  /api/bookings/{id}:
+    get:
+      tags: [bookings]
+      operationId: bookingsGetById
+      summary: Карточка записи — BookingDto с companyIsShowcase
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Запись.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookingDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+
+  # ── Вход ────────────────────────────────────────────────────────────────────────────────────────
+  /api/auth/login:
+    post:
+      tags: [auth]
+      operationId: authLogin
+      summary: Вход по телефону и паролю — витринная учётка всегда 401 (форма не меняется)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginDto' }
+      responses:
+        '200':
+          description: Токен.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponseDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ── Админка ─────────────────────────────────────────────────────────────────────────────────────
+  /api/admin/stats:
+    get:
+      tags: [admin]
+      operationId: adminGetStats
+      summary: Сводка — прежние счётчики без витрины, плюс счётчики витрины
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Сводка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminStatsDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/admin/users:
+    get:
+      tags: [admin]
+      operationId: adminGetUsers
+      summary: Пользователи — фильтр showcase и поле isShowcase
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - $ref: '#/components/parameters/ShowcaseFilter'
+      responses:
+        '200':
+          description: Страница пользователей.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PagedAdminUserDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/admin/companies:
+    get:
+      tags: [admin]
+      operationId: adminGetCompanies
+      summary: Компании — фильтр showcase, поля isShowcase и showcaseBookingOpen
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - name: kind
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: '#/components/parameters/ShowcaseFilter'
+      responses:
+        '200':
+          description: Страница компаний.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PagedAdminCompanyDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/admin/billing-accounts:
+    get:
+      tags: [admin]
+      operationId: adminGetBillingAccounts
+      summary: Биллинг-аккаунты — фильтр showcase и поле isShowcase
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+        - name: trial
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [never, active, used]
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - $ref: '#/components/parameters/ShowcaseFilter'
+      responses:
+        '200':
+          description: Страница аккаунтов.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PagedAdminBillingAccounts' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/admin/billing-accounts/{accountId}/subscription:
+    put:
+      tags: [admin]
+      operationId: adminAssignSubscription
+      summary: Назначить тариф — служебный тариф витрины только витринному аккаунту
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignSubscriptionInput' }
+      responses:
+        '200': { $ref: '#/components/responses/AnyJson' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            Прежние 409 (переполнение лимитов, заявка) либо, с цикла 28, «Служебный тариф витрины нельзя назначить
+            настоящему аккаунту.» Прежние 409 этого маршрута могут быть JSON — форма не меняется.
+          content:
+            text/plain:
+              schema: { type: string }
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/admin/companies/{id}/owner:
+    put:
+      tags: [admin, demo-restricted]
+      operationId: adminUpdateCompanyOwner
+      summary: Сменить ответственного — запрет смешивания; демо-роли — 403 DemoRestricted
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCompanyOwnerDto' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/DemoRestricted' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            Прежний 409 (не связан с аккаунтом) либо, с цикла 28, «Витринную компанию и настоящие учётные записи
+            смешивать нельзя.»
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /api/admin/companies/{companyId}/transfer:
+    post:
+      tags: [admin, demo-restricted]
+      operationId: adminTransferCompany
+      summary: Перенести компанию в другой аккаунт — запрет смешивания; демо-роли — 403 DemoRestricted
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdAlt'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompanyTransferInput' }
+      responses:
+        '200': { $ref: '#/components/responses/AnyJson' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/DemoRestricted' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            Прежние 409 переноса либо, с цикла 28, «Витринную компанию нельзя перенести в настоящий аккаунт, а
+            настоящую — в витринный.» Прежние 409 этого маршрута могут быть JSON — форма не меняется.
+          content:
+            text/plain:
+              schema: { type: string }
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  # ── Демо (проход B) ─────────────────────────────────────────────────────────────────────────────
+  /api/demo/status:
+    get:
+      tags: [demo]
+      operationId: demoGetStatus
+      summary: Статус демо-режима — плашка, кнопки ролей, «идёт сброс»; вне демо 404
+      responses:
+        '200':
+          description: Экземпляр в демо-режиме. Во время сброса — 200 с resetting = true (не 503).
+          headers:
+            X-Robots-Tag:
+              description: В демо-режиме — на всех ответах.
+              schema: { type: string, example: "noindex, nofollow" }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DemoStatusDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/demo/login:
+    post:
+      tags: [demo]
+      operationId: demoLogin
+      summary: Вход под готовой демо-ролью без пароля; вне демо 404
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DemoLoginRequest' }
+      responses:
+        '200':
+          description: Токен демо-роли (claim sb_demo = 1).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponseDto' }
+        '400':
+          description: «Неизвестная демо-роль.»
+          content:
+            text/plain:
+              schema: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: «Демо-данные ещё не созданы. Зайдите чуть позже.»
+          content:
+            text/plain:
+              schema: { type: string }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/DemoResetting' }
+
+  # ── Запреты демо-ролей ──────────────────────────────────────────────────────────────────────────
+  /api/profile/change-password:
+    post:
+      tags: [demo-restricted]
+      operationId: profileChangePassword
+      summary: Смена пароля — демо-роли получают 403 DemoRestricted
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200': { $ref: '#/components/responses/AnyJson' }
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/DemoRestricted' }
+
+  /api/profile/change-phone:
+    post:
+      tags: [demo-restricted]
+      operationId: profileChangePhone
+      summary: Смена телефона — демо-роли получают 403 DemoRestricted
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200': { $ref: '#/components/responses/AnyJson' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/DemoRestricted' }
+        '409': { $ref: '#/components/responses/PlainTextConflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/profile/delete-account:
+    post:
+      tags: [demo-restricted]
+      operationId: profileDeleteAccount
+      summary: Удаление аккаунта — демо-роли получают 403 DemoRestricted
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200': { $ref: '#/components/responses/AnyJson' }
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/DemoRestricted' }
+        '409': { $ref: '#/components/responses/PlainTextConflict' }
+
+  /api/billing/subscription/request:
+    post:
+      tags: [demo-restricted]
+      operationId: billingSubmitSubscriptionRequest
+      summary: Заявка на тариф — демо-роли получают 403 DemoRestricted
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200': { $ref: '#/components/responses/AnyJson' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/DemoRestricted' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/PlainTextConflict' }
+
+  /api/billing/trial:
+    post:
+      tags: [demo-restricted]
+      operationId: billingActivateTrial
+      summary: Активация пробного периода — демо-роли получают 403 DemoRestricted
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TrialActivationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/AnyJson' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/DemoRestricted' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Отказ выдачи пробного (JSON цикла 18, форма не меняется).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '429': { $ref: '#/components/responses/TooManyRequests' }

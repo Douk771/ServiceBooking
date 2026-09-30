@@ -52,6 +52,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- ARCHITECTURE_CYCLE28.md §575.6: the ready-made pictures of the showcase (manifest, LICENSES.md, images) travel with the published API image,
+         because `ops showcase create` runs inside that image. *.json is a default Content item (Update), pictures and the .md are not (Include) — the same pair of forms as App_Data/legal above. -->
+    <Content Update="ShowcaseAssets\**\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="ShowcaseAssets\**\*.jpg;ShowcaseAssets\**\*.jpeg;ShowcaseAssets\**\*.png;ShowcaseAssets\**\*.webp;ShowcaseAssets\LICENSES.md"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- ARCHITECTURE_CYCLE23.md §390: the map of goods.ezbook.ru routes and the shop-address policy (slug
          pattern, reserved words) has ONE source — contracts/cycle23/goods-routes.json — read here as an
          embedded resource (SlugPolicy), by the goods frontend test and by QA. The Docker build context is the

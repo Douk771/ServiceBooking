@@ -50,6 +50,13 @@ public static class LegalTextKey
     // (same reason as OrderCheckoutNotice): the deploy must not wait for legal-counsel; the frontend shows its fallback on 404.
     public const string ShopCustomerNoteNotice = "ShopCustomerNoteNotice";
 
+    // ARCHITECTURE_CYCLE28.md §572.2, §583.2 [L28-1, L28-3] — neutral placeholders (no lawyer engaged, customer decision 30.09),
+    // DELIBERATELY NOT in All (same reason as OrderCheckoutNotice): the deploy must not wait for legal text. The frontend reads
+    // GET /api/legal/texts/<key> and shows its own fallback (API_CONTRACT_CYCLE28.md §600) on 404.
+    public const string ShowcaseNotice = "ShowcaseNotice";
+    public const string ShowcaseBookingClosed = "ShowcaseBookingClosed";
+    public const string DemoBanner = "DemoBanner";
+
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         BookingNotice, TemplateAdWarning, UnsubscribePage, PhotoConsent, HealthDataConsent, GuardianConfirmation,

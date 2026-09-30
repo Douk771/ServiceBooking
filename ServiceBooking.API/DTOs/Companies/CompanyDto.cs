@@ -109,7 +109,12 @@ public record CompanyDto(
     // gives an enum, but readable by a plain System.Text.Json deserializer: many existing consumers (tests, tools) read this DTO
     // without the enum converter, and an enum member here would break every one of them.
     string Kind = nameof(CompanyKind.Services),
-    string PublicUrl = ""
+    string PublicUrl = "",
+    // ARCHITECTURE_CYCLE28.md §577.1, API_CONTRACT_CYCLE28.md §591 — additive, appended at the end with defaults. Filled for EVERY caller,
+    // anonymous ones included. IsShowcase: a fictional "example" company created by the showcase generator (always false for real ones).
+    // ShowcaseBookingOpen: such a company takes online booking (D-1); false = slots and calendar work, the confirmation is refused (409 ShowcaseBookingClosed).
+    bool IsShowcase = false,
+    bool ShowcaseBookingOpen = false
 );
 
 // ARCHITECTURE_CYCLE5.md §42.1 — the acceptance of TermsOwner (D3) that gates company creation. Checked

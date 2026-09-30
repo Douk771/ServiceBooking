@@ -280,6 +280,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("IsShowcase")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("LastName")
                         .IsRequired()
                         .HasColumnType("text");
@@ -319,6 +322,10 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Id")
+                        .HasDatabaseName("IX_AspNetUsers_IsShowcase")
+                        .HasFilter("\"IsShowcase\"");
+
                     b.HasIndex("NormalizedEmail")
                         .HasDatabaseName("EmailIndex");
 
@@ -352,6 +359,9 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.Property<int>("GrandfatheredEmployeeBonus")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("IsShowcase")
+                        .HasColumnType("boolean");
 
                     b.Property<DateTime?>("LastRejectedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -434,6 +444,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Id")
+                        .HasDatabaseName("IX_BillingAccounts_IsShowcase")
+                        .HasFilter("\"IsShowcase\"");
 
                     b.HasIndex("OwnerUserId")
                         .IsUnique();
@@ -527,6 +541,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<Guid>("ServiceId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("ShowcaseKind")
+                        .HasColumnType("integer");
+
                     b.Property<TimeOnly>("StartTime")
                         .HasColumnType("time without time zone");
 
@@ -541,6 +558,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("ClientId");
 
                     b.HasIndex("CompanyId");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("IX_Bookings_ShowcaseVisitor")
+                        .HasFilter("\"ShowcaseKind\" = 2");
 
                     b.HasIndex("GuestPhone")
                         .HasDatabaseName("IX_Bookings_GuestPhone")
@@ -1000,6 +1021,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsShowcase")
+                        .HasColumnType("boolean");
+
                     b.Property<int>("Kind")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -1023,6 +1047,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<bool>("ShowInPublicListing")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ShowcaseBookingOpen")
                         .HasColumnType("boolean");
 
                     b.Property<string>("Slug")
@@ -1051,6 +1078,10 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("CityId");
 
+                    b.HasIndex("Id")
+                        .HasDatabaseName("IX_Companies_IsShowcase")
+                        .HasFilter("\"IsShowcase\"");
+
                     b.HasIndex("OwnerUserId");
 
                     b.HasIndex("Slug")
@@ -1064,7 +1095,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasDatabaseName("IX_Companies_PublicListing_Default")
                         .HasFilter("\"IsActive\" AND \"ShowInPublicListing\"");
 
-                    b.ToTable("Companies");
+                    b.ToTable("Companies", t =>
+                        {
+                            t.HasCheckConstraint("CK_Companies_ShowcaseBookingOpen", "NOT \"ShowcaseBookingOpen\" OR \"IsShowcase\"");
+                        });
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.CompanyMember", b =>

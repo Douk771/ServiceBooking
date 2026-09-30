@@ -157,8 +157,9 @@ public class ProfileTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         profile.Plan!.PlanName.Should().Be("Free");
         profile.Plan.IsActive.Should().BeTrue();
         profile.Plan.PaidUntil.Should().BeNull();
-        profile.Plan.AllowOnlineBooking.Should().BeFalse();
-        profile.Plan.MaxEmployees.Should().Be(1);
+        // Cycle 28 (Q28-1): the free baseline "Старт" — online booking on, two employees.
+        profile.Plan.AllowOnlineBooking.Should().BeTrue();
+        profile.Plan.MaxEmployees.Should().Be(2);
         profile.Plan.MaxCompanies.Should().Be(1);
     }
 

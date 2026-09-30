@@ -37,6 +37,7 @@ public sealed class InactiveAccountRule(AppDbContext db, FileStorage storage) : 
         IQueryable<AppUser> Query(string cursor) => db.Users
             .Where(u => string.Compare(u.Id, cursor) > 0
                         && u.DeletedAtUtc == null
+                        && !u.IsShowcase // ARCHITECTURE_CYCLE28.md §577.6: showcase accounts are created and deleted by the operator's command, never by retention
                         && u.CreatedAt < cutoff
                         && !db.Companies.Any(c => c.OwnerUserId == u.Id)
                         && !db.CompanyMembers.Any(m => m.UserId == u.Id)

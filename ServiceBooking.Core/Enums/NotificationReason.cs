@@ -125,4 +125,8 @@ public enum NotificationReason
 
     /// <summary>The shop was deactivated after the row was queued — staff of a closed shop get no MAX order messages.</summary>
     StaffMaxShopInactive,
+
+    /// <summary>ARCHITECTURE_CYCLE28.md §576 — the company is a showcase (fictional) one, or the instance runs in demo mode:
+    /// no outbound message is ever sent. Only the dispatch tasks' safety net produces it (rows are normally not queued at all).</summary>
+    ShowcaseSuppressed,
 }

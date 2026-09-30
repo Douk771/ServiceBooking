@@ -3,10 +3,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { authApi } from '../api/auth'
 import { useAuthStore } from '../store/authStore'
+import { clearUserCache } from '../utils/clearUserCache'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { PhoneInput } from '../components/ui/PhoneInput'
 import { Icon } from '../components/ui/Icon'
+import { DemoRoleButtons } from '../components/demo/DemoRoleButtons'
 import { getAuthErrorMessage } from '../utils/authError'
 import { safeReturnTo, withReturnTo } from '../utils/returnTo'
 import { useState } from 'react'
@@ -44,7 +46,7 @@ export function LoginPage() {
       // Signing in over a live session (a direct /login link, or registering a second account without
       // logging out) would otherwise leave the previous user's cached queries in place, and the new
       // user gets a first frame of someone else's data. Navbar's logout clears for the same reason.
-      qc.clear()
+      clearUserCache(qc)
       setAuth(
         {
           id: res.userId,
@@ -122,6 +124,9 @@ export function LoginPage() {
               Зарегистрироваться
             </Link>
           </p>
+
+          {/* API_CONTRACT_CYCLE28.md §598 — only on the demo stand; production renders nothing here. */}
+          <DemoRoleButtons />
         </div>
       </div>
     </div>

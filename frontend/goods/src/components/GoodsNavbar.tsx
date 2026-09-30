@@ -33,12 +33,17 @@ export function GoodsNavbar() {
   return (
     <nav className="sticky top-0 z-40 bg-cream/90 backdrop-blur-md border-b border-line">
       <div className="max-w-[1180px] mx-auto px-4 sm:px-8 h-[68px] flex items-center justify-between">
-        <Link to="/" onClick={closeMenu} className="flex items-baseline gap-2.5 shrink-0" aria-label="ezbook · Заказы">
-          <span className="font-serif text-[22px] text-ink leading-none">ezbook</span>
-          <span className="text-line-strong" aria-hidden="true">
-            ·
+        <Link to="/" onClick={closeMenu} className="flex items-center gap-3 shrink-0" aria-label="ezbook · Заказы">
+          <span className="w-[38px] h-[38px] rounded-full bg-ink flex items-center justify-center shrink-0">
+            <Icon name="shopping-bag" size={18} className="text-cream" strokeWidth={1.6} />
           </span>
-          <span className="text-[13px] font-semibold tracking-wide uppercase text-gold-dark leading-none">Заказы</span>
+          <span className="flex items-center gap-2.5">
+            <span className="font-serif text-[22px] text-ink leading-none">ezbook</span>
+            <span className="text-line-strong leading-none" aria-hidden="true">
+              ·
+            </span>
+            <span className="text-[13px] font-semibold tracking-wide uppercase text-gold-dark leading-none">Заказы</span>
+          </span>
         </Link>
 
         <div className="hidden md:flex items-center gap-7">

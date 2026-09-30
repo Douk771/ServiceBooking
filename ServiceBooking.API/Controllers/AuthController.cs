@@ -163,6 +163,14 @@ public class AuthController(
             return Unauthorized("Invalid credentials");
         }
 
+        // ARCHITECTURE_CYCLE28.md §574.3: showcase accounts have no password and never sign in here (on the demo stand — only through
+        // POST /api/demo/login). The same 401 as a wrong password; checked before the password so no lockout counter moves.
+        if (user.IsShowcase)
+        {
+            logger.LogInformation("Login outcome {Outcome} for {Phone}", LoginOutcome.ShowcaseAccount, LogMasking.Phone(canonicalPhone));
+            return LoginOutcomeMapper.ToErrorResponse(LoginOutcome.ShowcaseAccount);
+        }
+
         var result = await signInManager.CheckPasswordSignInAsync(user, dto.Password, lockoutOnFailure: true);
         var outcome = LoginOutcomeMapper.FromSignInResult(result);
         if (outcome != LoginOutcome.Success)

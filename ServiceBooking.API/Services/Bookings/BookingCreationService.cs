@@ -5,6 +5,7 @@ using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -74,6 +75,11 @@ public sealed class BookingCreationService(
         // calling the API directly — the same shape of hole as the guestName bypass this cycle closed.
         // Staff are exempt: recording a walk-in is their tool, and the toggle is about the storefront.
         if (!isStaff && !company.AllowSelfBooking) return Fail(new ForbidResult());
+
+        // ARCHITECTURE_CYCLE28.md §577.4, API_CONTRACT_CYCLE28.md §592: a showcase company that is not open for booking refuses the confirmation for
+        // everyone but its staff (SuperAdmin included) — one place for guest, client and /embed. JSON, unlike the other 409s of this route.
+        if (company.IsShowcase && !company.ShowcaseBookingOpen && !isStaff)
+            return Fail(new ObjectResult(ShowcaseTexts.BookingClosedRefusal()) { StatusCode = StatusCodes.Status409Conflict });
 
         if (isGuestPath)
         {
@@ -245,7 +251,9 @@ public sealed class BookingCreationService(
             Status = BookingStatus.Confirmed,
             PaymentStatus = requiresPrepayment ? PaymentStatus.Pending : PaymentStatus.NotRequired,
             Price = totalPrice,
-            CommissionPercent = masterCommissionPercent
+            CommissionPercent = masterCommissionPercent,
+            // §574.1 invariant 3: a booking in a showcase company is marked; it was made through the API, so by a visitor (§577.4).
+            ShowcaseKind = company.IsShowcase ? ShowcaseBookingKind.Visitor : ShowcaseBookingKind.None
         };
 
         // US-67 (ARCHITECTURE_CYCLE6.md §44.2 p.2/p.3): one row per selected service, in request order,

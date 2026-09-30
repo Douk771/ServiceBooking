@@ -22,6 +22,9 @@ internal static class ApiExtensions
             // LegalDocumentProvider is resolved from DI per-request rather than requiring a service-locator
             // pattern here.
             options.Filters.Add<ServiceBooking.API.Services.Legal.LegalConsentFilter>();
+            // ARCHITECTURE_CYCLE28.md §579.5: in demo mode, a demo token (claim sb_demo) is refused the actions marked [DemoForbidden] with a 403 that has a body.
+            // A no-op everywhere else.
+            options.Filters.Add<ServiceBooking.API.Services.Demo.DemoForbiddenFilter>();
         })
         .ConfigureApiBehaviorOptions(options =>
         {
@@ -100,7 +103,9 @@ internal static class ApiExtensions
             p.WithOrigins(builder.Configuration["AllowedOrigins"]?.Split(',') ?? ["http://localhost:5173"])
              .AllowAnyHeader()
              .AllowAnyMethod()
-             .AllowCredentials()));
+             .AllowCredentials()
+             // Cycle 28, pass B: a cross-origin front end (a dev server) can only read these headers if they are exposed; they carry the demo's two special answers.
+             .WithExposedHeaders("X-Demo-Restricted", "X-Demo-Resetting", "Retry-After")));
     }
 
     public static void AddServiceBookingForwardedHeaders(this WebApplicationBuilder builder)

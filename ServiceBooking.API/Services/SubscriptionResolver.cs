@@ -36,15 +36,18 @@ public record EffectivePlan(
     int PaidNotificationNumbers = 0)
 {
     // No usable subscription → a restrictive baseline: no paid features, and an account may have just
-    // one company with one employee (the owner alone). This is what blocks free-company spam and forces
-    // an upgrade before a second branch or the first extra staff member can be added. Public listing is
+    // one company. Cycle 28 (customer decision Q28-1, ARCHITECTURE_CYCLE28.md §583.4): the free tier "Старт" now
+    // includes online booking and two employees (was: no online booking, one employee) — "online booking is the product,
+    // without it the free pages do not work as advertising" (tariff draft §5, cycle 28). It changes behaviour for EVERY
+    // existing free company. This still blocks free-company spam (one company) and forces an upgrade before a second
+    // branch or the third staff member can be added. Public listing is
     // the one flag that stays true on Free — otherwise every existing unsubscribed company would
     // silently vanish from the public directory. Photo limits get the same treatment as everything else
     // here: a low but non-zero baseline (SPEC US-24 p.2, "low-risk assumption") rather than 0/null,
     // which would either block every upload or grant unlimited storage to unpaid accounts.
     public static readonly EffectivePlan Free = new(
-        AllowOnlineBooking: false, AllowMailing: false, AllowAnalytics: false,
-        AllowPublicListing: true, AllowOnlinePayment: false, AccountMaxEmployees: 1, AccountMaxCompanies: 1,
+        AllowOnlineBooking: true, AllowMailing: false, AllowAnalytics: false,
+        AllowPublicListing: true, AllowOnlinePayment: false, AccountMaxEmployees: 2, AccountMaxCompanies: 1,
         PhotoQuotaMb: 100, PhotoRetention: PhotoRetention.SixMonths, AllowNotificationChannel: false);
 
     public static EffectivePlan FromConfig(SubscriptionPlanConfig c) => new(

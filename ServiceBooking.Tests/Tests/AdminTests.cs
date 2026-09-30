@@ -916,11 +916,18 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var admin = await LoginAsSuperAdminAsync();
         var adminClient = AuthedClient(admin.Token);
         var (owner, company) = await CreateOwnerWithCompanyAsync(attachPlan: false, allowSelfBooking: true);
-        var configId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
+        // Cycle 28 (Q28-1): the free baseline now has online booking too, so the observable difference between "the plan" and
+        // "Free" is online payment (a paid-tier flag Free never has) and the seat limit.
+        var configId = await CreateTestPlanConfigAsync(allowOnlineBooking: true, allowOnlinePayment: true, maxEmployees: 8);
         await SetSubscriptionAsync(company.Id, configId);
 
-        var before = await AnonymousClient().GetAsync($"/api/companies/{company.Slug}");
-        (await before.Content.ReadFromJsonAsync<CompanyDto>())!.OnlineBookingEnabled.Should().BeTrue();
+        async Task<CompanyDto> OwnersCompanyAsync() =>
+            (await (await AuthedClient(owner.Token).GetAsync("/api/companies/my")).Content.ReadFromJsonAsync<List<CompanyDto>>())!
+                .Single(c => c.Id == company.Id);
+
+        var before = await OwnersCompanyAsync();
+        before.PlanAllowsOnlinePayment.Should().BeTrue();
+        before.MaxEmployees.Should().Be(8);
 
         using (var scope = Factory.Services.CreateScope())
         {
@@ -930,8 +937,9 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
             await db.SaveChangesAsync();
         }
 
-        var after = await AnonymousClient().GetAsync($"/api/companies/{company.Slug}");
-        (await after.Content.ReadFromJsonAsync<CompanyDto>())!.OnlineBookingEnabled.Should().BeFalse();
+        var after = await OwnersCompanyAsync();
+        after.PlanAllowsOnlinePayment.Should().BeFalse();
+        after.MaxEmployees.Should().Be(2);
     }
 
     private SubscriptionPlanConfig NewPlanConfig() => new()

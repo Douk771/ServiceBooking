@@ -1,13 +1,26 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `364cc2b` (`develop` = `origin/develop`, мердж `cycle/031-shared-photo-uploader`; циклы 29, 30 и 31 влиты; дата коммита — 2026-09-30), дата обновления: 2026-10-01.**
-**Режим: обновление поверх полного сканирования на `1837373`** (прежние точечные обновления — на `b9c2a79`, `aeed251`).
+> **Цикл 32 влит в `develop` после этого снимка** (общий `CompanyProfileCard`, `SalonProfileSection`, `BookingRulesSection`, новая раскладка `SettingsTab`, удалён `CompanyAddressField`; сервер не менялся). Описания настроек компании ниже — до цикла 32; полная синхронизация — при следующем обновлении файла.
+
+**Актуально по состоянию на коммит: `050816f` (`develop` = `origin/develop`, мердж `cycle/034-goods-update-banner`; циклы 29, 30, 31 и 34 влиты; дата коммита — 2026-10-01), дата обновления: 2026-10-01.**
+**Режим: обновление поверх полного сканирования на `1837373`** (прежние точечные обновления — на `b9c2a79`, `aeed251`, `364cc2b`).
+**Обновление на `050816f`** (✔ `git diff 364cc2b..050816f`, 14 файлов). В диапазоне три вещи: `6a71f50` — документы цикла 31
+(CHANGELOG, README и прежняя правка этого файла; закрыт C31-8), `c7a4ace` — фикс `fix/goods-sound-remember` (мердж
+`49f0d60`, §5.5), и **цикл 34** «Плашка „Доступна новая версия“ в goods» — `9c0afb7`…`aabb693`, мердж `050816f` (§5.9).
+Цикл 34 изначально шёл под номером 31 и переименован коммитом `dbe476f`. Бэкенд, API, БД, контракты, CI и зависимости в
+диапазоне не менялись. Обновлены шапка, §0 (ветки), §5.5, §5.7 (строка про звук), §5.9 (новый), §7.1, §7.2, §7.4, §9.1,
+§9.2 (C24-1), §10. Остальные разделы описывают `364cc2b` и в этом диапазоне не затронуты. **Следующий diff отсчитывайте от `050816f`.**
+
+*Ниже — шапка прежнего обновления на `364cc2b`, сохранена для истории.*
 Сверено по git (✔): `git diff c19a83c..364cc2b` (99 файлов). В нём цикл 30 (уже был описан в этом файле на `aeed251`,
 влит мерджем `e1d7cdb`), три мелких фикса goods мимо циклов (`53def4f`, `9659742`, `474f8be`) и **цикл 31** —
 `5c1d133`…`67f0fd6`, мердж `364cc2b`. При этом мердже `CURRENT_STATE.md` взят в версии `develop`, так что прежняя
 правка из ветки 31 (`a8d3337`, «фактическое устройство до цикла 31») в файл не попала. Её суть теперь устарела, и вместо
 неё в §5.8 описано состояние **после** цикла 31. Обновлены §0, §1, §2, §3, §4, §5.4, §5.5, §5.7 (шапка), §5.8 (новый),
-§6.2, §7.1, §7.3, §9.1, §10. **Следующий diff отсчитывайте от `364cc2b`.**
+§6.2, §7.1, §7.3, §9.1, §10.
+
+**Дополнение цикла 28 (проходы A и B, ветка `cycle/028-showcase-data-demo-stand`, backend ✔ по коду и `dotnet test`; правил вручную, полный пересчёт — за codebase-analyst):** §5.5 (блоки «Цикл 28, проход A» и «Цикл 28, проход B — демо-стенд»),
+§5.6 (задачи `showcase-reseed` и `demo-reset`), §9.3 (долг C28-1…C28-14) и строка `Migrations/` в §2. Форма API — `contracts/cycle28/openapi.yaml`, описание — `API_DOCUMENTATION.md` §4.21 (проход B — §4.21.8).
 
 ## 0. Как читать этот документ
 
@@ -29,15 +42,21 @@
 - 🖥 — факт о боевой машине. В репозитории его нет, в этом сканировании он не проверялся (SSH не использовался).
   Источник — прежняя редакция, блок «🚀20», проверено по SSH 30.09.2026.
 
-**Ветки** (✔ по локальным ссылкам `origin/*` на 2026-09-30, `git fetch` в этом обновлении не делался):
-- `origin/develop` = `364cc2b`. В нём влиты **цикл 29** «Доделки цикла 26» (§5.5), **цикл 30** «Для покупателей» и
-  скриншоты на главной goods (мердж `e1d7cdb`, §5.7) и **цикл 31** «Общий блок фото, мультизагрузка, блок „Каталог“
-  салона, компактная шапка карточки» (мердж `364cc2b`, §5.8). Мимо циклов влиты фиксы goods `fix/goods-storefront-mobile-width`
-  (`53def4f`), `fix/goods-pickup-chips-narrow` (`9659742`) и `fix/goods-cabinet-tabs-scroll` (`474f8be`) — §5.5.
-- `origin/cycle/031-shared-photo-uploader`, `origin/cycle/030-user-section-screenshots`, `origin/cycle/029-cycle26-followups`
-  влиты в `develop`.
-- `origin/cycle/028-showcase-data-demo-stand` = `673473c` — на 37 коммитов впереди и на 15 позади `origin/develop` (✔
-  `rev-list` на `364cc2b`). `develop` до цикла 30 включительно (`e1d7cdb`) в неё уже влит, цикла 31 в ней нет. **Это уже
+**Ветки** (✔ по локальным ссылкам `origin/*` на 2026-10-01, `git fetch` в этом обновлении не делался):
+- `origin/develop` = `050816f` (совпадает с локальным `develop`). В нём влиты **цикл 29** «Доделки цикла 26» (§5.5),
+  **цикл 30** «Для покупателей» и скриншоты на главной goods (мердж `e1d7cdb`, §5.7), **цикл 31** «Общий блок фото,
+  мультизагрузка, блок „Каталог“ салона, компактная шапка карточки» (мердж `364cc2b`, §5.8) и **цикл 34** «Плашка
+  „Доступна новая версия“ в goods» (мердж `050816f`, §5.9). Мимо циклов влиты фиксы goods `fix/goods-storefront-mobile-width`
+  (`53def4f`), `fix/goods-pickup-chips-narrow` (`9659742`), `fix/goods-cabinet-tabs-scroll` (`474f8be`) и
+  `fix/goods-sound-remember` (`c7a4ace`, мердж `49f0d60`) — §5.5.
+- `origin/cycle/031-shared-photo-uploader`, `origin/cycle/030-user-section-screenshots`, `origin/cycle/029-cycle26-followups`,
+  `origin/fix/goods-sound-remember` влиты в `develop`. Ветка `cycle/034-goods-update-banner` есть **только локально**
+  (на origin её нет), влита в `develop`.
+- **Номера 32 и 33 заняты открытыми ветками:** `origin/cycle/032-salon-settings-compact-layout` и
+  `origin/cycle/033-unified-notifications-profile` обе стоят на `49f0d60` (0 своих коммитов, на 8 позади `develop`) —
+  только что заведены, кода в них ещё нет. Поэтому цикл «плашка обновления» получил номер 34, а не 32.
+- `origin/cycle/028-showcase-data-demo-stand` = `673473c` — на 37 коммитов впереди и на 26 позади `origin/develop` (✔
+  `rev-list` на `050816f`). `develop` до цикла 30 включительно (`e1d7cdb`) в неё уже влит, циклов 31 и 34 в ней нет. **Это уже
   не только документы.** Diff от общей базы — 151 файл, около 18 тыс. строк: демо-режим и витрина (`Services/Demo/`,
   `ShowcaseReseedTask`, правило retention `ShowcaseVisitorBookingRule`, `Services/Ops/OpsCommand*`), правки биллинга,
   триала, админки, одна новая миграция, генерат `api-cycle28.generated.ts`, свои `SPEC.md` и `CURRENT_STATE.md`. В этом
@@ -47,7 +66,8 @@
   выбирать файл целиком нельзя.
 - `origin/cycle/027-goods-business-block` влита в `develop` целиком (0 впереди, 0 позади).
 
-**Ориентиры.** На `491406c` было 1 058 коммитов и 1 783 отслеживаемых файла; цикл 27 добавил 7 коммитов.
+**Ориентиры.** На `491406c` было 1 058 коммитов и 1 783 отслеживаемых файла; цикл 27 добавил 7 коммитов. На `050816f` —
+1 128 коммитов и 1 868 отслеживаемых файлов.
 `origin/master` — `263c661` (2026-07-28), тегов нет, ветки `release-candidate` на origin нет.
 
 ---
@@ -121,7 +141,7 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | Путь | Что там |
 |---|---|
 | `ServiceBooking.Core/` | `Entities/` (67 файлов, POCO-сущности), `Enums/` (47). Зависит только от `Microsoft.AspNetCore.Identity.EntityFrameworkCore` |
-| `ServiceBooking.Infrastructure/` | `Data/AppDbContext.cs` (1 086 строк, вся Fluent-конфигурация) и `Migrations/` (78 миграций + снапшот) |
+| `ServiceBooking.Infrastructure/` | `Data/AppDbContext.cs` (1 086 строк, вся Fluent-конфигурация) и `Migrations/` (79 миграций + снапшот; последняя — `Cycle28ShowcaseMarks`, цикл 28) |
 | `ServiceBooking.API/` | Веб-приложение, в нём же **вся бизнес-логика** (отдельного слоя Application нет) |
 | `ServiceBooking.API/Program.cs` | **Точка входа**, 48 строк — только порядок вызовов расширений |
 | `ServiceBooking.API/Startup/` | Инфраструктура запуска: `ApiExtensions` (MVC/JSON/CORS/Swagger/обработчик 500/раздача загрузок), `AuthenticationExtensions` (JWT, `OnTokenValidated`), `ApplicationServicesExtensions` (DI прикладных сервисов, фоновые задачи, подтверждение телефона), `NotificationServicesExtensions` (транспорты, реестры, Web Push), `RateLimitingExtensions`, `DeploymentValidationExtensions` (fail-fast проверки прод-конфигурации), `HealthEndpointsExtensions` (`/api/health/live`, `/api/health/ready`), `LoggingExtensions`, `StartupSeedingExtensions` (миграции, роли, суперадмин) |
@@ -506,6 +526,20 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 
 ### 5.5 Что сделали последние циклы
 
+**Цикл 34 — плашка «Доступна новая версия» в goods** (✔ `git diff 364cc2b..050816f`, влит мерджем `050816f`). Только
+фронт goods и vhost nginx goods. API, БД, миграции, контракты, пакеты и CI не менялись. Подробно — §5.9.
+
+**Фикс goods мимо цикла — `fix/goods-sound-remember`** (✔ `c7a4ace`, мердж `49f0d60`, влит между циклами 31 и 34).
+В `frontend/goods/src/hooks/useNewOrderSound.ts` выбор «звук новых заказов включён» теперь переживает перезагрузку:
+- он хранится в `localStorage` под ключом `goods.newOrderSound` (`'1'` — включён, ключа нет — выключен). `enable()`
+  пишет ключ, `disable()` удаляет. Ошибки хранилища глотаются, тогда выбор просто не запоминается;
+- при первом вызове `initialState()` функция `restoreFromStorage()` создаёт `AudioContext` (он приостановлен) и ставит
+  `sharedEnabled = true`, поэтому после перезагрузки состояние — `blocked`, а не `off`;
+- пока контекст не `running`, эффект вешает на `window` (capture) слушатели `pointerdown`/`touchend`/`click`/`keydown`.
+  Первое касание или клавиша где угодно на странице вызывает `resume()`. Комментарий в коде: iOS Safari разблокирует
+  звук только по `touchend`/`click`.
+Тестов на хук по-прежнему нет (✔ ни один `*.test.ts(x)` его не импортирует).
+
 **Цикл 31 — общий блок фото с мультизагрузкой, блок «Каталог ezbook.ru» у салона, компактная шапка карточки**
 (✔ `git diff c19a83c..364cc2b`, влит мерджем `364cc2b`). Без миграций и без новых пакетов. Добавлены 2 маршрута
 (`GET|PUT /api/companies/{id}/catalog-listing`) и 2 политики частоты для галереи. Подробно — §5.8.
@@ -544,6 +578,50 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 **После `1837373` — только документы (✔ `git diff 1837373..b9c2a79`).** `4737b2f` — полное пересканирование этого файла.
 `b9c2a79` — в `CHANGELOG.md` добавлен раздел «Не выпущено — цикл 26: одна карточка компании…» (строка 34, под
 разделом цикла 27), в `README.md` цикл 26 описан в блоках goods и ezbook и в «Чего пока нет». Этим закрыт C26-6.
+
+**Цикл 28, проход A — тарифы «Записи», витринные данные (✔ backend; ветка `cycle/028-showcase-data-demo-stand`, в `develop` не влит, на бою нет).** Документы: `ARCHITECTURE_CYCLE28.md` §570–§583,
+`API_CONTRACT_CYCLE28.md` §590–§603, `contracts/cycle28/openapi.yaml`. Проход B (демо-стенд: `/api/demo/*`, `DemoMode`, сброс, `[DemoForbidden]`) — описан в следующем блоке («Цикл 28, проход B»).
+- **Одна миграция `Cycle28ShowcaseMarks`** (только добавления): `AspNetUsers.IsShowcase`, `BillingAccounts.IsShowcase`, `Companies.IsShowcase` и `ShowcaseBookingOpen`, `Bookings.ShowcaseKind`
+  (`ShowcaseBookingKind`: 0 обычная, 1 генератор, 2 посетитель), CHECK `CK_Companies_ShowcaseBookingOpen`, четыре частичных индекса. Enum'ы только дописаны: `NotificationReason.ShowcaseSuppressed`,
+  `PublicArea.Showcase`, `LegalTextKey.ShowcaseNotice/ShowcaseBookingClosed/DemoBanner` (вне `All`).
+- **Команды оператора внутри образа API** (`Program.cs`: `OpsCommandLine.Parse(args)`, первый аргумент `ops`; Serilog в режиме `ops` пишет в stderr, файл не трогает): `Services/Ops/`. HTTP-маршрута нет.
+  `ops tariffs plan|apply` (`Services/Showcase/Tariffs/`: `ZapisTariffCatalog`, `TariffCatalogSeeder`) — только создаёт недостающее; выравнивает системный бесплатный тариф в «Старт» по полям, совпадающим со значением сида цикла 7.
+  `ops showcase plan|create|recreate|delete [--yes]` (`Services/Showcase/`: `ShowcaseDataset` — чистая функция `(профиль, now)`, `ShowcaseRandom` xorshift64\*, `ShowcaseIds` UUIDv5, `ShowcasePhones` блок `72005550000–72005559999`,
+  `ShowcaseGenerator`, `ShowcaseEraser` + `ShowcaseOwnership` — порядок физического удаления, `ShowcaseAssetStore` + `ServiceBooking.API/ShowcaseAssets/`, `ShowcaseCommands` — одна транзакция под advisory-lock `ops:showcase`).
+  На тестовой БД: создание 9 компаний, 158 пользователей, ~9 тыс. записей — 4–13 с; `recreate` даёт тот же хеш записей на одну дату.
+- **Запрет смешивания** — `ShowcaseMixingGuard` (члены, смена ответственного, перенос, служебный тариф, зарезервированный слаг `primer-`); `AuthController.Login` отказывает витринным учёткам тем же 401; выборки «по номеру»
+  (`SubjectDataExporter`, `AccountDeletionService`, `ProfileConsentsController`, `GuestBookingLookup`) исключают витрину, маркеры `SUBJECT-PHONE-GATE` сохранены.
+- **Исходящие** — `ShowcaseOutboundGuard`: `NotificationScheduler.BuildContextAsync`, `StaffPushScheduler` (2 входа), `MailingController.SendMail` (409); страховка в `NotificationDispatchTask` и `StaffPushDispatchTask` (`Skipped` / `ShowcaseSuppressed`).
+- **Запись** — `BookingCreationService`: после `AllowSelfBooking` 409 JSON `ShowcaseBookingClosed` для закрытой витрины (не для персонала); запись в витринной компании помечается `Visitor`; правило ретенции
+  `ShowcaseVisitorBookingRule` (24 ч, `Retention:ShowcaseVisitorBookingHours`); `InactiveAccountRule` пропускает витрину. `CompanyDto` +`isShowcase`/`showcaseBookingOpen`, `BookingDto` +`companyIsShowcase`.
+- **Админка** — параметр `showcase=all|only|exclude`, поля `isShowcase`, `stats` без витрины + три счётчика.
+- **Решения заказчика Q28-1…Q28-4 в коде:** `EffectivePlan.Free` теперь `AllowOnlineBooking=true`, `AccountMaxEmployees=2` (**меняет поведение всех существующих бесплатных компаний**); `TrialTermsRegistry` — новая редакция `2026-09-30`
+  без обещания рассылок и без параметра `{3}` (`RenderCurrent(plan, days, endsAt)`), редакция `2026-09-26` сохранена; `TrialActivationService` не шлёт сигнал, если у пробного тарифа `AllowNotificationChannel = false`.
+- Тесты: unit +180 (`OpsCommandLineTests`, `ZapisTariffCatalogTests`, `Showcase*Tests`, `TrialMailingRulePolicyTests`, …); в функциональных обновлены 6 тестов под новый бесплатный тариф (`CompaniesTests`, `AdminTests`).
+  Функциональных тестов цикла 28 backend не писал — их пишет QA (`CY28-*`).
+
+**Цикл 28, проход B — демо-стенд (✔ backend: код и прогон на локальной БД; ветка `cycle/028-showcase-data-demo-stand`, в `develop` не влит, на бою нет, выкат DO-2 не выполнялся).** Документы: `ARCHITECTURE_CYCLE28.md` §579–§581,
+`API_CONTRACT_CYCLE28.md` §597–§600a, `API_DOCUMENTATION.md` §4.21.8. Новых миграций и зависимостей нет. Всё ниже **инертно при `DemoMode:Enabled=false`** (по умолчанию): маршруты отвечают 404 без тела, middleware и фильтр проходят насквозь,
+сброс отказывает кодом 2, задача `demo-reset` не регистрируется.
+- **Настройки** `DemoMode` (`DemoModeOptions`): `Enabled`, `ResetLocalTime` (`04:00`), `TimeZoneId` (`Europe/Moscow`), `MaintenanceFlagPath` (`App_Data/state/demo-resetting`); лимит `RateLimits:demo-login` 30/мин на IP (вне демо лимитер «не включается», чтобы 404 не превращался в 429).
+- **Два замка** (`Services/Demo/`): `DeploymentSafetyChecks.ValidateDemoMode` (конфигурация, до `Build()`, любое окружение: хосты `demo.*`, БД `*_demo`, `Jwt:Issuer` `*.Demo`, провайдеры `logging`/`stub`, StaffMax и пересев витрины выключены; нарушения собираются в одно сообщение)
+  и `DemoInstanceGuard` (данные; вызывается из `StartupSeedingExtensions` сразу после `MigrateAsync`: метка `PlatformSettings` `instance.kind = demo`, на пустой БД пишется, на БД с невитринной компанией или записью `ShowcaseKind = None` — отказ старта).
+- **Маршруты** `DemoController` (`[DemoOnly]` — `IResourceFilter`, 404 до действия): `GET /api/demo/status` (`DemoStatusDto`), `POST /api/demo/login` (`DemoLoginService`: учётка роли по стабильному Id из `ShowcaseDemoRoles`, `TokenService.GenerateToken(…, demo: true)` — claim `sb_demo = 1`
+  и текущие версии документов; 400/409/404/429 по контракту). Эталон `Cycle22RouteTable.golden.txt`: +2 маршрута и атрибут `[DemoForbidden]` на семи существующих действиях (`change-password`, `change-phone`, `delete-account`, `subscription/request`, `trial`, `transfer`, `PUT …/owner`).
+- **Конвейер:** `DemoResponseHeadersMiddleware` (`X-Robots-Tag: noindex, nofollow`) и `DemoMaintenanceMiddleware` (503 с `Retry-After` и `X-Demo-Resetting`; исключения `/api/health/*` и `GET /api/demo/status`) стоят первыми после `UseForwardedHeaders`, проверяют `DemoMode:Enabled` на каждом запросе.
+  `DemoForbiddenFilter` — глобальный `IAsyncResourceFilter` (403 `text/plain` + `X-Demo-Restricted`; срабатывает до привязки модели, после авторизации). Заголовки `X-Demo-*` и `Retry-After` объявлены в CORS (`WithExposedHeaders`).
+  Флаг обслуживания — файл (`DemoMaintenanceFlag`, singleton, кеш 1 с, зависший старше 10 минут игнорируется с `LogError`); общий для API и процесса `ops`.
+- **Сброс** (`DemoResetService`, одна процедура для `ops demo reset [--yes]` и фоновой `DemoResetTask`): оба замка → advisory-lock `ops:showcase` (код 4) → флаг → **одна транзакция**: `TRUNCATE` всех таблиц модели кроме списка разрешённых (`DemoResetTables`: строится из модели EF; 66 таблиц; разрешены
+  `__EFMigrationsHistory`, `Cities`, `AspNetRoles`, `SubscriptionPlanConfigs`, `SubscriptionOptions`, `PlanOptionRules`, `PlatformSettings`, **`ScheduledTaskStates`** — добавлена к списку архитектора), `TariffCatalogSeeder.ApplyAsync` (внутри внешней транзакции), генератор с профилем `demo`, `pricing.public-enabled = true`; коммит;
+  после коммита — `FileStorage.ClearAllFiles` (оба корня хранилища, кроме картинок новых данных; отказывается трогать корень приложения и корень файловой системы), `SuperAdminSeeder` (вынесен из `StartupSeedingExtensions` без изменения поведения; сам открывает транзакции, поэтому не может быть внутри общей), метка `demo.last-reset-utc`, снятие флага.
+  Сбой до коммита откатывает всё (TRUNCATE транзакционен): вчерашнее демо цело. `TRUNCATE` без `CASCADE` (отклонение от §580: ошибка на FK лучше тихой очистки каталога тарифов). Ночная задача `demo-reset` (период 10 мин, `DemoResetSchedule`) **не** делает первый сброс: без метки `demo.last-reset-utc` она ждёт команды оператора.
+  Измерено на локальной Postgres 16 без картинок (`ShowcaseAssets/` пуст): сброс 6–7 с, 66 таблиц, 159 пользователей, ~9,3 тыс. записей, ~19,5 тыс. событий.
+- **Профиль «demo»** (`ShowcaseProfile.Demo` — флаги `DemoRoles`, `Reviews`, `ClientNotes`, `RichHistory`, `RescheduleChance = 0,18`; `ShowcaseDataset`): тот же набор, что у `prod`, плюс три роли (`ShowcaseDemoRoles`: владелец «Лаванды» на публичном тарифе «Салон», `PaidUntil` = сегодня + 30; мастер `lavanda:m0`; клиент «Мария Климова» —
+  визиты берутся из существующих гостевых слотов в «Лаванде», «Жемчуге» и «Взгляде»: 3–4 прошлых и 1–2 будущих в каждой), отзывы (~30 % завершённых визитов зарегистрированных клиентов; средний рейтинг 4,0–4,4 по компаниям; у демо-клиента остаются неоценённые визиты),
+  заметки мастеров (нейтральные, без здоровья и фото; больше у демо-мастера), история переносов (часть записей переносится дважды). Профиль `prod` не изменился ни на байт (хеш графа совпал с состоянием до правки).
+- **Тесты:** unit +117 (`DemoModeValidationTests`, `DemoMaintenanceTests`, `DemoResetTests`, `DemoInstanceAndStorageTests`, `ShowcaseDemoProfileTests`; правка `ShowcaseDatasetTests` — списки отзывов/заметок пусты у `prod`); полный прогон `ServiceBooking.Tests` зелёный (1197/1198, 1 пропущен, прежний), эталон маршрутов обновлён.
+  **Функциональных тестов цикла 28 прохода B backend не писал** — их пишет QA (`CY28-23…30`).
+- **Вручную проверено на локальной БД** (не заменяет функциональные тесты): статус и вход под тремя ролями, 403 с заголовком (в том числе с пустым телом), 409 до первого сброса, 503 во время сброса, токен до сброса жив после него, файлы очищены, зарегистрированный посетитель стёрт, отказ старта на «боевой» конфигурации и на БД с реальными данными, код 2 у `ops demo reset` вне демо, ночная задача (стартовала по устаревшей метке, затем «not due»), 404 без тела и без 429 на 40 запросах вне демо.
 
 **Цикл 27 — блок «Для бизнеса» на главной goods (✔ `git diff 491406c..1837373`).** Затронут только фронт goods: бэкенд,
 контракты и миграции не менялись (`API_CONTRACT_CYCLE27.md` §553: «API не меняется»).
@@ -604,7 +682,7 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 - Документация цикла 26 дописана отдельным коммитом `b9c2a79` уже после влития: раздел в CHANGELOG и абзацы README.
 
 ### 5.6 Фоновые задачи (✔ `ApplicationServicesExtensions`, `appsettings.json`)
-Десять `IScheduledTask`, регистрируются поимённо:
+Одиннадцать `IScheduledTask` (с цикла 28), регистрируются поимённо; двенадцатая, `demo-reset`, — только при `DemoMode:Enabled` (проход B):
 
 | Задача | Полоса | Что делает |
 |---|---|---|
@@ -618,6 +696,8 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 | `staff-push-dispatch` | realtime | push персоналу, период 5 с |
 | `customer-order-push-dispatch` | realtime | push покупателям, период 5 с |
 | `staff-max-dispatch` | realtime | MAX персоналу, период 5 с |
+| `showcase-reseed` | main | (цикл 28) раз в неделю пересоздаёт **уже существующую** витрину; период 1 ч; **выключена** (`Showcase:Reseed:Enabled=false`), в `Testing` выключена. Время последнего пересева — `PlatformSettings` `showcase.last-reseed-utc` |
+| `demo-reset` | main | (цикл 28, проход B) **регистрируется только в демо-режиме**; период 10 мин; ночной сброс демо (`DemoResetService`), когда локальное время прошло `DemoMode:ResetLocalTime`, а `PlatformSettings` `demo.last-reset-utc` старше сегодняшнего слота. Без метки не делает ничего (первый сброс — команда оператора). `MaxRunMinutes=5`, в `Testing` выключена |
 
 Тик `main` — 10 с, тик `realtime` — 1 с. В окружении `Testing` все задачи выключены (`appsettings.Testing.json`).
 
@@ -677,7 +757,7 @@ CSS-размер 1x-кадра из манифеста (без сдвига вё
 **Доска заказов персонала** — `/cabinet/:shopId/orders`, `frontend/goods/src/pages/cabinet/OrdersScreenPage.tsx`
 (354 строки). Три колонки «Новые» / «Принятые» / «Готовы к выдаче» (`md:grid-cols-3`), на телефоне — вкладки
 (`role="tablist"`). Карточка — `components/orders/OrderCard.tsx`. Данные — `useOrderBoardPolling` (свой worker-таймер
-`hooks/boardTimer.worker.ts`), звук нового заказа — `useNewOrderSound`, экран не гаснет — `useWakeLock`. Под колонками — секция
+`hooks/boardTimer.worker.ts`), звук нового заказа — `useNewOrderSound` (с `c7a4ace` выбор хранится в `localStorage`, §5.5), экран не гаснет — `useWakeLock`. Под колонками — секция
 «Завершённые сегодня» (`h2`). В API и в `StartupSeedingExtensions` демо-данных для доски по-прежнему нет (фикстуры
 `components/orders/testData.ts` — только для тестов). Демо-данные goods теперь создаёт **внешний скрипт засева цикла 30**
 через HTTP API и только в локальном стенде `sb-shots` (ниже). Витринные и демо-данные `origin/cycle/028-…` — только для
@@ -878,6 +958,65 @@ node-типы: `shots.test.ts`, `seed-goods-demo.test.ts`, `BuyersBlock.qa.test.
   состояниях, шапка `/myasnoy` и `/company/:slug`, `/embed/:slug`) — **не выполнены**: вердикт в `TEST_CATALOG.md` —
   «НЕ ВЫПОЛНЕНО QA», у QA-агента не было браузера.
 
+### 5.9 Плашка «Доступна новая версия» в goods и кеш-заголовки nginx — цикл 34 (✔ по коду на `050816f`, ничего не запускалось)
+**Зачем.** Если goods добавлен на экран «Домой» iOS, приложение не перезагружается, а приостанавливается, и может днями
+держать старую сборку. Документы цикла:
+- `SPEC_CYCLE34_GOODS_UPDATE_BANNER.md` — US-34-01, US-34-02. В шапке спеки отправная точка указана как `e1d7cdb`, на
+  деле цикл вливался поверх `364cc2b` и `49f0d60`;
+- `ARCHITECTURE_CYCLE34.md` — задачи T-34-01…03.
+
+`API_CONTRACT_CYCLE34.md` нет: API не менялся. Цикл вёлся под номером 31, переименован в 34 коммитом `dbe476f`, внутри
+файлов ссылки исправлены.
+
+**Код (фронт goods, только новый код и одна точка подключения):**
+- `frontend/goods/src/hooks/useAppUpdate.ts`:
+  - `loadedBundle()` берёт `src` у `script[type="module"][src*="/assets/index-"]` и вырезает путь регэкспом
+    `/\/assets\/index-[\w-]+\.js/`. Если такого скрипта нет (dev-сервер Vite), возвращает `null`, и проверка не включается
+    совсем;
+  - `useAppUpdate(): boolean` делает `fetch('/index.html', { cache: 'no-store' })` и берёт первое совпадение того же
+    регэкспа в теле ответа. Если путь отличается от загруженного, хук возвращает `true` и дальше не опрашивает (эффект
+    зависит от `updateAvailable` и при `true` сразу выходит);
+  - когда проверяется: на `visibilitychange`, если страница видима, и по `setInterval` раз в 5 минут
+    (`CHECK_INTERVAL_MS`). Таймер тоже вызывает `onVisible`, поэтому в скрытой вкладке запросов нет. Сразу при
+    монтировании проверки нет;
+  - ответ не-2xx, сетевая ошибка и тело без бандла (например, страница captive portal) плашку не показывают и в консоль
+    не пишут;
+  - сравнивается только **entry-чанк** `index-<hash>.js`. У goods Vite собирает с `root: 'goods'` и входом
+    `goods/index.html`, поэтому чанк называется `index-*` (✔ `vite.goods.config.ts`: `rollupOptions`/`entryFileNames` не
+    заданы). Если имя входа или чанка поменять, проверка молча перестанет срабатывать.
+- `frontend/goods/src/components/UpdateBanner.tsx`:
+  - `role="status"`, `fixed inset-x-3 bottom-3 z-50`, `max-w-md`, фон `bg-ink`, отступ `marginBottom:
+    env(safe-area-inset-bottom)`;
+  - текст «Доступна новая версия», кнопка — общий `Button` (`@/components/ui/Button`, `size="sm"`) «Обновить» →
+    `window.location.reload()`. Сама страница не перезагружается, закрыть плашку нельзя.
+- `frontend/goods/src/GoodsApp.tsx` — `<UpdateBanner />` рендерится последним внутри `BrowserRouter`, после
+  `OwnerTermsGateModal`, то есть на всех маршрутах goods, включая кабинет. В ezbook (`frontend/src`) плашки нет. Одноимённые
+  `LegalUpdateBanner`/`PlatformNoticeBanner` в `frontend/src/components/legal/` — другие компоненты (правовые), с этой
+  плашкой не связаны.
+- `sw.js` не трогали: он по-прежнему не перехватывает `fetch` и не пользуется Cache API (§6.2).
+
+**nginx** — `deploy/nginx/goods.ezbook.conf`:
+- новый `location /assets/` отдаёт `Cache-Control: public, max-age=31536000, immutable` и повторяет HSTS, `nosniff`,
+  `Referrer-Policy`, потому что `add_header` не наследуется;
+- в `location /` (SPA-фолбэк, сюда попадает и `/index.html`) добавлено `Cache-Control: no-cache`;
+- у `location = /sw.js` и `location = /manifest.webmanifest` свои блоки, цикл их не менял.
+
+Деплой релиза vhost не обновляет, конфиг ставится на машину вручную (sudo) — `DEPLOY.md` §24, плюс абзац «Цикл 31:
+кеш-заголовки goods» внутри §21 (про их расхождение — §9.1, C34-3). Поставлен ли он на бою — 🖥 неизвестно. На боевой адрес
+цикл не выкачен (CHANGELOG, раздел цикла 34).
+
+**Тесты цикла 34** (vitest, лежат рядом с компонентом; описание — `TEST_CATALOG.md`, раздел «Цикл 34»):
+- `frontend/goods/src/components/UpdateBanner.test.tsx` — 3 теста разработчика без ID: та же сборка, новая сборка, ошибка
+  сети;
+- `frontend/goods/src/components/UpdateBanner.acceptance.test.tsx` — приёмочные **CY34-01…15**, ID стоят в названиях `it`:
+  - CY34-01…12 — поведение хука и плашки: fake timers, подменённые `fetch` и `location`, `visibilityState` через
+    `defineProperty`. CY34-11 проверяет safe-area по **исходнику** `UpdateBanner.tsx` (`readFileSync`), потому что jsdom
+    отбрасывает `env()`;
+  - CY34-13…15 читают `deploy/nginx/goods.ezbook.conf` с диска (путь `../../../../deploy/nginx/…` относительно
+    компонента) и проверяют блоки `location` по тексту. Это единственные vitest-тесты, которые читают файл из `deploy/`;
+- ручной кейс из архитектуры («на iPhone из иконки после деплоя двух разных сборок») в `TEST_CATALOG.md` как ручной кейс не
+  заведён, вердикта нет.
+
 ---
 
 ## 6. Конвенции проекта (✔ выборочно по коду; им следовать, а не вводить рядом свои)
@@ -1003,7 +1142,7 @@ node-типы: `shots.test.ts`, `seed-goods-demo.test.ts`, `BuyersBlock.qa.test.
 |---|---|---|---|
 | Юнит бэкенда `ServiceBooking.UnitTests` | xUnit 2.5.3 + FluentAssertions 6.12; без БД и без Docker | 179 файлов, 1 596 `[Fact]/[Theory]` | **2 421** (цикл 30: 2 407) |
 | Функциональные API `ServiceBooking.Tests` | xUnit 2.5.3 + `Microsoft.AspNetCore.Mvc.Testing` (`WebApplicationFactory<Program>`) + **реальный PostgreSQL 16** через Testcontainers 3.10 (или внешний сервер) | 85 файлов тестов, 1 103 `[Fact]/[Theory]` | **1 175** (цикл 30: 1 153) |
-| Фронтенд (оба сайта) | Vitest 3.2 + jsdom + Testing Library | 168 файлов `*.test.ts(x)` | **1 255** (цикл 30: 1 194). Гонять с пустой `VITE_SMARTCAPTCHA_SITEKEY`, с локальным `.env` — 8 падений `CartPanel` (§7.2) |
+| Фронтенд (оба сайта) | Vitest 3.2 + jsdom + Testing Library | 170 файлов `*.test.ts(x)` на `050816f` (цикл 34 добавил 2 файла: 3 + 15 тестов, §5.9) | **1 255** (цикл 30: 1 194) — это прогон цикла 31. Числа прогона цикла 34 при постановке задачи не передавались. Известно только, что 8 тестов `CartPanel` падают (§7.2) |
 
 Прогоны различаются по объёму: в прогоне считаются и наборы `[Theory]`, поэтому число прогонов больше числа атрибутов.
 Были ли в отчёте цикла 31 зелёные `tsc`, `lint`, `typecheck:node`, `build:release` и сколько тестов упало, в этом
@@ -1032,8 +1171,10 @@ dotnet test ServiceBooking.UnitTests                    # быстрый, без
 dotnet test ServiceBooking.Tests                        # функциональный, нужен Docker
 cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p tsconfig.goods.json && npm run typecheck:node && npm run test:run
 ```
-- Фронт-тесты гонять с пустой `VITE_SMARTCAPTCHA_SITEKEY` (как в CI): при локальном `frontend/.env` с ключом краснеют
-  8 тестов `CartPanel` (ловушка ниже).
+- Фронт-тесты гонять с пустой `VITE_SMARTCAPTCHA_SITEKEY` (как в CI). **8 тестов
+  `frontend/goods/src/components/storefront/CartPanel.test.tsx` падали (причина найдена и устранена веткой `fix/goods-cartpanel-test-captcha-env`, C34-1 закрыт, §9.1).
+- Точечно цикл 34 (vitest, без сети и без записи; `fetch` в тестах подменён):
+  `cd frontend && npx vitest run goods/src/components/UpdateBanner`.
 - Скрипты `shots:seed`/`shots:capture` и `stack.sh` — **не тесты**: они поднимают Docker-стенд и пишут в его базу;
   их запускает человек по `frontend/scripts/screenshots/README.md`, а не базовый прогон.
 - **macOS + colima** (так на этой машине): перед прогоном выставить
@@ -1055,7 +1196,9 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - два полных прогона параллельно на одном Docker дают ложные падения тестов, чувствительных ко времени;
   - по отчёту цикла 27 полный прогон на colima бывает нестабилен по таймаутам Npgsql;
   - флейк CY24-31 около 03:30–04:05 по времени магазина (C25-9);
-  - 8 тестов `CartPanel` краснеют при локальном `frontend/.env` с `VITE_SMARTCAPTCHA_SITEKEY` (в CI зелёные).
+  - ~~8 тестов `CartPanel.test.tsx` падают~~ — **закрыто** (C34-1, §9.1): причиной был локальный `frontend/.env` с непустым
+    `VITE_SMARTCAPTCHA_SITEKEY`, в CI ключа нет. Тест теперь мокает `SmartCaptcha` (как `SubjectRequestPage.test.tsx`) и
+    зелёный при любом `.env`; ✔ 16/16 при заполненном ключе.
 - Подмножество: `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle26CompanyCardTests"`; цикл 31 —
   `--filter "FullyQualifiedName~Cycle31"` (`Cycle31CatalogListingTests`, `Cycle31GalleryRateLimitTests`; второй поднимает
   отдельный хост с продовыми лимитами).
@@ -1100,10 +1243,12 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - `deploy/deploy.sh` — ручной запасной путь через `gh`. SSH-ключ ограничен forced command (`ssh-deploy-wrapper.sh`).
 - Прод-стек — `docker-compose.prod.yml`: `postgres:16-alpine`, `api` (`servicebooking-api:latest`, собирается на
   машине), `legal-tools`. Все переключатели — env-переменные с безопасными дефолтами, пример — `.env.production.example`.
-- nginx: `ezbook.conf`, `goods.ezbook.conf` (раздаёт `current/__goods`), `errors.ezbook.conf` (GlitchTip).
+- nginx: `ezbook.conf`, `goods.ezbook.conf` (раздаёт `current/__goods`), `errors.ezbook.conf` (GlitchTip). Vhost'ы деплой
+  не обновляет, их ставят на машину руками. С цикла 34 в `goods.ezbook.conf` есть `/assets/` с `immutable` и `no-cache` на
+  `location /` (§5.9, `DEPLOY.md` §24). На бою 🖥 не проверено.
 - Обслуживание: бэкап `deploy/backup/` (systemd-таймер), мониторинг `deploy/monitor/health-alert.*`, SQL-гейты выката
   `deploy/checks/`.
-- Подробная инструкция — `DEPLOY.md` (§0–§23); отдельно — `DEPLOY-windows.md`.
+- Подробная инструкция — `DEPLOY.md` (§0–§24); отдельно — `DEPLOY-windows.md`.
 
 ---
 
@@ -1114,6 +1259,38 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 ## 9. Рискованные и хрупкие места
 
 ### 9.1 Найдено или подтверждено в этом сканировании (✔)
+**Цикл 34 и фикс звука (✔ по коду и git на `050816f`, ничего не запускалось).**
+- ~~**C34-1.** 8 тестов `CartPanel.test.tsx` падают~~ **Закрыто** (ветка `fix/goods-cartpanel-test-captcha-env`). Причина: в
+  `frontend/.env` разработчика задан `VITE_SMARTCAPTCHA_SITEKEY`, виджет капчи требовал токен, которого тесты не создают; в CI
+  файла нет, поэтому там тесты были зелёными. Чинит мок `@/components/booking/SmartCaptcha` в тесте. ✔ проверено: с ключом
+  в `.env` падало 8 из 16, с пустым ключом и с моком — 16/16. Другие тесты с капчей должны мокать этот модуль так же.
+- **C34-2. Плашка работает, только если на машине стоит новый vhost goods (на 2026-10-01 владелец внёс блоки и проверил `curl`-ом заголовки).** Без `no-cache` на `location /` телефон может
+  брать `index.html` из HTTP-кеша. `fetch` в хуке идёт с `cache: 'no-store'`, но это не отменяет кеш старого
+  `index.html`, с которого запускается само приложение. Установка vhost — ручной шаг с sudo (`DEPLOY.md` §24), автоматики
+  нет. На бою 🖥 неизвестно, стоит ли конфиг. Кроме того, приложения, уже открытые на старой сборке, получат плашку только
+  после одного ручного перезапуска (SPEC, «Риски»).
+- **C34-3. В `DEPLOY.md` две разные инструкции про один и тот же конфиг.** Абзац «**Цикл 31: кеш-заголовки goods**» внутри
+  §21 «goods.ezbook.ru — второй сайт» (строка ~2033) оставлен со старым номером цикла (при переименовании `dbe476f` правили только заголовок §24) и
+  велит **скопировать файл** `cp` целиком, а потом повторить certbot. §24 велит **вписать блоки** `location` в файл на
+  машине, «не копируя файл поверх», а certbot повторять только если файл всё же скопировали. CHANGELOG (раздел цикла 34)
+  повторяет вариант «скопировать и перезапустить certbot».
+- **C34-4. Проверка версии опирается на имя entry-чанка.** Регэксп `/assets/index-[\w-]+\.js` предполагает, что
+  у входа по умолчанию Vite имя `index-<hash>.js`, а бандл лежит в `/assets/`. Если поменять `build.rollupOptions`,
+  `base` или имя входного html в `vite.goods.config.ts`, `loadedBundle()` вернёт `null` и проверка тихо выключится: ни
+  ошибки, ни падения теста, потому что тесты подставляют `<script>` сами. Кроме того, сравнивается только entry-чанк:
+  сборка, где поменялись только ленивые чанки или CSS, а entry тот же, плашку не покажет.
+- **C34-5. Плашка может перекрыть нижнюю панель витрины.** На `StorefrontPage` есть своя фиксированная панель снизу
+  (`fixed bottom-0 inset-x-0 z-30`, строка ~225). У плашки `z-50` и `bottom-3`, закрыть её нельзя, так что после появления
+  она лежит поверх этой панели. Глазами не проверялось.
+- **C34-6. Нумерация тестов в документах цикла 34 расходится.** В `ARCHITECTURE_CYCLE34.md` CY34-01…03 — это три теста
+  разработчика в `UpdateBanner.test.tsx`, где ID в коде нет. В `TEST_CATALOG.md` и в коде CY34-01…15 — приёмочный файл,
+  и там CY34-01…03 означают другое. Ручная проверка на iPhone из архитектуры в каталог не заведена.
+- **C34-7. Счётчик разделов «Не выпущено» во вступлении CHANGELOG опять разошёлся** (продолжение C26-7). Во вступлении
+  «двадцать семь», а разделов `## Не выпущено` на `050816f` 28 ✔. Раздел цикла 34 добавлен, счётчик не поправлен. Про
+  место цикла 34 в порядке разделов вступление тоже не говорит.
+- **Звук новых заказов (`c7a4ace`) без тестов.** Логика с `localStorage` и разблокировкой по первому жесту живёт в
+  модульных переменных `sharedCtx`/`sharedEnabled`. Проверить её можно только на реальном устройстве, особенно на iOS.
+
 **Цикл 31 (✔ по коду и git на `364cc2b`).** Пункты C31-1…C31-4 и C29-1 были записаны перед циклом в ветке 31 (`a8d3337`)
 и в `develop` не попали (§ шапка). Здесь указано их состояние после цикла.
 - ~~**C31-1. Tailwind goods не сканировал `CompanyPhotosSection.tsx`**~~ (компонент лежал в `src/pages/owner/`, классы
@@ -1123,8 +1300,7 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   включен в настройках».
 - ~~**C31-3. Галерея грузила по одному файлу и делила окно `uploads` 10/мин**~~ — **закрыто**: мультизагрузка и две
   отдельные политики. Остаётся: лимит 10 фото продублирован на фронте и сервере (§5.8). Бюджет обработки изображений на
-  пользователя вырос до 30 в минуту — это осознанное ослабление (О-31-3). В закоммиченном `CHANGELOG.md` его ещё нет
-  (C31-8).
+  пользователя вырос до 30 в минуту — это осознанное ослабление (О-31-3). В CHANGELOG оно записано с `6a71f50` (C31-8).
 - ~~**C31-4. Видимость салона в каталоге жила в двух запросах**~~ — **закрыто**: `SalonListingRules` + `SalonListingQuery`.
   Хрупкость перешла в другое место: правило и SQL-двойник надо менять вместе, а согласованность ловит только CY31-05.
   То же относится к `PublicListingQuery` и `SubscriptionResolver`.
@@ -1141,12 +1317,10 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - в ответе маршрута салона указано поле `planHint`, а в коде и контракте это `notAllowedByPlanText`;
   - в политике `company-photos-edit` упомянут маршрут `PUT /photos/{photoId}/cover`, но такого маршрута нет (обложка
     ставится через `PUT …/photos/order`).
-- **C31-8. В коммите `364cc2b` `CHANGELOG.md` и `README.md` цикл 31 не описывают** (✔ `git show HEAD:…`, верхний раздел
-  CHANGELOG — цикл 30), хотя архитектура (QA-3) требовала раздел. **В рабочем дереве на момент этого обновления оба файла
-  изменены и не закоммичены** (правит не codebase-analyst, этот документ их не трогал). В правке есть раздел CHANGELOG
-  «Не выпущено — цикл 31: …» с записью об ослаблении лимита загрузок до 30 изображений в минуту и о тексте «Показ
-  включен в настройках», счётчик во вступлении — «двадцать семь», а в README — абзацы «с цикла 31, пока не выкачено».
-  Пока правку не закоммитят, пункт открыт.
+- ~~**C31-8. В коммите `364cc2b` `CHANGELOG.md` и `README.md` цикл 31 не описывают.**~~ **Закрыто в `6a71f50`** (✔): в
+  CHANGELOG раздел «Не выпущено — цикл 31: …» (сейчас строка 32, под разделом цикла 34) с записью об ослаблении лимита
+  загрузок до 30 изображений в минуту, в README — абзацы «с цикла 31, пока не выкачено». Счётчик во вступлении тогда стал
+  «двадцать семь» и совпадал с числом разделов, после цикла 34 снова разошёлся (C34-7).
 - **C31-9. `contracts:json` зависит от необъявленного пакета.** Скрипт импортирует `js-yaml`, которого нет в
   `frontend/package.json`: пакет поднят в корень `node_modules` транзитивно (ESLint, `@redocly/openapi-core`). Если
   транзитивная зависимость сменит версию или место, CI-шаг сверки JSON упадёт на импорте.
@@ -1212,8 +1386,8 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   «Не выпущено — цикл 26: …» (строка 34, между циклами 27 и 25), в README цикл 26 описан в блоке goods и в возможностях
   салона (карточка, фото, ссылки на карты).
 - **C26-7. Счётчик разделов «Не выпущено» во вступлении CHANGELOG** на `364cc2b` сходится (✔): «двадцать шесть», и
-  разделов `## Не выпущено` тоже 26, верхний — цикл 30. Рассинхрон повторяется каждый цикл, и добавление раздела цикла 31
-  (C31-8) снова потребует правки счётчика.
+  разделов `## Не выпущено` тоже 26, верхний — цикл 30. Рассинхрон повторяется каждый цикл: после цикла 31 счётчик
+  поправили («двадцать семь»), после цикла 34 — нет (C34-7).
 - **Hero ezbook `salon-hero.jpg` — PNG на ~1,7 МБ под расширением `.jpg`** (§5.7). По-прежнему самый тяжёлый файл
   фронта, грузится на главной ezbook (на широком экране). Цикл 30 его не трогал; скриншоты goods сделаны отдельно, в WebP
   с бюджетом веса.
@@ -1248,7 +1422,8 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   вместе.
 - **C25-1 / C25-2.** MAX персоналу не включён, живого смоука нет. Бот MAX один на подтверждение телефона и на сообщения
   персоналу: бан бота остановит оба.
-- **C24-1 / C25-4.** vhost goods на сервере не обновлён: `/sw.js` без no-cache — ручной шаг `DEPLOY.md` §22.2.
+- **C24-1 / C25-4.** vhost goods на сервере не обновлён: `/sw.js` без no-cache — ручной шаг `DEPLOY.md` §22.2. С цикла 34
+  к нему добавился второй ручной шаг по тому же файлу — кеш-заголовки `/assets/` и `/` (`DEPLOY.md` §24, C34-2, C34-3).
 - **C24-2.** Push на реальных устройствах не проверен. С цикла 30 на это опирается текст главной goods (C30-2, §9.1).
 - **C21-2.** VAPID `sub` проверяется только на непустоту, Apple отвергает заглушки.
 - **C19-1.** Гейт `check_retired_limit_options` ни разу не выполнялся на реальной БД.
@@ -1304,29 +1479,52 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   Нумерация § в документах пересекается.
 - **C22-4.** Ссылки `Файл.cs:строка` в старых документах исторические.
 
+### 9.3 Долг цикла 28 (проход A)
+- **C28-1 / L28-1.** Тексты `ShowcaseNotice`, `ShowcaseBookingClosed` — нейтральные заглушки без юриста (вне `LegalTextKey.All`, запасные тексты на фронте и в `ShowcaseTexts`). Закрыть: текст в живой `legal.json`, ключ в `All`.
+- **C28-2 / L28-2.** `/pricing` с ценами включается без вычитки оферты (НДС, оплата, возврат). `pricing.legal-notice` пуст.
+- **C28-2b / L28-2b.** Условия пробного периода (редакция `2026-09-30`, Q28-4) правились без юриста. Кроме того, текст статуса окна рассылок пробного периода (`TrialLegalNotices.TrialMailingWindowNotStarted`, показывается в «Ваша подписка»)
+  всё ещё говорит «рассылки клиентам входят в пробный период»: он не менялся, это то же противоречие.
+- **C28-3 / L28-3.** Демо-баннер (`DemoBanner`, текст вне `LegalTextKey.All`, запасной на фронте) — заглушка без юриста. Редакция правовых документов для демо **остаётся долгом**: демо монтирует те же опубликованные документы боя (`legal/` только для чтения); срок хранения данных на демо — ≤ 24 ч.
+- **C28-4 / L28-4 (закрыт частично, 2026-10-01).** Каталог `ShowcaseAssets/` заполнен 68 файлами (7 логотипов, 42 фото компаний, 19 картинок услуг, 1,2 МБ): плоские иллюстрации, нарисованные программно `tools/showcase-assets/generate.py` (детерминированно, перегенерируются командой `python3 tools/showcase-assets/generate.py`). Людей и сторонних авторских прав нет, журнал происхождения — `LICENSES.md`. Это не фотографии: если заказчик захочет реальные фото, их кладут в каталог с записью в манифесте и журнале. CY28-19 больше не пропущен. Попутно исправлено: план `ops showcase plan` считал файлы по пути манифеста, а публикация дедуплицирует по хэшу содержимого (раньше расходились, если две записи манифеста — одинаковые байты).
+- **C28-5.** Пул клиентов витрины (120 + 300) на ~9 тыс. записей даёт ~20 визитов на клиента за 60 дней — данные правдоподобны в отчётах, но не в карточке отдельного клиента. Размер пула — параметры `ShowcaseProfile`.
+- **C28-6.** Отображаемое имя бесплатного тарифа в кабинете владельца без подписки и в тексте 402 при лимите мест — зашитое «Бесплатный» (`OwnerSubscriptionService`, `CompanyMembersController`, `CompanyTransferService`, `AdminAccountDtoBuilder`), на `/pricing` после `ops tariffs apply` — «Старт».
+- **C28-7.** Диапазон `+7 (200)` — проверка по реестру Россвязи (открытые CSV) не выполнена (шаг выката); фильтры §574.5 работают независимо от диапазона.
+- **C28-8.** Хвосты генератора: ~~вход сброса (`ops demo reset`) отвечает кодом 2~~ — **закрыто проходом B** (команда реализована, код 2 остался только вне демо); правила выдачи прав `Master` для владельца-одиночки не заводятся (только `CompanyOwner`, как в продукте).
+
+### 9.4 Долг цикла 28 (проход B — демо-стенд)
+- **C28-9.** Сброс демо не измерен с картинками и на машине заказчика: измерение 6–7 с сделано на локальной Postgres без файлов (`ShowcaseAssets/` пуст, CT-1 не выполнена). Бюджет ≤ 3 мин проверяет QA (`CY28-28`); память стенда (§581.2, оценка 250–400 МБ) — замер через сутки после выката: команды и таблица для записи цифр готовы в `DEPLOY.md` §25.10, **замер остаётся ручным шагом** (стенд на машине не развёрнут).
+- **C28-10.** Отклонения от §580 (записаны здесь, контракт не менялся): (1) `ScheduledTaskStates` добавлена в список разрешённых таблиц — иначе ночной сброс стирал бы состояние всех задач, и все они срабатывали бы разом; (2) `TRUNCATE` без `CASCADE`;
+  (3) `SuperAdmin` создаётся **после** коммита общей транзакции (его сид открывает собственные транзакции): при сбое именно этого шага демо остаётся без администратора, код выхода 1, флаг снимается, а метка `demo.last-reset-utc` не ставится — следующий тик повторит сброс.
+- **C28-11.** Первый сброс демо — только командой оператора (`ops demo reset --yes` после первого запуска API, который ставит метку `instance.kind`): ночная задача без метки `demo.last-reset-utc` ничего не делает. Если стереть `PlatformSettings` руками, нужно снова запустить API и сделать сброс командой.
+- **C28-12.** Функциональному тесту демо-режима нужна БД с именем на `_demo` (замок 1) — слот тестовой БД `sbtest_<ключ>_demo` подходит под шаблон `TestDatabaseNaming`; `ServicesBaseUrl`, `AllowedOrigins`, `Jwt:Issuer` и провайдеры тест задаёт сам. Замок нельзя обойти переменной: проверка идёт в любом окружении.
+- **C28-13.** Кеши в памяти после сброса: при сбросе командой `ops` (другой процесс) кеш каталога цен API живёт до 60 с, а кеш ответа флага обслуживания — 1 с (сброс ждёт 1,3 с после поднятия флага, чтобы API его увидел). Посетитель может на эту минуту увидеть устаревший каталог цен.
+- **C28-15.** Пробный запуск демо с `ASPNETCORE_ENVIRONMENT=Production` (проверено вручную) требует переменных, которых нет в перечне `.env.demo.example` из §581.1 архитектора: `Trial__PhoneKeyHmac` и `Trial__PhoneKeyId` (`ValidateTrialSecrets`, иначе старт падает), плюс `ForwardedHeaders__TrustedNetworks__0` и `SuperAdmin__Password` без заглушки (они в перечне есть). **Закрыто DO-4 (заготовка):** все четыре переменные есть в `.env.demo.example` и `docker-compose.demo.yml` (`DEMO_TRIAL_PHONEKEY_HMAC`/`_ID`, `DEMO_FORWARDEDHEADERS__TRUSTEDNETWORKS__0` с фиксированной подсетью проекта, `DEMO_SUPERADMIN_PASSWORD` — обязательные, без значений по умолчанию); проверено `docker compose config`, но на машине стенд ещё не запускался.
+- **C28-14.** Запись посетителей демо в открытые витринные компании по-прежнему ограничена капчей: хост `demo.visit.ezbook.ru` нужно добавить в консоль SmartCaptcha (ручной шаг `DEPLOY.md` §25.6, заказчик); без него гостевая запись на демо отвечает «Invalid captcha», запись под ролью клиента работает.
+
 ---
 
 ## 10. Что уже существует в документации и тест-кейсах (дополнять существующее, параллельных версий не заводить)
 
 ### 10.1 Краткая продуктовая документация
-- **`README.md`** (760 строк на `364cc2b`, markdown). Два раздела верхнего уровня:
+- **`README.md`** (775 строк на `050816f`, markdown). Два раздела верхнего уровня:
   - **«О проекте»** (строки 3–612). Абзацы с жирными подзаголовками, а не `###`: что это; где работает («стенд» ezbook.ru);
     отдельный блок «Заказы на самовывоз — goods.ezbook.ru»; возможности по ролям; тарифы; «Чего пока нет»; «Почему это
     стенд, а не запуск».
   - **«Запуск»** (со строки 613) с подразделами `###`: «Локально, всё в Docker», «Локально, без Docker для API»,
     «Переменные окружения и секреты», «Тесты», «CI», «Деплой».
   - Цикл 26 отражён (`b9c2a79`), цикл 30 — тоже (`5b46d62`): главная goods с блоками «Для покупателей» и «Для бизнеса»,
-    скриншоты на демо-данных, оговорка про push. **В `364cc2b` цикла 31 в README нет** ✔. Абзацы «с цикла 31, пока не
-    выкачено» лежат незакоммиченной правкой в рабочем дереве (C31-8). Инструкция пересъёмки скриншотов — отдельно, `frontend/scripts/screenshots/README.md`
+    скриншоты на демо-данных, оговорка про push. Цикл 31 вписан в `6a71f50` абзацами «с цикла 31, пока не выкачено»
+    (строки ~29, 63, 121, 208, 213). **Цикла 34 (плашка обновления) и фикса звука в README нет** ✔. Инструкция пересъёмки скриншотов — отдельно, `frontend/scripts/screenshots/README.md`
     (§5.7).
-- **`CHANGELOG.md`** (4 210 строк на `364cc2b`). Формат по мотивам Keep a Changelog, язык — для пользователей. Номеров
+- **`CHANGELOG.md`** (4 360 строк на `050816f`). Формат по мотивам Keep a Changelog, язык — для пользователей. Номеров
   версий нет. На каждый цикл — раздел `## …`, **самый свежий сверху**. Сверху идут 26 разделов «Не выпущено — <суть>» в
   порядке влития, ниже — датированные разделы (`## 2026-09-17 — сервис впервые развёрнут…`, самый ранний — `2026-09-01`).
-  Порядок верхних разделов: цикл 30 (строка 20), цикл 29 (141), цикл 27 (169), цикл 26 (183), далее старые. **Раздела
-  цикла 31 в `364cc2b` нет.** Он пишется незакоммиченной правкой сверху, над циклом 30 (C31-8). Внутри крупных разделов сложились подзаголовки `###`: «Что стоит прочитать до
+  Порядок верхних разделов на `050816f`: цикл 34 (строка 19, короткий: абзац для пользователей и абзац «На боевой адрес
+  не выкачено…» с ручным шагом nginx), цикл 31 (32), цикл 30 (170), цикл 29 (291), цикл 27 (319), цикл 26 (333), далее
+  старые. Всего разделов «Не выпущено» — 28, а во вступлении написано «двадцать семь» (C34-7). Фикс звука
+  (`fix/goods-sound-remember`) в CHANGELOG не записан. Внутри крупных разделов сложились подзаголовки `###`: «Что стоит прочитать до
   выката», тематические блоки, «Чего этот цикл не даёт», «Для команды» (итоги тестов и документы цикла). Даты разделов
-  «Не выпущено» при выкате не проставлялись. Счётчик во вступлении в `364cc2b` («двадцать шесть») совпадает с фактом
-  (C26-7).
+  «Не выпущено» при выкате не проставлялись.
 - Releases на GitHub и wiki не используются: тегов нет, ссылок на wiki в репозитории нет.
 - Внутренние справки: `BRIEF_BRAND_AND_DOMAINS.md` (бренд и домены «EZBOOK Запись» / «EZBOOK Заказы»),
   `BENCHMARK_CYCLE22.md`.
@@ -1341,7 +1539,8 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - **Руководства по goods.ezbook.ru нет.** Магазины упоминаются только в `docs/personal-data.md`.
 - Справки внутри приложения: правовые документы и тексты интерфейса отдаются из `/api/legal/*` (исходники —
   `legal-drafts/`) и показываются на `/privacy`, `/terms` и т.д. Отдельной базы знаний или сайта документации нет.
-- Эксплуатация: `DEPLOY.md` (2 457 строк, §0–§23, выкат, переменные, ручные шаги по циклам), `DEPLOY-windows.md`,
+- Эксплуатация: `DEPLOY.md` (2 481 строка на `050816f`, §0–§24, выкат, переменные, ручные шаги по циклам; §24 — цикл 34,
+  кеш-заголовки goods, есть дубль-абзац в §21, C34-3), `DEPLOY-windows.md`,
   `INCIDENT_CHECK_PROCEDURE_CYCLE16.md`. Правовые внутренние документы — `legal-internal/*.md`, `LEGAL_REVIEW*.md`,
   `LEGAL_DECISIONS_CYCLE20.md`, `legal-drafts/README.md`.
 
@@ -1368,7 +1567,7 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - Postman-коллекции нет. `ServiceBooking.API/ServiceBooking.API.http` — файл запросов IDE.
 
 ### 10.4 Описания тест-кейсов (отдельно от кода автотестов)
-- **`TEST_CATALOG.md`** (6 463 строки на `364cc2b`, markdown):
+- **`TEST_CATALOG.md`** (6 485 строк на `050816f`, markdown):
   - в начале — «Как устроены ссылки на тесты» и «Префиксы по доменам»;
   - затем разделы по доменам (Auth, Bookings, Companies…);
   - затем разделы по циклам: «Цикл N — … (`CYNN-`, число тестов, файл)», в каждом таблица `ID | US | Что проверяет`.
@@ -1378,7 +1577,11 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
     кейсов (`M27-`, `M29-`, `M30-`) с колонками `Кейс | Шаги | Ожидаемый результат | Критерий` (у M29 ещё `Вердикт`).
     Раздел цикла 30 перечисляет vitest T30-01…19 и QA30-01…10 одной строкой (без таблицы по ID) и M30-01…09 без
     вердиктов; ссылка раздела цикла 29 на спеку исправлена на архив `SPEC_CYCLE29_CYCLE26_FOLLOWUPS.md`.
-  - **Раздел цикла 31 — в самом конце файла (строка ~6417), после цикла 20.** В нём:
+  - **Раздел цикла 34** — «Цикл 34 — плашка „Доступна новая версия“ в goods (фронтенд, Vitest)», строка ~6417, после
+    цикла 20 и **перед** разделом цикла 31. Одна строка о том, где лежат тесты (vitest, ID в названии `it`, поиск
+    `grep -rn "CY34-05" frontend/goods/src`), и таблица CY34-01…15 с колонками `Id | Критерий | Сценарий → ожидание`
+    (колонки называются иначе, чем у соседних разделов). Ручных кейсов и вердиктов нет;
+  - **Раздел цикла 31 — в самом конце файла (строка ~6439), после цикла 34.** В нём:
     - таблица CY31-01…14 и CY31-20…25 с колонками `ID | US | Что проверяет | Тест`;
     - абзац про отложенные контрактные CY31-30…34;
     - vitest разработчиков одной строкой;
@@ -1393,13 +1596,16 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - Корень:
   - `SPEC.md` — спека **цикла 31** («Общий блок фото, мультизагрузка, блок „Каталог“ у салона, компактная шапка
     карточки компании»). Следующий цикл заменит её своей, а эту заархивирует как `SPEC_CYCLE31_*.md`. В этом обновлении
-    она **не** архивировалась: по конвенции проекта архивирует следующий цикл, и папки `docs/history/` нет;
-  - архив спек `SPEC_CYCLE{3..27,29,30}_*.md`: спека 27 — `SPEC_CYCLE27_GOODS_BUSINESS_BLOCK.md`, спека 29 —
+    она **не** архивировалась: по конвенции проекта архивирует следующий цикл, и папки `docs/history/` нет. **Цикл 34
+    корневой `SPEC.md` не трогал**: его спека сразу лежит в корне под архивным именем `SPEC_CYCLE34_GOODS_UPDATE_BANNER.md`,
+    так что корневой `SPEC.md` по-прежнему спека цикла 31, хотя она уже не «текущая»;
+  - архив спек `SPEC_CYCLE{3..27,29,30,34}_*.md`: спека 27 — `SPEC_CYCLE27_GOODS_BUSINESS_BLOCK.md`, спека 29 —
     `SPEC_CYCLE29_CYCLE26_FOLLOWUPS.md`, спека 30 — `SPEC_CYCLE30_USER_SECTION_SCREENSHOTS.md` (архивирована в ветке 31).
-    Спек 12 и 28 в корне нет (28 — в ветке `origin/cycle/028-…`). Плюс `SPEC_APPENDIX_CHANNELS.md` и
+    Спек 12, 28, 32, 33 в корне нет (28 — в ветке `origin/cycle/028-…`, 32 и 33 — открытые пустые ветки). Плюс `SPEC_APPENDIX_CHANNELS.md` и
     `SPEC_DEFERRED_NOTIFICATIONS.md`;
-  - `ARCHITECTURE_CYCLE{4..27,29,30,31}.md` (у цикла 8 два файла: основной и `_PHASE2`) и
-    `API_CONTRACT_CYCLE{4..27,29,30,31}.md`. У 27 — «API не меняется», у 30 — только формы файлов засева и манифеста
+  - `ARCHITECTURE_CYCLE{4..27,29,30,31,34}.md` (у цикла 8 два файла: основной и `_PHASE2`) и
+    `API_CONTRACT_CYCLE{4..27,29,30,31}.md`. У цикла 34 `API_CONTRACT` нет (API не менялся), `ARCHITECTURE_CYCLE34.md`
+    короткий (21 строка, задачи T-34-01…03, без нумерации §). У 27 — «API не меняется», у 30 — только формы файлов засева и манифеста
     (§30.20–§30.27), у 31 — §31.20–§31.29. Циклы 29–31 нумеруют § по номеру цикла (§29.x, §30.x, §31.x), а не сквозной
     нумерацией. Корневые `ARCHITECTURE.md`/`API_CONTRACT.md` — от цикла 3;
   - `LEGAL_REVIEW*.md`.

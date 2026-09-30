@@ -23,6 +23,7 @@ import { usePhoneVerificationConfig } from '../hooks/usePhoneVerification'
 import { VerifyPhoneButton, type PhoneVerificationRefValue } from '../components/phoneVerification/VerifyPhoneButton'
 import { PhoneVerifiedBadge } from '../components/phoneVerification/PhoneVerifiedBadge'
 import { formatMonthlyPrice } from '../utils/pricingFormat'
+import { getDemoRestrictedMessage } from '../utils/demoHeaders'
 
 const roleLabel: Record<string, string> = {
   Client: 'Клиент',
@@ -235,7 +236,9 @@ export function ProfilePage() {
       setPwdSuccess(true)
       setTimeout(() => setPwdSuccess(false), 3000)
     },
-    onError: () => setPwdError('currentPassword', { message: 'Неверный текущий пароль' }),
+    // Cycle 28 (§599): a demo role gets the demo's refusal text instead of the misleading "wrong password".
+    onError: (err: unknown) =>
+      setPwdError('currentPassword', { message: getDemoRestrictedMessage(err) ?? 'Неверный текущий пароль' }),
   })
 
   // ── Phone form ────────────────────────────────────────────────────────────
@@ -303,9 +306,10 @@ export function ProfilePage() {
       setNeedsPhoneVerification(false)
       setPhoneVerificationUnavailable(false)
       const message =
-        err instanceof AxiosError && typeof err.response?.data === 'string'
+        getDemoRestrictedMessage(err) ??
+        (err instanceof AxiosError && typeof err.response?.data === 'string'
           ? err.response.data
-          : 'Не удалось изменить номер телефона'
+          : 'Не удалось изменить номер телефона')
       setPhoneError('currentPassword', { message })
     },
   })

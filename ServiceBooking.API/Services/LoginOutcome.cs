@@ -14,6 +14,9 @@ public enum LoginOutcome
     WrongPassword,
     LockedOut,
     NotAllowed,
+    /// <summary>ARCHITECTURE_CYCLE28.md §574.3 — a showcase (fictional) account: never signs in through the password route.
+    /// Answers exactly like a wrong password, so the response is no oracle for "this phone is a showcase account".</summary>
+    ShowcaseAccount,
 }
 
 public static class LoginOutcomeMapper
@@ -41,6 +44,7 @@ public static class LoginOutcomeMapper
     {
         LoginOutcome.UserNotFound => new UnauthorizedObjectResult("Invalid credentials"),
         LoginOutcome.WrongPassword => new UnauthorizedObjectResult("Invalid credentials"),
+        LoginOutcome.ShowcaseAccount => new UnauthorizedObjectResult("Invalid credentials"),
         LoginOutcome.LockedOut => new ObjectResult("Account temporarily locked") { StatusCode = StatusCodes.Status423Locked },
         LoginOutcome.NotAllowed => new ObjectResult("Sign-in not allowed") { StatusCode = StatusCodes.Status403Forbidden },
         LoginOutcome.Success => throw new InvalidOperationException("Success has no error response."),

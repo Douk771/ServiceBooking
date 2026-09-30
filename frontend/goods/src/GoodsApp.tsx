@@ -15,6 +15,7 @@ import { LegalDocumentPage } from '@/pages/LegalDocumentPage'
 import { NoticesPage } from '@/pages/NoticesPage'
 import { GoodsNavbar } from './components/GoodsNavbar'
 import { GoodsFooter } from './components/GoodsFooter'
+import { UpdateBanner } from './components/UpdateBanner'
 import { CatalogHomePage } from './pages/CatalogHomePage'
 import { StorefrontPage } from './pages/StorefrontPage'
 import { OrderPage } from './pages/OrderPage'
@@ -156,6 +157,7 @@ export function GoodsApp() {
             </LegalGuard>
           </GoodsNoticeLinks>
           <OwnerTermsGateModal />
+          <UpdateBanner />
         </div>
       </BrowserRouter>
     </QueryClientProvider>

@@ -240,7 +240,7 @@ public class ProfileConsentsController(
 
                 var photos = await db.ClientNotePhotos.Include(p => p.ClientNote)
                     .Where(p => p.CompanyId == dto.CompanyId
-                                && (p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone)))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+                                && (p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone && !p.ClientNote.Company.IsShowcase)))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
                     .ToListAsync();
                 photosDeleted = photos.Count;
                 if (photos.Count > 0)
@@ -376,7 +376,7 @@ public class ProfileConsentsController(
         if (wholeDocument || purpose == ConsentPurpose.HealthData)
         {
             var healthNotesQuery = db.ClientHealthNotes
-                .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone));  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+                .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone && !n.Company.IsShowcase));  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             healthNotesDeleted = await healthNotesQuery.CountAsync();
 
             if (apply)

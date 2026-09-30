@@ -93,4 +93,13 @@ public class Company
     // there is deliberately no DTO setter for it anywhere, the admin panel included. Every pre-existing row is
     // Services through the column default (no backfill).
     public CompanyKind Kind { get; set; } = CompanyKind.Services;
+
+    /// <summary>ARCHITECTURE_CYCLE28.md §572.1 — a fictional "example" company created by the showcase generator.
+    /// Everything that belongs to it (services, masters, schedules, photos, bookings…) is showcase by ownership chain.</summary>
+    public bool IsShowcase { get; set; }
+
+    /// <summary>§572.1, D-1 — a showcase company that accepts online booking (the booking is marked
+    /// <see cref="ShowcaseBookingKind.Visitor"/> and purged by retention). Only meaningful with <see cref="IsShowcase"/>
+    /// (CK_Companies_ShowcaseBookingOpen).</summary>
+    public bool ShowcaseBookingOpen { get; set; }
 }

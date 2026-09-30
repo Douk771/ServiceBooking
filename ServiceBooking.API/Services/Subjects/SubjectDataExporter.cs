@@ -63,7 +63,7 @@ public sealed class SubjectDataExporter(
         var guestMatchPhone = scope.GuestMatchPhone; // SUBJECT-PHONE-GATE: gated — canonical guard for the whole export
         var bookings = await db.Bookings
             .Include(b => b.Service).Include(b => b.Master).Include(b => b.Company)
-            .Where(b => b.ClientId == userId || (guestMatchPhone != null && b.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+            .Where(b => b.ClientId == userId || (guestMatchPhone != null && b.GuestPhone == guestMatchPhone && b.ShowcaseKind == ShowcaseBookingKind.None))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
             .Select(b => new ExportBookingDto(
                 b.Id, b.Date, b.StartTime, b.EndTime, b.Company.Name, b.Service.Name,
@@ -83,14 +83,14 @@ public sealed class SubjectDataExporter(
         // registering (a client can be both, if they booked as a guest before signing up).
         var notesAboutMe = await db.ClientNotes
             .Include(n => n.Company).Include(n => n.Photos)
-            .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+            .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone && !n.Company.IsShowcase))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .OrderByDescending(n => n.CreatedAt)
             .Select(n => new ExportNoteMetaDto(n.Company.Name, n.CreatedAt, n.Photos.Count))
             .ToListAsync(ct);
 
         var photosOfMe = await db.ClientNotePhotos
             .Include(p => p.ClientNote).ThenInclude(n => n.Company)
-            .Where(p => p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+            .Where(p => p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone && !p.ClientNote.Company.IsShowcase))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .OrderByDescending(p => p.CreatedAt)
             .Select(p => new ExportPhotoMetaDto(p.ClientNote.Company.Name, p.CreatedAt, p.SizeBytes))
             .ToListAsync(ct);
@@ -100,19 +100,19 @@ public sealed class SubjectDataExporter(
         // like the sections above) build BOTH the company-id union and the "what is stored" tags in one
         // pass, then ONE second query fetches the company cards themselves — never one query per company.
         var bookingCompanyIds = await db.Bookings
-            .Where(b => b.ClientId == userId || (guestMatchPhone != null && b.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+            .Where(b => b.ClientId == userId || (guestMatchPhone != null && b.GuestPhone == guestMatchPhone && b.ShowcaseKind == ShowcaseBookingKind.None))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .Select(b => b.CompanyId).Distinct().ToListAsync(ct);
         var noteCompanyIds = await db.ClientNotes
-            .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+            .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone && !n.Company.IsShowcase))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .Select(n => n.CompanyId).Distinct().ToListAsync(ct);
         var photoCompanyIds = await db.ClientNotePhotos
-            .Where(p => p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+            .Where(p => p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone && !p.ClientNote.Company.IsShowcase))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .Select(p => p.CompanyId).Distinct().ToListAsync(ct);
         // Code review В4: was ClientId-only, unlike every neighboring section above — a health note filed
         // while this person was still a guest (booked, then registered later) is stored by GuestPhone,
         // exactly like ClientNote/ClientNotePhoto, and the export silently omitted it.
         var healthNoteRows = await db.ClientHealthNotes
-            .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+            .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone && !n.Company.IsShowcase))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .ToListAsync(ct);
 
         // ARCHITECTURE_CYCLE23.md §398.1: orders of the account, and guest orders on the same number ONLY when the number is verified.

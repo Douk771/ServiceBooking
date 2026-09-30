@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Bookings;
+using ServiceBooking.API.Services.Demo;
 using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.API.Services.Subjects;
 using ServiceBooking.Core.Entities;
@@ -80,6 +81,7 @@ public class ProfileController(
         return Ok(await MapToDtoAsync(user, roles));
     }
 
+    [DemoForbidden]
     [HttpPost("change-password")]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
     {
@@ -103,6 +105,7 @@ public class ProfileController(
     // all) works exactly as before — Р1. Formulation that MUST accompany any description of this
     // result: закрыт путь через смену номера; путь через регистрацию нового аккаунта на чужой номер
     // остаётся открытым осознанно (SPEC.md §6.4, блок V1 в CURRENT_STATE.md §9) — see §153.4/§140.3.
+    [DemoForbidden]
     [HttpPost("change-phone")]
     [EnableRateLimiting("phone-change")]
     public async Task<ActionResult<ProfileDto>> ChangePhone([FromBody] ChangePhoneDto dto)
@@ -224,6 +227,7 @@ public class ProfileController(
         return Ok(await accountDeletionService.PreviewAsync(userId, ct));
     }
 
+    [DemoForbidden]
     [HttpPost("delete-account")]
     public async Task<IActionResult> DeleteAccount([FromBody] DeleteAccountDto dto)
     {
@@ -291,7 +295,9 @@ public class ProfileController(
         var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == userId);
         if (account is null)
             return new ProfilePlanDto(
-                "Free", 0, true, null, false, false, false, false, MaxEmployees: 1, MaxCompanies: 1,
+                // Cycle 28 (Q28-1): the free baseline is EffectivePlan.Free — online booking on, two employees — not a second hand-written copy.
+                "Free", 0, true, null, false, EffectivePlan.Free.AllowOnlineBooking, false, false,
+                MaxEmployees: EffectivePlan.Free.AccountMaxEmployees, MaxCompanies: EffectivePlan.Free.AccountMaxCompanies,
                 TotalMonthlyPrice: 0, Currency: "RUB", CompaniesUsed: 0, EmployeesUsed: 0,
                 ExpiresInDays: null, IsExpiringSoon: false, OptionCount: 0);
 
@@ -332,7 +338,7 @@ public class ProfileController(
 
         if (sub is null || sub.PlanConfig is null)
             return new ProfilePlanDto(
-                "Free", 0, true, null, false, false, false, false,
+                "Free", 0, true, null, false, plan.AllowOnlineBooking, plan.AllowMailing, plan.AllowAnalytics,
                 MaxEmployees: plan.AccountMaxEmployees, MaxCompanies: plan.AccountMaxCompanies,
                 TotalMonthlyPrice: totalMonthlyPrice, Currency: "RUB",
                 CompaniesUsed: usage.CompaniesUsed, EmployeesUsed: usage.SeatsUsed,

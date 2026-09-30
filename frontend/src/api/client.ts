@@ -2,6 +2,8 @@ import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { useLegalStore } from '../store/legalStore'
 import { useOwnerGateStore } from '../store/ownerGateStore'
+import { useDemoStore } from '../store/demoStore'
+import { isDemoResetting } from '../utils/demoHeaders'
 import { queryClient } from '../queryClient'
 import type { OwnerGate451 } from '../types'
 
@@ -48,6 +50,13 @@ api.interceptors.response.use(
         useLegalStore.getState().setConsentRequired(true)
         queryClient.invalidateQueries({ queryKey: ['legal-consent-status'] })
       }
+      return Promise.reject(err)
+    }
+    // API_CONTRACT_CYCLE28.md §600a — the demo stand is being reset (503 + X-Demo-Resetting). Not an error of the screen
+    // that happened to ask: the whole app is swapped for the "Демо обновляется" message (DemoMaintenanceGate). A
+    // 403 + X-Demo-Restricted (§599) needs no handling here — its body is the text the calling form shows.
+    if (isDemoResetting(err)) {
+      useDemoStore.getState().setResetting(true)
       return Promise.reject(err)
     }
     if (err.response?.status === 401 && !isAuthEndpoint) {

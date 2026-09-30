@@ -53,6 +53,11 @@ public class Booking
     // empty GuestName would otherwise look identical to corruption).
     public bool ClientDeleted { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE28.md §572.1 — 0 ordinary, 1 created by the showcase generator, 2 made by a visitor in an
+    /// open showcase company. Non-zero exactly when the company is a showcase one (§574.1). Lets phone-matching filters,
+    /// retention and outbound suppression work without joining to Companies.</summary>
+    public ShowcaseBookingKind ShowcaseKind { get; set; } = ShowcaseBookingKind.None;
+
     // US-78, US-65 п. 7 (ARCHITECTURE_CYCLE5.md §44.5). BookedForOther/GuardianConfirmed* apply only to
     // the client/guest/embed self-booking paths (never a staff manual booking, §46 API_CONTRACT_CYCLE5.md) —
     // "false"/nulls is the default and requires no confirmation, matching today's behavior exactly.

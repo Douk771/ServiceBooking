@@ -1,5 +1,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using ServiceBooking.API.Services.Demo;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -16,7 +19,7 @@ namespace ServiceBooking.API.Services.Notifications;
 /// Cancellation, reschedule and reminder are deliberately NOT wired here (§105.6: "Отмена, перенос и
 /// напоминание в push не шлются") — only the create path exists this cycle.
 /// </summary>
-public sealed class StaffPushScheduler(AppDbContext db, StaffPushLinks links)
+public sealed class StaffPushScheduler(AppDbContext db, StaffPushLinks links, IOptions<DemoModeOptions> demoOptions)
 {
     /// <param name="booking">The just-created booking (not yet saved — same convention as
     /// <see cref="NotificationScheduler.OnBookingCreatedAsync"/>).</param>
@@ -28,6 +31,10 @@ public sealed class StaffPushScheduler(AppDbContext db, StaffPushLinks links)
     public async Task OnBookingCreatedAsync(
         Booking booking, IReadOnlyList<string> serviceNames, string? creatorUserId, CancellationToken ct)
     {
+        // ARCHITECTURE_CYCLE28.md §576: nothing is queued for a showcase company (or on the demo stand).
+        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == booking.CompanyId, ct);
+        if (company is null || ShowcaseOutboundGuard.IsSuppressed(company, demoOptions.Value.Enabled)) return;
+
         var settings = await db.CompanyNotificationSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.CompanyId == booking.CompanyId, ct);
         var staffPushEnabled = settings?.StaffPushEnabled ?? new CompanyNotificationSettings().StaffPushEnabled;
@@ -43,9 +50,6 @@ public sealed class StaffPushScheduler(AppDbContext db, StaffPushLinks links)
             .Where(s => s.UserId == booking.MasterId).ToListAsync(ct); // ARCHITECTURE_CYCLE33 §33.26: every device of the master, whichever site it was enabled on
         // §105.6 p.3: not subscribed on any device -> nobody to tell, nothing to queue.
         if (subscriptions.Count == 0) return;
-
-        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == booking.CompanyId, ct);
-        if (company is null) return;
 
         var visitStartUtc = NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, company.TimeZoneId);
         var clientName = await ResolveClientNameAsync(booking, ct);
@@ -94,6 +98,10 @@ public sealed class StaffPushScheduler(AppDbContext db, StaffPushLinks links)
     public async Task OnBookingRescheduledAsync(
         Booking booking, IReadOnlyList<string> serviceNames, string? actorUserId, CancellationToken ct)
     {
+        // ARCHITECTURE_CYCLE28.md §576: nothing is queued for a showcase company (or on the demo stand).
+        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == booking.CompanyId, ct);
+        if (company is null || ShowcaseOutboundGuard.IsSuppressed(company, demoOptions.Value.Enabled)) return;
+
         var settings = await db.CompanyNotificationSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.CompanyId == booking.CompanyId, ct);
         var staffPushEnabled = settings?.StaffPushEnabled ?? new CompanyNotificationSettings().StaffPushEnabled;
@@ -108,9 +116,6 @@ public sealed class StaffPushScheduler(AppDbContext db, StaffPushLinks links)
         var subscriptions = await db.PushSubscriptions.AsNoTracking()
             .Where(s => s.UserId == booking.MasterId).ToListAsync(ct); // ARCHITECTURE_CYCLE33 §33.26: every device of the master, whichever site it was enabled on
         if (subscriptions.Count == 0) return;
-
-        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == booking.CompanyId, ct);
-        if (company is null) return;
 
         var visitStartUtc = NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, company.TimeZoneId);
         var clientName = await ResolveClientNameAsync(booking, ct);

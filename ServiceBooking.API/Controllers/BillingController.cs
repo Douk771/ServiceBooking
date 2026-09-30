@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Demo;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -30,6 +31,7 @@ public class BillingController(
         return dto is null ? NotFound() : Ok(dto);
     }
 
+    [DemoForbidden]
     [HttpPost("trial")]
     [EnableRateLimiting("trial-activate")]
     public async Task<ActionResult<OwnerSubscriptionDto>> ActivateTrial([FromBody] TrialActivationRequestDto dto)
@@ -87,6 +89,7 @@ public class BillingController(
         return dto is null ? NotFound() : Ok(dto);
     }
 
+    [DemoForbidden]
     [HttpPost("subscription/request")]
     public async Task<IActionResult> SubmitRequest([FromBody] SubscriptionRequestInputDto dto)
     {

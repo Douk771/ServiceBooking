@@ -81,7 +81,7 @@ public sealed class AccountDeletionService(
         // cleanup happens only after a successful commit).
         var notesAboutMe = await db.ClientNotes
             .Include(n => n.Photos)
-            .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+            .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone && !n.Company.IsShowcase))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .ToListAsync();
         var photoKeysToDelete = notesAboutMe.SelectMany(n => n.Photos)
             .Select(p => (p.StoragePath, p.ThumbnailPath)).ToList();
@@ -96,7 +96,7 @@ public sealed class AccountDeletionService(
         // row would sit until the retention sweep aged it out three years later. Same double condition as
         // notesAboutMe above.
         var healthNotesAboutMe = await db.ClientHealthNotes
-            .Where(h => h.ClientId == userId || (guestMatchPhone != null && h.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+            .Where(h => h.ClientId == userId || (guestMatchPhone != null && h.GuestPhone == guestMatchPhone && !h.Company.IsShowcase))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .ToListAsync();
         db.ClientHealthNotes.RemoveRange(healthNotesAboutMe);
 
@@ -150,7 +150,7 @@ public sealed class AccountDeletionService(
         // completed visit must stay intact (US-39 p.3). Matches both the client path and the guest path
         // (a booking made before this person registered, found the same way as step 2's notes).
         var bookingsToAnonymize = await db.Bookings
-            .Where(b => b.ClientId == userId || (guestMatchPhone != null && b.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+            .Where(b => b.ClientId == userId || (guestMatchPhone != null && b.GuestPhone == guestMatchPhone && b.ShowcaseKind == ShowcaseBookingKind.None))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .ToListAsync();
         foreach (var booking in bookingsToAnonymize)
         {
