@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -12,7 +13,7 @@ namespace ServiceBooking.API.Services.Orders.Notifications;
 /// only adds rows to the caller's transaction and never calls SaveChanges (the <c>StaffPushScheduler</c> convention). Rights are re-checked
 /// by the dispatcher at SEND time, so a member removed after queueing gets nothing.
 /// </summary>
-public sealed class OrderStaffPushQueue(AppDbContext db)
+public sealed class OrderStaffPushQueue(AppDbContext db, StaffPushLinks links)
 {
     /// <summary>A queued row lives an hour: "a late new-order push does more harm than a missed one" (the salon rule, §105.8).</summary>
     public static readonly TimeSpan StaffPushTtl = TimeSpan.FromHours(1);
@@ -47,12 +48,15 @@ public sealed class OrderStaffPushQueue(AppDbContext db)
     {
         if (userIds.Count == 0) return;
         var subscriptions = await db.PushSubscriptions.AsNoTracking()
-            .Where(s => s.Site == CompanyKind.Orders && userIds.Contains(s.UserId)).ToListAsync(ct);
+            .Where(s => userIds.Contains(s.UserId)).ToListAsync(ct);
         if (subscriptions.Count == 0) return;
 
         var now = DateTime.UtcNow;
-        var body = JsonSerializer.Serialize(new { title = payload.Title, body = payload.Body, tag = payload.Tag, url = payload.Url }, PayloadOptions);
+        // API_CONTRACT_CYCLE33.md §33.26-27: every device of the recipient; the url is absolute for a subscription made on the other site.
         foreach (var subscription in subscriptions)
+        {
+            var body = StaffPushPayloadJson.Build(
+                payload.Title, payload.Body, payload.Tag, links.ResolveUrl(subscription.Site, CompanyKind.Orders, payload.Url));
             db.StaffPushNotifications.Add(new StaffPushNotification
             {
                 Id = Guid.NewGuid(),
@@ -67,5 +71,6 @@ public sealed class OrderStaffPushQueue(AppDbContext db)
                 CreatedAt = now,
                 IdempotencyKey = $"{keySeed}:{subscription.UserId}:{subscription.Id}",
             });
+        }
     }
 }

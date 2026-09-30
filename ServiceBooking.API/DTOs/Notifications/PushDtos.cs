@@ -41,4 +41,4 @@ public record DeleteCurrentPushSubscriptionInput(string Endpoint);
 /// <summary><c>GET|PUT /api/companies/{companyId}/staff-push-settings</c> (US-117). Tariff-free,
 /// channel-free — see CompanyNotificationSettings.StaffPushEnabled's own doc comment for why this is a
 /// separate route rather than a field on the existing (perpetually-402) notification-settings screen.</summary>
-public record StaffPushSettingsDto(bool StaffPushEnabled, Core.Enums.CompanyKind Kind = Core.Enums.CompanyKind.Services);
+public record StaffPushSettingsDto(bool StaffPushEnabled);

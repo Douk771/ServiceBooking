@@ -21,20 +21,20 @@ public class StaffPushSchedulerTests
     {
         var bookingId = Guid.NewGuid();
         var payload = StaffPushScheduler.BuildPayload(
-            ["Стрижка"], new DateOnly(2026, 9, 25), new TimeOnly(14, 30), "Анна", bookingId);
+            ["Стрижка"], new DateOnly(2026, 9, 25), new TimeOnly(14, 30), "Анна", "Салон", bookingId, "/my-bookings?booking=x");
 
         var json = ParsePayload(payload);
         json.GetProperty("title").GetString().Should().Be("Новая запись");
-        json.GetProperty("body").GetString().Should().Be("Стрижка · 25.09.2026 в 14:30 · Анна");
+        json.GetProperty("body").GetString().Should().Be("Стрижка · 25.09.2026 в 14:30 · Анна · Салон");
         json.GetProperty("tag").GetString().Should().Be($"b-{bookingId}");
-        json.GetProperty("url").GetString().Should().Be($"/my-bookings?booking={bookingId}");
+        json.GetProperty("url").GetString().Should().Be("/my-bookings?booking=x");
     }
 
     [Fact]
     public void BuildPayload_MultipleServices_JoinsWithCommaSpace()
     {
         var payload = StaffPushScheduler.BuildPayload(
-            ["Стрижка", "Укладка"], new DateOnly(2026, 1, 5), new TimeOnly(9, 5), "Клиент", Guid.NewGuid());
+            ["Стрижка", "Укладка"], new DateOnly(2026, 1, 5), new TimeOnly(9, 5), "Клиент", "Салон", Guid.NewGuid(), "/my-bookings?booking=x");
 
         ParsePayload(payload).GetProperty("body").GetString().Should().Contain("Стрижка, Укладка");
     }
@@ -43,7 +43,7 @@ public class StaffPushSchedulerTests
     public void BuildPayload_NoServices_FallsBackToGenericWord()
     {
         var payload = StaffPushScheduler.BuildPayload(
-            [], new DateOnly(2026, 1, 1), TimeOnly.MinValue, "Клиент", Guid.NewGuid());
+            [], new DateOnly(2026, 1, 1), TimeOnly.MinValue, "Клиент", "Салон", Guid.NewGuid(), "/my-bookings?booking=x");
 
         ParsePayload(payload).GetProperty("body").GetString().Should().Contain("услуга");
     }
@@ -54,7 +54,7 @@ public class StaffPushSchedulerTests
         // §115.6: an absolute URL here would let a compromised/misbehaving server open an arbitrary
         // address from the service worker's notificationclick handler — must stay a bare path.
         var payload = StaffPushScheduler.BuildPayload(
-            ["Маникюр"], new DateOnly(2026, 3, 3), new TimeOnly(10, 0), "Клиент", Guid.NewGuid());
+            ["Маникюр"], new DateOnly(2026, 3, 3), new TimeOnly(10, 0), "Клиент", "Салон", Guid.NewGuid(), "/my-bookings?booking=x");
 
         var url = ParsePayload(payload).GetProperty("url").GetString();
         url.Should().StartWith("/").And.NotContain("://");
@@ -66,7 +66,7 @@ public class StaffPushSchedulerTests
         // §105.6 (П8): "Телефона клиента нет." — a regression here would mean a phone number leaking
         // into an OS notification tray, including a locked screen.
         var payload = StaffPushScheduler.BuildPayload(
-            ["Маникюр"], new DateOnly(2026, 3, 3), new TimeOnly(10, 0), "Иван +7 900 123-45-67", Guid.NewGuid());
+            ["Маникюр"], new DateOnly(2026, 3, 3), new TimeOnly(10, 0), "Иван +7 900 123-45-67", "Салон", Guid.NewGuid(), "/my-bookings?booking=x");
 
         // The method itself never ADDS a phone — this only proves it doesn't invent one from thin air;
         // a caller passing a phone number as the "name" is a caller bug, not this method's to prevent.

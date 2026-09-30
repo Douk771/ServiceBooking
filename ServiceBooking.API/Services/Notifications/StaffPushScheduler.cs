@@ -16,7 +16,7 @@ namespace ServiceBooking.API.Services.Notifications;
 /// Cancellation, reschedule and reminder are deliberately NOT wired here (§105.6: "Отмена, перенос и
 /// напоминание в push не шлются") — only the create path exists this cycle.
 /// </summary>
-public sealed class StaffPushScheduler(AppDbContext db)
+public sealed class StaffPushScheduler(AppDbContext db, StaffPushLinks links)
 {
     /// <param name="booking">The just-created booking (not yet saved — same convention as
     /// <see cref="NotificationScheduler.OnBookingCreatedAsync"/>).</param>
@@ -40,7 +40,7 @@ public sealed class StaffPushScheduler(AppDbContext db)
             return;
 
         var subscriptions = await db.PushSubscriptions.AsNoTracking()
-            .Where(s => s.UserId == booking.MasterId && s.Site == CompanyKind.Services).ToListAsync(ct); // ARCHITECTURE_CYCLE24.md §455: a master's booking push never goes to a goods device
+            .Where(s => s.UserId == booking.MasterId).ToListAsync(ct); // ARCHITECTURE_CYCLE33 §33.26: every device of the master, whichever site it was enabled on
         // §105.6 p.3: not subscribed on any device -> nobody to tell, nothing to queue.
         if (subscriptions.Count == 0) return;
 
@@ -49,7 +49,7 @@ public sealed class StaffPushScheduler(AppDbContext db)
 
         var visitStartUtc = NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, company.TimeZoneId);
         var clientName = await ResolveClientNameAsync(booking, ct);
-        var payload = BuildPayload(serviceNames, booking.Date, booking.StartTime, clientName, booking.Id);
+        var salonName = company.Name;
         var nowUtc = DateTime.UtcNow;
         // §105.8 (Q17): min(CreatedAt + 1h, visit start) — a row surviving past this is never sent at all.
         var expiresAtUtc = nowUtc.AddHours(1) < visitStartUtc ? nowUtc.AddHours(1) : visitStartUtc;
@@ -59,6 +59,8 @@ public sealed class StaffPushScheduler(AppDbContext db)
         // guarantee; this AddRange simply relies on it the same way NotificationScheduler's QueueAsync does).
         foreach (var subscription in subscriptions)
         {
+            var payload = BuildPayload(serviceNames, booking.Date, booking.StartTime, clientName, salonName, booking.Id,
+                links.ResolveUrl(subscription.Site, CompanyKind.Services, BookingPath(booking.Id)));
             db.StaffPushNotifications.Add(new StaffPushNotification
             {
                 Id = Guid.NewGuid(),
@@ -104,7 +106,7 @@ public sealed class StaffPushScheduler(AppDbContext db)
             return;
 
         var subscriptions = await db.PushSubscriptions.AsNoTracking()
-            .Where(s => s.UserId == booking.MasterId && s.Site == CompanyKind.Services).ToListAsync(ct); // ARCHITECTURE_CYCLE24.md §455: a master's booking push never goes to a goods device
+            .Where(s => s.UserId == booking.MasterId).ToListAsync(ct); // ARCHITECTURE_CYCLE33 §33.26: every device of the master, whichever site it was enabled on
         if (subscriptions.Count == 0) return;
 
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == booking.CompanyId, ct);
@@ -112,7 +114,7 @@ public sealed class StaffPushScheduler(AppDbContext db)
 
         var visitStartUtc = NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, company.TimeZoneId);
         var clientName = await ResolveClientNameAsync(booking, ct);
-        var payload = BuildRescheduledPayload(serviceNames, booking.Date, booking.StartTime, clientName, booking.Id);
+        var salonName = company.Name;
         var nowUtc = DateTime.UtcNow;
         var expiresAtUtc = nowUtc.AddHours(1) < visitStartUtc ? nowUtc.AddHours(1) : visitStartUtc;
 
@@ -131,6 +133,8 @@ public sealed class StaffPushScheduler(AppDbContext db)
                 .AnyAsync(n => n.IdempotencyKey == idempotencyKey, ct);
             if (alreadyQueued) continue;
 
+            var payload = BuildRescheduledPayload(serviceNames, booking.Date, booking.StartTime, clientName, salonName, booking.Id,
+                links.ResolveUrl(subscription.Site, CompanyKind.Services, BookingPath(booking.Id)));
             db.StaffPushNotifications.Add(new StaffPushNotification
             {
                 Id = Guid.NewGuid(),
@@ -155,40 +159,31 @@ public sealed class StaffPushScheduler(AppDbContext db)
         $"{NotificationType.StaffBookingRescheduled}:{bookingId}:{userId}:{subscriptionId}:{date:O}:{startTime:O}";
 
     internal static string BuildRescheduledPayload(
-        IReadOnlyList<string> serviceNames, DateOnly date, TimeOnly startTime, string clientName, Guid bookingId)
+        IReadOnlyList<string> serviceNames, DateOnly date, TimeOnly startTime, string clientName, string salonName, Guid bookingId, string url)
     {
         var services = serviceNames.Count > 0 ? string.Join(", ", serviceNames) : "услуга";
-        var body = $"{services} · перенесено на {date:dd.MM.yyyy} в {startTime:HH:mm} · {clientName}";
-        return JsonSerializer.Serialize(new
-        {
-            title = "Запись перенесена",
-            body,
-            tag = $"b-{bookingId}",
-            url = $"/my-bookings?booking={bookingId}",
-        });
+        var body = $"{services} · перенесено на {date:dd.MM.yyyy} в {startTime:HH:mm} · {clientName} · {ShortSalonName(salonName)}";
+        return StaffPushPayloadJson.Build("Запись перенесена", body, $"b-{bookingId}", url);
     }
+
+    internal static string BookingPath(Guid bookingId) => $"/my-bookings?booking={bookingId}";
+
+    /// <summary>§33.27: the salon name is at most 60 characters (longer: 59 + "…").</summary>
+    internal static string ShortSalonName(string name) => name.Length <= 60 ? name : name[..59] + "…";
 
     public static string BuildIdempotencyKey(Guid bookingId, string userId, Guid subscriptionId) =>
         $"{NotificationType.StaffBookingCreated}:{bookingId}:{userId}:{subscriptionId}";
 
-    /// <summary>§115.6: <c>{ title, body, tag, url }</c> JSON — the service worker's <c>event.data.json()</c>
-    /// contract, NOT a free-form string (a plain string here makes JSON parsing throw client-side and the
-    /// browser falls back to a blank-body default notification). §105.6 (П8, minimum): body carries
-    /// service(s), date/time, client name — no phone, the payload reaches the OS tray, including a locked
-    /// screen. <c>tag</c> collapses repeats for the same visit; <c>url</c> is the relative path the service
-    /// worker opens on click (origin is added client-side, §115.6 — never emit an absolute URL here).</summary>
+    /// <summary>§115.6 / §33.27: <c>{ title, body, tag, url }</c> JSON — the service worker's <c>event.data.json()</c>
+    /// contract. Body carries service(s), date/time, client name and salon name — no phone (the payload reaches the OS tray,
+    /// including a locked screen). <paramref name="url"/> comes from <see cref="StaffPushLinks"/>: relative for a subscription of
+    /// the booking's own site, absolute for the other one.</summary>
     internal static string BuildPayload(
-        IReadOnlyList<string> serviceNames, DateOnly date, TimeOnly startTime, string clientName, Guid bookingId)
+        IReadOnlyList<string> serviceNames, DateOnly date, TimeOnly startTime, string clientName, string salonName, Guid bookingId, string url)
     {
         var services = serviceNames.Count > 0 ? string.Join(", ", serviceNames) : "услуга";
-        var body = $"{services} · {date:dd.MM.yyyy} в {startTime:HH:mm} · {clientName}";
-        return JsonSerializer.Serialize(new
-        {
-            title = "Новая запись",
-            body,
-            tag = $"b-{bookingId}",
-            url = $"/my-bookings?booking={bookingId}",
-        });
+        var body = $"{services} · {date:dd.MM.yyyy} в {startTime:HH:mm} · {clientName} · {ShortSalonName(salonName)}";
+        return StaffPushPayloadJson.Build("Новая запись", body, $"b-{bookingId}", url);
     }
 
     private async Task<string> ResolveClientNameAsync(Booking booking, CancellationToken ct)
