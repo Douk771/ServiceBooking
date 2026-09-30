@@ -884,6 +884,13 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["CatalogConflict"];
+            /** @description Нет тела или Content-Type application/json (отвечает фреймворк, тело пустое). */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             451: components["responses"]["LegalGate"];
         };
     };
@@ -1118,6 +1125,7 @@ export interface operations {
                     "application/json": components["schemas"]["GoodsCatalogPageDto"];
                 };
             };
+            400: components["responses"]["PlainTextError"];
             429: components["responses"]["TooManyRequests"];
         };
     };
@@ -1172,10 +1180,18 @@ export interface operations {
                     "application/json": components["schemas"]["CatalogListingDto"];
                 };
             };
+            400: components["responses"]["PlainTextError"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["CatalogConflict"];
+            /** @description Нет тела или Content-Type application/json (отвечает фреймворк, тело пустое). */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             451: components["responses"]["LegalGate"];
         };
     };

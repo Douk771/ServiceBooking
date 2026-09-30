@@ -709,6 +709,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/CatalogConflict' }
+        '415': { description: 'Нет тела или Content-Type application/json (отвечает фреймворк, тело пустое).' }
         '451': { $ref: '#/components/responses/LegalGate' }
 
   # ═══════════════════════════════ shop-reports ═══════════════════════════════
@@ -904,6 +905,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GoodsCatalogPageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /api/shops/{shopId}/catalog-listing:
     parameters: [ { $ref: '#/components/parameters/ShopId' } ]
@@ -937,8 +939,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CatalogListingDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/CatalogConflict' }
+        '415': { description: 'Нет тела или Content-Type application/json (отвечает фреймворк, тело пустое).' }
         '451': { $ref: '#/components/responses/LegalGate' }
