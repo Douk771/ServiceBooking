@@ -21,6 +21,8 @@ public static class ShowcaseOwnership
     private const string Accounts = "(SELECT \"Id\" FROM \"BillingAccounts\" WHERE \"IsShowcase\")";
     private const string CompanyBookings = "(SELECT \"Id\" FROM \"Bookings\" WHERE \"CompanyId\" IN " + Companies + ")";
     private const string CompanyServices = "(SELECT \"Id\" FROM \"Services\" WHERE \"CompanyId\" IN " + Companies + ")";
+    private const string CompanyOrders = "(SELECT \"Id\" FROM \"Orders\" WHERE \"CompanyId\" IN " + Companies + ")";
+    private const string CompanyDailyMenus = "(SELECT \"Id\" FROM \"ShopDailyMenus\" WHERE \"CompanyId\" IN " + Companies + ")";
     private const string CompanyWorkingHours = "(SELECT \"Id\" FROM \"WorkingHours\" WHERE \"CompanyId\" IN " + Companies + ")";
 
     private static OwnershipStep ByCompany(string report, string table) => new(report, table, $"\"CompanyId\" IN {Companies}");
@@ -54,6 +56,22 @@ public static class ShowcaseOwnership
         ByCompany("channelAssignments", "ChannelCompanyAssignments"),
         ByCompany("ownerChangeLogs", "CompanyOwnerChangeLogs"),
         new("subscriptionChangeLogs", "SubscriptionChangeLogs", $"\"CompanyId\" IN {Companies} OR \"BillingAccountId\" IN {Accounts}"),
+        // ARCHITECTURE_CYCLE35.md §35.9.7 — the shops of «Заказы» (the demo profile, and whatever a visitor of the demo put into a shop of the showcase). Children before
+        // parents: OrderItems and ShopDailyMenuItems reference Products with Restrict, Products reference categories, every goods table references Companies with Restrict.
+        ByCompany("orderEvents", "OrderEvents"),
+        new("orderItems", "OrderItems", $"\"OrderId\" IN {CompanyOrders}"),
+        new("orderPushSubscriptions", "OrderPushSubscriptions", $"\"OrderId\" IN {CompanyOrders}"),
+        ByCompany("customerOrderPushNotifications", "CustomerOrderPushNotifications"),
+        ByCompany("staffMaxMessages", "StaffMaxMessages"),
+        ByCompany("orders", "Orders"),
+        ByCompany("orderDailyCounters", "OrderDailyCounters"),
+        ByCompany("shopCustomerNotes", "ShopCustomerNotes"),
+        new("shopDailyMenuItems", "ShopDailyMenuItems", $"\"DailyMenuId\" IN {CompanyDailyMenus}"),
+        ByCompany("shopDailyMenus", "ShopDailyMenus"),
+        ByCompany("shopSpecialDays", "ShopSpecialDays"),
+        ByCompany("products", "Products"),
+        ByCompany("productCategories", "ProductCategories"),
+        ByCompany("shopSettings", "ShopSettings"),
         new("members", "CompanyMembers", $"\"CompanyId\" IN {Companies} OR \"UserId\" IN {Users}"),
         new("companies", "Companies", "\"IsShowcase\""),
 
@@ -86,16 +104,6 @@ public static class ShowcaseOwnership
     /// </summary>
     public static readonly IReadOnlyDictionary<string, string> NeverWritten = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["ShopSettings"] = "showcase companies are salons (Kind = Services), goods tables stay empty",
-        ["ProductCategories"] = "goods table, no shop in the showcase",
-        ["Products"] = "goods table, no shop in the showcase",
-        ["Orders"] = "goods table, no shop in the showcase",
-        ["OrderDailyCounters"] = "goods table, no shop in the showcase",
-        ["ShopSpecialDays"] = "goods table, no shop in the showcase",
-        ["ShopDailyMenus"] = "goods table, no shop in the showcase",
-        ["ShopCustomerNotes"] = "goods table, no shop in the showcase",
-        ["StaffMaxMessages"] = "goods table, no shop in the showcase",
-        ["CustomerOrderPushNotifications"] = "goods table, no shop in the showcase",
         ["NotificationChannels"] = "showcase accounts own no notification numbers (mixing with real accounts is forbidden, sending is suppressed)",
     };
 

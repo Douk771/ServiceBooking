@@ -82,6 +82,34 @@ public class ShowcaseOwnershipCoverageTests
     }
 
     [Fact]
+    public void StepsOfTheShops_RunChildrenBeforeParents_ARCHITECTURE_CYCLE35_9_7()
+    {
+        var order = ShowcaseOwnership.DeleteSteps.Select(s => s.Table).ToList();
+        int At(string table) => order.IndexOf(table);
+
+        foreach (var table in new[]
+                 {
+                     "OrderEvents", "OrderItems", "OrderPushSubscriptions", "CustomerOrderPushNotifications", "StaffMaxMessages", "Orders", "OrderDailyCounters",
+                     "ShopCustomerNotes", "ShopDailyMenuItems", "ShopDailyMenus", "ShopSpecialDays", "Products", "ProductCategories", "ShopSettings",
+                 })
+        {
+            At(table).Should().BeGreaterThanOrEqualTo(0, $"{table} must be erased with the showcase (the demo profile writes shops)");
+            At(table).Should().BeLessThan(At("Companies"), $"{table}.CompanyId is Restrict");
+        }
+
+        At("OrderItems").Should().BeLessThan(At("Products"), "OrderItems.ProductId is Restrict");
+        At("ShopDailyMenuItems").Should().BeLessThan(At("Products"), "ShopDailyMenuItems.ProductId is Restrict");
+        At("ShopDailyMenuItems").Should().BeLessThan(At("ShopDailyMenus"));
+        At("Products").Should().BeLessThan(At("ProductCategories"), "Products.CategoryId is Restrict");
+        At("OrderItems").Should().BeLessThan(At("Orders"));
+        At("OrderEvents").Should().BeLessThan(At("Orders"));
+    }
+
+    [Fact]
+    public void OnlyTheNotificationChannelsStayDeclaredNeverWritten_TheShopTablesAreWrittenByTheDemoProfile() =>
+        ShowcaseOwnership.NeverWritten.Keys.Should().Equal("NotificationChannels");
+
+    [Fact]
     public void ErasingNeverTouchesAnUnmarkedRow_EveryStepIsScopedByAMark()
     {
         foreach (var step in ShowcaseOwnership.DeleteSteps)
