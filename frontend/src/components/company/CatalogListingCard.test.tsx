@@ -82,4 +82,14 @@ describe('CatalogListingCard', () => {
     renderCard({ saveError: 'Не удалось сохранить' })
     expect(screen.getByRole('alert')).toHaveTextContent('Не удалось сохранить')
   })
+
+  it('cycle 32: headingClassName is applied; without it the goods style stays', () => {
+    renderCard({ headingAs: 'h2', headingClassName: 'text-[15px] font-semibold text-ink' })
+    expect(screen.getByRole('heading', { level: 2, name: 'Каталог ezbook.ru' })).toHaveClass('text-[15px]')
+  })
+
+  it('cycle 32: default heading class is the serif title', () => {
+    renderCard()
+    expect(screen.getByRole('heading', { name: 'Каталог ezbook.ru' })).toHaveClass('font-serif', 'text-xl')
+  })
 })
