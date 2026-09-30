@@ -189,6 +189,9 @@ jobs:
       - name: Type-check goods
         run: npx tsc --noEmit -p tsconfig.goods.json
 
+      - name: Type-check node (shots)
+        run: npm run typecheck:node
+
       # ARCHITECTURE_CYCLE17.md §310 п.4 / API_CONTRACT_CYCLE17.md §328 п.9 (долг C15-10).
       # Генераты лежат в репозитории, поэтому расходятся со схемой молча: контракт правят,
       # регенерацию забывают, и типы описывают вчерашний API. Именно это и случилось внутри
