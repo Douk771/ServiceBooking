@@ -1,19 +1,20 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { MemoryRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { CABINET_DEVICES_PATH, cabinetDevicesRedirect } from './cabinetDevicesRoute'
 
 function Profile() {
   const { pathname, hash } = useLocation()
   return <p>{pathname + hash}</p>
 }
 
-// The same <Route> as in GoodsApp.tsx (§33.8): the old devices page forwards to the profile block.
+// Path and element are imported from the same module GoodsApp uses (§33.8).
 describe('/cabinet/devices redirect', () => {
   it('goes to /profile#devices', () => {
     render(
       <MemoryRouter initialEntries={['/cabinet/devices']}>
         <Routes>
-          <Route path="/cabinet/devices" element={<Navigate to="/profile#devices" replace />} />
+          <Route path={CABINET_DEVICES_PATH} element={cabinetDevicesRedirect} />
           <Route path="/profile" element={<Profile />} />
         </Routes>
       </MemoryRouter>,

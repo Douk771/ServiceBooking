@@ -80,10 +80,18 @@ describe('DevicesAndNotificationsSection (ARCHITECTURE_CYCLE33.md §33.7)', () =
     expect(screen.queryByRole('switch')).toBeNull()
   })
 
-  it('unavailable reason: notice instead of the switch, device list still shown', () => {
+  it('platform-disabled: notice instead of the switch, device list hidden', () => {
     useWebPush.mockReturnValue({ ...base, reason: 'platform-disabled', devices: [device({})] })
     renderSection()
     expect(screen.getByTestId('push-unavailable')).toHaveAttribute('data-reason', 'platform-disabled')
+    expect(screen.queryByRole('switch')).toBeNull()
+    expect(screen.queryByText(/Chrome на Windows/)).toBeNull()
+  })
+
+  it('permission-denied: notice instead of the switch, device list still shown', () => {
+    useWebPush.mockReturnValue({ ...base, reason: 'permission-denied', devices: [device({})] })
+    renderSection()
+    expect(screen.getByTestId('push-unavailable')).toHaveAttribute('data-reason', 'permission-denied')
     expect(screen.queryByRole('switch')).toBeNull()
     expect(screen.getByText(/Chrome на Windows/)).toBeInTheDocument()
   })
