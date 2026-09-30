@@ -6,9 +6,10 @@ import testAreas from '../../../contracts/cycle36/test-areas.json'
 
 const modules = import.meta.glob(['../**/*.test.{ts,tsx}', '../../goods/src/**/*.test.{ts,tsx}'])
 
-// Keys are relative to this file (`../pages/X.test.tsx`, `../../goods/src/…`); normalise to `src/…` / `goods/src/…`.
+// Keys are relative to this file (`./x.test.ts`, `../pages/X.test.tsx`, `../../goods/src/…`); resolve them against the frontend root.
+const frontendRoot = new URL('../../', import.meta.url).pathname
 function toRepoPath(key: string): string {
-  return key.startsWith('../../goods/') ? key.slice('../../'.length) : 'src/' + key.slice('../'.length)
+  return new URL(key, import.meta.url).pathname.slice(frontendRoot.length)
 }
 
 describe('CY36-02 test areas cover every vitest file', () => {

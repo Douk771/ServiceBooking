@@ -37,5 +37,19 @@ if (files.length === 0) {
   process.exit(1)
 }
 console.log(`[test:area] ${wanted.join(', ')}: ${files.length} file(s)`)
-const r = spawnSync('npx', ['vitest', 'run', ...files], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' })
-process.exit(r.status ?? 1)
+// Vitest treats positional args as substring filters: absolute paths keep `src/x.test.ts` from matching `goods/src/x.test.ts`.
+const abs = files.map((f) => path.join(root, f))
+// cmd.exe limits the command line to ~8 KB: run in batches.
+const batches = []
+let cur = [], len = 0
+for (const f of abs) {
+  if (cur.length > 0 && len + f.length + 1 > 6000) { batches.push(cur); cur = []; len = 0 }
+  cur.push(f); len += f.length + 1
+}
+batches.push(cur)
+let code = 0
+for (const b of batches) {
+  const r = spawnSync('npx', ['vitest', 'run', ...b], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' })
+  if ((r.status ?? 1) !== 0) code = r.status ?? 1
+}
+process.exit(code)
