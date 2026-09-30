@@ -621,8 +621,9 @@ public static class ShowcaseShopsDataset
     private static List<OrderCtx> BuildDemoCustomerOrders(string p, List<ShopCtx> shops, CustomerCtx customer, DateTime nowUtc)
     {
         var result = new List<OrderCtx>();
-        var kofeinya = shops.Single(s => s.Spec.Key == "kofeinya");
-        var pekarnya = shops.Single(s => s.Spec.Key == "pekarnya");
+        // The shops of the demo customer (ShowcaseDemoRoles.CustomerShopKeys): the coffee shop (the flagship) and the bakery.
+        var kofeinya = shops.Single(s => s.Spec.Key == ShowcaseDemoRoles.CustomerShopKeys[0]);
+        var pekarnya = shops.Single(s => s.Spec.Key == ShowcaseDemoRoles.CustomerShopKeys[1]);
 
         // Completed orders of the last 30 days: six in the coffee shop (one of them cancelled by the customer), three in the bakery.
         var history = new (ShopCtx Shop, int DaysAgo, int StartMinutes, PastFate Fate)[]
