@@ -22,6 +22,7 @@ export function CatalogListingCard({
   switchLabel,
   headingId,
   headingAs: Heading = 'h2',
+  headingClassName = 'font-serif text-xl text-ink',
   data,
   isLoading,
   loadError,
@@ -34,6 +35,8 @@ export function CatalogListingCard({
   switchLabel: string
   headingId: string
   headingAs?: 'h2' | 'h3'
+  /** ARCHITECTURE_CYCLE32.md §32.9.2 — the salon cabinet passes the common card-title class. */
+  headingClassName?: string
   data?: CatalogListingView
   isLoading: boolean
   loadError?: string | null
@@ -44,7 +47,7 @@ export function CatalogListingCard({
 }) {
   return (
     <Card className="p-5 sm:p-6" aria-labelledby={headingId} role="region">
-      <Heading id={headingId} className="font-serif text-xl text-ink">
+      <Heading id={headingId} className={headingClassName}>
         {title}
       </Heading>
       {isLoading ? (

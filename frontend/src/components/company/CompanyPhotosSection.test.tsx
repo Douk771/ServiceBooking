@@ -371,4 +371,18 @@ describe('CompanyPhotosSection — цикл 31: плитка', () => {
     expect(panel.className).toContain('[@media(hover:hover)_and_(pointer:fine)]:opacity-0')
     expect(panel.parentElement?.parentElement?.className).toContain('grid-cols-2')
   })
+
+describe('CompanyPhotosSection — цикл 32: уровень и класс заголовка', () => {
+  it('headingAs/headingClassName are applied', async () => {
+    list.mockResolvedValue([])
+    renderSection({ headingAs: 'h2', headingClassName: 'text-[15px] font-semibold text-ink' })
+    expect(await screen.findByRole('heading', { level: 2, name: 'Фотографии салона' })).toHaveClass('text-[15px]')
+  })
+
+  it('without props the heading stays h3 text-lg', async () => {
+    list.mockResolvedValue([])
+    renderSection()
+    expect(await screen.findByRole('heading', { level: 3, name: 'Фотографии салона' })).toHaveClass('text-lg')
+  })
+})
 })
