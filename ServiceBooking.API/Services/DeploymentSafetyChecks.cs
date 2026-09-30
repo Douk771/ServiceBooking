@@ -634,6 +634,32 @@ public static class DeploymentSafetyChecks
     }
 
     /// <summary>
+    /// ARCHITECTURE_CYCLE25.md §498.1 — the switch "MAX messages to staff" (<c>Notifications:StaffMax:Enabled</c>, false in the repository). Outside a
+    /// developer environment, turning it on requires what it cannot work without: the real bot provider, the key that encrypts chat ids and the key
+    /// that hashes them — otherwise the process would start and then fail on the first link, so it fails at startup with a clear message instead.
+    /// </summary>
+    public static void ValidateStaffMax(IConfiguration configuration, string environmentName)
+    {
+        if (!configuration.GetValue($"{Services.StaffMax.StaffMaxOptions.SectionName}:Enabled", false)) return;
+        if (IsDeveloperEnvironment(environmentName)) return;
+
+        var provider = configuration[$"{PhoneVerificationOptions.SectionName}:Provider"] ?? "stub";
+        if (!string.Equals(provider, "max-bot", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Notifications:StaffMax:Enabled is true but PhoneVerification:Provider is not 'max-bot'. Set PHONEVERIFY_PROVIDER=max-bot " +
+                "(and the bot's settings) or turn STAFFMAX_ENABLED off — see DEPLOY.md §23.");
+        if (string.IsNullOrWhiteSpace(configuration["Notifications:EncryptionKey"]))
+            throw new InvalidOperationException(
+                "Notifications:StaffMax:Enabled is true but Notifications:EncryptionKey is empty. Set NOTIFICATIONS_ENCRYPTION_KEY " +
+                "(base64, 32 bytes) or turn STAFFMAX_ENABLED off — see DEPLOY.md §23.");
+        ValidateEncryptionKeyFormat(configuration["Notifications:EncryptionKey"]);
+        if (string.IsNullOrWhiteSpace(configuration[$"{PhoneVerificationOptions.SectionName}:ExternalKeyHmac"]))
+            throw new InvalidOperationException(
+                "Notifications:StaffMax:Enabled is true but PhoneVerification:ExternalKeyHmac is empty. Set PHONEVERIFY_EXTERNAL_KEY " +
+                "(base64, 32 bytes) or turn STAFFMAX_ENABLED off — see DEPLOY.md §23.");
+    }
+
+    /// <summary>
     /// Code-review finding (cycle 18) — <see cref="TrialOptions.UniquenessCheckOptions.Enabled"/>'s own
     /// doc comment already claims "DeploymentSafetyChecks refuses to start a Production instance with
     /// this off", but nothing enforced it: a Production box could boot with the once-only check silently

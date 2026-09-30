@@ -68,6 +68,8 @@ internal static class DeploymentValidationExtensions
     // (PhoneVerification:Provider), checked unconditionally (even in Development — an unrecognized
     // provider value is a config-correctness bug there too, unlike the secrets themselves).
     DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(builder.Configuration, builder.Environment.EnvironmentName);
+    // ARCHITECTURE_CYCLE25.md §498.1 — MAX messages to staff: when switched on, the bot, the encryption key and the chat-key HMAC are mandatory.
+    DeploymentSafetyChecks.ValidateStaffMax(builder.Configuration, builder.Environment.EnvironmentName);
     // ARCHITECTURE_CYCLE23.md §391 — public base addresses of ezbook.ru / goods.ezbook.ru (fail-closed).
     DeploymentSafetyChecks.ValidatePublicSites(builder.Configuration, builder.Environment.EnvironmentName);
 

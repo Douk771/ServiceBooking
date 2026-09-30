@@ -186,6 +186,14 @@ internal static class RateLimitingExtensions
         // order-push (ARCHITECTURE_CYCLE24.md §456.1): subscribing a browser to one order's notifications — anonymous, so bounded per IP, 20/hour.
         o.AddPolicy("order-push", ctx => IpWindowPolicy(ctx, "order-push", defaultPermitLimit: 20, defaultWindowMinutes: 60));
 
+        // ── Cycle 25 (ARCHITECTURE_CYCLE25.md §510.3) ──────────────────────────────────────────────────────
+        // shop-reports: history, summary, pick list, customer card and note — 120/min per user (a screen refreshes the pick list once a minute).
+        o.AddPolicy("shop-reports", ctx => UserWindowPolicy(ctx, "shop-reports", defaultPermitLimit: 120, defaultWindowMinutes: 1));
+        // goods-catalog: the anonymous catalog of shops — 120/min per IP.
+        o.AddPolicy("goods-catalog", ctx => IpWindowPolicy(ctx, "goods-catalog", defaultPermitLimit: 120, defaultWindowMinutes: 1));
+        // staff-max-link: a one-time link to connect MAX — 10/hour per user.
+        o.AddPolicy("staff-max-link", ctx => UserWindowPolicy(ctx, "staff-max-link", defaultPermitLimit: 10, defaultWindowMinutes: 60));
+
         // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §14) — the built-in rejection
         // response is empty, so OnRejected has to write the body itself or the frontend's *Error.ts mappers
         // couldn't tell a 429 apart from a 403. Branches by policy name so each surfaces its own Russian
@@ -213,6 +221,7 @@ internal static class RateLimitingExtensions
                 "storefront" or "order-public" or "order-board" => "Слишком много запросов — подождите минуту",
                 "order-create" => "Слишком много заказов подряд — попробуйте через несколько минут",
                 "order-push" => "Слишком много запросов — подождите минуту",
+                "shop-reports" or "goods-catalog" or "staff-max-link" => "Слишком много запросов — подождите минуту",
                 _ => "Too many uploads. Try again in a minute."
             };
             // WriteAsync alone never sets Content-Type (unlike controller-level BadRequest(string)/Conflict(string),

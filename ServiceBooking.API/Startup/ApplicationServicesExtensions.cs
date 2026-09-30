@@ -190,6 +190,16 @@ internal static class ApplicationServicesExtensions
 
     builder.Services.AddSingleton<ServiceBooking.API.Services.PhoneVerification.Max.MaxWebhookSubscriber>();
     builder.Services.AddScoped<ServiceBooking.API.Services.PhoneVerification.Max.MaxWebhookHandler>();
+
+    // ── Cycle 25: "MAX for staff" (ARCHITECTURE_CYCLE25.md §498) ────────────────────────────────────────
+    // The shared webhook handler gets its extension point; with no IMaxBotUpdateHandler registered the cycle-14 behaviour is unchanged.
+    builder.Services.Configure<ServiceBooking.API.Services.StaffMax.StaffMaxOptions>(
+        builder.Configuration.GetSection(ServiceBooking.API.Services.StaffMax.StaffMaxOptions.SectionName));
+    builder.Services.AddSingleton<ServiceBooking.API.Services.StaffMax.StaffMaxAvailability>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.StaffMax.StaffMaxLinkService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.StaffMax.StaffMaxStartHandler>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.PhoneVerification.Max.IMaxBotUpdateHandler>(sp =>
+        sp.GetRequiredService<ServiceBooking.API.Services.StaffMax.StaffMaxStartHandler>());
     builder.Services.AddScoped<ServiceBooking.API.Services.PhoneVerification.PhoneVerificationSessionService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.PhoneVerification.PhoneVerificationWriter>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.GuestBookingLookup>();

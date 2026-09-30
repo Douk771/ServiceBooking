@@ -53,6 +53,12 @@ public sealed class MaxBotClient : IMaxBotClient, IDisposable
             }));
     }
 
+    /// <summary>The webhook's update types. <c>bot_stopped</c> was added in cycle 25 (staff MAX links).</summary>
+    private static readonly string[] UpdateTypes = ["bot_started", "message_created", "bot_stopped"];
+
+    /// <summary>The list of cycle 14 — the fallback when the platform refuses the extended one (ARCHITECTURE_CYCLE25.md §498.4).</summary>
+    private static readonly string[] LegacyUpdateTypes = ["bot_started", "message_created"];
+
     public async Task<bool> SubscribeAsync(CancellationToken ct)
     {
         var maxOptions = _options.Value.Max;
@@ -73,12 +79,16 @@ public sealed class MaxBotClient : IMaxBotClient, IDisposable
         try
         {
             using var client = CreateClient(maxOptions);
-            using var response = await client.PostAsJsonAsync("subscriptions", new
-            {
-                url = webhookUrl,
-                update_types = new[] { "bot_started", "message_created" },
-            }, ct);
-            return response.IsSuccessStatusCode;
+            using var response = await client.PostAsJsonAsync("subscriptions", new { url = webhookUrl, update_types = UpdateTypes }, ct);
+            if (response.IsSuccessStatusCode) return true;
+
+            // §498.4: the phone confirmation must never depend on the new update type. If the platform refuses the extended list, subscribe
+            // again with the old two types in the SAME call; a stopped bot is then noticed only by 403/404 on sending.
+            _logger.LogWarning(
+                "max-webhook-renew: subscribing with bot_stopped was refused ({StatusCode}); retrying with the previous update types",
+                (int)response.StatusCode);
+            using var fallback = await client.PostAsJsonAsync("subscriptions", new { url = webhookUrl, update_types = LegacyUpdateTypes }, ct);
+            return fallback.IsSuccessStatusCode;
         }
         catch (HttpRequestException ex)
         {

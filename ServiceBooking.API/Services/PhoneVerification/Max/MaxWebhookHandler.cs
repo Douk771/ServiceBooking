@@ -18,7 +18,8 @@ public sealed class MaxWebhookHandler(
     IOptions<PhoneVerificationOptions> options,
     IMaxBotClient botClient,
     PhoneVerificationWriter writer,
-    ILogger<MaxWebhookHandler> logger)
+    ILogger<MaxWebhookHandler> logger,
+    IEnumerable<IMaxBotUpdateHandler> updateHandlers)
 {
     public async Task HandleAsync(JsonElement root, CancellationToken ct)
     {
@@ -31,6 +32,18 @@ public sealed class MaxWebhookHandler(
                 break;
             case "message_created" when update.Contact is not null:
                 await HandleContactAsync(update, ct);
+                break;
+            case "bot_stopped":
+                // ARCHITECTURE_CYCLE25.md §498.3: the phone confirmation has nothing to do when a bot is stopped and sends no reply; other
+                // subsystems (staff MAX links) react. One handler failing must not stop the others nor turn the answer into a non-2xx.
+                foreach (var handler in updateHandlers)
+                {
+                    try { await handler.HandleStoppedAsync(update, ct); }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        logger.LogWarning(ex, "phone-verification webhook: a bot_stopped handler failed");
+                    }
+                }
                 break;
             default:
                 // §146.2: an update this subsystem doesn't recognize is logged, never rejected — a
@@ -45,6 +58,15 @@ public sealed class MaxWebhookHandler(
         if (string.IsNullOrEmpty(update.Payload) || string.IsNullOrEmpty(update.SenderId))
         {
             logger.LogInformation("phone-verification webhook: bot_started missing payload or sender id");
+            return;
+        }
+
+        // ARCHITECTURE_CYCLE25.md §498.3: a payload with another subsystem's prefix ("sm1." — staff MAX links) is theirs, decided BEFORE any
+        // phone-verification lookup; everything else (including unknown prefixes) goes on exactly as in cycle 14.
+        var foreignHandler = updateHandlers.FirstOrDefault(h => h.CanHandleStart(update.Payload));
+        if (foreignHandler is not null)
+        {
+            await foreignHandler.HandleStartAsync(update, ct);
             return;
         }
 
