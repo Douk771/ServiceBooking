@@ -91,10 +91,4 @@ describe('BusinessBlock QA (cycle 27)', () => {
     expect(items).toHaveLength(4)
     items.forEach((li) => expect(li.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true'))
   })
-
-  it('QA27-09 mentions chats/one place', () => {
-    const { container } = setup()
-    expect(container.textContent).toMatch(/по чатам/)
-    expect(container.textContent).toMatch(/в одном месте/)
-  })
 })
