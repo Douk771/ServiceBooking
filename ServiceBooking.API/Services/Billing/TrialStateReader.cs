@@ -74,7 +74,7 @@ public class TrialStateReader(
                 account.TrialTermsVersion ?? TrialTermsRegistry.CurrentVersion,
                 TrialTermsRegistry.Sha256Of(account.TrialTermsVersion ?? TrialTermsRegistry.CurrentVersion) ?? string.Empty,
                 account.TrialTermsVersion == TrialTermsRegistry.CurrentVersion
-                    ? TrialTermsRegistry.RenderCurrent(plan!.Name, account.TrialDurationDays ?? 0, trialEndsAt, account.TrialMailingWindowDays ?? 0)
+                    ? TrialTermsRegistry.RenderCurrent(plan!.Name, account.TrialDurationDays ?? 0, trialEndsAt)
                     : TrialTermsRegistry.TryGetTemplate(account.TrialTermsVersion ?? string.Empty) ?? string.Empty,
                 AcknowledgementRequired: account.TrialTermsAcknowledgedAtUtc is null,
                 ShownAt: account.TrialTermsAcknowledgedAtUtc is null ? null : account.TrialStartedAtUtc,
@@ -158,7 +158,7 @@ public class TrialStateReader(
         var message = refusal is not null
             ? refusal.Message
             : plan is null ? string.Empty
-                : TrialTermsRegistry.RenderCurrent(plan.Name, durationDays!.Value, now.AddDays(durationDays.Value), windowDays!.Value);
+                : TrialTermsRegistry.RenderCurrent(plan.Name, durationDays!.Value, now.AddDays(durationDays.Value));
 
         var available = refusalCode is null;
         var endsAtPreview = available ? now.AddDays(durationDays!.Value) : (DateTime?)null;
@@ -166,7 +166,7 @@ public class TrialStateReader(
         TrialMailingWindowDto mailingWindow = NotApplicableMailingWindow();
         if (available)
         {
-            var text = TrialTermsRegistry.RenderCurrent(plan!.Name, durationDays!.Value, endsAtPreview!.Value, windowDays!.Value);
+            var text = TrialTermsRegistry.RenderCurrent(plan!.Name, durationDays!.Value, endsAtPreview!.Value);
             availableTerms = new TrialActivationTermsDto(
                 TrialTermsRegistry.CurrentVersion, TrialTermsRegistry.Sha256Of(TrialTermsRegistry.CurrentVersion) ?? string.Empty,
                 text, AcknowledgementRequired: false, ShownAt: null, AcknowledgedAt: null);

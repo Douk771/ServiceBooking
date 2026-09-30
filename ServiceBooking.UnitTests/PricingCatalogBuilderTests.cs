@@ -299,4 +299,26 @@ public class PricingCatalogBuilderTests
 
         result.Options.Should().BeEmpty();
     }
+
+    // ARCHITECTURE_CYCLE28.md §573.4 п.5 — the mailing option is not sold in the "Записи" grid (no price), so it must stay off the
+    // storefront even when the legal precondition is met (a published TermsOwner).
+    [Fact]
+    public void Build_DropsUnpricedMailingOption_EvenWhenRequiredDocumentIsPublished()
+    {
+        var whatsapp = Option(name: "WhatsApp рассылка", unitName: null, price: null);
+        whatsapp.Code = "notifications.whatsapp";
+
+        var publishedSnapshot = new LegalSnapshot(
+            new Dictionary<LegalDocumentType, LegalDocument>
+            {
+                [LegalDocumentType.TermsOwner] = new(
+                    LegalDocumentType.TermsOwner, "T", "v1", new DateOnly(2026, 1, 1), false,
+                    LegalChangeKind.Material, LegalGate.OwnerScope, [], "<p/>", "hash", "file.html"),
+            },
+            new Dictionary<string, LegalUiText>());
+
+        var result = PricingCatalogBuilder.Build("v1", [], [whatsapp], legalNotice: null, legalSnapshot: publishedSnapshot);
+
+        result.Options.Should().BeEmpty();
+    }
 }

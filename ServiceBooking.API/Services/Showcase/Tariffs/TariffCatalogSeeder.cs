@@ -1,0 +1,230 @@
+using System.Globalization;
+using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.Services.Billing;
+using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
+using ServiceBooking.Infrastructure.Data;
+
+namespace ServiceBooking.API.Services.Showcase.Tariffs;
+
+/// <summary>Outcome of <c>ops tariffs plan|apply</c>. <see cref="Lines"/> are printed to stdout as they are.</summary>
+public sealed record TariffCatalogReport(IReadOnlyList<string> Lines, int PlansCreated, int RulesAdded, int FreeFieldsAligned, bool LockBusy)
+{
+    public static TariffCatalogReport Busy { get; } = new([], 0, 0, 0, LockBusy: true);
+}
+
+/// <summary>
+/// ARCHITECTURE_CYCLE28.md §573.1 — creates the missing tariffs of the "Записи" grid. It ONLY CREATES what is absent (by stable id, then by
+/// name ignoring case) and never overwrites what an administrator has set: for a tariff that already exists the report lists the
+/// fields that differ from the grid ("в админке цена 990, в сетке 790 — оставлено как есть").
+///
+/// One deliberate exception, the customer's decision Q28-1: the system free tariff is renamed and widened into "Старт" (online booking,
+/// two employees) — but each field only while it still has the value the cycle-7 migration seeded, i.e. while nobody touched it.
+///
+/// Why a command and not a data migration: a migration would seed the tariffs into the database of every functional test and break
+/// the cycle-18 tests that expect "no trial tariff" (§570 A5). Functional tests call this class directly in their own database.
+/// </summary>
+public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> logger)
+{
+    /// <summary>Seconds after which the machine's pricing catalog cache (60 s TTL) shows the change.</summary>
+    public const int CacheSeconds = 60;
+
+    public Task<TariffCatalogReport> PlanAsync(CancellationToken ct = default) => RunAsync(apply: false, ct);
+
+    public Task<TariffCatalogReport> ApplyAsync(CancellationToken ct = default) => RunAsync(apply: true, ct);
+
+    private async Task<TariffCatalogReport> RunAsync(bool apply, CancellationToken ct)
+    {
+        await using var transaction = apply ? await db.Database.BeginTransactionAsync(ct) : null;
+        if (apply && !await AdvisoryLock.TryAcquireAsync(db, ShowcaseCatalog.TariffsLockKey))
+            return TariffCatalogReport.Busy;
+
+        var lines = new List<string>();
+        var services = await db.SubscriptionPlanConfigs.Where(p => p.Line == CompanyKind.Services).ToListAsync(ct);
+        // Ids are global: a row with the grid's id counts even if somebody put it into another line.
+        var allById = await db.SubscriptionPlanConfigs.Where(p => ZapisTariffCatalog.Grid.Select(g => g.Id).Contains(p.Id)).ToListAsync(ct);
+
+        var created = new List<SubscriptionPlanConfig>();
+        var existingTargets = new List<SubscriptionPlanConfig>();
+
+        foreach (var tariff in ZapisTariffCatalog.Grid)
+        {
+            var existing = allById.FirstOrDefault(p => p.Id == tariff.Id)
+                ?? services.FirstOrDefault(p => string.Equals(p.Name, tariff.Name, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null)
+            {
+                existingTargets.Add(existing);
+                var differences = DescribeDivergences(existing, tariff);
+                lines.Add(differences.Count == 0
+                    ? $"уже есть, не трогаю: {existing.Name} — совпадает с сеткой"
+                    : $"уже есть, не трогаю: {existing.Name} — {string.Join("; ", differences)}");
+                if (tariff.IsSystemTrial && !existing.IsSystemTrial && !services.Any(p => p.IsSystemTrial))
+                    lines.Add($"внимание: «{existing.Name}» не помечен как пробный период — пометьте в админке (PUT /api/admin/plans/{{id}}/system-trial), иначе кнопка «Попробовать» не появится");
+                continue;
+            }
+
+            if (tariff.IsSystemTrial && services.FirstOrDefault(p => p.IsSystemTrial) is { } anotherTrial)
+            {
+                lines.Add($"пробный уже заведён: {anotherTrial.Name}");
+                continue;
+            }
+
+            var plan = ToEntity(tariff);
+            created.Add(plan);
+            lines.Add($"{(apply ? "создан" : "будет создан")}: {plan.Name} (id {plan.Id})");
+            if (apply) db.SubscriptionPlanConfigs.Add(plan);
+        }
+
+        var rulesAdded = await AddMissingUnavailableRulesAsync(apply, created, existingTargets, ct);
+        lines.Add($"правила опций: {(apply ? "добавлено" : "будет добавлено")} {rulesAdded} (у каждой опции каталога — «недоступна», в том числе у рассылок)");
+
+        var aligned = await AlignSystemFreeTariffAsync(apply, lines, ct);
+
+        lines.Add("pricing.public-enabled не меняется: витрину цен включает оператор в админке (PUT /api/admin/platform-settings)");
+        if (apply)
+        {
+            await db.SaveChangesAsync(ct);
+            await transaction!.CommitAsync(ct);
+            lines.Add($"готово; изменения будут видны в каталоге цен на работающей машине в течение {CacheSeconds} секунд");
+            logger.LogInformation("ops tariffs apply: created {Created} plans, {Rules} rules, {Aligned} free-tariff fields",
+                created.Count, rulesAdded, aligned);
+        }
+        else
+        {
+            lines.Add("режим: только показать — команда `ops tariffs apply` выполнит изменения");
+        }
+
+        return new TariffCatalogReport(lines, created.Count, rulesAdded, aligned, LockBusy: false);
+    }
+
+    private async Task<int> AddMissingUnavailableRulesAsync(
+        bool apply, List<SubscriptionPlanConfig> created, List<SubscriptionPlanConfig> existingTargets, CancellationToken ct)
+    {
+        var options = await db.SubscriptionOptions.WhereNotRetired().ToListAsync(ct);
+        var existingRuleKeys = existingTargets.Count == 0
+            ? []
+            : (await db.PlanOptionRules
+                .Where(r => existingTargets.Select(p => p.Id).Contains(r.PlanConfigId))
+                .Select(r => new { r.PlanConfigId, r.OptionId })
+                .ToListAsync(ct))
+                .Select(r => (r.PlanConfigId, r.OptionId))
+                .ToHashSet();
+
+        var added = 0;
+        foreach (var plan in created.Concat(existingTargets))
+        {
+            foreach (var option in options)
+            {
+                if (existingRuleKeys.Contains((plan.Id, option.Id))) continue;
+                added++;
+                if (apply)
+                    db.PlanOptionRules.Add(new PlanOptionRule
+                    {
+                        Id = Guid.NewGuid(), PlanConfigId = plan.Id, OptionId = option.Id, Availability = OptionAvailability.Unavailable,
+                    });
+            }
+        }
+        return added;
+    }
+
+    private async Task<int> AlignSystemFreeTariffAsync(bool apply, List<string> lines, CancellationToken ct)
+    {
+        var free = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.IsSystemFree && p.Line == CompanyKind.Services, ct);
+        if (free is null)
+        {
+            lines.Add("системный бесплатный тариф не найден — «Старт» не выравнивается");
+            return 0;
+        }
+
+        var changes = AlignFreeTariff(free, apply);
+        if (changes.Count == 0)
+            lines.Add($"бесплатный тариф «{free.Name}»: уже соответствует «Старту» или изменён в админке — не трогаю");
+        else
+            foreach (var change in changes)
+                lines.Add($"бесплатный тариф «Старт» (решение Q28-1): {(apply ? "изменено" : "будет изменено")} — {change}");
+        return changes.Count;
+    }
+
+    /// <summary>
+    /// Q28-1 — moves the free tariff from the cycle-7 seed to "Старт", field by field, only where the field still equals the seed.
+    /// When <paramref name="apply"/> is false nothing is mutated. Returns human-readable descriptions of the changes.
+    /// </summary>
+    public static List<string> AlignFreeTariff(SubscriptionPlanConfig free, bool apply)
+    {
+        var changes = new List<string>();
+        if (!free.AllowOnlineBooking)
+        {
+            changes.Add("онлайн-запись: выключена → включена");
+            if (apply) free.AllowOnlineBooking = true;
+        }
+        if (free.MaxEmployees == 1)
+        {
+            changes.Add($"сотрудников: 1 → {ZapisTariffCatalog.StartMaxEmployees}");
+            if (apply) free.MaxEmployees = ZapisTariffCatalog.StartMaxEmployees;
+        }
+        if (free.Name == ZapisTariffCatalog.LegacyFreeName)
+        {
+            changes.Add($"название: «{free.Name}» → «{ZapisTariffCatalog.StartName}»");
+            if (apply) free.Name = ZapisTariffCatalog.StartName;
+        }
+        if (free.Description == ZapisTariffCatalog.LegacyFreeDescription)
+        {
+            changes.Add("описание обновлено");
+            if (apply) free.Description = ZapisTariffCatalog.StartDescription;
+        }
+        if (free.Highlights == ZapisTariffCatalog.LegacyFreeHighlights)
+        {
+            changes.Add("преимущества обновлены");
+            if (apply) free.Highlights = ZapisTariffCatalog.StartHighlights;
+        }
+        return changes;
+    }
+
+    /// <summary>Fields of an existing row that differ from the grid, in words. Only the fields the grid defines and an administrator is
+    /// likely to have changed.</summary>
+    public static List<string> DescribeDivergences(SubscriptionPlanConfig existing, ZapisTariff grid)
+    {
+        var differences = new List<string>();
+        void Compare<T>(string label, T inAdmin, T inGrid, Func<T, string> show)
+        {
+            if (!EqualityComparer<T>.Default.Equals(inAdmin, inGrid))
+                differences.Add($"{label} в админке {show(inAdmin)}, в сетке {show(inGrid)} — оставлено как есть");
+        }
+
+        Compare("цена", existing.PricePerMonth, grid.PricePerMonth, v => v.ToString("0.##", CultureInfo.InvariantCulture));
+        Compare("компаний", existing.MaxCompanies, grid.MaxCompanies, Limit);
+        Compare("сотрудников", existing.MaxEmployees, grid.MaxEmployees, Limit);
+        Compare("квота фото, МБ", existing.PhotoQuotaMb, grid.PhotoQuotaMb, Limit);
+        Compare("срок хранения фото", existing.PhotoRetention, grid.PhotoRetention, v => v.ToString());
+        Compare("публичный", existing.IsPublic, grid.IsPublic, v => v ? "да" : "нет");
+        Compare("активен", existing.IsActive, true, v => v ? "да" : "нет");
+        return differences;
+
+        static string Limit(int? v) => v?.ToString(CultureInfo.InvariantCulture) ?? "без ограничения";
+    }
+
+    public static SubscriptionPlanConfig ToEntity(ZapisTariff tariff) => new()
+    {
+        Id = tariff.Id,
+        Name = tariff.Name,
+        Line = CompanyKind.Services,
+        PricePerMonth = tariff.PricePerMonth,
+        MaxCompanies = tariff.MaxCompanies,
+        MaxEmployees = tariff.MaxEmployees,
+        AllowOnlineBooking = true,
+        AllowAnalytics = true,
+        AllowPublicListing = true,
+        AllowMailing = false,
+        AllowOnlinePayment = false,
+        AllowNotificationChannel = false,
+        PhotoQuotaMb = tariff.PhotoQuotaMb,
+        PhotoRetention = tariff.PhotoRetention,
+        Description = tariff.Description,
+        Highlights = tariff.Highlights.Count == 0 ? null : string.Join('\n', tariff.Highlights),
+        IsActive = true,
+        IsPublic = tariff.IsPublic,
+        SortOrder = tariff.SortOrder,
+        IsSystemTrial = tariff.IsSystemTrial,
+        CreatedAt = DateTime.UtcNow,
+    };
+}

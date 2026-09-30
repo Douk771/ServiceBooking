@@ -146,7 +146,7 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     }
 
     [Fact, TestCase("CO-010")]
-    public async Task GetBySlug_ExpiredPaidSubscription_OnlineBookingEnabledIsFalse()
+    public async Task GetBySlug_ExpiredPaidSubscription_FallsBackToStart_OnlineBookingStaysEnabled()
     {
         var (_, company) = await CreateOwnerWithCompanyAsync(allowSelfBooking: true);
         await SetSubscriptionAsync(company.Id, paidUntil: DateTime.UtcNow.AddDays(-1));
@@ -154,8 +154,9 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var response = await AnonymousClient().GetAsync($"/api/companies/{company.Slug}");
         var dto = await response.Content.ReadFromJsonAsync<CompanyDto>();
 
-        // Matches the same expiry check the booking endpoint applies before allowing a guest booking.
-        dto!.OnlineBookingEnabled.Should().BeFalse();
+        // Cycle 28, Q28-1: the free baseline "Старт" includes online booking, so an expired paid subscription no longer
+        // switches it off (it used to: the old Free baseline had no online booking).
+        dto!.OnlineBookingEnabled.Should().BeTrue();
     }
 
     [Fact, TestCase("CO-011")]
@@ -510,10 +511,10 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     }
 
     [Fact, TestCase("CO-062")]
-    public async Task GetAll_ExpiredPaidSubscription_KeepsCompanyListed_ButOnlineBookingOff()
+    public async Task GetAll_ExpiredPaidSubscription_KeepsCompanyListed_AndOnlineBookingOnStart()
     {
-        // An expired subscription resolves to the Free baseline, which still allows public listing
-        // (so the company stays in the directory) but not online booking.
+        // An expired subscription resolves to the free baseline "Старт", which allows public listing
+        // (so the company stays in the directory) and, since cycle 28 (Q28-1), online booking as well.
         var (_, company) = await CreateOwnerWithCompanyAsync(allowSelfBooking: true);
         await SetSubscriptionAsync(company.Id, paidUntil: DateTime.UtcNow.AddDays(-1));
 
@@ -522,7 +523,7 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var entry = companies.Should().ContainSingle(c => c.Id == company.Id).Subject;
         entry.PublicListingEnabled.Should().BeTrue();
-        entry.OnlineBookingEnabled.Should().BeFalse();
+        entry.OnlineBookingEnabled.Should().BeTrue();
     }
 
     // ── GET /api/companies/{id}/masters ──────────────────────────────────────
@@ -1241,16 +1242,20 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     }
 
     [Fact, TestCase("CO-047")]
-    public async Task AddMember_OnPlanlessAccount_ReturnsPaymentRequired_OwnerOnlySeat()
+    public async Task AddMember_OnPlanlessAccount_ReturnsPaymentRequired_AfterOwnerPlusOneSeat()
     {
-        // No subscription at all → the restrictive Free baseline: MaxEmployees = 1. The owner already
-        // occupies that one seat, so even a first master cannot be added until the account is upgraded.
+        // No subscription at all → the free baseline "Старт": MaxEmployees = 2 (cycle 28, Q28-1; was 1). The owner occupies one
+        // seat, so the first master fits and the second one cannot be added until the account is upgraded.
         var (owner, company) = await CreateOwnerWithCompanyAsync(attachPlan: false);
-        var toAdd = await RegisterAsync();
+        var first = await RegisterAsync();
+        var second = await RegisterAsync();
 
+        var firstResponse = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/companies/{company.Id}/members",
+            new { phone = first.Phone, firstName = first.FirstName, lastName = first.LastName, role = "Master", bio = (string?)null });
         var response = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/companies/{company.Id}/members",
-            new { phone = toAdd.Phone, firstName = toAdd.FirstName, lastName = toAdd.LastName, role = "Master", bio = (string?)null });
+            new { phone = second.Phone, firstName = second.FirstName, lastName = second.LastName, role = "Master", bio = (string?)null });
 
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         response.StatusCode.Should().Be((HttpStatusCode)402);
     }
 
@@ -1266,14 +1271,19 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var (owner, company) = await CreateOwnerWithCompanyAsync(onlineBooking: false);
         var configId = await CreateTestPlanConfigAsync(maxEmployees: 8);
         await SetSubscriptionAsync(company.Id, configId, paidUntil: DateTime.UtcNow.AddDays(-1)); // expired yesterday
+        var first = await RegisterAsync();
         var toAdd = await RegisterAsync();
 
+        // Cycle 28 (Q28-1): the applied free limit is now 2 seats, the owner's plus one — fill the second one first.
+        (await AuthedClient(owner.Token).PostAsJsonAsync($"/api/companies/{company.Id}/members",
+            new { phone = first.Phone, firstName = first.FirstName, lastName = first.LastName, role = "Master", bio = (string?)null }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
         var response = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/companies/{company.Id}/members",
             new { phone = toAdd.Phone, firstName = toAdd.FirstName, lastName = toAdd.LastName, role = "Master", bio = (string?)null });
 
         response.StatusCode.Should().Be((HttpStatusCode)402);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("из 1 мест", "the ENFORCED limit (Free, after the expired subscription fell back) is 1, not the lapsed plan's 8");
+        body.Should().Contain("из 2 мест", "the ENFORCED limit (Free, after the expired subscription fell back) is 2, not the lapsed plan's 8");
         body.Should().NotContain("«Test Plan", "the lapsed plan's own name must not appear as if it were still granting anything");
     }
 
@@ -1394,7 +1404,7 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     // owner's stored toggle currently is.
 
     [Fact, TestCase("CO-063")]
-    public async Task GetMy_OnFreeBaseline_ExposesRestrictivePlanCapabilityFlags()
+    public async Task GetMy_OnFreeBaseline_ExposesStartPlanCapabilityFlags()
     {
         var (owner, company) = await CreateOwnerWithCompanyAsync(attachPlan: false);
 
@@ -1402,10 +1412,11 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var companies = (await response.Content.ReadFromJsonAsync<List<CompanyDto>>())!;
         var dto = companies.Single(c => c.Id == company.Id);
 
-        dto.PlanAllowsOnlineBooking.Should().BeFalse();
+        // Cycle 28, Q28-1: the free baseline "Старт" has online booking and two employees.
+        dto.PlanAllowsOnlineBooking.Should().BeTrue();
         dto.PlanAllowsOnlinePayment.Should().BeFalse();
         dto.PlanAllowsPublicListing.Should().BeTrue();
-        dto.MaxEmployees.Should().Be(1);
+        dto.MaxEmployees.Should().Be(2);
     }
 
     [Fact, TestCase("CO-064")]

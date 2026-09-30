@@ -295,13 +295,14 @@ public class TrialActivationService(
                     existingOption.ActivatedByUserId = request.ActorUserId;
                 }
             }
-            else
+            else if (TrialMailingRulePolicy.IsMisconfiguration(plan))
             {
                 // Н2 (code review, cycle 18 3rd pass) — no PlanOptionRule for notifications.whatsapp on
                 // the trial plan, or an Extra one: fail-closed per §333.3/§0.2 п.4, no row created, so the
                 // owner gets a "mailings included" terms text and a mailing-window countdown while every
                 // mailing attempt silently hits NotOnPaidPlan in NotificationGate. That misconfiguration
                 // must be visible to an operator, not just consistent with the contract on paper.
+                // Cycle 28 (§573.3): only when the plan itself is designed with mailings (AllowNotificationChannel).
                 logger.LogError(
                     "trial-lifecycle: trial plan {PlanId} has no Included PlanOptionRule for {OptionCode} " +
                     "— account {AccountId} granted a trial with no paid notification numbers materialized",
@@ -309,6 +310,14 @@ public class TrialActivationService(
                 misconfigurationSignal =
                     $"Пробный тариф {plan.Id} не даёт правило Included на {SubscriptionResolver.WhatsAppOptionCode} " +
                     $"— у аккаунта {account.Id} рассылки не будут работать несмотря на активный триал.";
+            }
+            else
+            {
+                // Cycle 28 (§573.3, Q28-4): the trial plan is intentionally without mailings — nothing to alert about.
+                logger.LogInformation(
+                    "trial-lifecycle: trial plan {PlanId} is intentionally without mailings ({OptionCode} not Included) " +
+                    "— account {AccountId} granted a trial without a mailing option row",
+                    plan.Id, SubscriptionResolver.WhatsAppOptionCode, account.Id);
             }
         }
 

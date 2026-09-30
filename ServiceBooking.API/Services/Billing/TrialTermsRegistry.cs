@@ -16,16 +16,25 @@ namespace ServiceBooking.API.Services.Billing;
 public static class TrialTermsRegistry
 {
     /// <summary>The edition currently shown to owners. Format <c>yyyy-MM-dd</c>.</summary>
-    public const string CurrentVersion = "2026-09-26";
+    public const string CurrentVersion = "2026-09-30";
+
+    /// <summary>The first released edition (cycle 18). Kept forever: <c>TrialGrant</c> rows created before cycle 28 carry its
+    /// version and hash. It promised mailings inside the trial and has a fourth substitution ({3}) — see
+    /// <see cref="TrialLegalNotices.TrialActivationTermsV20260926"/>.</summary>
+    public const string LegacyVersion20260926 = "2026-09-26";
 
     private static readonly IReadOnlyDictionary<string, string> TextsByVersion =
-        new Dictionary<string, string> { [CurrentVersion] = TrialLegalNotices.TrialActivationTerms };
+        new Dictionary<string, string>
+        {
+            [LegacyVersion20260926] = TrialLegalNotices.TrialActivationTermsV20260926,
+            [CurrentVersion] = TrialLegalNotices.TrialActivationTerms,
+        };
 
     /// <summary>Д19 — which warning thresholds (in days) this edition literally promises ("за 7, 3 и 1
     /// день"). <c>PUT /api/admin/platform-settings</c> must reject a thresholds value that disagrees
     /// with the CURRENT edition's promise (§339.1).</summary>
     public static readonly IReadOnlyDictionary<string, int[]> PromisedThresholdsByVersion =
-        new Dictionary<string, int[]> { [CurrentVersion] = [7, 3, 1] };
+        new Dictionary<string, int[]> { [LegacyVersion20260926] = [7, 3, 1], [CurrentVersion] = [7, 3, 1] };
 
     public static int[] CurrentPromisedThresholds => PromisedThresholdsByVersion[CurrentVersion];
 
@@ -45,8 +54,9 @@ public static class TrialTermsRegistry
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    /// <summary>Renders the CURRENT edition's template with the four substitutions
-    /// (§4.1: план, длительность, дата окончания, окно рассылок).</summary>
-    public static string RenderCurrent(string planName, int durationDays, DateTime endsAtUtc, int mailingWindowDays) =>
-        string.Format(TextsByVersion[CurrentVersion], planName, durationDays, endsAtUtc.ToString("dd.MM.yyyy"), mailingWindowDays);
+    /// <summary>Renders the CURRENT edition's template with its three substitutions
+    /// (§4.1: план, длительность, дата окончания). Since edition 2026-09-30 there is no mailing-window substitution
+    /// (cycle 28, Q28-4: mailings are not part of the trial).</summary>
+    public static string RenderCurrent(string planName, int durationDays, DateTime endsAtUtc) =>
+        string.Format(TextsByVersion[CurrentVersion], planName, durationDays, endsAtUtc.ToString("dd.MM.yyyy"));
 }

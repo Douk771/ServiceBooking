@@ -1,10 +1,14 @@
+using ServiceBooking.API.Services.Ops;
 using ServiceBooking.API.Startup;
 
 // Cycle 22 P5 (ARCHITECTURE_CYCLE22.md §378): every section of this file moved, verbatim, into
 // Startup/*Extensions.cs; this is the same sequence of registrations and middleware, in the same order.
-var builder = WebApplication.CreateBuilder(args);
+// Cycle 28 (ARCHITECTURE_CYCLE28.md §575.1): `dotnet ServiceBooking.API.dll ops <command>` is an operator command run inside the same
+// image; the ops words are not host arguments, everything else starts the web server exactly as before.
+var opsCommand = OpsCommandLine.Parse(args);
+var builder = WebApplication.CreateBuilder(opsCommand?.HostArgs ?? args);
 
-builder.AddServiceBookingSerilog();
+builder.AddServiceBookingSerilog(opsMode: opsCommand is not null);
 var isDeveloperEnvironment = builder.ValidateDeployment();
 builder.AddServiceBookingControllers();
 builder.AddServiceBookingDatabase();
@@ -21,6 +25,14 @@ builder.AddBackgroundTasks();
 var app = builder.Build();
 
 app.ValidateServiceRegistries();
+
+if (opsCommand is not null)
+{
+    // No middleware, no background tasks, no seeding: only the command (§575.1).
+    Environment.ExitCode = await OpsCommandRunner.RunAsync(app.Services, opsCommand, Console.Out);
+    await app.DisposeAsync();
+    return;
+}
 
 // FIRST in the pipeline, before anything reads Connection.RemoteIpAddress — the rate limiter's IP
 // partitions (auth-login, auth-register, booking-create) and Serilog's request logging both need the
