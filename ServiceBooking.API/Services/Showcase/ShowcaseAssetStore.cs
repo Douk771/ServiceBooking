@@ -46,6 +46,14 @@ public sealed class ShowcaseAssetStore(FileStorage storage, IWebHostEnvironment 
         return files.Count;
     }
 
+    /// <summary>File names (inside <c>uploads/showcase/</c>) of everything this store instance has published so far: the pictures the new rows point at.</summary>
+    public IReadOnlySet<string> PublishedFileNames => _published.Values
+        .Where(p => p is not null)
+        .SelectMany(p => new[] { p!.Url, p.ThumbnailUrl })
+        .Where(url => !string.IsNullOrEmpty(url))
+        .Select(url => Path.GetFileName(url!))
+        .ToHashSet(StringComparer.Ordinal);
+
     /// <summary>Copies the asset (once per store instance) and returns what a row needs, or null when the asset is not available.</summary>
     public async Task<PublishedShowcaseAsset?> PublishAsync(string key, CancellationToken ct)
     {

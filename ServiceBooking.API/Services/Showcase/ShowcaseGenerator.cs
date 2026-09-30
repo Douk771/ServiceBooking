@@ -42,6 +42,9 @@ public class ShowcaseGenerator(
         return (photoKeys.Count(assets.IsAvailable), assets.CountFiles(allKeys));
     }
 
+    /// <summary>Names of the files in <c>uploads/showcase/</c> that the rows written by <see cref="PersistAsync"/> point at.</summary>
+    public IReadOnlySet<string> PublishedFileNames => assets.PublishedFileNames;
+
     /// <summary>Writes the whole graph. The caller has already refused when a showcase exists.</summary>
     public async Task PersistAsync(ShowcaseGraph graph, IReadOnlyDictionary<string, int> cityIds, string profile, CancellationToken ct)
     {

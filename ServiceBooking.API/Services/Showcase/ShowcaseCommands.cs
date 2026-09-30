@@ -21,6 +21,10 @@ public class ShowcaseCommands(
     public const int ExitRefused = 2;
     public const int ExitLockBusy = 4;
 
+    /// <summary>The default 30 s command timeout is not enough for the DELETE steps on a busy machine or with stale planner statistics (a delete that needs
+    /// 0.5 s with fresh statistics took 7 s without them); the whole changing command runs under the same budget the insert already has.</summary>
+    private const int CommandTimeoutSeconds = 300;
+
     public async Task<ShowcaseCommandResult> RunAsync(
         OpsAction action, ShowcasePlanKind? planOf, bool confirmed, DateTime nowUtc, CancellationToken ct)
     {
@@ -37,7 +41,21 @@ public class ShowcaseCommands(
 
         return action == OpsAction.ShowcasePlan || !confirmed
             ? await PlanAsync(kind, profile, nowUtc, title, ct)
-            : await ExecuteAsync(kind, profile, nowUtc, title, ct);
+            : await ExecuteWithLongTimeoutAsync(kind, profile, nowUtc, title, ct);
+    }
+
+    private async Task<ShowcaseCommandResult> ExecuteWithLongTimeoutAsync(ShowcasePlanKind kind, ShowcaseProfile profile, DateTime nowUtc, string title, CancellationToken ct)
+    {
+        var previousTimeout = db.Database.GetCommandTimeout();
+        db.Database.SetCommandTimeout(TimeSpan.FromSeconds(CommandTimeoutSeconds));
+        try
+        {
+            return await ExecuteAsync(kind, profile, nowUtc, title, ct);
+        }
+        finally
+        {
+            db.Database.SetCommandTimeout(previousTimeout);
+        }
     }
 
     private async Task<ShowcaseCommandResult> PlanAsync(ShowcasePlanKind kind, ShowcaseProfile profile, DateTime nowUtc, string title, CancellationToken ct)
@@ -103,7 +121,8 @@ public class ShowcaseCommands(
         }
 
         // After the commit only: a rollback must never leave rows pointing at missing files.
-        if (erased is not null) eraser.DeleteFilesAfterCommit(erased.FilesToDelete);
+        if (erased is not null)
+            eraser.DeleteFilesAfterCommit(erased.FilesToDelete, graph is null ? null : generator.PublishedFileNames);
 
         stopwatch.Stop();
         var summary = new List<string>();

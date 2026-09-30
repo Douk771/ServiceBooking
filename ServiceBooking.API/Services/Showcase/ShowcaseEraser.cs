@@ -36,16 +36,19 @@ public class ShowcaseEraser(AppDbContext db, FileStorage storage, ILogger<Showca
         return new ShowcaseEraseResult(ToCounts(counts, files.Count), files);
     }
 
-    /// <summary>Removes the orphaned files after the transaction committed: the whole <c>uploads/showcase/</c> folder plus files that a demo visitor or staff
-    /// member uploaded into a showcase company (logo, service picture, gallery photo, avatar, client-note photo) outside it.</summary>
-    public void DeleteFilesAfterCommit(IReadOnlyList<string> files)
+    /// <summary>Removes the orphaned files after the transaction committed: files that a demo visitor or staff member uploaded into a showcase company (logo,
+    /// service picture, gallery photo, avatar, client-note photo) outside <c>uploads/showcase/</c>, and the content of <c>uploads/showcase/</c> itself — except
+    /// <paramref name="keepShowcaseFiles"/>: after a re-seed the new rows point at the pictures just published there (same content-addressed names), and those
+    /// must survive. Pass nothing (a plain delete) to remove the whole folder.</summary>
+    public void DeleteFilesAfterCommit(IReadOnlyList<string> files, IReadOnlySet<string>? keepShowcaseFiles = null)
     {
         foreach (var file in files)
         {
             if (file.StartsWith("private:", StringComparison.Ordinal)) storage.DeletePrivate(file["private:".Length..]);
             else storage.DeletePublic(file);
         }
-        storage.DeletePublicAreaFolder(PublicArea.Showcase);
+        if (keepShowcaseFiles is { Count: > 0 }) storage.DeletePublicAreaFolderExcept(PublicArea.Showcase, keepShowcaseFiles);
+        else storage.DeletePublicAreaFolder(PublicArea.Showcase);
     }
 
     private async Task<List<string>> CollectFilesAsync(CancellationToken ct)

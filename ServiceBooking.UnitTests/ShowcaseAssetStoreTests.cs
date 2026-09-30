@@ -117,6 +117,50 @@ public sealed class ShowcaseAssetStoreTests : IDisposable
         Directory.Exists(Path.Combine(_uploads, "showcase")).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Recreate_CleanupKeepsTheJustPublishedPictures_AndRemovesOnlyTheOldOnes()
+    {
+        // The review finding: recreate publishes into uploads/showcase/ and afterwards used to wipe the whole folder, leaving every new row with a broken picture.
+        File.WriteAllBytes(Path.Combine(_assets, "a.jpg"), [1, 2, 3]);
+        File.WriteAllBytes(Path.Combine(_assets, "a.thumb.jpg"), [4]);
+        WriteManifest("""{ "version": 1, "assets": [ { "key": "logo.x", "role": "logo", "file": "a.jpg", "thumbnail": "a.thumb.jpg", "width": 1, "height": 1 } ] }""");
+        await _storage.SavePublicNamedAsync(PublicArea.Showcase, "old-orphan.jpg", [9]);
+        var published = (await _store.PublishAsync("logo.x", CancellationToken.None))!;
+        var eraser = new ShowcaseEraser(null!, _storage, NullLogger<ShowcaseEraser>.Instance);
+
+        eraser.DeleteFilesAfterCommit([], _store.PublishedFileNames);
+
+        var left = Directory.GetFiles(Path.Combine(_uploads, "showcase")).Select(Path.GetFileName).ToList();
+        left.Should().BeEquivalentTo(new[] { Path.GetFileName(published.Url), Path.GetFileName(published.ThumbnailUrl!) });
+    }
+
+    [Fact]
+    public async Task PlainDelete_CleanupRemovesTheWholeShowcaseFolder()
+    {
+        await _storage.SavePublicNamedAsync(PublicArea.Showcase, "x.jpg", [1]);
+        var eraser = new ShowcaseEraser(null!, _storage, NullLogger<ShowcaseEraser>.Instance);
+
+        eraser.DeleteFilesAfterCommit([]);
+
+        Directory.Exists(Path.Combine(_uploads, "showcase")).Should().BeFalse();
+    }
+
+    [Fact]
+    public void PublishedFileNames_IsEmptyBeforeAnythingIsPublished() => _store.PublishedFileNames.Should().BeEmpty();
+
+    [Fact]
+    public async Task FileStorage_DeleteAreaFolderExcept_KeepsNamedFiles_AndDropsTheFolderWhenNothingIsLeft()
+    {
+        await _storage.SavePublicNamedAsync(PublicArea.Showcase, "keep.jpg", [1]);
+        await _storage.SavePublicNamedAsync(PublicArea.Showcase, "drop.jpg", [2]);
+
+        _storage.DeletePublicAreaFolderExcept(PublicArea.Showcase, new HashSet<string> { "keep.jpg" });
+        Directory.GetFiles(Path.Combine(_uploads, "showcase")).Select(Path.GetFileName).Should().Equal("keep.jpg");
+
+        _storage.DeletePublicAreaFolderExcept(PublicArea.Showcase, new HashSet<string>());
+        Directory.Exists(Path.Combine(_uploads, "showcase")).Should().BeFalse();
+    }
+
     [Theory]
     [InlineData("../x.jpg")]
     [InlineData("a/b.jpg")]

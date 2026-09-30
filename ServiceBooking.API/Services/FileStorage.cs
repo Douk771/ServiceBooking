@@ -100,6 +100,17 @@ public class FileStorage
         if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
     }
 
+    /// <summary>Removes every file of a public area folder except the named ones (plain file names), and the folder itself when nothing is left. Used by a showcase
+    /// re-seed: the pictures it has just published (content-addressed, same names as before) must survive the cleanup of the previous showcase's files.</summary>
+    public void DeletePublicAreaFolderExcept(PublicArea area, IReadOnlySet<string> keepFileNames)
+    {
+        var dir = Path.Combine(_publicRoot, AreaFolder(area));
+        if (!Directory.Exists(dir)) return;
+        foreach (var file in Directory.EnumerateFiles(dir))
+            if (!keepFileNames.Contains(Path.GetFileName(file))) File.Delete(file);
+        if (!Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
+    }
+
     /// <summary>How many files a public area folder holds (0 when it does not exist).</summary>
     public int CountPublicAreaFiles(PublicArea area)
     {
