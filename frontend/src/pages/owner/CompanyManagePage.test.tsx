@@ -282,6 +282,10 @@ describe('SettingsTab — cycle 29 field groups', () => {
   it('V29-04: Enter in the city and IANA fields does not submit anything', async () => {
     renderSettings()
     const city = await screen.findByRole('group', { name: 'Город и часовой пояс' })
+    const name = screen.getByLabelText('Название')
+    await waitFor(() => expect(name).toHaveValue('Салон'))
+    await userEvent.type(name, '!') // make the form dirty so "Сохранить изменения" is enabled
+    expect(screen.getByRole('button', { name: 'Сохранить изменения' })).toBeEnabled()
     await userEvent.type(within(city).getByRole('combobox'), '{Enter}')
     await userEvent.click(within(city).getByRole('checkbox'))
     await userEvent.type(within(city).getByPlaceholderText('Asia/Barnaul'), '{Enter}')
