@@ -291,7 +291,9 @@ public class ProfileController(
         var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == userId);
         if (account is null)
             return new ProfilePlanDto(
-                "Free", 0, true, null, false, false, false, false, MaxEmployees: 1, MaxCompanies: 1,
+                // Cycle 28 (Q28-1): the free baseline is EffectivePlan.Free — online booking on, two employees — not a second hand-written copy.
+                "Free", 0, true, null, false, EffectivePlan.Free.AllowOnlineBooking, false, false,
+                MaxEmployees: EffectivePlan.Free.AccountMaxEmployees, MaxCompanies: EffectivePlan.Free.AccountMaxCompanies,
                 TotalMonthlyPrice: 0, Currency: "RUB", CompaniesUsed: 0, EmployeesUsed: 0,
                 ExpiresInDays: null, IsExpiringSoon: false, OptionCount: 0);
 
@@ -332,7 +334,7 @@ public class ProfileController(
 
         if (sub is null || sub.PlanConfig is null)
             return new ProfilePlanDto(
-                "Free", 0, true, null, false, false, false, false,
+                "Free", 0, true, null, false, plan.AllowOnlineBooking, plan.AllowMailing, plan.AllowAnalytics,
                 MaxEmployees: plan.AccountMaxEmployees, MaxCompanies: plan.AccountMaxCompanies,
                 TotalMonthlyPrice: totalMonthlyPrice, Currency: "RUB",
                 CompaniesUsed: usage.CompaniesUsed, EmployeesUsed: usage.SeatsUsed,
