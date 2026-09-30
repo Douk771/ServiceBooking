@@ -96,4 +96,38 @@ public class OrderNotificationPlanTests
         foreach (var kind in told) For(kind, OrderStatus.Accepted).IsEmpty.Should().BeFalse(kind.ToString());
         foreach (var kind in silent) For(kind).IsEmpty.Should().BeTrue(kind.ToString());
     }
+
+    // ── cycle 25: MAX to staff (§499.2) ─────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(OrderEventKind.Created, NotificationType.StaffOrderCreated)]
+    [InlineData(OrderEventKind.CancelledByCustomer, NotificationType.StaffOrderCancelledByCustomer)]
+    public void StaffMax_FollowsTheSameEventsAsStaffPush(OrderEventKind kind, NotificationType type)
+    {
+        var plan = For(kind, OrderStatus.New, AllOn with { StaffMaxEnabled = true });
+        plan.StaffType.Should().Be(type);
+        plan.StaffMaxType.Should().Be(type);
+        plan.StaffMax.Should().BeTrue();
+    }
+
+    [Fact]
+    public void StaffMax_IsIndependentOfStaffPush()
+    {
+        var pushOff = For(OrderEventKind.Created, OrderStatus.New, AllOn with { StaffPushEnabled = false, StaffMaxEnabled = true });
+        pushOff.StaffType.Should().BeNull();
+        pushOff.StaffMax.Should().BeTrue();
+        pushOff.IsEmpty.Should().BeFalse();
+
+        var maxOff = For(OrderEventKind.Created, OrderStatus.New, AllOn with { StaffMaxEnabled = false });
+        maxOff.StaffType.Should().Be(NotificationType.StaffOrderCreated);
+        maxOff.StaffMax.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(OrderEventKind.Accepted)]
+    [InlineData(OrderEventKind.MarkedReady)]
+    [InlineData(OrderEventKind.Issued)]
+    [InlineData(OrderEventKind.Edited)]
+    public void StaffMax_NotForEventsStaffPushIsNotFor(OrderEventKind kind) =>
+        For(kind, OrderStatus.Accepted, AllOn with { StaffMaxEnabled = true }).StaffMax.Should().BeFalse();
 }

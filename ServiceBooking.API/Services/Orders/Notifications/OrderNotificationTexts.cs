@@ -46,7 +46,7 @@ public static class OrderNotificationTexts
     public static string OrderTag(Guid orderId) => $"o-{orderId}";
 
     /// <summary>A shop name is up to 200 characters; the push body must stay short (a lock screen shows a couple of lines) and inside the column.</summary>
-    private static string ShortName(string name) => name.Length <= 60 ? name : name[..59] + "…";
+    public static string ShortName(string name) => name.Length <= 60 ? name : name[..59] + "…";
 
     /// <summary>"Новый заказ № 27" / "к 12:30 · 3 позиции · ≈ 540 ₽ · Шаурма на Ленина".</summary>
     public static PushPayload StaffOrderCreated(OrderTextFacts f, Guid shopId, Guid orderId) => new(
