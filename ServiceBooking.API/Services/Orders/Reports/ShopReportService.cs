@@ -49,7 +49,7 @@ public sealed class ShopReportService(
         if (!TryResolvePeriod(query.Period, query.From, query.To, ReportPeriodPreset.Last7Days, context.WorkingDay, out var period, out var error))
             return (error, null);
 
-        var customerText = TruncateWithoutSplittingPair(query.Customer, CustomerSearchTerm.MaxLength);
+        var customerText = TruncateWithoutSplittingPair(query.Customer?.Replace("\0", string.Empty), CustomerSearchTerm.MaxLength);  // NUL is not storable in PostgreSQL text: ignored in the search term
         var customer = CustomerSearchTerm.Parse(customerText);
         if (customer.Kind == CustomerSearchKind.TooShort) return (CustomerSearchTerm.TooShortText, null);
         if (query.AmountFrom is < 0 || query.AmountTo is < 0) return (AmountNegativeText, null);

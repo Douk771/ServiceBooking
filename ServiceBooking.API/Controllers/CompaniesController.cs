@@ -102,8 +102,8 @@ public class CompaniesController(
             // search=_ would match any single character). Escape both, plus the escape character itself,
             // before wrapping in the leading/trailing '%'.
             var likePattern = $"%{EscapeLikeWildcards(sanitizedSearch)}%";
-            query = query.Where(c => EF.Functions.ILike(c.Name, likePattern)
-                                      || (c.Address != null && EF.Functions.ILike(c.Address, likePattern)));
+            query = query.Where(c => EF.Functions.ILike(c.Name, likePattern, "\\")
+                                      || (c.Address != null && EF.Functions.ILike(c.Address, likePattern, "\\")));
         }
 
         query = query.OrderBy(c => c.Name).ThenBy(c => c.Id);

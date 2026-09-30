@@ -16,6 +16,7 @@ namespace ServiceBooking.API.Services.Orders.Reports;
 public sealed class ShopCustomerService(
     AppDbContext db, OrderReportQueries queries, IConfiguration configuration)
 {
+    public const string NoteInvalidCharsText = "Текст заметки содержит недопустимые символы";
     public const string NoteTooLongText = "Заметка — не длиннее 1000 символов";
     public const int MaxNoteLength = 1000;
     public const string DeletedAuthorName = "Удалённый пользователь";
@@ -100,6 +101,7 @@ public sealed class ShopCustomerService(
 
         var trimmed = text?.Trim() ?? string.Empty;
         if (trimmed.Length > MaxNoteLength) return (true, NoteTooLongText, null);
+        if (trimmed.Contains('\0')) return (true, NoteInvalidCharsText, null);
 
         var existing = await db.ShopCustomerNotes.FirstOrDefaultAsync(n => n.CompanyId == shop.Id && n.Phone == phone, ct); // SUBJECT-PHONE-GATE: not-account-scoped — shop's own customer note (US-25-10)
         if (trimmed.Length == 0)
@@ -130,16 +132,22 @@ public sealed class ShopCustomerService(
         {
             await db.SaveChangesAsync(ct);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation })
         {
             // Two staff members created the FIRST note for the same customer at the same moment: the unique (shop, phone) index refused the second.
-            // The last write wins — replace the row the other one created.
+            // The last write wins — replace the row the other one created (or create it again if that one is already gone).
+            var authorLabel = existing.UpdatedByName;
             db.ChangeTracker.Clear();
-            var winner = await db.ShopCustomerNotes.FirstAsync(n => n.CompanyId == shop.Id && n.Phone == phone, ct); // SUBJECT-PHONE-GATE: not-account-scoped — shop's own customer note (US-25-10)
+            var winner = await db.ShopCustomerNotes.FirstOrDefaultAsync(n => n.CompanyId == shop.Id && n.Phone == phone, ct); // SUBJECT-PHONE-GATE: not-account-scoped — shop's own customer note (US-25-10)
+            if (winner is null)
+            {
+                winner = new ShopCustomerNote { Id = Guid.NewGuid(), CompanyId = shop.Id, Phone = phone, CreatedAtUtc = now };
+                db.ShopCustomerNotes.Add(winner);
+            }
             winner.Text = trimmed;
             winner.UpdatedAtUtc = now;
             winner.UpdatedByUserId = userId;
-            winner.UpdatedByName = existing.UpdatedByName;
+            winner.UpdatedByName = authorLabel;
             await db.SaveChangesAsync(ct);
             existing = winner;
         }

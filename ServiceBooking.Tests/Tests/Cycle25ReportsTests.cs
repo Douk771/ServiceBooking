@@ -410,7 +410,7 @@ public class Cycle25ReportsTests(TestDatabaseFixture fixture) : Cycle25TestBase(
     /// Подозреваемое место: CustomerSearchTerm.Parse / ShopReportService.HistoryAsync и ShopCustomerService.PutNoteAsync (убрать или отклонить
     /// управляющие символы до обращения к БД).
     /// </summary>
-    [Fact(Skip = "BUG-25-02/03: order-history (customer) и заметка (text) отвечают 500 на символ U+0000"), TestCase("CY25-29b")]
+    [Fact, TestCase("CY25-29b")]
     public async Task NulCharacter_InHistoryCustomerAndNoteText_IsRefusedOrIgnored_NeverA500()
     {
         var shop = await CreateRoundClockShopAsync();

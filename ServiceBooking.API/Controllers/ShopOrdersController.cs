@@ -47,7 +47,8 @@ public class ShopOrdersController(
         var revision = settings.OrdersRevision;
         var nowUtc = DateTime.UtcNow;
         var pickupContext = await gates.PickupContextAsync(shop, settings, nowUtc, ct);
-        var today = ShopClock.BusinessDate(shop.TimeZoneId, nowUtc);
+        // The storefront's "today": the current WORKING day (in the after-midnight tail of an overnight interval it is yesterday's date).
+        var today = pickupContext.WorkingDay;
         var acceptance = ShopScheduleMapper.ToDto(ShopAcceptanceRules.State(settings, nowUtc, pickupContext.Zone));
         if (sinceRevision == revision && businessDate == today)
             return Ok(new OrderBoardDto(revision, false, today, nowUtc, acceptance, null, null, null, null, null));
@@ -56,6 +57,7 @@ public class ShopOrdersController(
             .Where(o => o.CompanyId == shopId && (o.Status == OrderStatus.New || o.Status == OrderStatus.Accepted || o.Status == OrderStatus.Ready))
             .OrderBy(o => o.PickupStartUtc).ThenBy(o => o.CreatedAtUtc).ThenBy(o => o.Number).ToListAsync(ct);
         var (dayStart, dayEnd) = ShopClock.DayBoundsUtc(shop.TimeZoneId, today);
+        if (dayEnd <= nowUtc) dayEnd = nowUtc.AddSeconds(1); // the tail after midnight still belongs to the working day
         var completed = await db.Orders.AsNoTracking().Include(o => o.Items)
             .Where(o => o.CompanyId == shopId && o.CompletedAtUtc >= dayStart && o.CompletedAtUtc < dayEnd &&
                         o.Status != OrderStatus.New && o.Status != OrderStatus.Accepted && o.Status != OrderStatus.Ready)

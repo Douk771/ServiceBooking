@@ -12,7 +12,7 @@ namespace ServiceBooking.API.Controllers;
 /// ARCHITECTURE_CYCLE25.md §504, API_CONTRACT_CYCLE25.md §529–§530 — the customer card of a shop and the shop's note about a customer. The customer is
 /// addressed by <c>customerRef</c>, the id of any of their orders in THIS shop — the phone is never in a URL. Order of checks: token → the shop exists
 /// and is a shop (404) → the role (403, empty body) → the ref (404, empty body: another shop's order, an erased one and an unknown one look the same).
-/// Only the shop's staff see the card and the note; the customer and the platform administrator do not.
+/// Only the shop's staff (and the platform administrator, who holds ViewOrderReports and EditCustomerNotes, §506) see the card and the note; the customer does not.
 /// </summary>
 [ApiController]
 [Route("api/shops/{shopId:guid}/customers/{customerRef:guid}")]

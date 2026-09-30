@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using ServiceBooking.API.Services.Orders.Reports;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -164,8 +165,8 @@ public class ShopCatalogController(
         var trimmedSearch = ServiceBooking.API.DTOs.Common.Pagination.SanitizeSearch(search);
         if (!string.IsNullOrWhiteSpace(trimmedSearch))
         {
-            var pattern = $"%{CompaniesController.EscapeLikeWildcards(trimmedSearch.Length > 100 ? trimmedSearch[..100] : trimmedSearch)}%";
-            query = query.Where(p => EF.Functions.ILike(p.Name, pattern));
+            var pattern = $"%{CompaniesController.EscapeLikeWildcards(ShopReportService.TruncateWithoutSplittingPair(trimmedSearch, 100)!)}%";
+            query = query.Where(p => EF.Functions.ILike(p.Name, pattern, "\\"));
         }
 
         var products = await query.ToListAsync(ct);

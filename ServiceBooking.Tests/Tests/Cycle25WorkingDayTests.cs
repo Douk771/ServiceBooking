@@ -196,7 +196,7 @@ public class Cycle25WorkingDayTests(TestDatabaseFixture fixture) : Cycle25TestBa
     /// лежит в колонке «Принятые», хотя его карточка говорит «Завтра, к 1:30» и <c>isPreorder = true</c>. Тест включить, когда доска перейдёт
     /// на <c>pickupContext.WorkingDay</c> (ShopOrdersController.GetBoard).
     /// </summary>
-    [Fact(Skip = "BUG-25-01: ShopOrdersController.GetBoard считает «сегодня» по календарю в «хвосте» ночного интервала"), TestCase("CY25-64")]
+    [Fact, TestCase("CY25-64")]
     public async Task InTheAfterMidnightTail_BoardBusinessDayAndPreorderColumn_FollowTheWorkingDay()
     {
         var night = await NightShopAsync();
