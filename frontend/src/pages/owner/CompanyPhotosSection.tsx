@@ -100,7 +100,17 @@ function SuperAdminRemovePhotoDialog({
  * without a single photo can still have a logo). No consent screen/checkbox here (П7) — company
  * photos aren't personal data of an identifiable person the way client-note photos can be.
  */
-export function CompanyPhotosSection({ companyId }: { companyId: string }) {
+export function CompanyPhotosSection({
+  companyId,
+  kind = 'salon',
+  onChanged,
+}: {
+  companyId: string
+  /** ARCHITECTURE_CYCLE26.md §551 — only the heading and the empty state differ; ezbook keeps the default. */
+  kind?: 'salon' | 'shop'
+  /** Called after the existing cache resets (goods drops its `['storefront']` cache here). */
+  onChanged?: () => void
+}) {
   const qc = useQueryClient()
   const isSuperAdmin = useAuthStore((s) => s.hasRole('SuperAdmin'))
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -122,6 +132,7 @@ export function CompanyPhotosSection({ companyId }: { companyId: string }) {
     // edit until a full page reload. There's no `slug` in scope here, so match by prefix — a plain
     // `['company']` key matches every `['company', slug]` entry (react-query's default).
     qc.invalidateQueries({ queryKey: ['company'] })
+    onChanged?.()
   }
 
   const uploadMut = useMutation({
@@ -176,7 +187,7 @@ export function CompanyPhotosSection({ companyId }: { companyId: string }) {
   return (
     <Card className="p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-ink">Фотографии салона</h3>
+        <h3 className="text-lg font-semibold text-ink">{kind === 'shop' ? 'Фотографии магазина' : 'Фотографии салона'}</h3>
         <span className="text-xs text-muted">{photos?.length ?? 0} / {MAX_PHOTOS}</span>
       </div>
 
@@ -248,7 +259,7 @@ export function CompanyPhotosSection({ companyId }: { companyId: string }) {
       ) : (
         <div className="text-center py-8 mb-4 bg-cream-deep rounded-xl">
           <Icon name="store" size={22} strokeWidth={1.6} className="text-gold-dark mx-auto mb-2" />
-          <p className="text-sm text-ink-soft">В галерее пока нет фотографий</p>
+          <p className="text-sm text-ink-soft">{kind === 'shop' ? 'В галерее магазина пока нет фотографий' : 'В галерее пока нет фотографий'}</p>
         </div>
       )}
 

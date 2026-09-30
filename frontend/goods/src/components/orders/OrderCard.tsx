@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { formatPhone } from '@/utils/phone'
-import { dialHref } from '../../utils/dial'
+import { telHref } from '@/utils/phone'
 import { OrderStatusBadge } from '../OrderStatusBadge'
 import { formatAgo, minutesAgo } from '../../utils/orderStatus'
 import { isOverdueNow } from '../../utils/board'
@@ -76,7 +76,7 @@ export function OrderCard({ order, serverNow, nowMs, highlighted, busy, readOnly
           <>
             <p className="font-medium text-ink">{order.customerName}</p>
             {order.customerPhone && (
-              <a href={dialHref(order.customerPhone) || undefined} className="inline-flex items-center gap-1.5 text-ink-soft hover:text-gold-dark min-h-[36px]">
+              <a href={telHref(order.customerPhone) || undefined} className="inline-flex items-center gap-1.5 text-ink-soft hover:text-gold-dark min-h-[36px]">
                 <Icon name="phone" size={13} strokeWidth={1.8} />
                 {formatPhone(order.customerPhone)}
               </a>

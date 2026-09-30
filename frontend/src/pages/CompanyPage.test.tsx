@@ -209,7 +209,7 @@ describe('CompanyMapLinks — ARCHITECTURE_CYCLE15.md §253/§285, wired into th
 
     renderWithProviders(<CompanyPage />)
 
-    expect(await screen.findByText('Ленина, 5')).toBeInTheDocument()
+    expect(await screen.findByText('Барнаул, Ленина, 5')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Открыть в Яндекс Картах/ })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Открыть в 2ГИС/ })).not.toBeInTheDocument()
   })
@@ -233,7 +233,7 @@ describe('phone link — ARCHITECTURE_CYCLE15.md §254', () => {
     renderWithProviders(<CompanyPage />)
 
     const phoneLink = await screen.findByRole('link', { name: /Позвонить \+7/ })
-    expect(phoneLink).toHaveAttribute('href', 'tel:79991234567')
+    expect(phoneLink).toHaveAttribute('href', 'tel:+79991234567')
   })
 
   it('renders no phone row when the company has none', async () => {

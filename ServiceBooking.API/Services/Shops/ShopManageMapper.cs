@@ -25,18 +25,22 @@ public sealed class ShopManageMapper(
     {
         var settings = context.Settings;
         var gate = context.Gate;
-        var cityName = shop.CityId is null ? null : await db.Cities.AsNoTracking().Where(c => c.Id == shop.CityId).Select(c => c.Name).FirstOrDefaultAsync(ct);
+        var city = shop.CityId is null ? null : await db.Cities.AsNoTracking().Where(c => c.Id == shop.CityId).Select(c => new { c.Name, c.Region }).FirstOrDefaultAsync(ct);
+        var hasOrders = await db.Orders.AsNoTracking().AnyAsync(o => o.CompanyId == shop.Id, ct);
+        int? utcOffset = TimeZoneOffset.TryGetUtcOffsetMinutes(shop.TimeZoneId, DateTime.UtcNow, out var offsetMinutes) ? offsetMinutes : null;
         var productCount = await db.Products.AsNoTracking().CountAsync(p => p.CompanyId == shop.Id && p.DeletedAtUtc == null, ct);
 
         return new ShopManageDto(
             shop.Id, shop.Name, shop.Slug, shop.Description, shop.LogoUrl, shop.Address, shop.Phone, shop.Email,
-            shop.CityId, cityName, shop.TimeZoneId, shop.YandexMapsUrl, shop.TwoGisUrl, shop.IsActive,
+            shop.CityId, city?.Name, shop.TimeZoneId, shop.YandexMapsUrl, shop.TwoGisUrl, shop.IsActive,
             links.CompanyPageUrl(shop), role, ToSettingsDto(settings, context.SettingsRowExists), ToSellerDto(settings), gate.Accepting,
             gate.OwnerText, phoneVerification.IsAvailable, productCount,
             gate.Code, ShopScheduleMapper.ToDto(ShopOrderingGate.PickupSettingsOf(settings)), context.Schedule.HoursSet,
             ShopScheduleMapper.ToDto(gate.Acceptance), ShopScheduleMapper.ToDto(gate.OpenState),
             ShopScheduleMapper.SetupChecklist(context.Schedule.HoursSet), ShopScheduleMapper.ToDto(gate.OrderLimit),
-            EffectiveProductLimit(context.Plan, options.Value));
+            EffectiveProductLimit(context.Plan, options.Value),
+            string.IsNullOrEmpty(city?.Region) ? null : city.Region, utcOffset, !hasOrders,
+            hasOrders ? ShopTimeZoneChangePolicy.LockedText(utcOffset) : null);
     }
 
     /// <summary>The limit of products the shop can really have: the tariff's, but never above the technical ceiling (§459.2).</summary>

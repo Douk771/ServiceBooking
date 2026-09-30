@@ -26,7 +26,7 @@ export function getUploadErrorMessage(error: unknown): string {
     // API_CONTRACT_CYCLE10.md §127.1 — the one cycle-10 upload error, already Russian at the source
     // (it's the only text unique to this endpoint), so it's matched by the exact server string rather
     // than translated — no second error dictionary (ARCHITECTURE_CYCLE10.md §109.2).
-    if (body.includes('В галерее салона может быть не больше 10 фотографий')) return body
+    if (/В галерее (салона|магазина) может быть не больше 10 фотографий/.test(body)) return body
     // ImageUploadService now answers in Russian directly (US-125); matched by the shared "Слишком
     // больш…" prefix the server deliberately uses for both the byte-size and the pixel-dimension
     // rejection, so both land in this one bucket.

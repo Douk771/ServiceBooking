@@ -1,6 +1,7 @@
 import type { components } from '@/types/api-cycle23.generated'
 import type { components as C24 } from '@/types/api-cycle24.generated'
 import type { components as C25 } from '@/types/api-cycle25.generated'
+import type { components as C26 } from '@/types/api-cycle26.generated'
 
 /**
  * goods types are read straight off the generated cycle-23 schema (ARCHITECTURE_CYCLE23.md §399.2) —
@@ -11,6 +12,8 @@ type S = components['schemas']
 type N = C24['schemas']
 /** Cycle 25 (ARCHITECTURE_CYCLE25.md §509.1): DTOs of the cycle and the ones it changed come from the cycle-25 schema. */
 type M = C25['schemas']
+/** Cycle 26 (ARCHITECTURE_CYCLE26.md §545): StorefrontDto (+email, +photos), ShopManageDto (+city time-zone fields). */
+type L = C26['schemas']
 
 export type CompanyKind = N['CompanyKind']
 export type ShopRole = N['ShopRole']
@@ -38,13 +41,14 @@ export type ShopSettingsInput = S['ShopSettingsInput']
 export type SellerInfoInput = S['SellerInfoInput']
 export type SellerInfoDto = N['SellerInfoDto']
 export type PublicSellerInfoDto = N['PublicSellerInfoDto']
-export type ShopManageDto = N['ShopManageDto']
+export type ShopManageDto = L['ShopManageDto']
+export type CompanyPhotoDto = L['CompanyPhotoDto']
 export type CategoryDto = S['CategoryDto']
 export type CategoryInput = S['CategoryInput']
 export type ProductDto = N['ProductDto']
 export type ProductInput = N['ProductInput']
 export type ProductOrderInput = S['ProductOrderInput']
-export type StorefrontDto = N['StorefrontDto']
+export type StorefrontDto = L['StorefrontDto']
 export type StorefrontCategoryDto = N['StorefrontCategoryDto']
 export type StorefrontProductDto = N['StorefrontProductDto']
 export type QuoteInput = N['QuoteInput']

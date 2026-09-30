@@ -97,6 +97,8 @@ export function CityCombobox({ label = 'Город', value, onChange, error, pla
           aria-expanded={open}
           aria-controls={listboxId}
           aria-autocomplete="list"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? `${listboxId}-error` : undefined}
           aria-activedescendant={open && items[highlighted] ? `${listboxId}-opt-${items[highlighted].id}` : undefined}
           autoComplete="off"
           value={query}
@@ -147,7 +149,7 @@ export function CityCombobox({ label = 'Город', value, onChange, error, pla
           </div>
         )}
       </div>
-      {error && <p className="text-xs text-danger">{error}</p>}
+      {error && <p id={`${listboxId}-error`} className="text-xs text-danger">{error}</p>}
     </div>
   )
 }

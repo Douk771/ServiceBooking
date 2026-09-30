@@ -81,6 +81,9 @@ interface UpdateCompanyPayload {
   /** API_CONTRACT_CYCLE4.md §31.3 — `timeZoneId: null` explicitly resets to the city-derived zone. */
   cityId?: number
   timeZoneId?: string | null
+  /** API_CONTRACT_CYCLE26.md §563 — absent = unchanged, `""` = remove the link. */
+  yandexMapsUrl?: string
+  twoGisUrl?: string
   /**
    * US-65/Q5 (API_CONTRACT_CYCLE6.md §41.4): how many days ahead a client may book online.
    * Omitted/undefined = leave unchanged; `0` = reset to the server default (90 days), never "closed".
