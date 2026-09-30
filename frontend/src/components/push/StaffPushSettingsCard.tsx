@@ -50,7 +50,7 @@ export function StaffPushSettingsCard({ companyId }: { companyId: string }) {
         <span>
           <span className="block text-sm font-medium text-ink">Уведомлять сотрудников о новых записях</span>
           <span className="block text-xs text-muted mt-0.5">
-            Push в браузер мастера, когда клиент записался. Бесплатно, не зависит от тарифа.
+            Push в браузер мастера, когда клиент записался. Бесплатно, не зависит от тарифа. Мастер включает их у себя в профиле, раздел «Устройства и уведомления».
           </span>
         </span>
         <button

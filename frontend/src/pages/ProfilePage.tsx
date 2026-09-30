@@ -9,6 +9,7 @@ import { notificationsApi } from '../api/notifications'
 import { useAuthStore } from '../store/authStore'
 import { useExportData } from '../hooks/useExportData'
 import { GuestDataGateNotice } from '../components/profile/GuestDataGateNotice'
+import { DevicesAndNotificationsSection } from '../components/push/DevicesAndNotificationsSection'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -401,6 +402,8 @@ export function ProfilePage() {
       {profile?.plan && <PlanSection plan={profile.plan} />}
 
       <NotificationPreferencesCard />
+
+      <DevicesAndNotificationsSection site="Services" appName="Запись" className="mb-[18px]" />
 
       {/* Password */}
       <Card className="p-[26px]">

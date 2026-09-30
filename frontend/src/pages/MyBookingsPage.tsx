@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO, isToday, isTomorrow, addDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -18,7 +19,6 @@ import { BookingHistoryPanel } from '../components/booking/BookingHistoryPanel'
 import { RescheduleModal } from '../components/booking/RescheduleModal'
 import { NoteCard } from '../components/clientNotes/NoteCard'
 import { NotePhotoUploader } from '../components/clientNotes/NotePhotoUploader'
-import { MyDevicesCard } from '../components/push/MyDevicesCard'
 import type { Booking } from '../types'
 import { bookingStatusLabel } from '../utils/bookingStatus'
 
@@ -474,10 +474,12 @@ export function MyBookingsPage() {
       {showCreateModal && <BookingModal onClose={() => setShowCreateModal(false)} />}
       {rescheduleBooking && <RescheduleModal booking={rescheduleBooking} onClose={() => setRescheduleBooking(null)} />}
 
-      {/* §105.10 — lives next to the master's own bookings, the one place SPEC US-118 calls for it. */}
-      <div className="mb-6">
-        <MyDevicesCard />
-      </div>
+      {/* ARCHITECTURE_CYCLE33.md §33.10.2 — the device switch moved to the profile; one line points there. */}
+      <p className="mb-6 text-sm">
+        <Link to="/profile#devices" className="inline-flex items-center min-h-[44px] text-ink-soft underline">
+          Уведомления на устройства — в профиле
+        </Link>
+      </p>
 
       {isLoading ? (
         <div className="grid gap-4">
