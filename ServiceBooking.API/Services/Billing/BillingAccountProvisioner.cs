@@ -26,10 +26,13 @@ public class BillingAccountProvisioner(AppDbContext db)
             .FirstOrDefaultAsync();
         if (existingId.HasValue) return existingId.Value;
 
+        // ARCHITECTURE_CYCLE28.md §574.1: the account of a showcase user is a showcase account.
+        var ownerIsShowcase = await db.Users.Where(u => u.Id == ownerUserId).Select(u => u.IsShowcase).FirstOrDefaultAsync();
         var account = new BillingAccount
         {
             Id = Guid.NewGuid(),
             OwnerUserId = ownerUserId,
+            IsShowcase = ownerIsShowcase,
         };
         db.BillingAccounts.Add(account);
         try
