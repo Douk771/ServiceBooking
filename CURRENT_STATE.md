@@ -1,10 +1,13 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `b9c2a79` (`develop` = `origin/develop` = `cycle/029-cycle26-followups` на старте цикла 29), дата: 2026-09-30.**
-**Режим: обновление поверх полного сканирования на `1837373`.** Diff `1837373..b9c2a79` (✔) — только документы:
-`CURRENT_STATE.md` (сама полная пересборка, `4737b2f`), `README.md` и `CHANGELOG.md` (описание цикла 26, `b9c2a79`).
-Код, миграции, контракты, CI и конфиги не менялись, поэтому §1–§7 остаются в силе без правок. Обновлены §0, §5.5, §9.1
-(C26-6 закрыт, добавлен C26-7), §10.1. **Следующий diff отсчитывайте от `b9c2a79`.**
+**Актуально по состоянию на коммит: `c19a83c` (`develop` = `origin/develop` = `cycle/031-shared-photo-uploader` на старте цикла 31, цикл 29 влит), дата: 2026-09-30.**
+**Режим: обновление поверх полного сканирования на `1837373`.** Предыдущая отметка — `b9c2a79`. Diff `b9c2a79..c19a83c`
+(✔, 13 коммитов, 45 файлов) — цикл 29 «Доделки цикла 26»: бэкенд (guard 400 на битое имя поля формы, `logoUrl` в
+каталоге goods, удалён дублирующий запрос галереи), фронт обоих сайтов (`CompanyLogoMark`, группы полей в кабинете
+салона, галерея и карты во встраиваемой форме), контракты `contracts/cycle26/openapi.json`, `contracts/cycle29/*`, CI.
+**Миграций нет, новых зависимостей нет.** Обновлены §0, §4, §5.5, §5.7 (новый: фактическое устройство зон, которых
+касается запрос цикла 31), §7.1, §7.3, §9.1, §10. Спека цикла 29 заархивирована как `SPEC_CYCLE29_CYCLE26_FOLLOWUPS.md`,
+корневого `SPEC.md` сейчас **нет** — его пишет следующий цикл. **Следующий diff отсчитывайте от `c19a83c`.**
 
 ## 0. Как читать этот документ
 
@@ -26,13 +29,15 @@
 - 🖥 — факт о боевой машине. В репозитории его нет, в этом сканировании он не проверялся (SSH не использовался).
   Источник — прежняя редакция, блок «🚀20», проверено по SSH 30.09.2026.
 
-**Ветки, которые идут параллельно и в `develop` ещё не влиты** (✔ `git fetch` 2026-09-30, пересчитано на `b9c2a79`):
-- `origin/cycle/029-cycle26-followups` — текущая ветка цикла 29, пока совпадает с `develop` (0 впереди, 0 позади).
-- `origin/cycle/028-showcase-data-demo-stand` — на 7 коммитов впереди и на 23 позади `develop`. Только документы: спека
-  цикла 28, бриф «витрина и демо-стенд», черновик тарифной сетки. Когда эта ветка будет вливаться, у неё будет свой
-  `SPEC.md` (спека 28) поверх спеки 27 в корне. Если она тронет CURRENT_STATE.md, конфликт разрешает codebase-analyst,
-  сводя обе версии по смыслу; выбирать файл целиком нельзя.
-- `origin/cycle/027-goods-business-block` влита в `develop` целиком (0 впереди, 0 позади).
+**Ветки, которые идут параллельно и в `develop` ещё не влиты** (✔ `git fetch` 2026-09-30, пересчитано на `c19a83c`):
+- `origin/cycle/031-shared-photo-uploader` — текущая ветка цикла 31, на старте совпадает с `develop` (0 впереди, 0 позади).
+- `origin/cycle/030-user-section-screenshots` — своих коммитов нет (0 впереди), на 13 позади `develop`: ветка заведена
+  от `b9c2a79` и пока пуста.
+- `origin/cycle/028-showcase-data-demo-stand` — на 10 коммитов впереди и на 13 позади `develop` (✔ `rev-list --count`).
+  Только документы: спека цикла 28, бриф «витрина и демо-стенд», черновик тарифной сетки. При влитии у неё будет свой
+  корневой `SPEC.md` (спека 28); в `develop` корневого `SPEC.md` сейчас нет, спека 29 в архиве. Если ветка тронет
+  CURRENT_STATE.md, конфликт разрешает codebase-analyst, сводя обе версии по смыслу; выбирать файл целиком нельзя.
+- `cycle/029-cycle26-followups` и `cycle/027-goods-business-block` влиты в `develop` целиком.
 
 **Ориентиры.** На `491406c` было 1 058 коммитов и 1 783 отслеживаемых файла; цикл 27 добавил 7 коммитов.
 `origin/master` — `263c661` (2026-07-28), тегов нет, ветки `release-candidate` на origin нет.
@@ -284,7 +289,12 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
   `POST /api/companies/{id}/logo`, `GET /api/companies/{id}/{photo-usage,stats}`, `PUT /api/companies/{id}/address`,
   `POST /api/companies/address/notice`.
 - Галерея — auth: `POST /api/companies/{id}/photos`, `DELETE /api/companies/{id}/photos/{photoId}` (`?reason=DepictedPersonRequest`
-  только для SA), `PUT /api/companies/{id}/photos/order`.
+  только для SA), `PUT /api/companies/{id}/photos/order`. `POST` принимает **один файл** (поле `file`) за запрос; пакетной
+  загрузки нет (подробно — §5.7).
+- Цикл 29 (✔): на всех маршрутах с параметрами действия неразбираемое имя поля multipart-формы (незакрытая `[`) даёт
+  400 `text/plain` «Не удалось прочитать данные формы. Проверьте имена полей запроса.», а не 500
+  (`Services/MalformedKeyGuardValueProviderFactory.cs`, ставится в `Startup/ApiExtensions.cs`). Строку запроса guard не
+  трогает.
 - Сотрудники — auth: `GET|POST /api/Companies/{id}/members`,
   `PUT /api/Companies/{id}/members/{memberId}/{provides-services,services,commission}`, `DELETE /api/Companies/{id}/members/{memberId}`.
 - Push персоналу — auth: `GET|PUT /api/companies/{companyId}/staff-push-settings`.
@@ -342,7 +352,8 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 - `GET /api/staff-max`, `POST /api/staff-max/link-sessions`, `DELETE /api/staff-max/link`.
 
 **Магазин (goods) — покупатель, anon**
-- `GET /api/goods/catalog` — каталог города, кеш 30 с.
+- `GET /api/goods/catalog` — каталог города, кеш 30 с. С цикла 29 у элемента есть `logoUrl` (`string | null`, в конце
+  `GoodsCatalogShopDto`).
 - `GET /api/storefront/{slug}`, `GET /api/storefront/{slug}/pickup-slots`, `POST /api/storefront/{slug}/{quote,orders}`.
 - `GET /api/orders/public/{token}`, `POST /api/orders/public/{token}/cancel`,
   `POST /api/orders/public/{token}/push-subscription[/remove]`.
@@ -475,6 +486,37 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 
 ### 5.5 Что сделали последние циклы
 
+**Цикл 29 — доделки цикла 26 (✔ `git diff b9c2a79..c19a83c`).** Без миграций и новых зависимостей, новых маршрутов нет.
+- Бэкенд:
+  - `MalformedKeyGuardValueProviderFactory` — 400 вместо 500 на битое имя поля формы (§4). Решение «400 и на строку
+    запроса» отозвано: в ASP.NET Core 8 такого дефекта нет, ветка оставлена как защита на будущее (`b23c13c`);
+  - `GoodsCatalogShopDto.LogoUrl` (каталог goods), заполняется в `GoodsCatalogService`;
+  - `CompanyDtoAssembler.GetPhotosOrderedAsync` удалён, публичная карточка салона (`CompaniesController`, `GET {slug}`)
+    читает галерею через `CompanyPhotoQueries.OrderedAsync` — один запрос на все места (закрывает C26-4).
+- Фронт:
+  - `src/components/company/CompanyLogoMark.tsx` (логотип или первая буква, в т.ч. при ошибке загрузки картинки; размеры
+    `card` 64 px и `catalog` 56 px) и `src/utils/companyInitial.ts`. Используется в `CompanyCard`, `HomePage` (каталог
+    ezbook) и `goods/src/pages/CatalogHomePage.tsx`;
+  - `CompanyManagePage.tsx` → `SettingsTab`: поля в `fieldset` «Основное», «Контакты», «Адрес и карты», «Запись», по два в
+    ряд на `sm`. Город и пояс (`CityTimeZoneFields`) внутри основной формы, но со своей кнопкой; Enter там гасится
+    `swallowImplicitSubmit`;
+  - `EmbedPage.tsx` показывает галерею и ссылки на карты;
+  - `ShopProfileSection` сравнивает смещения UTC и не блокирует смену города только по флагу `timeZoneChangeAllowed`
+    (смягчает C26-3 на стороне UI);
+  - генерат `src/types/api-cycle29.generated.ts`, скрипт `types:api:cycle29`.
+- Контракты и CI: `contracts/cycle26/openapi.json`, `contracts/cycle29/openapi.{yaml,json}`; контракты 26 и 29 добавлены в
+  `redocly lint` и в сверку генератов (закрывает C26-1). В `ServiceBooking.Tests/Infrastructure/OpenApiContract.cs` —
+  валидатор ответов по подмножеству OpenAPI (самопроверка — `OpenApiContractValidatorTests.cs`).
+- Тесты: функциональные `Cycle29QaTests.cs`, `Cycle29ContractTests.cs` (`CY29-`), юнит
+  `MalformedKeyGuardValueProviderFactoryTests`, правки `ModelValidationErrorFormatterTests`; vitest `CompanyLogoMark`,
+  `companyInitial`, правки `CompanyManagePage`, `EmbedPage`, `HomePage`, `CatalogHomePage`, `ShopProfileSection`.
+- Цикл сам зафиксировал несделанным (CHANGELOG, «Чего этот цикл не даёт»): ручная проверка вёрстки 360 px сделана
+  частично (кейсы `M29-*` в `TEST_CATALOG.md`), юрист (L21, L22), модерация фото, тарифный лимит галереи, предпросмотр
+  карточки в кабинете.
+- Документы: `SPEC_CYCLE29_CYCLE26_FOLLOWUPS.md` (заархивирована при этом обновлении), `ARCHITECTURE_CYCLE29.md`
+  (§29.x), `API_CONTRACT_CYCLE29.md`; CHANGELOG — верхний раздел «Не выпущено — цикл 29…»; раздел `TEST_CATALOG.md`
+  «Цикл 29» (строка ~6240); `API_DOCUMENTATION.md` — пометки «Цикл 29 (unreleased)». README цикл 29 не описывает.
+
 **Цикл 27 — блок «Для бизнеса» на главной goods (✔ `git diff 491406c..1837373`).** Затронут только фронт goods: бэкенд,
 контракты и миграции не менялись (`API_CONTRACT_CYCLE27.md` §553: «API не меняется»).
 - `frontend/goods/src/components/BusinessBlock.tsx` переписан. Блок рендерится последним внутри `CatalogHomePage` на `/`
@@ -489,13 +531,14 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 - Тесты: `BusinessBlock.test.tsx` (T27-01…10) и `BusinessBlock.qa.test.tsx` (QA27-01…09). Ручные кейсы M27-01…05 —
   в `TEST_CATALOG.md`.
 - Документы:
-  - `SPEC.md` теперь спека цикла 27, спека цикла 26 заархивирована как `SPEC_CYCLE26_COMPANY_CARD_UNIFIED.md`;
+  - спека цикла 27 — `SPEC_CYCLE27_GOODS_BUSINESS_BLOCK.md` (заархивирована циклом 29), спека цикла 26 —
+    `SPEC_CYCLE26_COMPANY_CARD_UNIFIED.md`;
   - `ARCHITECTURE_CYCLE27.md` (§543–§552) и `API_CONTRACT_CYCLE27.md` (§553) — **номера § совпадают с номерами цикла 26**
     (C27-1);
   - CHANGELOG — верхний раздел «Не выпущено — … цикл 27».
 - Каталог магазинов на главной goods — сетка карточек (`aae5b44`, ветка `fix/goods-catalog-cards-sound`, влита мимо
-  цикла агентов). Звук нового заказа держится на уровне модуля (`useNewOrderSound`). Тестов на `CatalogHomePage` и на
-  хук нет.
+  цикла агентов). Звук нового заказа держится на уровне модуля (`useNewOrderSound`). Тестов на хук нет; на
+  `CatalogHomePage` с цикла 29 есть `CatalogHomePage.test.tsx` (логотип и заглушка).
 
 **Цикл 26 — «Единая карточка компании» (✔ `git diff 0d41df4..491406c`).**
 Без миграций и без новых зависимостей. **Новых маршрутов нет, изменилось поведение трёх.**
@@ -550,6 +593,91 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 | `staff-max-dispatch` | realtime | MAX персоналу, период 5 с |
 
 Тик `main` — 10 с, тик `realtime` — 1 с. В окружении `Testing` все задачи выключены (`appsettings.Testing.json`).
+
+### 5.7 Галерея фото, блок каталога и карточка компании — фактическое устройство (✔ по коду на `c19a83c`, ничего не запускалось)
+Зоны, которых касается запрос цикла 31. Только факты, решений здесь нет.
+
+**Галерея фото компании в кабинете — компонент ОДИН.**
+- `frontend/src/pages/owner/CompanyPhotosSection.tsx` (335 строк), пропсы `companyId`, `kind: 'salon' | 'shop'`
+  (меняет только заголовок и текст пустого состояния), `onChanged`. Параллельной копии в goods нет.
+- Где подключён: ezbook — `CompanyManagePage.tsx`, `SettingsTab`, строка ~1012 (`<CompanyPhotosSection companyId=… />`);
+  goods — `frontend/goods/src/pages/cabinet/SettingsPage.tsx` (`kind="shop"`, `onChanged` сбрасывает `['storefront']`),
+  контейнер `max-w-[760px]`. goods импортирует его через `@/pages/owner/CompanyPhotosSection` — это в разрешённом
+  ESLint-списке (§6.2).
+- Разметка плитки: сетка `grid-cols-3`; на первом фото бейдж «Обложка» (`absolute top-1.5 left-1.5 text-[10px]`); панель
+  управления поверх фото — `absolute inset-x-0 bottom-0 … bg-gradient-to-t from-ink/70 to-transparent opacity-0
+  group-hover:opacity-100`; в ней кнопки «влево», «Сделать обложкой» (`text-[9px] … h-6`, только не на первом фото),
+  «вправо», «удалить». «Сделать обложкой» переставляет фото в начало через `PUT …/photos/order`. Отдельного поля
+  «обложка» нет: обложка = фото с позицией 0.
+- **Почему в goods плитка выглядит иначе** (✔ по конфигам, в браузере не проверялось): `frontend/tailwind.goods.config.js`
+  сканирует только `goods/src/**`, `src/components/**`, пять разрешённых страниц, `src/pages/owner/NotificationsSection.tsx`
+  и `src/pages/BillingPage.tsx`. **Файла `src/pages/owner/CompanyPhotosSection.tsx` в `content` нет.** Поэтому в CSS goods
+  попадают только те классы этого компонента, которые случайно встречаются в сканируемых файлах. Греп показывает, что
+  нигде в сканируемых файлах нет `text-[9px]`, `text-[10px]`, `top-1.5`, `left-1.5`, `bg-gradient-to-t`, `from-ink/70`,
+  `to-transparent`, `rounded-b-xl`, `group-hover:opacity-100`, а `opacity-0`/`transition-opacity` есть только в
+  `src/components/legal/*Banner.tsx` (попадают). Итог на goods: бейдж «Обложка» и «Сделать обложкой» идут с размером
+  шрифта по умолчанию и без отступов, у панели нет градиента, а она сама скрыта `opacity-0` без `group-hover`-показа —
+  вид «поехал». На ezbook (`tailwind.config.js` сканирует весь `src/**`) все классы есть.
+- Загрузка: `<input type="file" accept="image/jpeg,image/png,image/webp">` **без `multiple`**, берётся
+  `e.target.files?.[0]`; drop-зона тоже берёт только `dataTransfer.files?.[0]`. Мутация `uploadMut` — один файл, одна
+  ошибка (`getUploadErrorMessage`), `loading` на кнопке «Выбрать файл». Прецедент множественного выбора в проекте —
+  `src/components/clientNotes/NotePhotoUploader.tsx` (отдельные input для галереи с `multiple` и для камеры с `capture`;
+  в комментарии объяснено, почему их нельзя совмещать).
+- API-клиент `src/api/companyPhotos.ts`: `list`, `upload(companyId, file)` — один `FormData` с полем `file`, `remove`,
+  `reorder`. Сервер `CompanyPhotosController.Upload`: один `IFormFile`, `[RequestSizeLimit(5 МБ)]` на запрос,
+  `[EnableRateLimiting("uploads")]`; дедупликация по SHA-256 обработанных байт (повтор → 200 с существующим фото);
+  advisory lock `company-photos:{id}` на вставку; лимит `CompanyPhotoOrdering.MaxPhotosPerCompany = 10` → 400
+  `CompanyPhotoTexts.LimitReached(kind)`; новое фото встаёт в конец (`Position = count`). Пакетного маршрута нет.
+- Политика `uploads` (`Startup/RateLimitingExtensions.cs`): фиксированное окно 1 мин, `Uploads:PerUserPerMinute`
+  (по умолчанию 10), `QueueLimit = 0`, ключ — пользователь. Политика общая для всех загрузок одного пользователя:
+  логотип (`CompaniesController`), три метода галереи (`CompanyPhotosController`: POST, DELETE и PUT order — удаление и
+  перестановка тоже тратят окно), фото заметок, аватар (`ProfileController`), картинка услуги (`ServicesController`),
+  картинка товара (`ShopCatalogController`). Ответ 429 — `"Too many uploads. Try again in a minute."`, на эту строку
+  завязан `utils/uploadError.ts`.
+- Лимит 10 фото продублирован на фронте константой `MAX_PHOTOS = 10` в `CompanyPhotosSection.tsx`.
+- Тесты: `src/pages/owner/CompanyPhotosSection.test.tsx` (10 `it`); функциональные — галерея в тестах циклов 10/20/26.
+- Логотип — отдельный код в двух местах: `SettingsTab` ezbook (строки ~786–821) и `ShopProfileSection` goods (строки
+  ~218–247), оба через `companiesApi.uploadLogo`, одиночный файл. Разметка похожая, но не общий компонент.
+
+**Блок «Каталог goods.ezbook.ru» (кабинет магазина).**
+- Фронт: `frontend/goods/src/components/CatalogListingSection.tsx` — переключатель `role="switch"`, статус и чек-лист из
+  ответа сервера; каждый пункт рисуется как `✓`/`○` + `c.text`. Тексты пунктов фронт не формирует.
+- Сервер: `GET|PUT /api/shops/{shopId}/catalog-listing` (`ShopsController`), правило — `Services/Shops/CatalogListingRules.cs`
+  (чистая функция, ею же пользуется `GoodsCatalogService`). Пункты: `ShopBlocked` (только если заблокирован),
+  `NoWorkingHours` «Задайте часы работы», `NoPublishedProducts` «Опубликуйте хотя бы один товар», `NotAllowedByPlan`
+  (только если тариф не позволяет), `HiddenByOwner` — текст константой **`HiddenByOwnerText = "Показ выключен в
+  настройках"`**, `Done = ShowInPublicListing`. Текст не зависит от состояния: при включённом показе пункт выводится как
+  «✓ Показ выключен в настройках». Остальные пункты сформулированы как требование («Задайте…»), этот — как состояние.
+- На этот текст завязаны: `ServiceBooking.UnitTests/CatalogListingRulesTests.cs:26` (InlineData с этой строкой);
+  `API_CONTRACT_CYCLE25.md` §505.1/§532 ссылаются на тексты `ARCHITECTURE_CYCLE25.md` §505.1. Функциональный
+  `Cycle25CatalogTests.cs:117` проверяет только код и `Done`, не текст. vitest `CatalogListingSection.test.tsx` (4 `it`)
+  этой строки не содержит.
+
+**Показ салона в каталоге ezbook (кабинет салона).**
+- Только чекбокс `showInPublicListing` «Показывать компанию в общем списке» в `SettingsTab` (`CompanyManagePage.tsx`
+  ~983–998, fieldset «Запись»), сохраняется общей кнопкой формы через `PUT /api/companies/{id}` (поле
+  `ShowInPublicListing` в `UpdateCompanyDto`). Выключен, если `!company.planAllowsPublicListing`, тогда под ним текст
+  «Отображение в общем списке не входит в текущий тариф…».
+- Правило видимости салона (✔ `CompaniesController.GetAll`/`GetPublic`): `IsActive ∧ ShowInPublicListing ∧
+  Kind=Services ∧ план.AllowPublicListing` (в `GetPublic` тариф — `PublicListingQuery.WhereAllowsPublicListing` в SQL).
+  Других условий (услуги, мастера, расписание) нет. Отдельного маршрута «статус и чек-лист показа» для салона **нет**;
+  в `CompanyDto` есть `ShowInPublicListing`, `PublicListingEnabled` (= опция владельца ∧ тариф) и
+  `PlanAllowsPublicListing`.
+
+**Публичная карточка компании (`CompanyCard`).**
+- Один общий компонент `frontend/src/components/company/CompanyCard.tsx` (106 строк) — ezbook `src/pages/CompanyPage.tsx`
+  и goods `frontend/goods/src/pages/StorefrontPage.tsx` (`goods.ezbook.ru/:slug`, напр. `/myasnoy`). Вход — `CompanyCardData`
+  (каждая страница маппит свой DTO), `children` — слот модуля.
+- Раскладка: необязательная галерея `CompanyPhotoGallery` сверху; ниже строка `flex items-start gap-5`: слева
+  `CompanyLogoMark size="card"` (64 px, при галерее наезжает `-mt-[52px]`), справа столбец — `h1` 30 px, описание
+  (`max-w-[520px]`), затем **вертикальный** список `flex-col gap-2`: телефон (ссылка `tel:` высотой 44 px), адрес,
+  e-mail, `CompanyMapLinks` (две ссылки-«таблетки» по 44 px, тексты «Открыть в Яндекс Картах»/«Открыть в 2ГИС»), затем
+  слот `children`. В goods слот — бейдж «Открыто/Закрыто» и `<details>` «Часы работы» (`data-testid="open-state"`); в
+  ezbook — предупреждение о выключенной самозаписи и т.п. Контейнер витрины `max-w-[860px]`.
+- `CompanyMapLinks` несёт лицензионные условия (§285 цикла 15, проверяются `CompanyMapLinks.test.tsx`): без логотипов
+  сервисов, точные доступные имена ссылок, `target="_blank" rel="noopener noreferrer"`, `href` байт в байт.
+- Отдельного теста на `CompanyCard` нет; он покрыт косвенно `CompanyPage.test.tsx`, `StorefrontPage.test.tsx`,
+  `CompanyLogoMark.test.tsx`, `CompanyMapLinks.test.tsx`, `CompanyPhotoGallery.test.tsx`.
 
 ---
 
@@ -649,7 +777,8 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
   на английском. В документах бывает русский. Трейлер `Co-Authored-By`.
 - Документы цикла: корневой `SPEC.md` — спека **текущего** цикла, прошлая архивируется **в корень** с суффиксом
   (`SPEC_CYCLE25_…md`). `ARCHITECTURE_CYCLENN.md`/`API_CONTRACT_CYCLENN.md` лежат в корне. **Папки `docs/history/` нет** —
-  архив ведётся суффиксами в корне. Нумерация § в документах сквозная через циклы (цикл 26 — §543–§569).
+  архив ведётся суффиксами в корне. Нумерация § в документах сквозная через циклы (цикл 26 — §543–§569);
+  цикл 29 отошёл от этого и нумерует `§29.N`.
 
 ---
 
@@ -658,9 +787,9 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 ### 7.1 Наборы тестов
 | Набор | Фреймворк | Объём (✔ подсчёт атрибутов) | Последний известный прогон (↪ из отчётов, на `b23c13c`) |
 |---|---|---|---|
-| Юнит бэкенда `ServiceBooking.UnitTests` | xUnit 2.5.3 + FluentAssertions 6.12; без БД и без Docker | 177 файлов, 1 581 `[Fact]/[Theory]` | 2 407/2 407 на `b23c13c` (цикл 29, 30.09.2026); на `b23c13c` (цикл 29): 2 407/2 407 |
-| Функциональные API `ServiceBooking.Tests` | xUnit 2.5.3 + `Microsoft.AspNetCore.Mvc.Testing` (`WebApplicationFactory<Program>`) + **реальный PostgreSQL 16** через Testcontainers 3.10 (или внешний сервер) | 81 файл тестов, 1 063 `[Fact]/[Theory]` | 1 153/1 153 на `b23c13c` (цикл 29, 30.09.2026) |
-| Фронтенд (оба сайта) | Vitest 3.2 + jsdom + Testing Library | 154 файла `*.test.ts(x)`, около 1 087 `it/test` (на `1837373`) | 1 157/1 157 в 157 файлах на `b23c13c` (цикл 29, 30.09.2026) |
+| Юнит бэкенда `ServiceBooking.UnitTests` | xUnit 2.5.3 + FluentAssertions 6.12; без БД и без Docker | 176 файлов с тестами, 1 593 `[Fact]/[Theory]` (на `c19a83c`) | 2 407/2 407 на `b23c13c` (цикл 29, 30.09.2026) |
+| Функциональные API `ServiceBooking.Tests` | xUnit 2.5.3 + `Microsoft.AspNetCore.Mvc.Testing` (`WebApplicationFactory<Program>`) + **реальный PostgreSQL 16** через Testcontainers 3.10 (или внешний сервер) | 83 файла в `Tests/`, 1 087 `[Fact]/[Theory]` (на `c19a83c`) | 1 153/1 153 на `b23c13c` (цикл 29, 30.09.2026) |
+| Фронтенд (оба сайта) | Vitest 3.2 + jsdom + Testing Library | 157 файлов `*.test.ts(x)` (на `c19a83c`) | 1 157/1 157 в 157 файлах на `b23c13c` (цикл 29, 30.09.2026) |
 
 **Сквозного браузерного e2e-набора (Playwright, Cypress и т.п.) в проекте НЕТ** ✔. «Функциональные» здесь — HTTP-тесты
 против хоста в памяти и настоящего Postgres. Ближе всего к e2e — bash-смоуки `deploy/ci/smoke.sh` (живой контейнер API:
@@ -715,8 +844,8 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - `LegalKit check`.
 - **frontend** (Node 20):
   - `npm ci`;
-  - сверка генератов циклов 7, 9, 14 и отдельным шагом 18, 19, 20, 23, 24, 25;
-  - `redocly lint` контрактов 8-invariant, 13, 14, 16, 18, 19, 20, 23, 24, 25;
+  - сверка генератов циклов 7, 9, 14 и отдельным шагом 18, 19, 20, 23, 24, 25, 26, 29;
+  - `redocly lint` контрактов 8-invariant, 13, 14, 16, 18, 19, 20, 23, 24, 25, 26, 29;
   - `npm audit --omit=dev --audit-level=high`;
   - `lint`, `tsc` для ezbook и для goods;
   - греп на заглушку правового текста и на `fetch`/Cache в `sw.js`;
@@ -726,8 +855,8 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - артефакт `frontend-dist-<sha>` для `master`/`release-candidate`/`develop`.
 - **docker-build** — сборка образа API и запуск в режиме `Production` с Postgres. Это заодно доказывает полноту
   обязательных env-переменных. Затем `smoke.sh`.
-- ⚠️ **Контракт цикла 26 CI не охвачен**: `contracts/cycle26/openapi.yaml` нет в `redocly lint`, `types:api:cycle26` нет в
-  сверке генератов (C26-1).
+- Контракты 26 и 29 в CI добавлены циклом 29 (`d03720b`), C26-1 закрыт. Новый контракт по-прежнему надо дописывать
+  руками в два шага `ci.yml` (строки ~170 и ~203–209) и в `package.json` (`types:api:cycleNN`).
 
 ### 7.4 Деплой
 - `deploy-staging.yml` — ручной запуск, только ветка `develop`, окружение GitHub `staging`. Шаги: сборка фронта, SSH-ключ,
@@ -752,25 +881,43 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 ## 9. Рискованные и хрупкие места
 
 ### 9.1 Найдено или подтверждено в этом сканировании (✔)
-- **C26-1. CI не проверяет контракт цикла 26.** В `ci.yml` нет `contracts/cycle26/openapi.yaml` в `redocly lint` и нет
-  `types:api:cycle26` в сверке генератов. Расхождение `api-cycle26.generated.ts` с контрактом пройдёт молча. Шаблон один и
-  тот же каждый цикл: новый контракт надо дописывать в два шага `ci.yml`.
+- **C31-1. Tailwind goods не сканирует `CompanyPhotosSection.tsx`** (✔ по конфигу и грепу, §5.7). Общий компонент из
+  `src/pages/owner/` в goods рисуется без части своих классов (размеры шрифта бейджа и кнопки обложки, позиционирование,
+  градиент, показ панели по hover). `tsc`, vitest и сборка это не ловят — только глаз. Та же ловушка ждёт любой общий
+  компонент, положенный вне `src/components/**` и не вписанный в `content` `tailwind.goods.config.js`.
+- **C31-2. Текст пункта `HiddenByOwner` описывает состояние, а не условие** (✔ §5.7): при включённом показе чек-лист
+  goods показывает «✓ Показ выключен в настройках». Текст — серверная константа, на неё завязан юнит-тест
+  `CatalogListingRulesTests.cs:26`.
+- **C31-3. Галерея грузит по одному файлу, лимит частоты общий** (✔ §5.7): `uploads` — 10 запросов в минуту на
+  пользователя, на него же расходуются удаление и перестановка фото, логотип и картинки товаров/услуг; `QueueLimit = 0`,
+  лишний запрос сразу 429. Лимит 10 фото продублирован на фронте (`MAX_PHOTOS`) и на сервере
+  (`CompanyPhotoOrdering.MaxPhotosPerCompany`).
+- **C31-4. Показ салона в каталоге ezbook — голый флаг** (✔ §5.7): у магазина есть серверный чек-лист
+  (`CatalogListingRules` + `catalog-listing`), у салона — только `ShowInPublicListing` и `PlanAllowsPublicListing` в
+  `CompanyDto`; условия видимости салона живут в двух запросах `CompaniesController` (`GetAll`, `GetPublic`), а не в
+  одном правиле.
+- **C29-1. JSON-копии контрактов не имеют скрипта и сверки** (✔): `OpenApiContract.cs` и `API_CONTRACT_CYCLE29.md`
+  (строки 17, 199, 248) ссылаются на `npm run contracts:json`, `ARCHITECTURE_CYCLE29.md` (строка ~244) даёт его текст,
+  но **в `frontend/package.json` такого скрипта нет**, и в `ci.yml` нет шага, сверяющего `contracts/cycle{26,29}/openapi.json`
+  с YAML. Правка YAML без ручной перегенерации JSON оставит функциональные контрактные тесты на старой схеме.
+- ~~**C26-1. CI не проверяет контракт цикла 26.**~~ **Закрыто в цикле 29** (`d03720b`, ✔ `ci.yml`): контракты 26 и 29 в
+  `redocly lint` и в сверке генератов.
 - **C26-2. Ловушка с алиасом `@` в ezbook-сборке** (§6.2). `tsc` и vitest алиас видят, `vite build` ezbook — нет. Ловит
   только шаг `build:release` в CI, локальные `tsc`/тесты зелёные.
 - **C26-3. `ShopManageDto.TimeZoneChangeAllowed = !hasOrders`, а сервер разрешает магазину с заказами переезд в город с
-  тем же смещением UTC** (`ShopTimeZoneChangePolicy`). Флаг строже правила. Если UI опирается только на флаг, он запретит
-  разрешённый переезд.
-- **C26-4. Два одинаковых запроса упорядоченной галереи:** `CompanyDtoAssembler.GetPhotosOrderedAsync` (карточка салона)
-  и новый `CompanyPhotoQueries.OrderedAsync` (галерея и витрина). Порядок сортировки сейчас совпадает, но при правке одного
-  разойдётся.
+  тем же смещением UTC** (`ShopTimeZoneChangePolicy`). Флаг строже правила. **Цикл 29:** `ShopProfileSection` сравнивает
+  смещения и на флаг один не опирается (✔ строка ~114); сам флаг на сервере прежний — другие потребители DTO всё ещё
+  могут понять его строже, чем правило.
+- ~~**C26-4. Два одинаковых запроса упорядоченной галереи.**~~ **Закрыто в цикле 29** (✔): `GetPhotosOrderedAsync`
+  удалён, везде `CompanyPhotoQueries.OrderedAsync`.
 - **C26-5. Галерея магазина без счётчика квоты.** `photo-usage` для магазина отвечает 409. Загрузка же идёт через общий
   конвейер и тарифные правила фото: какой лимит объёма фото у линейки «Заказы» действует на деле, в этом сканировании не
   проверялось.
 - ~~**C26-6. CHANGELOG и README не описывают цикл 26.**~~ **Закрыто в `b9c2a79`** (✔): в CHANGELOG раздел
   «Не выпущено — цикл 26: …» (строка 34, между циклами 27 и 25), в README цикл 26 описан в блоке goods и в возможностях
   салона (карточка, фото, ссылки на карты).
-- **C26-7. Счётчик разделов «Не выпущено» во вступлении CHANGELOG снова отстаёт** (✔): в тексте «двадцать два», по
-  факту разделов `## Не выпущено` — 24. Мелочь, но повторяется каждый цикл.
+- **C26-7. Счётчик разделов «Не выпущено» во вступлении CHANGELOG снова отстаёт** (✔ на `c19a83c`): в тексте
+  «двадцать три», по факту разделов `## Не выпущено` — 25. Мелочь, но повторяется каждый цикл.
 - **C27-1. Номера § в документах циклов 26 и 27 совпадают.** Оба цикла стартовали параллельно от `0d41df4`.
   `ARCHITECTURE_CYCLE26.md` — §543–§556, `API_CONTRACT_CYCLE26.md` — §557–§569. `ARCHITECTURE_CYCLE27.md` — снова
   §543–§552, `API_CONTRACT_CYCLE27.md` — §553. Ссылка вида «§548.2» без имени файла неоднозначна. Это продолжение
@@ -788,12 +935,15 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - **§9.25** (подтверждено): `dotnet format` в CI нет.
 - **Заглушка рассылки** (§5.3) выглядит как работающая функция: API отвечает «поставлена в очередь».
 - **Крупные файлы, на которых завязано много:**
-  - `frontend/src/pages/owner/CompanyManagePage.tsx` — 1 305 строк;
+  - `frontend/src/pages/owner/CompanyManagePage.tsx` — 1 327 строк на `c19a83c` (в нём `SettingsTab`, логотип салона,
+    чекбокс показа в каталоге);
   - `NotificationChannelsController` — 845 (не режется по решению цикла 22);
   - `AdminBillingController` — 791, `AdminController` — 675, `BookingsController` — 595;
   - `AppDbContext` — 1 086.
 - **Модель релизов разошлась с документами.** Кнопка «staging» фактически выкатывает боевой ezbook.ru, `master`/теги/
-  `release-candidate` не используются. CHANGELOG держит 23 раздела «Не выпущено», хотя часть из них на бою (циклы 20–22).
+  `release-candidate` не используются. CHANGELOG держит 25 разделов «Не выпущено», хотя часть из них на бою (циклы 20–22).
+- **Ручной осмотр вёрстки — единственная проверка внешнего вида.** Браузерного e2e и визуальных снапшотов нет; кейсы
+  `M29-*` (360 px) выполнены частично (CHANGELOG цикла 29).
 
 ### 9.2 Открытый долг из прежней редакции (↪ не перепроверялся; подробности — `git show 491406c:CURRENT_STATE.md`, §9)
 **Эксплуатация и выкат**
@@ -868,13 +1018,14 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - **«Запуск»** (со строки 581) с подразделами `###`: «Локально, всё в Docker», «Локально, без Docker для API»,
     «Переменные окружения и секреты», «Тесты», «CI», «Деплой».
   - Цикл 26 в README отражён (`b9c2a79`): профиль и фото магазина, смена города, общая карточка салона/магазина.
-- **`CHANGELOG.md`** (4 061 строка на `b9c2a79`). Формат по мотивам Keep a Changelog, язык — для пользователей. Номеров версий нет.
-  Раздел `## …` на каждый цикл, **самый свежий сверху**. Сверху идут 24 раздела «Не выпущено — <суть>» в порядке влития,
-  ниже — датированные разделы (`## 2026-09-17 — сервис впервые развёрнут…`, самый ранний — `2026-09-01`). Верхний раздел
-  сейчас — цикл 27 («Для бизнеса» на главной goods), под ним — цикл 26 (строка 34), затем цикл 25. Внутри крупных
-  разделов сложились подзаголовки `###`: «Что стоит прочитать до выката», тематические блоки, «Чего этот цикл не даёт»,
-  «Для команды» (итоги тестов и документы цикла). Даты «Не выпущено» при выкате не проставлялись. Счётчик во вступлении
-  («двадцать два») отстаёт от факта (24) — C26-7.
+  - Цикл 29 не менял README (на `c19a83c` те же 743 строки): логотипы в каталогах и группы полей там не описаны.
+- **`CHANGELOG.md`** (4 089 строк на `c19a83c`; верхний раздел — «Не выпущено — цикл 29…», под ним цикл 27, затем 26). Формат по мотивам Keep a Changelog, язык — для пользователей. Номеров версий нет.
+  Раздел `## …` на каждый цикл, **самый свежий сверху**. Сверху идут 25 разделов «Не выпущено — <суть>» в порядке влития,
+  ниже — датированные разделы (`## 2026-09-17 — сервис впервые развёрнут…`, самый ранний — `2026-09-01`). Порядок сверху:
+  цикл 29, цикл 27, цикл 26, цикл 25… Внутри крупных разделов сложились подзаголовки `###`: «Что стоит прочитать до
+  выката», тематические блоки, «Чего этот цикл не даёт», «Для команды» (итоги тестов и документы цикла); у небольших
+  циклов (29) — маркированный список с жирными темами плюс «Чего этот цикл не даёт». Даты «Не выпущено» при выкате не
+  проставлялись. Счётчик во вступлении («двадцать три») отстаёт от факта (25) — C26-7.
 - Releases на GitHub и wiki не используются: тегов нет, ссылок на wiki в репозитории нет.
 - Внутренние справки: `BRIEF_BRAND_AND_DOMAINS.md` (бренд и домены «EZBOOK Запись» / «EZBOOK Заказы»),
   `BENCHMARK_CYCLE22.md`.
@@ -894,13 +1045,17 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   `LEGAL_DECISIONS_CYCLE20.md`, `legal-drafts/README.md`.
 
 ### 10.3 Документация API для внешних потребителей
-- **`API_DOCUMENTATION.md`** (4 480 строк, markdown, по-русски) — основной справочник:
+- **`API_DOCUMENTATION.md`** (4 481 строка на `c19a83c`, markdown, по-русски) — основной справочник:
   - §1 «Обзор», §2 «Аутентификация», §3 «Ключевые бизнес-концепции»;
-  - §4 «Справочник эндпоинтов» — по доменам, с подразделами «Цикл N (unreleased)», у цикла 26 — строка ~1955;
+  - §4 «Справочник эндпоинтов» — по доменам, с подразделами «Цикл N (unreleased)», у цикла 26 — строка ~1955; у цикла 29
+    — вставки-абзацы «**Цикл 29 (unreleased):** …» внутри существующих описаний (каталог goods ~4168, код 400 в §6
+    ~4384), а не отдельный подраздел;
   - §5 «Сквозные сценарии», §6 «Справочник кодов ответа», §7 «Известные ограничения».
   - ↪ C23-8: в §4 есть повторяющиеся номера подразделов.
-- **OpenAPI по циклам** — `contracts/cycleN/openapi.yaml` для циклов 7, 9, 10, 11, 13–20, 23–26 и
-  `contracts/cycle8/servicebooking-invariant.openapi.yaml`. Каждый файл описывает **дельту своего цикла, а не весь API
+- **OpenAPI по циклам** — `contracts/cycleN/openapi.yaml` для циклов 7, 9, 10, 11, 13–20, 23–26, 29 и
+  `contracts/cycle8/servicebooking-invariant.openapi.yaml`. С цикла 29 рядом лежат JSON-копии
+  `contracts/cycle26/openapi.json`, `contracts/cycle29/openapi.json` — их читает валидатор в функциональных тестах
+  (`ServiceBooking.Tests/Infrastructure/OpenApiContract.cs`). Каждый файл описывает **дельту своего цикла, а не весь API
   целиком**. Сводного OpenAPI нет.
 - Прочие контракты: `contracts/cycle23/goods-routes.json`, `order-money-vectors.json`, `cycle24/pickup-schedule-vectors.json`,
   `cycle11/*.schema.json`, `legal-routes.json`, `contracts/legal/runtime-value-forms.json`. Линт — `contracts/redocly.yaml`.
@@ -910,13 +1065,13 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - Postman-коллекции нет. `ServiceBooking.API/ServiceBooking.API.http` — файл запросов IDE.
 
 ### 10.4 Описания тест-кейсов (отдельно от кода автотестов)
-- **`TEST_CATALOG.md`** (6 345 строк, markdown):
+- **`TEST_CATALOG.md`** (6 399 строк на `c19a83c`, markdown):
   - в начале — «Как устроены ссылки на тесты» и «Префиксы по доменам»;
   - затем разделы по доменам (Auth, Bookings, Companies…);
   - затем разделы по циклам: «Цикл N — … (`CYNN-`, число тестов, файл)», в каждом таблица `ID | US | Что проверяет`.
     Там же ручные кейсы (`M27-…` в ветке 27), вердикты QA и «не покрыто»;
-  - раздел цикла 27 — строка ~6226, за ним цикл 26 (~6240), **затем цикл 20**: разделы идут в порядке влития, а не по
-    номеру. У цикла 27 кроме автотестов есть таблица ручных кейсов `M27-` с колонками `Кейс | Шаги | Ожидаемый
+  - раздел цикла 27 — строка ~6226, за ним цикл 29 (~6240, `CY29-` автотесты и ручные `M29-` для вёрстки 360 px), затем
+    цикл 26 (~6280), **затем цикл 20**: разделы идут в порядке влития, а не по номеру. У цикла 27 кроме автотестов есть таблица ручных кейсов `M27-` с колонками `Кейс | Шаги | Ожидаемый
     результат | Критерий` — образец для ручных проверок вёрстки.
   - ↪ TD16-7: вердикты раздела «Цикл 16» устарели.
 - ID кейсов продублированы в коде атрибутом `[TestCase("CY26-01")]` на тестах `ServiceBooking.Tests`.
@@ -925,12 +1080,15 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 
 ### 10.5 Документы циклов
 - Корень:
-  - `SPEC.md` — спека **цикла 27** (уже выполненного). Следующий цикл заменит её своей, а эту заархивирует как
-    `SPEC_CYCLE27_*.md`;
-  - архив спек `SPEC_CYCLE{3..26}_*.md` (последний — `SPEC_CYCLE26_COMPANY_CARD_UNIFIED.md`), плюс
+  - **корневого `SPEC.md` на `c19a83c` + это обновление нет**: спека цикла 29 перенесена в
+    `SPEC_CYCLE29_CYCLE26_FOLLOWUPS.md` (ссылки в `ARCHITECTURE_CYCLE29.md`, `API_CONTRACT_CYCLE29.md` и разделе «Цикл 29»
+    `TEST_CATALOG.md` перенаправлены). Новый цикл пишет свой `SPEC.md` в корень;
+  - архив спек `SPEC_CYCLE{3..27,29}_*.md` (последние — `SPEC_CYCLE27_GOODS_BUSINESS_BLOCK.md`,
+    `SPEC_CYCLE29_CYCLE26_FOLLOWUPS.md`; спеки 28 в `develop` нет, она в ветке `cycle/028-…`), плюс
     `SPEC_APPENDIX_CHANNELS.md` и `SPEC_DEFERRED_NOTIFICATIONS.md`;
-  - `ARCHITECTURE_CYCLE{4..27}.md` (у цикла 8 два файла: основной и `_PHASE2`) и `API_CONTRACT_CYCLE{4..27}.md`
-    (у цикла 27 — одна строка «API не меняется»). Корневые `ARCHITECTURE.md`/`API_CONTRACT.md` — от цикла 3;
+  - `ARCHITECTURE_CYCLE{4..27,29}.md` (у цикла 8 два файла: основной и `_PHASE2`) и `API_CONTRACT_CYCLE{4..27,29}.md`
+    (у цикла 27 — одна строка «API не меняется»; нумерация цикла 29 — `§29.x`, а не сквозная). Корневые
+    `ARCHITECTURE.md`/`API_CONTRACT.md` — от цикла 3;
   - `LEGAL_REVIEW*.md`.
 - `docs/history/` не существует: архивом служат суффиксы в корне.
 
