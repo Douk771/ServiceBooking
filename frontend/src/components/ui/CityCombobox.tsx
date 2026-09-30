@@ -10,6 +10,8 @@ interface Props {
   onChange: (city: City | null) => void
   error?: string
   placeholder?: string
+  /** ARCHITECTURE_CYCLE32.md §32.4.3 — id of a hint element; merged with the error id in aria-describedby. */
+  describedBy?: string
 }
 
 /**
@@ -98,7 +100,7 @@ export function CityCombobox({ label = 'Город', value, onChange, error, pla
           aria-controls={listboxId}
           aria-autocomplete="list"
           aria-invalid={error ? true : undefined}
-          aria-describedby={error ? `${listboxId}-error` : undefined}
+          aria-describedby={[describedBy, error ? `${listboxId}-error` : undefined].filter(Boolean).join(' ') || undefined}
           aria-activedescendant={open && items[highlighted] ? `${listboxId}-opt-${items[highlighted].id}` : undefined}
           autoComplete="off"
           value={query}

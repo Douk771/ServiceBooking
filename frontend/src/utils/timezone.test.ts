@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatUtcOffset, formatCityTimeZone } from './timezone'
+import { formatUtcOffset, formatCityTimeZone, utcOffsetMinutesOf } from './timezone'
 
 describe('formatUtcOffset', () => {
   it('formats a positive whole-hour offset', () => {
@@ -25,5 +25,20 @@ describe('formatCityTimeZone', () => {
     expect(formatCityTimeZone('Барнаул, Алтайский край', 420, 'Asia/Barnaul')).toBe(
       'Барнаул, Алтайский край → UTC+7, Asia/Barnaul',
     )
+  })
+})
+
+describe('utcOffsetMinutesOf', () => {
+  it.each([
+    ['Asia/Barnaul', 420],
+    ['Europe/Moscow', 180],
+    ['Asia/Kolkata', 330],
+    ['UTC', 0],
+  ])('%s -> %i', (zone, expected) => {
+    expect(utcOffsetMinutesOf(zone)).toBe(expected)
+  })
+
+  it('returns null for an unknown zone', () => {
+    expect(utcOffsetMinutesOf('Mars/Olympus')).toBeNull()
   })
 })
