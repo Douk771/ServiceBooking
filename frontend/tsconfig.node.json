@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node", "vite/client"] },
+  "include": [
+    "goods/src/assets/screenshots/shots.test.ts",
+    "goods/src/assets/screenshots/seed-goods-demo.test.ts",
+    "goods/src/components/BuyersBlock.qa.test.tsx",
+    "src/vite-env.d.ts"
+  ],
+  "exclude": []
+}

@@ -8,6 +8,7 @@ import { Pagination } from '@/components/ui/Pagination'
 import { CompanyLogoMark } from '@/components/company/CompanyLogoMark'
 import type { City } from '@/types'
 import { goodsCatalogApi } from '../api/goodsCatalog'
+import { BuyersBlock } from '../components/BuyersBlock'
 import { BusinessBlock } from '../components/BusinessBlock'
 import { EmptyState, ErrorState, LoadingList } from '../components/StatePanels'
 import { publicAddress } from '@/utils/publicAddress'
@@ -84,6 +85,9 @@ export function CatalogHomePage() {
         <p className="text-[13px] font-semibold tracking-[0.14em] uppercase text-gold-dark mb-4">Заказы с самовывозом</p>
         <h1 className="font-serif text-[36px] sm:text-[48px] leading-[1.08] font-medium text-ink">Где заказать в вашем городе</h1>
         <p className="mt-4 text-[16px] text-ink-soft">Выберите магазин, соберите заказ и заберите его в удобное время.</p>
+        <p className="mt-2">
+          <a href="#buyers-title" className="inline-flex items-center min-h-[36px] text-sm text-ink-soft underline underline-offset-2 hover:no-underline">Как сделать заказ</a>
+        </p>
       </div>
 
       <form role="search" aria-label="Поиск магазина" onSubmit={(e) => { e.preventDefault(); patch({ search: searchDraft.trim() || null }) }} className="mt-8 grid gap-4 md:grid-cols-[minmax(0,320px)_minmax(0,1fr)_auto] items-end">
@@ -116,7 +120,7 @@ export function CatalogHomePage() {
         </p>
       )}
 
-      <section aria-label="Магазины" aria-live="polite" className="mt-8">
+      <section id="shop-list" tabIndex={-1} aria-label="Магазины" aria-live="polite" className="mt-8 scroll-mt-24 focus:outline-none">
         {q.isLoading ? (
           <LoadingList rows={4} rowClass="h-24" />
         ) : q.isError && !data ? (
@@ -137,6 +141,7 @@ export function CatalogHomePage() {
         ) : null}
       </section>
 
+      <BuyersBlock />
       <BusinessBlock />
     </main>
   )

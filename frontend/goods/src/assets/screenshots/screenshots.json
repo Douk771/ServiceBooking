@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-09-30T14:36:48Z",
+  "sourceCommit": "6ea8d4c-dirty",
+  "browser": "Chrome/154.0.8037.59",
+  "orderPage": {
+    "cssWidth": 390,
+    "cssHeight": 509,
+    "files": {
+      "1x": "order-page-1x.webp",
+      "2x": "order-page-2x.webp"
+    },
+    "bytes": {
+      "1x": 9994,
+      "2x": 21042
+    },
+    "orderNumber": 3,
+    "pickupClock": "19:00",
+    "statusText": "Принят"
+  },
+  "boardDesktop": {
+    "cssWidth": 1280,
+    "cssHeight": 820,
+    "files": {
+      "1x": "board-desktop-1x.webp",
+      "2x": "board-desktop-2x.webp"
+    },
+    "bytes": {
+      "1x": 48274,
+      "2x": 104874
+    },
+    "orderCount": 6
+  },
+  "boardPhone": {
+    "cssWidth": 390,
+    "cssHeight": 900,
+    "files": {
+      "2x": "board-phone-2x.webp"
+    },
+    "bytes": {
+      "2x": 48482
+    }
+  }
+}
