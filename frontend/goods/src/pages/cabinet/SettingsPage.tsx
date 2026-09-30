@@ -10,6 +10,7 @@ import { getLogoErrorMessage } from '@/utils/companyManageError'
 import { shopsApi } from '../../api/shops'
 import { useShopContext } from '../../hooks/useShop'
 import { InlineError } from '../../components/StatePanels'
+import { CatalogListingSection } from '../../components/CatalogListingSection'
 import { getGoodsErrorMessage } from '../../utils/orderError'
 import { getCatalogErrorMessage } from '../../utils/catalogError'
 import type { OrderAcceptanceMode, SellerInfoInput, ShopCustomerMode, ShopManageDto } from '../../types'
@@ -21,6 +22,7 @@ export function SettingsPage() {
     <main className="max-w-[760px] mx-auto px-4 sm:px-8 pt-8 flex flex-col gap-5">
       <ProfileSection shop={shop} />
       <RulesSection shop={shop} />
+      <CatalogListingSection shopId={shop.id} />
       <SellerSection shop={shop} />
     </main>
   )

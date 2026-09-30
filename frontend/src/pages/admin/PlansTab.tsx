@@ -411,7 +411,7 @@ export function PlansTab() {
                         </span>
                         {plan.line === 'Orders' && (
                           <span className="text-xs text-muted" data-testid="orders-plan-limits">
-                            Товаров в магазине: {plan.maxProductsPerShop != null ? `до ${plan.maxProductsPerShop}` : '∞'} · Заказов в месяц: {plan.maxOrdersPerMonth != null ? `до ${plan.maxOrdersPerMonth}` : '∞'} · Приём заказов: {plan.allowOrders ? 'да' : 'нет'}
+                            Товаров в магазине: {plan.maxProductsPerShop != null ? `до ${plan.maxProductsPerShop}` : '∞'} · Заказов в месяц: {plan.maxOrdersPerMonth != null ? `до ${plan.maxOrdersPerMonth}` : '∞'} · Приём заказов: {plan.allowOrders ? 'да' : 'нет'} · Показ в каталоге goods: {plan.allowPublicListing ? 'да' : 'нет'}
                           </span>
                         )}
                       </div>
@@ -651,6 +651,10 @@ export function PlansTab() {
                 <label className="col-span-2 flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={form.allowOrders} onChange={(e) => setForm((f) => ({ ...f, allowOrders: e.target.checked }))} className="w-4 h-4 accent-gold" />
                   <span className="text-sm text-ink-soft">Приём заказов</span>
+                </label>
+                <label className="col-span-2 flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.allowPublicListing} onChange={(e) => setForm((f) => ({ ...f, allowPublicListing: e.target.checked }))} className="w-4 h-4 accent-gold" />
+                  <span className="text-sm text-ink-soft">Показ в каталоге goods</span>
                 </label>
               </div>
             )}
