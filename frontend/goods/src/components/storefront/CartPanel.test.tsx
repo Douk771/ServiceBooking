@@ -24,6 +24,12 @@ vi.mock('../../api/legalNotice', () => ({
 }))
 vi.mock('@/api/profile', () => ({ profileApi: { get: () => Promise.resolve({ phoneVerified: false }) } }))
 vi.mock('@/api/phoneVerification', () => ({ phoneVerificationApi: { getConfig: () => Promise.resolve({ enabled: false, healthy: false }) } }))
+// The real widget needs a live script; with VITE_SMARTCAPTCHA_SITEKEY in a developer's local .env it would demand a
+// token these tests never produce. Stubbed the same way as in SubjectRequestPage.test.tsx.
+vi.mock('@/components/booking/SmartCaptcha', () => ({
+  smartCaptchaEnabled: false,
+  SmartCaptcha: () => null,
+}))
 
 const product = (over: Partial<StorefrontProductDto> = {}): StorefrontProductDto => ({
   id: 'p1', name: 'Шаурма классическая', unit: 'Piece', price: 250, minQuantity: 1, maxQuantity: 99, foodInfo: {}, available: true, ...over,
