@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -23,6 +24,7 @@ public sealed class NotificationDispatchTask(
     IOptions<NotificationOptions> options,
     SubscriptionResolver subscriptionResolver,
     INotificationClock clock,
+    ShowcaseOutboundGuard showcaseGuard,
     ILogger<NotificationDispatchTask> logger) : IScheduledTask
 {
     public string Name => "notification-dispatch";
@@ -125,6 +127,10 @@ public sealed class NotificationDispatchTask(
                 : (await db.ShopSettings.AsNoTracking().Where(s => orderShopIds.Contains(s.CompanyId) && !s.CustomerMessengerEnabled)
                     .Select(s => s.CompanyId).ToListAsync(linkedCt)).ToHashSet();
 
+            // ARCHITECTURE_CYCLE28.md §576 — the safety net behind the queueing guard: a row of a showcase company (or any row on the demo
+            // stand) that got into the queue anyway is never handed to a transport.
+            var showcaseCompanyIds = await showcaseGuard.SuppressedCompanyIdsAsync(companyIds, linkedCt);
+
             var phones = candidates.Select(n => n.RecipientPhone).Distinct().ToList();
             var optedOutPhones = (await db.NotificationOptOuts
                     .Where(o => phones.Contains(o.Phone))
@@ -136,6 +142,14 @@ public sealed class NotificationDispatchTask(
             var readyToSend = new List<OutboundNotification>();
             foreach (var row in candidates)
             {
+                if (showcaseCompanyIds.Contains(row.CompanyId))
+                {
+                    row.Status = NotificationStatus.Skipped;
+                    row.Reason = NotificationReason.ShowcaseSuppressed;
+                    skipped++;
+                    continue;
+                }
+
                 if (NotificationTiming.IsExpired(row.VisitStartUtc, now))
                 {
                     row.Status = NotificationStatus.Expired;

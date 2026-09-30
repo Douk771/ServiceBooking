@@ -37,6 +37,10 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Billing.TrialActivationService>();
     // Cycle 28 (ARCHITECTURE_CYCLE28.md §573.1): `ops tariffs plan|apply` — created by the operator command, never at startup.
     builder.Services.AddScoped<ServiceBooking.API.Services.Showcase.Tariffs.TariffCatalogSeeder>();
+    // Cycle 28 (§576, §579.1): demo mode is off by default (the demo stand itself is pass B); the guard holds on the showcase mark alone.
+    builder.Services.Configure<ServiceBooking.API.Services.Demo.DemoModeOptions>(
+        builder.Configuration.GetSection(ServiceBooking.API.Services.Demo.DemoModeOptions.SectionName));
+    builder.Services.AddScoped<ServiceBooking.API.Services.Showcase.ShowcaseOutboundGuard>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Billing.TrialStateReader>();
     // Cycle 4 (ARCHITECTURE_CYCLE4.md §25.3, T4-B7): the other backend developer's queueing service, called
     // directly from BookingsController (create/cancel/reschedule) — registered here because Program.cs is

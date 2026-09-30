@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Companies;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Infrastructure.Data;
 
@@ -13,7 +14,7 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/companies/{id:guid}/mail")]
 [Authorize]
-public class MailingController(AppDbContext db, SubscriptionResolver subscriptionResolver) : ControllerBase
+public class MailingController(AppDbContext db, SubscriptionResolver subscriptionResolver, ShowcaseOutboundGuard showcaseGuard) : ControllerBase
 {
     [HttpPost]
     public async Task<IActionResult> SendMail(Guid id, [FromBody] SendMailDto dto)
@@ -21,6 +22,10 @@ public class MailingController(AppDbContext db, SubscriptionResolver subscriptio
         if (!await CanManageCompany(id)) return Forbid();
         // §389.2: salon-only route (rights first, kind second).
         if (await CompanyKindGuard.RejectShopAsync(db, id) is { } shopRefusal) return shopRefusal;
+
+        // ARCHITECTURE_CYCLE28.md §576, API_CONTRACT_CYCLE28.md §596: after rights and company kind, before the tariff check and before any MailLog row.
+        if (showcaseGuard.DemoMode) return Conflict("В демо-версии рассылка не отправляется.");
+        if (await showcaseGuard.IsSuppressedAsync(id, HttpContext.RequestAborted)) return Conflict("По витринной компании рассылка недоступна.");
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(id);
         if (!plan.AllowMailing) return StatusCode(402, "Mailing requires a tariff plan that includes it.");
