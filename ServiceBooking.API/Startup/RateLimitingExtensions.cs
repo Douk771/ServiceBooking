@@ -194,6 +194,11 @@ internal static class RateLimitingExtensions
         // staff-max-link: a one-time link to connect MAX — 10/hour per user.
         o.AddPolicy("staff-max-link", ctx => UserWindowPolicy(ctx, "staff-max-link", defaultPermitLimit: 10, defaultWindowMinutes: 60));
 
+        // Cycle 31 (ARCHITECTURE_CYCLE31.md §31.6): the gallery leaves the shared "uploads" window. A 10-photo batch must
+        // not starve "make cover"/delete, and gallery traffic must not starve logo/avatar/product uploads either.
+        o.AddPolicy("company-photos", ctx => UserWindowPolicy(ctx, "company-photos", defaultPermitLimit: 20, defaultWindowMinutes: 1));
+        o.AddPolicy("company-photos-edit", ctx => UserWindowPolicy(ctx, "company-photos-edit", defaultPermitLimit: 60, defaultWindowMinutes: 1));
+
         // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §14) — the built-in rejection
         // response is empty, so OnRejected has to write the body itself or the frontend's *Error.ts mappers
         // couldn't tell a 429 apart from a 403. Branches by policy name so each surfaces its own Russian
@@ -222,6 +227,7 @@ internal static class RateLimitingExtensions
                 "order-create" => "Слишком много заказов подряд — попробуйте через несколько минут",
                 "order-push" => "Слишком много запросов — подождите минуту",
                 "shop-reports" or "goods-catalog" or "staff-max-link" => "Слишком много запросов — подождите минуту",
+                "uploads" or "company-photos" or "company-photos-edit" => "Too many uploads. Try again in a minute.",
                 _ => "Too many uploads. Try again in a minute."
             };
             // WriteAsync alone never sets Content-Type (unlike controller-level BadRequest(string)/Conflict(string),
