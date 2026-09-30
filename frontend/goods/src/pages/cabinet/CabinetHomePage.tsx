@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useWebPush } from '@/hooks/useWebPush'
+import { describeDevice, useWebPush } from '@/hooks/useWebPush'
+import { likelySameBrowserOnOtherSite } from '@/utils/staffPushTexts'
 import { shopsApi } from '../../api/shops'
 import { LinkButton } from '../../components/LinkButton'
 import { Icon } from '@/components/ui/Icon'
@@ -13,7 +14,14 @@ export function CabinetHomePage() {
   const summary = useQuery({ queryKey: ['kinds-summary'], queryFn: shopsApi.kindsSummary, retry: false })
   // US-33-08 (P2): a nudge for staff whose device has no order notifications yet. Also refreshes the worker's sibling origin.
   const push = useWebPush({ site: 'Orders', keepBrowserSubscription: true })
-  const showPushNudge = push.isStaff === true && !push.isLoading && push.reason === null && !push.isSubscribedOnThisDevice
+  const showPushNudge =
+    push.isStaff === true &&
+    push.hasOrders &&
+    !push.isLoading &&
+    !push.devicesError &&
+    push.reason === null &&
+    !push.isSubscribedOnThisDevice &&
+    !likelySameBrowserOnOtherSite(push.devices, 'Orders', describeDevice())
 
   return (
     <main className="max-w-[860px] mx-auto px-4 sm:px-8 pt-10">

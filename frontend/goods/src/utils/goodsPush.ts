@@ -1,14 +1,11 @@
 import type { PushUnavailableReason } from '@/utils/pushAvailability'
 
-/** The only reader of these texts is the buyer on the order page; staff texts live in `@/utils/staffPushTexts` (cycle 33). */
-export type PushAudience = 'customer'
-
 /**
  * Explanations for «notifications are not available on this device» for the BUYER on goods. The REASON is picked by the
  * shared `getPushUnavailableReason`; only the words are goods-specific. API_CONTRACT_CYCLE24.md §479 adds the advice:
  * choose messages in MAX/WhatsApp next time. The `'staff'` branch was removed in cycle 33 (ARCHITECTURE_CYCLE33.md §33.8).
  */
-export function goodsPushMessage(reason: PushUnavailableReason, _audience: PushAudience = 'customer'): string {
+export function goodsPushMessage(reason: PushUnavailableReason): string {
   const advice = ' В следующий раз выберите при оформлении сообщения в MAX/WhatsApp.'
   switch (reason) {
     case 'ios-safari-not-installed':

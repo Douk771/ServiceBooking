@@ -26,7 +26,7 @@ export function OrderPushCard({ token, info }: { token: string; info: OrderWebPu
         </p>
       ) : push.reason ? (
         <p className="mt-1.5 text-sm text-ink-soft" data-testid="order-push-reason" data-reason={push.reason}>
-          {goodsPushMessage(push.reason, 'customer')}
+          {goodsPushMessage(push.reason)}
         </p>
       ) : push.subscribed ? (
         <div className="mt-1.5 flex items-center justify-between gap-3 flex-wrap">

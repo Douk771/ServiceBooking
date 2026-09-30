@@ -114,7 +114,7 @@ export function DevicesAndNotificationsSection({
           </p>
         )}
 
-        {!listLoading && (
+        {!listLoading && push.reason !== 'platform-disabled' && (
           <div className="mt-5 pt-4 border-t border-line">
             <h3 className="text-[13px] font-medium text-[#4A4038] mb-1.5">Устройства с включёнными уведомлениями</h3>
             {push.devicesError ? (

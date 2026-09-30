@@ -7,10 +7,10 @@ import { CabinetHomePage } from './CabinetHomePage'
 const my = vi.fn()
 const useWebPush = vi.fn()
 vi.mock('../../api/shops', () => ({ shopsApi: { my: () => my(), kindsSummary: vi.fn().mockRejectedValue(new Error('x')) } }))
-vi.mock('@/hooks/useWebPush', () => ({ useWebPush: (...a: unknown[]) => useWebPush(...a) }))
+vi.mock('@/hooks/useWebPush', () => ({ useWebPush: (...a: unknown[]) => useWebPush(...a), describeDevice: () => 'Chrome · Mac' }))
 
 const shop = (myRole: 'Owner' | 'Staff') => ({ id: 's1', name: 'Шаурма', slug: 'sh', logoUrl: null, isActive: true, myRole })
-const pushBase = { isStaff: true, isLoading: false, reason: null, isSubscribedOnThisDevice: false }
+const pushBase = { isStaff: true, hasOrders: true, devicesError: false, devices: [] as unknown[], isLoading: false, reason: null, isSubscribedOnThisDevice: false }
 
 function renderPage() {
   return render(
@@ -55,6 +55,9 @@ describe('CabinetHomePage — cycle 33', () => {
     ['not staff', { isStaff: false }],
     ['still loading', { isLoading: true }],
     ['push unavailable', { reason: 'platform-disabled' }],
+    ['salon-only staff (no shops)', { hasOrders: false }],
+    ['devices list failed', { devicesError: true }],
+    ['enabled via the other site in this browser', { devices: [{ id: 'd1', site: 'Services', deviceLabel: 'Chrome · Mac' }] }],
   ])('no nudge when %s', async (_n, over) => {
     useWebPush.mockReturnValue({ ...pushBase, ...over })
     my.mockResolvedValue([shop('Staff')])
