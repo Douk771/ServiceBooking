@@ -50,11 +50,17 @@ export function Navbar() {
     // mode, so the chrome hides itself for print instead of every printable page reimplementing it.
     <nav className="sticky top-0 z-50 bg-cream/86 backdrop-blur-md border-b border-line print:hidden">
       <div className="max-w-[1180px] mx-auto px-4 sm:px-8 h-[76px] flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-3 shrink-0" onClick={closeMenu}>
+        <Link to="/" onClick={closeMenu} className="flex items-center gap-3 shrink-0" aria-label="ezbook · Записи">
           <span className="w-[38px] h-[38px] rounded-full bg-ink flex items-center justify-center shrink-0">
             <Icon name="calendar" size={18} className="text-cream" strokeWidth={1.6} />
           </span>
-          <span className="font-serif text-xl text-ink">EZBOOK</span>
+          <span className="flex items-center gap-2.5">
+            <span className="font-serif text-[22px] text-ink leading-none">ezbook</span>
+            <span className="text-line-strong leading-none" aria-hidden="true">
+              ·
+            </span>
+            <span className="text-[13px] font-semibold tracking-wide uppercase text-gold-dark leading-none">Записи</span>
+          </span>
         </Link>
 
         {/* Desktop nav */}
