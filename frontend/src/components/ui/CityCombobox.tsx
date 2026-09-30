@@ -10,6 +10,8 @@ interface Props {
   onChange: (city: City | null) => void
   error?: string
   placeholder?: string
+  /** ARCHITECTURE_CYCLE32.md §32.4.3 — id of a hint element; merged with the error id in aria-describedby. */
+  describedBy?: string
 }
 
 /**
@@ -17,7 +19,7 @@ interface Props {
  * a `City` picked from the dropdown is valid, so `onChange` fires a full `City` or `null`, never a
  * string. Keyboard: ↑/↓ moves the highlighted option, Enter selects it, Escape closes the list.
  */
-export function CityCombobox({ label = 'Город', value, onChange, error, placeholder = 'Начните вводить город...' }: Props) {
+export function CityCombobox({ label = 'Город', value, onChange, error, placeholder = 'Начните вводить город...', describedBy }: Props) {
   const [query, setQuery] = useState(value?.label ?? '')
   const [open, setOpen] = useState(false)
   const [highlighted, setHighlighted] = useState(0)
@@ -98,7 +100,7 @@ export function CityCombobox({ label = 'Город', value, onChange, error, pla
           aria-controls={listboxId}
           aria-autocomplete="list"
           aria-invalid={error ? true : undefined}
-          aria-describedby={error ? `${listboxId}-error` : undefined}
+          aria-describedby={[describedBy, error ? `${listboxId}-error` : undefined].filter(Boolean).join(' ') || undefined}
           aria-activedescendant={open && items[highlighted] ? `${listboxId}-opt-${items[highlighted].id}` : undefined}
           autoComplete="off"
           value={query}

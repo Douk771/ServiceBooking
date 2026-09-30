@@ -23,7 +23,7 @@ public class CatalogListingRulesTests
     [InlineData(true, false, true, true, true, CatalogListingCheckCode.NoWorkingHours, "Задайте часы работы")]
     [InlineData(true, true, false, true, true, CatalogListingCheckCode.NoPublishedProducts, "Опубликуйте хотя бы один товар")]
     [InlineData(true, true, true, false, true, CatalogListingCheckCode.NotAllowedByPlan, "Показ в каталоге не входит в ваш тариф")]
-    [InlineData(true, true, true, true, false, CatalogListingCheckCode.HiddenByOwner, "Показ выключен в настройках")]
+    [InlineData(true, true, true, true, false, CatalogListingCheckCode.HiddenByOwner, "Показ включен в настройках")]
     public void EachConditionAlone_HidesTheShop_AndIsInTheChecklist(
         bool active, bool hours, bool product, bool plan, bool owner, CatalogListingCheckCode code, string text)
     {

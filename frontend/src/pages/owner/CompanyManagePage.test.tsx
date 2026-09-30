@@ -10,6 +10,7 @@ const getByCompany = vi.fn()
 const getMy = vi.fn()
 const updateMemberProvidesServices = vi.fn()
 const update = vi.fn()
+const getPhotoUsage = vi.fn()
 
 vi.mock('../../api/companies', () => ({
   companiesApi: {
@@ -22,6 +23,7 @@ vi.mock('../../api/companies', () => ({
     removeMember: vi.fn(),
     update: (...args: unknown[]) => update(...args),
     uploadLogo: vi.fn(),
+    getPhotoUsage: (...args: unknown[]) => getPhotoUsage(...args),
   },
 }))
 
@@ -29,6 +31,17 @@ const saveAddress = vi.fn()
 vi.mock('../../api/companyAddress', () => ({
   companyAddressApi: { saveAddress: (...a: unknown[]) => saveAddress(...a), notice: vi.fn() },
 }))
+vi.mock('../../api/companyCatalogListing', () => ({
+  companyCatalogListingApi: {
+    get: () =>
+      Promise.resolve({
+        showInCatalog: true, allowedByPlan: true, visible: true, statusText: 'Салон виден в каталоге ezbook.ru',
+        notAllowedByPlanText: null, checklist: [{ code: 'HiddenByOwner', text: 'Показ включен в настройках', done: true }],
+      }),
+    put: vi.fn(),
+  },
+}))
+vi.mock('../../api/companyPhotos', () => ({ companyPhotosApi: { list: () => Promise.resolve([]) } }))
 vi.mock('../../api/cities', () => ({ citiesApi: { search: () => Promise.resolve([]) } }))
 
 vi.mock('../../api/services', () => ({
@@ -119,104 +132,9 @@ describe('MembersTab — US-62 "provides services" toggle', () => {
   })
 })
 
-describe('SettingsTab — unsaved edits survive an unrelated `my-companies` refetch (review finding, cycle 13)', () => {
-  function renderSettings(companyId = 'co1') {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const utils = render(
-      <QueryClientProvider client={qc}>
-        <SettingsTab companyId={companyId} />
-      </QueryClientProvider>,
-    )
-    return { ...utils, qc }
-  }
-
-  beforeEach(() => {
-    update.mockReset()
-  })
-
-  it('keeps typed-but-unsubmitted text and an enabled Save button after `values` resyncs to an unrelated field change', async () => {
-    getMy.mockReset().mockResolvedValue([{ id: 'co1', name: 'Салон красоты', allowSelfBooking: true }])
-    const { qc } = renderSettings()
-
-    const nameInput = await screen.findByLabelText('Название')
-    // Let the initial `values` resync settle before editing, so it can't race with the interactions
-    // below and produce a flaky "typed text landed before/after a resync" result.
-    await waitFor(() => expect(nameInput).toHaveValue('Салон красоты'))
-
-    await userEvent.clear(nameInput)
-    await userEvent.type(nameInput, 'Новое название')
-    await waitFor(() => expect(nameInput).toHaveValue('Новое название'))
-
-    const saveButton = screen.getByRole('button', { name: 'Сохранить изменения' })
-    expect(saveButton).not.toBeDisabled()
-
-    // Simulate `['my-companies']` resyncing mid-edit because of an unrelated change (e.g. the
-    // address field's own save via CompanyAddressField, §209) — writing a new value into the SAME
-    // query cache the form's `values` prop reads from triggers RHF's `keepDirtyValues` resync path,
-    // exactly like a real refetch landing while the owner is still typing.
-    qc.setQueryData(['my-companies'], [{ id: 'co1', name: 'Салон красоты', allowSelfBooking: false }])
-
-    await waitFor(() => expect(nameInput).toHaveValue('Новое название'))
-    expect(saveButton).not.toBeDisabled()
-  })
-})
-
-// ARCHITECTURE_CYCLE17.md §305.3/§326 (US-17-03, C15-6.3): the hint text must match the ACTUAL "PUT
-// with the field omitted" behaviour ("leave the saved value alone"), not the field's server-side
-// default — and clearing the field must not send `clientRescheduleMinHours` in the body at all.
-describe('SettingsTab — clientRescheduleMinHours hint and empty-field behaviour (§305.3, §326)', () => {
-  function renderSettings(companyId = 'co1') {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    return render(
-      <QueryClientProvider client={qc}>
-        <SettingsTab companyId={companyId} />
-      </QueryClientProvider>,
-    )
-  }
-
-  beforeEach(() => {
-    update.mockReset().mockResolvedValue({})
-    getMy.mockReset().mockResolvedValue([
-      { id: 'co1', name: 'Салон красоты', allowSelfBooking: true, clientRescheduleMinHours: 24 },
-    ])
-  })
-
-  // Т20-05 п. 3 (API_CONTRACT_CYCLE20.md §435, US-20-04) replaced the §305.3 "leave the saved value
-  // alone" hint with the lawyer's caption about the 24 h cancellation ceiling — dословно
-  // `staffNotices.ts` (CANCEL_WINDOW_FIELD_CAPTION), not a paraphrase written at the call site.
-  it('shows the Т20-05 п. 3 caption about the 24 h cancellation ceiling, not the old §305.3 copy', async () => {
-    renderSettings()
-
-    expect(await screen.findByText(/не больше 24 часов/)).toBeInTheDocument()
-    expect(screen.queryByText(/Пусто — оставить текущее значение/)).not.toBeInTheDocument()
-    expect(screen.queryByText('Пусто — 2 часа по умолчанию. 0 — можно перенести вплоть до начала визита.')).not.toBeInTheDocument()
-  })
-
-  it('label mentions both reschedule and cancellation, since one window now governs both (§304)', async () => {
-    renderSettings()
-    expect(await screen.findByLabelText('За сколько часов клиент может перенести или отменить запись')).toBeInTheDocument()
-  })
-
-  it('clearing the field omits clientRescheduleMinHours from the PUT body entirely', async () => {
-    renderSettings()
-
-    const hoursInput = await screen.findByLabelText('За сколько часов клиент может перенести или отменить запись')
-    await waitFor(() => expect(hoursInput).toHaveValue(24))
-    await userEvent.clear(hoursInput)
-
-    await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
-
-    await waitFor(() => expect(update).toHaveBeenCalled())
-    const body = update.mock.calls[0][1] as Record<string, unknown>
-    // `undefined` (not sent by JSON.stringify, which is what actually crosses the wire) rather than
-    // an empty string/0 — an empty string would be a stray no-op to the API contract, 0 is a
-    // legitimate explicit value the owner didn't type.
-    expect(body.clientRescheduleMinHours).toBeUndefined()
-  })
-})
-
-// ARCHITECTURE_CYCLE29.md §29.9 (US-29-01): the four field groups and the city block inside the main form.
-describe('SettingsTab — cycle 29 field groups', () => {
+// ARCHITECTURE_CYCLE32.md §32.9 — the settings tab is six cards in one column; the old form tests moved to
+// SalonProfileSection.test.tsx / BookingRulesSection.test.tsx (table §32.12.2).
+describe('SettingsTab — cycle 32 layout', () => {
   function renderSettings() {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     return render(
@@ -226,7 +144,7 @@ describe('SettingsTab — cycle 29 field groups', () => {
     )
   }
   const COMPANY = {
-    id: 'co1', name: 'Салон', address: 'Ленина, 1', cityId: 5, cityName: 'Барнаул', cityRegion: 'Алтайский край',
+    id: 'co1', name: 'Салон', slug: 'salon', address: 'Ленина, 1', cityId: 5, cityName: 'Барнаул', cityRegion: 'Алтайский край',
     timeZoneId: 'Asia/Barnaul', utcOffsetMinutes: 420, allowSelfBooking: true, clientRescheduleMinHours: 2,
     planAllowsOnlineBooking: true, planAllowsOnlinePayment: true, planAllowsPublicListing: true,
   }
@@ -235,73 +153,66 @@ describe('SettingsTab — cycle 29 field groups', () => {
     update.mockReset().mockResolvedValue({})
     saveAddress.mockReset()
     getMy.mockReset().mockResolvedValue([COMPANY])
+    getPhotoUsage.mockReset().mockResolvedValue({ companyId: 'co1', usedBytes: 0, photoCount: 0, quotaMb: 100, percentUsed: 0, retention: 'SixMonths' })
   })
 
-  it('V29-01: fields live in their own named groups', async () => {
-    renderSettings()
-    await screen.findByRole('group', { name: 'Город и часовой пояс' })
-    const main = screen.getByRole('group', { name: 'Основное' })
-    expect(within(main).getByLabelText('Название')).toBeInTheDocument()
-    expect(within(main).getByText('Описание')).toBeInTheDocument()
-    const contacts = screen.getByRole('group', { name: 'Контакты' })
-    expect(within(contacts).getByLabelText('Телефон')).toBeInTheDocument()
-    expect(within(contacts).getByLabelText('Email')).toBeInTheDocument()
-    const addr = screen.getByRole('group', { name: 'Адрес и карты' })
-    expect(within(addr).getByRole('group', { name: 'Город и часовой пояс' })).toBeInTheDocument()
-    expect(within(addr).getByLabelText('Ссылка на Яндекс Картах')).toBeInTheDocument()
-    expect(within(addr).getByLabelText('Ссылка на 2ГИС')).toBeInTheDocument()
-    const rec = screen.getByRole('group', { name: 'Запись' })
-    expect(within(rec).getByLabelText('На сколько дней вперёд клиент может записаться')).toBeInTheDocument()
-    expect(within(rec).getByLabelText('За сколько часов клиент может перенести или отменить запись')).toBeInTheDocument()
-    expect(within(rec).getAllByRole('checkbox')).toHaveLength(3)
+  it('V32-19: h2 order, no h3, no old title, column classes', async () => {
+    const { container } = renderSettings()
+    await screen.findByRole('heading', { name: 'Хранилище фото клиентов' })
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      'Профиль салона', 'Фотографии салона', 'Правила записи', 'Каталог ezbook.ru', 'Виджет для сайта', 'Хранилище фото клиентов',
+    ])
+    expect(screen.queryAllByRole('heading', { level: 3 })).toHaveLength(0)
+    expect(screen.queryByText('Настройки компании')).not.toBeInTheDocument()
+    expect(container.firstElementChild).toHaveClass('max-w-[760px]', 'gap-5')
   })
 
-  it('V29-02: main save sends one update without cityId/timeZoneId/address', async () => {
+  it('V32-19: old field groups are gone; address group lives in the profile', async () => {
     renderSettings()
-    const name = await screen.findByLabelText('Название')
-    await waitFor(() => expect(name).toHaveValue('Салон'))
+    await screen.findByRole('group', { name: 'Адрес и карты' })
+    for (const g of ['Основное', 'Контакты', 'Запись', 'Город и часовой пояс']) expect(screen.queryByRole('group', { name: g })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Город и часовой пояс' })).not.toBeInTheDocument()
+  })
+
+  it('V32-20: no "общий список" checkbox, catalog switch present, showInPublicListing never sent', async () => {
+    getMy.mockResolvedValue([{ ...COMPANY, showInPublicListing: true }])
+    renderSettings()
+    const name = await screen.findByLabelText('Название *')
+    expect(screen.queryByLabelText('Показывать компанию в общем списке')).not.toBeInTheDocument()
+    expect(await screen.findByRole('switch', { name: 'Показывать салон в каталоге ezbook.ru' })).toBeInTheDocument()
     await userEvent.type(name, '!')
-    await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить правила' }))
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2))
+    for (const call of update.mock.calls) expect(call[1]).not.toHaveProperty('showInPublicListing')
+  })
+
+  it('V32-21: Enter in the IANA field saves the profile only', async () => {
+    renderSettings()
+    await userEvent.click(await screen.findByLabelText(/Указать часовой пояс вручную/))
+    await userEvent.type(screen.getByLabelText('Часовой пояс (IANA)'), 'Asia/Barnaul{Enter}')
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
     const body = update.mock.calls[0][1] as Record<string, unknown>
-    expect(body).not.toHaveProperty('cityId')
-    expect(body).not.toHaveProperty('timeZoneId')
-    expect(body).not.toHaveProperty('address')
-    expect(saveAddress).not.toHaveBeenCalled()
+    expect(body).toHaveProperty('name')
+    expect(body).not.toHaveProperty('bookingHorizonDays')
   })
 
-  it('V29-03: city save sends exactly { cityId, timeZoneId } and does not submit the main form', async () => {
-    renderSettings()
-    const city = await screen.findByRole('group', { name: 'Город и часовой пояс' })
-    await waitFor(() => expect(within(city).getByRole('combobox')).toHaveValue('Барнаул, Алтайский край'))
-    await userEvent.click(within(city).getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
-    expect(update).toHaveBeenCalledWith('co1', { cityId: 5, timeZoneId: null })
+  it('V32-22: a failed photo-usage card is not rendered; the widget is the last card', async () => {
+    getPhotoUsage.mockReset().mockRejectedValue(new Error('x'))
+    const { container } = renderSettings()
+    await screen.findByRole('heading', { name: 'Виджет для сайта' })
+    await waitFor(() => expect(getPhotoUsage).toHaveBeenCalled())
+    expect(screen.queryByRole('heading', { name: 'Хранилище фото клиентов' })).not.toBeInTheDocument()
+    const last = container.firstElementChild?.lastElementChild
+    expect(within(last as HTMLElement).getByRole('heading', { name: 'Виджет для сайта' })).toBeInTheDocument()
   })
 
-  it('V29-04: Enter in the city and IANA fields does not submit anything', async () => {
+  it('shows a skeleton while loading and no profile/rules cards for a foreign company', async () => {
+    getMy.mockReset().mockResolvedValue([])
     renderSettings()
-    const city = await screen.findByRole('group', { name: 'Город и часовой пояс' })
-    const name = screen.getByLabelText('Название')
-    await waitFor(() => expect(name).toHaveValue('Салон'))
-    await userEvent.type(name, '!') // make the form dirty so "Сохранить изменения" is enabled
-    expect(screen.getByRole('button', { name: 'Сохранить изменения' })).toBeEnabled()
-    await userEvent.type(within(city).getByRole('combobox'), '{Enter}')
-    await userEvent.click(within(city).getByRole('checkbox'))
-    await userEvent.type(within(city).getByPlaceholderText('Asia/Barnaul'), '{Enter}')
-    expect(update).not.toHaveBeenCalled()
-  })
-
-  it('V29-06: a 400 about the Yandex link shows next to its field inside the address group', async () => {
-    update.mockRejectedValue({ response: { status: 400, data: 'Ждём ссылку на Яндекс Карты — например, https://yandex.ru/maps/org/1' } })
-    renderSettings()
-    const name = await screen.findByLabelText('Название')
-    await waitFor(() => expect(name).toHaveValue('Салон'))
-    await userEvent.type(name, '!')
-    await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
-    const addr = screen.getByRole('group', { name: 'Адрес и карты' })
-    const field = await within(addr).findByLabelText('Ссылка на Яндекс Картах')
-    await waitFor(() => expect(field).toHaveAttribute('aria-describedby', 'yandexMapsUrl-error'))
-    expect(within(addr).getByText(/Ждём ссылку на Яндекс/)).toBeInTheDocument()
+    await waitFor(() => expect(getMy).toHaveBeenCalled())
+    await screen.findByRole('heading', { name: 'Фотографии салона' })
+    expect(screen.queryByRole('heading', { name: 'Профиль салона' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Правила записи' })).not.toBeInTheDocument()
   })
 })

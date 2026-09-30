@@ -100,4 +100,14 @@ describe('CityCombobox', () => {
 
     expect(await screen.findByDisplayValue(MOSCOW.label)).toBeInTheDocument()
   })
+
+  it('cycle 32: describedBy is merged with the error id; absent props keep the old behaviour', () => {
+    const { unmount } = renderWithProviders(<CityCombobox value={null} onChange={() => {}} describedBy="hint-1" error="Плохо" />)
+    const ids = (screen.getByRole('combobox').getAttribute('aria-describedby') ?? '').split(' ')
+    expect(ids[0]).toBe('hint-1')
+    expect(ids).toHaveLength(2)
+    unmount()
+    renderWithProviders(<CityCombobox value={null} onChange={() => {}} />)
+    expect(screen.getByRole('combobox')).not.toHaveAttribute('aria-describedby')
+  })
 })

@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
@@ -10,24 +10,22 @@ import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
 import { Avatar } from '../../components/ui/Avatar'
-import { CityCombobox } from '../../components/ui/CityCombobox'
 import { ScheduleTab } from './ScheduleTab'
-import { CompanyPhotosSection } from './CompanyPhotosSection'
-import { CompanyAddressField } from '../../components/company/CompanyAddressField'
+import { SalonCatalogListingSection } from './SalonCatalogListingSection'
+import { CompanyPhotosSection } from '../../components/company/CompanyPhotosSection'
+import { CARD_TITLE_CLASS } from '../../components/company/cardTitle'
+import { SalonProfileSection } from './SalonProfileSection'
+import { BookingRulesSection } from './BookingRulesSection'
 import { NotificationSettingsTab } from './NotificationSettingsTab'
 import { NotificationTemplatesTab } from './NotificationTemplatesTab'
 import { NotificationLogTab } from './NotificationLogTab'
 import { getAddMemberErrorMessage } from '../../utils/memberError'
-import { getCompanyManageErrorMessage, getLogoErrorMessage } from '../../utils/companyManageError'
-import { mapLinksFieldError } from '../../utils/mapLinksFieldError'
+import { getCompanyManageErrorMessage } from '../../utils/companyManageError'
 import { getProvidesServicesErrorMessage } from '../../utils/providesServicesError'
-import { parseBookingHorizonInput } from '../../utils/bookingHorizon'
 import { getUploadErrorMessage } from '../../utils/uploadError'
 import { PhoneInput } from '../../components/ui/PhoneInput'
 import { formatPhone, isRussianPhone } from '../../utils/phone'
-import { formatCityTimeZone } from '../../utils/timezone'
-import { CANCEL_WINDOW_FIELD_CAPTION } from '../../legal/staffNotices'
-import type { Service, City } from '../../types'
+import type { Service } from '../../types'
 import { formatRub } from '../../utils/money'
 
 // ── Services tab ──────────────────────────────────────────────────────────────
@@ -697,424 +695,33 @@ export function MembersTab({ companyId }: { companyId: string }) {
 
 // ── Settings tab ──────────────────────────────────────────────────────────────
 
+/**
+ * ARCHITECTURE_CYCLE32.md §32.9.1 — six cards in one 760 px column, one `gap-5`, one title style: profile, photos,
+ * booking rules, catalog, widget, photo storage. No card exists for a company that is not in `['my-companies']`
+ * (not the owner): an empty form saved would overwrite the fields with empty strings.
+ */
 export function SettingsTab({ companyId }: { companyId: string }) {
-  const qc = useQueryClient()
-  const { data: companies } = useQuery({ queryKey: ['my-companies'], queryFn: companiesApi.getMy })
+  const { data: companies, isLoading, isError, refetch } = useQuery({ queryKey: ['my-companies'], queryFn: companiesApi.getMy })
   const company = companies?.find((c) => c.id === companyId)
-  const logoInputRef = useRef<HTMLInputElement>(null)
-
-  const {
-    register,
-    handleSubmit,
-    formState: { dirtyFields },
-  } = useForm({
-    values: company
-      ? {
-          name: company.name,
-          description: company.description ?? '',
-          phone: company.phone ?? '',
-          email: company.email ?? '',
-          allowSelfBooking: company.allowSelfBooking,
-          requirePrepayment: company.requirePrepayment ?? false,
-          showInPublicListing: company.showInPublicListing ?? true,
-          bookingHorizonDays: company.bookingHorizonDays || '',
-          yandexMapsUrl: company.yandexMapsUrl ?? '',
-          twoGisUrl: company.twoGisUrl ?? '',
-          clientRescheduleMinHours:
-            company.clientRescheduleMinHours != null ? String(company.clientRescheduleMinHours) : '',
-        }
-      : undefined,
-    // `values` resyncs the form whenever the `['my-companies']` cache updates — which now also
-    // happens on `CompanyAddressField`'s own save (§209), a save this form's fields know nothing
-    // about. Without `keepDirtyValues`, that resync silently reverts whatever the owner had typed
-    // into THIS form but not yet submitted (review finding, cycle 13).
-    resetOptions: { keepDirtyValues: true },
-  })
-  // react-hook-form's `keepDirtyValues` resync keeps `dirtyFields` accurate but force-resets
-  // `isDirty` to `false` on every resync regardless of actual pending edits (known RHF quirk —
-  // `Ue`'s `isDirty` branch ignores `keepDirtyValues`, only `dirtyFields` respects it). Deriving
-  // "has unsaved edits" from `dirtyFields` instead avoids the submit button going stale-disabled
-  // right after a concurrent `my-companies` refetch (review finding, cycle 13).
-  const isDirty = Object.keys(dirtyFields).length > 0
-
-  const [settingsError, setSettingsError] = useState('')
-  // ARCHITECTURE_CYCLE15.md §283 — the server's own sentence, routed to whichever of the three new
-  // fields caused it, shown right next to that field (not just as a generic banner).
-  const [mapLinksError, setMapLinksError] = useState<{ field: 'yandexMapsUrl' | 'twoGisUrl' | 'clientRescheduleMinHours'; text: string } | null>(
-    null,
-  )
-
-  const updateMut = useMutation({
-    mutationFn: (d: Record<string, unknown>) => companiesApi.update(companyId, d),
-    onSuccess: () => {
-      setSettingsError('')
-      setMapLinksError(null)
-      qc.invalidateQueries({ queryKey: ['my-companies'] })
-    },
-    onError: (err: unknown) => {
-      const rawText =
-        (err as { response?: { status?: number; data?: unknown } })?.response?.status === 400
-          ? String((err as { response?: { data?: unknown } })?.response?.data ?? '')
-          : null
-      const field = mapLinksFieldError(rawText)
-      if (field && rawText) {
-        setMapLinksError({ field, text: rawText })
-        setSettingsError('')
-      } else {
-        setMapLinksError(null)
-        setSettingsError(getCompanyManageErrorMessage(err, 'Не удалось сохранить настройки компании.'))
-      }
-    },
-  })
-
-  const [logoError, setLogoError] = useState('')
-  const logoMut = useMutation({
-    mutationFn: (file: File) => companiesApi.uploadLogo(companyId, file),
-    onMutate: () => setLogoError(''),
-    onSuccess: () => {
-      setLogoError('')
-      qc.invalidateQueries({ queryKey: ['my-companies'] })
-    },
-    onError: (err) => setLogoError(getLogoErrorMessage(err)),
-  })
-
   return (
-    <div>
-      <h2 className="text-lg font-semibold text-ink mb-4">Настройки компании</h2>
-      <Card className="p-6">
-        {/* Logo */}
-        <div className="flex items-center gap-4 mb-6">
-          {company?.logoUrl ? (
-            <img
-              src={company.logoUrl}
-              alt="Логотип"
-              className="w-16 h-16 rounded-2xl object-cover border border-line"
-            />
-          ) : (
-            <div className="w-16 h-16 rounded-2xl bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-xl">
-              {company?.name?.[0] ?? '?'}
-            </div>
-          )}
-          <div>
-            <input
-              ref={logoInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0]
-                if (f) logoMut.mutate(f)
-                e.target.value = ''
-              }}
-            />
-            <Button
-              size="sm"
-              variant="secondary"
-              loading={logoMut.isPending}
-              onClick={() => logoInputRef.current?.click()}
-            >
-              {company?.logoUrl ? 'Заменить логотип' : 'Загрузить логотип'}
-            </Button>
-            <p className="text-xs text-muted mt-1">JPEG, PNG или WEBP, до 5 МБ</p>
-            {logoError && <p className="text-xs text-danger mt-1">{logoError}</p>}
-          </div>
+    <div className="max-w-[760px] flex flex-col gap-5">
+      {company ? (
+        <SalonProfileSection key={`profile-${company.id}`} company={company} />
+      ) : isLoading ? (
+        <div className="h-72 bg-cream-deep rounded-2xl animate-pulse" />
+      ) : isError ? (
+        <div role="alert" className="text-sm text-danger flex items-center gap-3">
+          Не удалось загрузить настройки компании
+          <button type="button" className="underline" onClick={() => void refetch()}>
+            Повторить
+          </button>
         </div>
-
-        <form
-          onSubmit={handleSubmit((d) => {
-            const horizon = parseBookingHorizonInput(String(d.bookingHorizonDays ?? ''))
-            if (horizon.error) {
-              setSettingsError(horizon.error)
-              return
-            }
-            // §283 — clientRescheduleMinHours: empty field means "don't touch" (not "reset to
-            // default"), so it's omitted rather than sent as 0/null when the owner cleared it.
-            const rawHours = String(d.clientRescheduleMinHours ?? '').trim()
-            const clientRescheduleMinHours = rawHours === '' ? undefined : parseInt(rawHours, 10)
-            updateMut.mutate({
-              ...d,
-              bookingHorizonDays: horizon.value,
-              clientRescheduleMinHours,
-            })
-          })}
-          className="flex flex-col gap-6"
-        >
-          <fieldset className="min-w-0 flex flex-col gap-4 border-t border-line pt-5">
-            <legend className="text-[13px] font-semibold text-ink pr-2">Основное</legend>
-          <Input label="Название" {...register('name')} />
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-ink-soft">Описание</label>
-            <textarea
-              className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold focus:ring-2 focus:ring-cream-deep resize-none"
-              rows={3}
-              {...register('description')}
-            />
-          </div>
-          </fieldset>
-          <fieldset className="min-w-0 flex flex-col gap-4 border-t border-line pt-5">
-            <legend className="text-[13px] font-semibold text-ink pr-2">Контакты</legend>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Input label="Телефон" {...register('phone')} />
-            <Input label="Email" type="email" {...register('email')} />
-          </div>
-          </fieldset>
-          <fieldset className="min-w-0 flex flex-col gap-4 border-t border-line pt-5">
-            <legend className="text-[13px] font-semibold text-ink pr-2">Адрес и карты</legend>
-          {/* ARCHITECTURE_CYCLE13.md §209/§211: address writes go through their own endpoint
-              (`PUT /api/companies/{id}/address`), never through this form's submit — so this field
-              owns its own save action instead of being `register('address')`d into `updateMut`. */}
-          {company && (
-            <CompanyAddressField
-              companyId={companyId}
-              initialAddress={company.address ?? ''}
-              onSaved={() => qc.invalidateQueries({ queryKey: ['my-companies'] })}
-            />
-          )}
-          {company && <CityTimeZoneFields company={company} companyId={companyId} />}
-          <div className="grid sm:grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1">
-            <Input
-              label="Ссылка на Яндекс Картах"
-              placeholder="https://yandex.ru/maps/org/..."
-              aria-invalid={mapLinksError?.field === 'yandexMapsUrl' || undefined}
-              aria-describedby={mapLinksError?.field === 'yandexMapsUrl' ? 'yandexMapsUrl-error' : undefined}
-              {...register('yandexMapsUrl')}
-            />
-            <p className="text-xs text-muted">Вставьте ссылку на карточку компании — она сохранится как есть, без изменений</p>
-            {mapLinksError?.field === 'yandexMapsUrl' && (
-              <p id="yandexMapsUrl-error" className="text-xs text-danger">
-                {mapLinksError.text}
-              </p>
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <Input
-              label="Ссылка на 2ГИС"
-              placeholder="https://2gis.ru/..."
-              aria-invalid={mapLinksError?.field === 'twoGisUrl' || undefined}
-              aria-describedby={mapLinksError?.field === 'twoGisUrl' ? 'twoGisUrl-error' : undefined}
-              {...register('twoGisUrl')}
-            />
-            {mapLinksError?.field === 'twoGisUrl' && (
-              <p id="twoGisUrl-error" className="text-xs text-danger">
-                {mapLinksError.text}
-              </p>
-            )}
-          </div>
-          </div>
-          </fieldset>
-          <fieldset className="min-w-0 flex flex-col gap-4 border-t border-line pt-5">
-            <legend className="text-[13px] font-semibold text-ink pr-2">Запись</legend>
-          <div className="flex flex-col gap-1">
-            <Input
-              label="На сколько дней вперёд клиент может записаться"
-              type="number"
-              min={0}
-              max={365}
-              placeholder="90"
-              {...register('bookingHorizonDays')}
-            />
-            <p className="text-xs text-muted">Пусто или 0 — 90 дней по умолчанию</p>
-          </div>
-          <div className="flex flex-col gap-1">
-            <Input
-              // ARCHITECTURE_CYCLE17.md §305.3 (US-17-03, C15-6.3): label now says what the field
-              // actually governs after §304 — it's the SAME window that gates client cancellation,
-              // not just reschedule.
-              label="За сколько часов клиент может перенести или отменить запись"
-              type="number"
-              min={0}
-              max={168}
-              placeholder="2"
-              aria-invalid={mapLinksError?.field === 'clientRescheduleMinHours' || undefined}
-              aria-describedby={
-                (mapLinksError?.field === 'clientRescheduleMinHours' ? 'clientRescheduleMinHours-error ' : '') +
-                'clientRescheduleMinHours-caption'
-              }
-              {...register('clientRescheduleMinHours')}
-            />
-            {/* Т20-05 п. 3 (US-20-04) — replaces the §305.3 copy verbatim, dословно юриста
-                (`staffNotices.ts`, "не переписывать без legal-counsel"): the field still stores the
-                same 0–168 window used for reschedule, but for CANCELLATION the server now enforces a
-                24 h ceiling regardless of what's configured here (`clientCancelMinHours`,
-                API_CONTRACT_CYCLE20.md §435) — the caption explains that ceiling instead of silently
-                describing a number that no longer applies to cancellation. */}
-            <p id="clientRescheduleMinHours-caption" className="text-xs text-muted">
-              {CANCEL_WINDOW_FIELD_CAPTION}
-            </p>
-            {mapLinksError?.field === 'clientRescheduleMinHours' && (
-              <p id="clientRescheduleMinHours-error" className="text-xs text-danger">
-                {mapLinksError.text}
-              </p>
-            )}
-          </div>
-          <div>
-            <label className="flex items-center gap-3 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
-              <input
-                type="checkbox"
-                className="w-4 h-4 rounded accent-gold"
-                disabled={company ? !company.planAllowsOnlineBooking : false}
-                {...register('allowSelfBooking')}
-              />
-              <span className="text-sm text-ink-soft">Разрешить клиентам записываться самостоятельно</span>
-            </label>
-            {company && !company.planAllowsOnlineBooking && (
-              <p className="text-xs text-warning mt-1 ml-7">
-                Онлайн-запись не входит в текущий тариф — повысьте тариф, чтобы включить
-              </p>
-            )}
-          </div>
-          <div>
-            <label className="flex items-center gap-3 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
-              <input
-                type="checkbox"
-                className="w-4 h-4 rounded accent-gold"
-                disabled={company ? !company.planAllowsOnlinePayment : false}
-                {...register('requirePrepayment')}
-              />
-              <span className="text-sm text-ink-soft">Требовать предоплату при онлайн-записи</span>
-            </label>
-            {company && !company.planAllowsOnlinePayment && (
-              <p className="text-xs text-warning mt-1 ml-7">
-                Онлайн-оплата не входит в текущий тариф — повысьте тариф, чтобы включить
-              </p>
-            )}
-          </div>
-          <div>
-            <label className="flex items-center gap-3 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
-              <input
-                type="checkbox"
-                className="w-4 h-4 rounded accent-gold"
-                disabled={company ? !company.planAllowsPublicListing : false}
-                {...register('showInPublicListing')}
-              />
-              <span className="text-sm text-ink-soft">Показывать компанию в общем списке</span>
-            </label>
-            {company && !company.planAllowsPublicListing && (
-              <p className="text-xs text-warning mt-1 ml-7">
-                Отображение в общем списке не входит в текущий тариф — повысьте тариф, чтобы включить
-              </p>
-            )}
-          </div>
-          </fieldset>
-          {updateMut.isSuccess && (
-            <p className="text-sm text-success flex items-center gap-1.5">
-              <Icon name="check" size={14} strokeWidth={2} /> Сохранено
-            </p>
-          )}
-          {settingsError && <p className="text-sm text-danger">{settingsError}</p>}
-          <Button type="submit" loading={updateMut.isPending} disabled={!isDirty}>
-            Сохранить изменения
-          </Button>
-        </form>
-      </Card>
-
-      <CompanyPhotosSection companyId={companyId} />
+      ) : null}
+      <CompanyPhotosSection companyId={companyId} headingAs="h2" headingClassName={CARD_TITLE_CLASS} />
+      {company && <BookingRulesSection key={`rules-${company.id}`} company={company} />}
+      <SalonCatalogListingSection companyId={companyId} />
       {company && <WidgetCard company={company} />}
       <PhotoUsageCard companyId={companyId} />
-    </div>
-  )
-}
-
-// ── City & time zone (US-30) ─────────────────────────────────────────────────
-
-/**
- * ARCHITECTURE_CYCLE29.md §29.9.3 — this block sits inside the main <form>; Enter in its text inputs must not
- * trigger the implicit submit of the main form (its own «Сохранить» is type="button").
- */
-function swallowImplicitSubmit(e: React.KeyboardEvent) {
-  if (e.key === 'Enter' && e.target instanceof HTMLInputElement) e.preventDefault()
-}
-
-function CityTimeZoneFields({ company, companyId }: { company: import('../../types').Company; companyId: string }) {
-  const qc = useQueryClient()
-  const [city, setCity] = useState<City | null>(
-    company.cityId != null && company.cityName
-      ? {
-          id: company.cityId,
-          name: company.cityName,
-          region: company.cityRegion ?? '',
-          timeZoneId: company.timeZoneId ?? '',
-          utcOffsetMinutes: company.utcOffsetMinutes ?? 0,
-          label: company.cityRegion ? `${company.cityName}, ${company.cityRegion}` : company.cityName,
-        }
-      : null,
-  )
-  const [manualZone, setManualZone] = useState(!!company.timeZoneIsManual)
-  const [zoneId, setZoneId] = useState(company.timeZoneId ?? '')
-  const [error, setError] = useState('')
-  const titleId = useId()
-
-  const mut = useMutation({
-    mutationFn: () =>
-      companiesApi.update(companyId, {
-        cityId: city?.id,
-        // Explicit null resets to the city-derived zone (§31.3); an empty manual field means "not
-        // overridden", so it's sent as null rather than an empty string.
-        timeZoneId: manualZone ? zoneId || null : null,
-      }),
-    onSuccess: () => {
-      setError('')
-      qc.invalidateQueries({ queryKey: ['my-companies'] })
-    },
-    onError: (err: unknown) => setError(getCompanyManageErrorMessage(err, 'Не удалось сохранить город и часовой пояс.')),
-  })
-
-  const effectiveZoneId = manualZone ? zoneId : city?.timeZoneId
-  const effectiveOffset = manualZone ? null : city?.utcOffsetMinutes
-
-  return (
-    <div role="group" aria-labelledby={titleId} className="flex flex-col gap-3" onKeyDown={swallowImplicitSubmit}>
-      <h3 id={titleId} className="text-sm font-semibold text-ink">Город и часовой пояс</h3>
-      <p className="text-sm text-muted">
-        От часового пояса зависит момент отправки напоминаний клиентам — «за 24 часа» считается по местному времени
-        салона, а не по Москве.
-      </p>
-        <CityCombobox
-          value={city}
-          onChange={(c) => {
-            setCity(c)
-            if (c && !manualZone) setZoneId(c.timeZoneId)
-          }}
-        />
-        {city && effectiveOffset != null && !manualZone && (
-          <p className="text-xs text-muted">Часовой пояс: {formatCityTimeZone(city.label, effectiveOffset, city.timeZoneId)}</p>
-        )}
-        <label className="flex items-center gap-2.5 cursor-pointer">
-          <input
-            type="checkbox"
-            className="w-4 h-4 accent-gold rounded"
-            checked={manualZone}
-            onChange={(e) => {
-              setManualZone(e.target.checked)
-              if (!e.target.checked && city) setZoneId(city.timeZoneId)
-            }}
-          />
-          <span className="text-sm text-ink-soft">Указать часовой пояс вручную (IANA, например Asia/Barnaul)</span>
-        </label>
-        {manualZone && (
-          <input
-            value={zoneId}
-            onChange={(e) => setZoneId(e.target.value)}
-            placeholder="Asia/Barnaul"
-            className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold bg-white text-ink font-mono"
-          />
-        )}
-        {error && <p className="text-sm text-danger">{error}</p>}
-        {mut.isSuccess && !error && (
-          <p className="text-sm text-success flex items-center gap-1.5">
-            <Icon name="check" size={14} strokeWidth={2} /> Сохранено
-          </p>
-        )}
-        <Button
-          type="button"
-          className="self-start"
-          loading={mut.isPending}
-          disabled={!city && !effectiveZoneId}
-          onClick={() => mut.mutate()}
-        >
-          Сохранить
-        </Button>
     </div>
   )
 }
@@ -1150,8 +757,8 @@ function WidgetCard({ company }: { company: import('../../types').Company }) {
   }
 
   return (
-    <Card className="p-6 mt-[18px]">
-      <h2 className="text-lg font-semibold text-ink mb-1">Виджет для сайта</h2>
+    <Card className="p-6">
+      <h2 className={`${CARD_TITLE_CLASS} mb-1`}>Виджет для сайта</h2>
       <p className="text-sm text-muted mb-4">Вставьте код на свой сайт — форма записи откроется прямо там.</p>
 
       {(!company.allowSelfBooking || !company.onlineBookingEnabled) && (
@@ -1218,15 +825,15 @@ function PhotoUsageCard({ companyId }: { companyId: string }) {
     queryFn: () => companiesApi.getPhotoUsage(companyId),
   })
 
-  if (isLoading) return <div className="h-20 bg-cream-deep rounded-2xl animate-pulse mt-[18px]" />
+  if (isLoading) return <div className="h-20 bg-cream-deep rounded-2xl animate-pulse" />
   if (isError || !usage) return null
 
   const usedMb = usage.usedBytes / (1024 * 1024)
   const nearQuota = usage.percentUsed != null && usage.percentUsed > 90
 
   return (
-    <Card className="p-6 mt-[18px]">
-      <h2 className="text-lg font-semibold text-ink mb-1">Хранилище фото клиентов</h2>
+    <Card className="p-6">
+      <h2 className={`${CARD_TITLE_CLASS} mb-1`}>Хранилище фото клиентов</h2>
       <p className="text-sm text-ink-soft mt-2">
         Занято {usedMb.toLocaleString('ru-RU', { maximumFractionDigits: 1 })} из{' '}
         {usage.quotaMb != null ? `${usage.quotaMb} МБ` : '∞'} · {usage.photoCount} фото
@@ -1294,7 +901,7 @@ export function CompanyManagePage() {
   ]
 
   return (
-    <div className="max-w-4xl mx-auto px-8 pt-11 pb-24">
+    <div className="max-w-4xl mx-auto px-4 sm:px-8 pt-11 pb-24">
       <div className="mb-6">
         <Link to="/owner" className="text-sm text-muted hover:text-gold-dark inline-flex items-center gap-1">
           <Icon name="chevron-left" size={14} strokeWidth={1.8} /> Мои компании
