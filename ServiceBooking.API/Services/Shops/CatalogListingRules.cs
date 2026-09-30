@@ -6,7 +6,8 @@ public enum CatalogListingCheckCode
     NoWorkingHours,
     NoPublishedProducts,
     NotAllowedByPlan,
-    HiddenByOwner
+    HiddenByOwner,
+    SalonBlocked // Cycle 31 (ARCHITECTURE_CYCLE31.md §31.5): salon checklist only; the shop route never emits it.
 }
 
 public sealed record CatalogListingCheck(CatalogListingCheckCode Code, string Text, bool Done);
@@ -28,7 +29,8 @@ public static class CatalogListingRules
     public const string NoWorkingHoursText = "Задайте часы работы";
     public const string NoPublishedProductsText = "Опубликуйте хотя бы один товар";
     public const string NotAllowedByPlanText = "Показ в каталоге не входит в ваш тариф";
-    public const string HiddenByOwnerText = "Показ выключен в настройках";
+    // Describes the CONDITION, not the state, like the other items (ARCHITECTURE_CYCLE31.md §31.4).
+    public const string HiddenByOwnerText = "Показ включен в настройках";
     public const string VisibleStatusText = "Магазин виден в каталоге goods.ezbook.ru";
     public const string HiddenStatusText = "Магазина сейчас нет в каталоге";
 

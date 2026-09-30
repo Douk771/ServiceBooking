@@ -6413,3 +6413,51 @@ FullyQualifiedName~Cycle20` — 32/32 (новые файлы) + `CY20-N-08` от
 флейк фронтенд-теста календаря, не относящийся к этому циклу. Ветка готова к передаче дальше по
 конвейеру (code-reviewer уже отработал; следующий шаг — интеграция `develop → cycle` и разбор ожидаемого
 конфликта `legal-drafts/` с циклом 19, см. `CURRENT_STATE.md`).
+
+## Цикл 31 — общий блок фото, мультизагрузка, блок «Каталог ezbook.ru» салона, компактная шапка (`CY31-`, `M31-`, `ServiceBooking.Tests/Tests/Cycle31CatalogListingTests.cs`, `Cycle31GalleryRateLimitTests.cs`)
+
+Написаны QA по `SPEC.md` (US-31-02, US-31-04, US-31-05) и `API_CONTRACT_CYCLE31.md` §31.21–§31.25, не по реализации. Хост лимитов галереи — с продовыми значениями 10 / 20 / 60 (обычный хост поднимает лимиты до 10000). Сверка ответов с `contracts/cycle31/openapi.json` (CY31-30…34 из архитектуры) отложена: `contracts/cycle31/openapi.json` и скрипт `contracts:json` уже есть (BE-6), разовая сверка ответов с ним прошла при контрактной проверке цикла 31, но постоянные тесты CY31-30…34 в набор не добавлены.
+
+| ID | US | Что проверяет | Тест |
+|---|---|---|---|
+| CY31-01 | US-31-05 | салон в порядке: `visible`, один пункт `HiddenByOwner` «Показ включен в настройках» `done`, `notAllowedByPlanText = null` | `Cycle31CatalogListingTests.Owner_AllOk_Visible_SingleDoneItem` |
+| CY31-02 | US-31-05 | показ выключен: `visible = false`, «Салона сейчас нет в каталоге», пункт не выполнен | `Owner_ShowOff_NotVisible_ItemNotDone` |
+| CY31-03 | US-31-05 | тариф не разрешает: пункты `[NotAllowedByPlan, HiddenByOwner]`, текст про тариф | `PlanDisallows_TwoItems_PlanTextPresent` |
+| CY31-04 | US-31-05 | салон неактивен: три пункта, первый `SalonBlocked`, все `done = false` | `InactiveSalon_FirstItemSalonBlocked_AllThreeNotDone` |
+| CY31-05 | US-31-05 | матрица активность x тариф x показ: `visible` = присутствие в `GET /api/companies` и в `GET /api/companies/public`; `visible` = все пункты `done` | `Matrix_ActiveXPlanXShow_VisibleFlagMatchesBothCatalogs` |
+| CY31-06 | US-31-05 | PUT true/false: салон появляется и исчезает в обоих каталогах, повтор идемпотентен | `Put_TrueFalse_AppearsAndDisappearsInCatalogs_Idempotent` |
+| CY31-07 | US-31-05 | PUT true на тарифе без показа: 409 JSON `CatalogListingNotAllowedByPlan`, колонка прежняя; PUT false там же 200 | `Put_TrueOnPlanWithoutListing_409Json_ColumnUnchanged_FalseStill200` |
+| CY31-07b | US-31-05 | PUT false у заблокированного салона: 200 | `Put_False_WorksForBlockedSalon` |
+| CY31-08 | US-31-05 | нет поля или `null`: 400 text/plain «Не указано, показывать ли салон в каталоге», колонка прежняя | `Put_MissingOrNullField_400Text_ColumnUnchanged` |
+| CY31-08b | US-31-05 | не-JSON тело 415, битый JSON 400 | `Put_NonJsonBody_415_Or_400` |
+| CY31-09 | US-31-05 | чужой пользователь: 404 (тело как у случайного GUID), аноним 401 | `Stranger_404_SameAsRandomGuid_Anonymous_401` |
+| CY31-10 | US-31-05 | SuperAdmin: GET и PUT 200 | `SuperAdmin_CanGetAndPut` |
+| CY31-11 | US-31-05 | владелец магазина на маршруте салона: 409 `ShopRefusalText`, флаг прежний; посторонний 404 | `ShopOwner_OnShopId_409ShopText_Unchanged_StrangerGets404` |
+| CY31-12 | US-31-05 | мастер салона (не владелец): 404 | `Master_NotOwner_404` |
+| CY31-13 | US-31-05, R-4 | `PUT /api/companies/{id}` с `showInPublicListing` меняет флаг; без поля или с `null` не затирает значение переключателя | `LegacyPutCompany_WithField_ChangesFlag_WithoutField_KeepsIt` |
+| CY31-14 | US-31-04 | магазин: пункт `HiddenByOwner` «Показ включен в настройках» при `done` true и false; старого текста нет; код `SalonBlocked` магазину не отдаётся | `Cycle31CatalogListingTests.Shop_HiddenByOwnerText_IsNewWording_BothStates_CodesUnchanged` |
+| CY31-20 | US-31-02 | 10 фото подряд 201, затем в ту же минуту `PUT …/photos/order` 200 и `DELETE` 204 | `Cycle31GalleryRateLimitTests.TenPhotos_ThenCoverAndDelete_NoneRateLimited` |
+| CY31-21 | US-31-02 | после 10 фото галереи загрузка логотипа 200 | `TenPhotos_ThenLogoUpload_StillOk_UploadsWindowUntouched` |
+| CY31-22 | US-31-02 | 21-й запрос загрузки галереи за окно: 429 `Too many uploads. Try again in a minute.` | `Gallery_21stUploadInWindow_429_WithContractText` |
+| CY31-23 | US-31-02 | 61-я правка галереи 429; окно `uploads` живёт своё: 10 логотипов 200, 11-й 429 | `Edits_61stInWindow_429_LogoUploadsWindowStillLive_ItsOwn11thIs429` |
+| CY31-24 | US-31-02 | последовательные загрузки: позиции 0,1,2,3 в порядке отправки, обложка не меняется | `SequentialUploads_PositionsFollowSendOrder_CoverUnchangedOnAppend` |
+| CY31-25 | US-31-02 | галерея магазина: 10 фото и сразу смена обложки без 429 | `ShopGallery_TenPhotosThenCover_NoRateLimit` |
+
+Vitest разработчиков (не пересобирались QA): `CompanyPhotosSection.test.tsx` (мультизагрузка, отсев, обрезка по остатку, блокировка на время пакета, повтор), `CompanyCard.test.tsx`, `SalonCatalogListingSection.test.tsx`, `CatalogListingCard.test.tsx`, `CompanyManagePage.test.tsx` (форма не шлёт `showInPublicListing`).
+
+### Ручные кейсы (T-31-04, Q-31-10)
+
+Вердикт: **НЕ ВЫПОЛНЕНО QA** — у QA-агента в этом прогоне нет браузера. Вёрстка (плитка, 360 px, шапка) автоматикой не покрыта. Для 360x740 проверять `document.documentElement.scrollWidth <= window.innerWidth`.
+
+| Кейс | Шаги | Ожидаемый результат | Критерий | Вердикт |
+|---|---|---|---|---|
+| M31-01 | 1280 px: настройки магазина goods и салона ezbook рядом, галерея с 3+ фото | Бейдж «Обложка» тёмной «таблеткой» слева сверху, панель на затемнении при наведении, компактная кнопка обложки; goods = ezbook | US-31-01, T-31-01 | не выполнен |
+| M31-02 | 360 px, оба сайта, та же галерея | Панель и бейдж внутри плитки, нет прокрутки страницы, текст не обрезан посреди слова, шрифт не меньше 10 px | US-31-01 | не выполнен |
+| M31-03 | Телефон (touch) и клавиатура (Tab) | Панель кнопок видна без наведения; Tab на кнопку показывает панель | US-31-03 | не выполнен |
+| M31-04 | Пустая галерея, выбрать 10 фото, сразу «Сделать обложкой» и удалить одно | Загружено 10 из 10, счётчик «10 / 10», 429 нет | US-31-02 | не выполнен |
+| M31-05 | 8 фото + выбрать 5; файл 6 МБ; `.gif`; обрыв сети посреди пакета | 2 загружены, одно сообщение «Не добавлено 3 фото…» с именами; ошибки у файлов; «Повторить неудавшиеся» повторяет только сетевые | US-31-02, US-31-08 | не выполнен |
+| M31-06 | Настройки салона, блок «Каталог ezbook.ru»: виден, показ выключен, тариф не разрешает, заблокирован | Переключатель `role="switch"`, статус и чек-лист с серверными текстами; при тарифе без показа переключатель недоступен | US-31-05 | не выполнен |
+| M31-07 | Настройки магазина goods, блок каталога, показ включён и выключен | «✓ Показ включен в настройках» / «○ …» | US-31-04 | не выполнен |
+| M31-08 | goods `/myasnoy`, 1280 и 360 px: полная карточка, только название, раскрытые «Часы работы» | Контакты не выше 2 строк на 1280, кнопки не меньше 44 px, без пустых зазоров и прокрутки; скриншоты «до/после» | US-31-06 | не выполнен |
+| M31-09 | ezbook `/company/:slug`, 1280 и 360 px, в том числе «Запись только через мастера» | Та же компактная шапка, слот предупреждений не ломает раскладку | US-31-06 | не выполнен |
+| M31-10 | ezbook `/embed/:slug` | Не изменился | US-31-06, R-5 | не выполнен |

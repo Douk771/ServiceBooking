@@ -148,7 +148,8 @@ describe('CompanyPage — ARCHITECTURE_CYCLE13.md §204 (logo-over-gallery layer
     // the heading rather than hardcoding a DOM depth that a redesign could silently change.
     const row = heading.closest('div.relative.z-10')
     expect(row).not.toBeNull()
-    expect(row?.className).toMatch(/\bflex\b/)
+    // Cycle 31 (§31.11.1): the header row became a grid; the contract is z-10 + a laid-out row.
+    expect(row?.className).toMatch(/\b(flex|grid)\b/)
   })
 
   it.each([1, 3, 5, 10])('the logo placeholder renders on top with %i gallery photos', async (n) => {

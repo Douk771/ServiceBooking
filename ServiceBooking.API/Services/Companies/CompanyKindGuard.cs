@@ -17,7 +17,7 @@ public enum CompanyKindCheck
 /// either a salon (Services) or a shop (Orders); booking routes refuse a shop, order routes see a salon as
 /// "does not exist". The closed list of call sites is §389.2 — every one of them goes through here, so a new
 /// route cannot silently forget the rule in its own private way. Cycle 26: the gallery routes (photos upload/delete/order) were removed from
-/// that list — a shop has a gallery too; the other salon routes, including photo-usage, still refuse a shop.
+/// that list — a shop has a gallery too; the other salon routes, including photo-usage and (cycle 31) GET|PUT companies/{id}/catalog-listing, still refuse a shop.
 /// Convention (cycle 6): rights first, kind second — except anonymous public routes, which have no rights.
 /// </summary>
 public static class CompanyKindGuard
