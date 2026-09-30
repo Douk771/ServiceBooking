@@ -53,7 +53,7 @@ public sealed class OrderReportQueries(AppDbContext db)
                 break;
             case CustomerSearchKind.Name:
                 var pattern = LikePattern.Contains(c.Customer.Value);
-                q = q.Where(o => !o.PersonalDataErased && o.CustomerName != null && EF.Functions.ILike(o.CustomerName, pattern));
+                q = q.Where(o => !o.PersonalDataErased && o.CustomerName != null && EF.Functions.ILike(o.CustomerName, pattern, "\\"));
                 break;
         }
         return q;
@@ -159,11 +159,11 @@ public sealed class OrderReportQueries(AppDbContext db)
 
     /// <summary>Orders, issued orders and issued amount per pickup day (P1). Days without orders are simply absent here; the caller fills them.</summary>
     public async Task<List<DayAggregate>> DaysAsync(Guid shopId, ReportPeriod period, CancellationToken ct) =>
-        (await InPeriod(shopId, period.From, period.To).GroupBy(o => o.PickupDate)
+        (await InPeriod(shopId, period.From, period.To).GroupBy(o => o.PickupDate).OrderBy(g => g.Key)
             .Select(OrderReportQueryableExtensions.UseTotal<DateOnly, DayAmount>(g => new DayAmount(
                 g.Key, g.Count(), g.Count(o => o.Status == OrderStatus.Issued),
                 g.Where(o => o.Status == OrderStatus.Issued).Sum(o => o.EstimatedTotal))))
-            .OrderBy(x => x.Date).ToListAsync(ct))
+            .ToListAsync(ct))
         .Select(x => new DayAggregate(x.Date, x.Orders, x.IssuedCount, x.Amount)).ToList();
 }
 
@@ -189,7 +189,7 @@ internal static class OrderReportQueryableExtensions
     {
         protected override Expression VisitMethodCall(MethodCallExpression node)
         {
-            if (node.Method is { Name: nameof(Enumerable.Sum), IsGenericMethod: false } && node.Arguments.Count == 2 &&
+            if (node.Method.DeclaringType == typeof(Enumerable) && node.Method.Name == nameof(Enumerable.Sum) && node.Arguments.Count == 2 &&
                 node.Method.GetParameters()[1].ParameterType == typeof(Func<Order, decimal>))
                 return Expression.Call(node.Method, Visit(node.Arguments[0]), OrderReportExpressions.Total);
             return base.VisitMethodCall(node);
