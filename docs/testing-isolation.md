@@ -76,6 +76,27 @@ dotnet test ServiceBooking.Tests       # функциональные: подн�
 Юнит-набор намеренно не зависит ни от Docker, ни от базы: он должен проходить при остановленном
 Docker. Если юнит-тестам вдруг понадобился Docker — это регресс, а не особенность вашей машины.
 
+### Быстрый контур фронта (vitest)
+
+```bash
+cd frontend
+npm run test:area -- orders                 # одна область
+npm run test:area -- orders notifications   # несколько
+npm run test:run                            # весь набор
+```
+
+Области — закрытый список `contracts/cycle36/test-areas.json` (`account`, `bookings`, `companies`, `orders`, `notifications`,
+`billing`, `legal`, `admin`, `security`, `platform`). Файл попадает в область по префиксу пути (`frontendPathPrefixes`), одному
+файлу могут соответствовать несколько областей. Весь `goods/src` входит в `orders`. Неизвестная область — код выхода 1 и список
+допустимых. Тест `CY36-02` (`frontend/src/test/testAreas.guard.test.ts`) падает на новом файле, который не попал ни в одну
+область: добавьте префикс в `test-areas.json`.
+
+**Быстрый контур не заменяет полный прогон перед мерджем.**
+
+Файл без обращений к DOM (`document`, `window`, `localStorage`, `navigator`, `render`, `renderHook`, `Notification`) первой строкой
+несёт `// @vitest-environment node`: так он не платит за jsdom. Новый чистый `*.test.ts` — добавляйте эту строку сразу; если тест
+красный в `node`, значит, ему нужен DOM, и строку не ставят. Пул vitest — `threads` (`frontend/vitest.config.ts`).
+
 ### Из Rider / IDE
 
 Кнопкой «Run» по тесту, классу или проекту. Настраивать ничего не нужно: и степень параллелизма
