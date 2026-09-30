@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
-import { Icon } from '@/components/ui/Icon'
-import { CompanyPhotoGallery } from '@/components/company/CompanyPhotoGallery'
-import { CompanyMapLinks } from '@/components/company/CompanyMapLinks'
-import { formatPhone, telHref } from '@/utils/phone'
-import { publicAddress } from '@/utils/publicAddress'
-import type { CompanyPhoto } from '@/types'
+import { Icon } from '../ui/Icon'
+import { CompanyPhotoGallery } from './CompanyPhotoGallery'
+import { CompanyMapLinks } from './CompanyMapLinks'
+import { formatPhone, telHref } from '../../utils/phone'
+import { publicAddress } from '../../utils/publicAddress'
+import type { CompanyPhoto } from '../../types'
 
 /**
  * ARCHITECTURE_CYCLE26.md §550 — the one public company card of ezbook (salon) and goods (shop).
