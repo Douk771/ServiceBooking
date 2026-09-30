@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 export type SoundState = 'off' | 'on' | 'blocked' | 'unsupported'
 
@@ -9,6 +9,17 @@ function audioContextCtor(): AudioCtor | undefined {
   return w.AudioContext ?? w.webkitAudioContext
 }
 
+// The context and the «enabled» flag live at module level: the orders page unmounts when the shop owner switches
+// to another tab (SPA navigation, no reload), and the browser's audio unlock would be lost with it.
+let sharedCtx: AudioContext | null = null
+let sharedEnabled = false
+
+function initialState(): SoundState {
+  if (!audioContextCtor()) return 'unsupported'
+  if (!sharedEnabled || !sharedCtx) return 'off'
+  return sharedCtx.state === 'running' ? 'on' : 'blocked'
+}
+
 /**
  * «Включить звук» (§397.3). Browsers refuse audio before a user gesture, so `enable()` must be called from a
  * click: it creates/resumes the AudioContext and plays a short test signal. The signal is generated (two tones,
@@ -16,13 +27,11 @@ function audioContextCtor(): AudioCtor | undefined {
  * (`AudioContext.state !== 'running'` after it was enabled).
  */
 export function useNewOrderSound() {
-  const ctxRef = useRef<AudioContext | null>(null)
-  const enabled = useRef(false)
-  const [state, setState] = useState<SoundState>(() => (audioContextCtor() ? 'off' : 'unsupported'))
+  const [state, setState] = useState<SoundState>(initialState)
 
   const sync = useCallback(() => {
-    const ctx = ctxRef.current
-    if (!enabled.current || !ctx) return
+    const ctx = sharedCtx
+    if (!sharedEnabled || !ctx) return
     setState(ctx.state === 'running' ? 'on' : 'blocked')
   }, [])
 
@@ -40,8 +49,8 @@ export function useNewOrderSound() {
   }
 
   const play = useCallback(() => {
-    const ctx = ctxRef.current
-    if (!enabled.current || !ctx) return
+    const ctx = sharedCtx
+    if (!sharedEnabled || !ctx) return
     if (ctx.state !== 'running') {
       // Suspended (tab was frozen, OS took the audio session): try to wake it; without a gesture it may stay blocked.
       void ctx.resume().finally(sync)
@@ -57,13 +66,11 @@ export function useNewOrderSound() {
       setState('unsupported')
       return
     }
-    if (!ctxRef.current) {
-      ctxRef.current = new Ctor()
-      ctxRef.current.onstatechange = sync
-    }
-    enabled.current = true
+    if (!sharedCtx) sharedCtx = new Ctor()
+    sharedCtx.onstatechange = sync
+    sharedEnabled = true
     try {
-      await ctxRef.current.resume()
+      await sharedCtx.resume()
     } catch {
       // stays blocked — reflected below
     }
@@ -72,18 +79,18 @@ export function useNewOrderSound() {
   }, [play, sync])
 
   const disable = useCallback(() => {
-    enabled.current = false
+    sharedEnabled = false
     setState('off')
   }, [])
 
-  useEffect(
-    () => () => {
-      enabled.current = false
-      void ctxRef.current?.close().catch(() => {})
-      ctxRef.current = null
-    },
-    [],
-  )
+  useEffect(() => {
+    // Re-bind to this mount and pick up a state change that happened while the page was away.
+    if (sharedCtx) sharedCtx.onstatechange = sync
+    sync()
+    return () => {
+      if (sharedCtx?.onstatechange === sync) sharedCtx.onstatechange = null
+    }
+  }, [sync])
 
   return { state, enable, disable, play }
 }
