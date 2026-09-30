@@ -1,10 +1,183 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `f739382` (`develop` = `origin/develop`, итог цикла 24 «Заказы», цикл 2), дата: 2026-09-30.**
-Прошлая отметка — `8d4e98d` (🛒23+). Эта правка описывает `git diff 8d4e98d..f739382` — только цикл 24
-(22 коммита, 283 файла, +29 361 / −1 140), сверено по коду. **Следующий diff отсчитывайте от `f739382`.**
-Метка блоков этой правки — ⏰24. Предыдущие метки 🛒23+ / 🛒23 / 🧮19 / ⚖️20✅ / 🚀20 ниже остаются в силе,
-кроме мест, где рядом стоит ⏰24. Остальные разделы заново не сканировались.
+**Актуально по состоянию на коммит: `4739e0b` (`develop` = `origin/develop`, итог цикла 25 «Заказы», цикл 3), дата: 2026-09-30.**
+Прошлая отметка — `f739382` (⏰24). Эта правка описывает `git diff f739382..4739e0b`: цикл 25 и коммит состояния
+цикла 24 `066ad91`. Всего 38 коммитов, 191 файл, +20 879 / −862. Сверено по коду. **Следующий diff отсчитывайте от `4739e0b`.**
+Метка блоков этой правки — 📊25. Предыдущие метки ⏰24 / 🛒23+ / 🛒23 / 🧮19 / ⚖️20✅ / 🚀20 ниже остаются в силе,
+кроме мест, где рядом стоит 📊25. Остальные разделы заново не сканировались.
+
+### 📊25 Итог цикла 25 «Заказы», цикл 3 «Аналитика, каталог по городу и MAX для персонала» (goods.ezbook.ru) — `f739382..4739e0b`
+
+Источники: корневой `SPEC.md` (теперь это спека **цикла 25**, 560 строк; спека цикла 24 заархивирована в корне как
+`SPEC_CYCLE24_GOODS_ORDERS_TIME_NOTIFY.md`), `ARCHITECTURE_CYCLE25.md` (§495–§519, отклонения от SPEC — §519),
+`API_CONTRACT_CYCLE25.md` (§520–§542), `contracts/cycle25/openapi.yaml` и сам код. Ветка
+`cycle/025-goods-orders-insights-max` влита в `develop`. Цикл 25 закрывает перенесённую US-24-17 (MAX персоналу,
+US-25-01…04) и долги цикла 24 T-25-01…04. Новых NuGet/npm-зависимостей нет (§496). **На бой не выкачен.**
+`origin/master` по-прежнему `263c661`. Деплой `4739e0b` на staging запущен, его результат в репозитории не зафиксирован.
+
+**А. Модель данных — одна миграция `20260930004926_Cycle25OrdersInsightsMax`.** Designer-файлов миграций теперь 78.
+- Новых таблиц 4:
+  - `StaffMaxLinks` — привязка пользователя к чату MAX. Уникальный индекс по `UserId`, индекс по `ChatKey` (хеш id
+    чата). `ChatIdCiphertext` + `KeyId` — id чата хранится зашифрованным. Есть `Status` (`StaffMaxLinkStatus`),
+    `StoppedAtUtc`, `LastSuccessAtUtc`, `ConsecutiveFailures`. FK на `AspNetUsers` с cascade.
+  - `StaffMaxLinkSessions` — одноразовые ссылки привязки. Хранится только SHA-256 payload: `PayloadHash`, уникальный.
+    Есть `ExpiresAtUtc` и `CompletedAtUtc`.
+  - `StaffMaxMessages` — очередь сообщений персоналу. Уникальный `IdempotencyKey`, индекс `IX_StaffMaxMessages_Dispatch`.
+    FK на `Orders` с `SetNull`, на `Companies` с `Restrict`. Поля `Status`/`Reason`/`ReasonDetail`, счётчики попыток,
+    `ExpiresAtUtc`. TTL сообщения — 1 час (`OrderStaffMaxQueue.MessageTtl`).
+  - `ShopCustomerNotes` — заметка магазина о покупателе. Уникальна по `CompanyId`+`Phone`, где `Phone` —
+    канонический, как `Orders.CustomerPhone`. `Text` до 1000 символов, `UpdatedByUserId` без FK (намеренно),
+    `UpdatedByName`.
+- Новая колонка `ShopSettings.StaffMaxEnabled` (bool, default `true`) — переключатель магазина «MAX персоналу».
+- Новые индексы на `Orders`:
+  - `IX_Orders_Report` — (`CompanyId`, `PickupDate`) INCLUDE (`Status`, `EstimatedTotal`, `FinalTotal`);
+  - `IX_Orders_CompanyId_CustomerPhone` — фильтр `CustomerPhone IS NOT NULL`.
+- Данные: `UPDATE Companies SET ShowInPublicListing = TRUE WHERE Kind = 1`, то есть все магазины по умолчанию
+  видны в каталоге. Также `UPDATE SubscriptionPlanConfigs SET AllowPublicListing = TRUE WHERE IsSystemFree AND Line = 1`.
+  Сами колонки `ShowInPublicListing`/`AllowPublicListing` существовали раньше; теперь их использует и линейка
+  «Заказы» (`OrdersPlan.AllowPublicListing`, по умолчанию `true`). `Down` возвращает оба флага в `FALSE`.
+- Новые значения enum:
+  - `NotificationReason`: `StaffMaxDisabledByShop`, `StaffMaxChatUnavailable`, `StaffMaxNoRecipient`,
+    `StaffMaxPlatformDisabled`, `StaffMaxRateLimited`, `StaffMaxShopInactive`.
+  - `ShopPermission`: `ViewOrderReports` и `EditCustomerNotes` (владелец и сотрудники), `ViewSummary` (только
+    владелец и SuperAdmin; сотрудник получает 403).
+  - `LegalTextKey.ShopCustomerNoteNotice` — **намеренно вне `All`**, фронт показывает fallback (L17).
+
+**Б. Новые эндпоинты** (12 маршрутов, добавлены в `Cycle22RouteTable.golden.txt`):
+- `ShopReportsController` (`api/shops/{shopId}`, `[Authorize]`, лимит `shop-reports` 120/мин на пользователя):
+  - `POST order-history` — история заказов. Фильтры в теле, поэтому **телефон никогда не попадает в URL**.
+    Поиск покупателя (`CustomerSearchTerm`): телефон — от 4 цифр, имя — от 2 символов, иначе 400.
+  - `GET summary` — сводка, только владелец.
+  - `GET picklist` — лист сборки. Читает проекцию без ПДн покупателя (`cffa1b1`).
+- `ShopCustomersController` (`api/shops/{shopId}/customers/{customerRef}`), тот же лимит:
+  - `GET` — карточка покупателя с его заказами;
+  - `GET note` и `PUT note` — заметка.
+  - `customerRef` — это **Id заказа этого магазина** (`ShopCustomerService.ResolvePhoneAsync`). Телефон в URL не
+    попадает. Ссылка на чужой магазин, стёртый заказ или неизвестный заказ даёт 404.
+- `ShopsController`:
+  - `GET {shopId}/catalog-listing` — показывается ли магазин в каталоге и чек-лист почему;
+  - `PUT {shopId}/catalog-listing` — `[RequiresOwnerTerms]`. Без `showInCatalog` — 400 plain text. Включение при
+    тарифе без `AllowPublicListing` — 409 JSON `CatalogListingNotAllowedByPlan`. Выключить можно всегда.
+- `GoodsCatalogController` — `GET /api/goods/catalog`, анонимный, лимит `goods-catalog` 120/мин на IP. Работает
+  через `GoodsCatalogService`: список города кешируется `IMemoryCache` на `Orders:CatalogCacheSeconds` = 30 с. Гейты
+  загружаются пачкой через `ShopGateLoader.LoadManyAsync`, а «принимает заказы» решает тот же
+  `ShopOrderingGate.Evaluate`, что и витрина. Видимость определяет `CatalogListingRules`: магазин активен, есть
+  часы работы, есть опубликованный товар, тариф разрешает и включён флаг магазина. Сортировка — `GoodsCatalogOrdering`.
+- `StaffMaxController` (`api/staff-max`, `[Authorize]`):
+  - `GET` — состояние привязки;
+  - `POST link-sessions` — лимит `staff-max-link` 10/час;
+  - `DELETE link`.
+- `notification-settings` магазина получил флаг `staffMaxEnabled`.
+- Изменения поведения существующих маршрутов:
+  - повтор дня недели в категории, товаре или меню теперь даёт 400 «День недели указан дважды» (T-25-03);
+  - `GET /api/push/config` — 400 описан в контракте (`1fa739d`);
+  - поиск в `CompaniesController` и `ShopCatalogController` использует `EF.Functions.ILike(…, "\\")` с общим
+    `LikePattern.Escape`.
+- Постраничность истории: offset считается в `long`, поэтому огромный номер страницы не даёт 500. Даты вне
+  2000..2100 → 400 «Дата должна быть между 2000 и 2100 годом» (`ReportPeriod.IsSaneDate`). NUL в поиске
+  выбрасывается, NUL в заметке → 400. Гонку при создании заметки повторяем только на 23505 (unique violation).
+
+**В. MAX для персонала (US-25-01…04).**
+- Используется тот же бот платформы, что для подтверждения телефона. Вебхук делегирует обновление по префиксу
+  payload ещё до собственной логики. `sm1.` (`StaffMaxPayload`, 32 байта CSPRNG, base64url) обрабатывает
+  `StaffMaxStartHandler`, `v1.` — подтверждение телефона (`MaxWebhookHandler`, `IMaxBotUpdateHandler`).
+- Подписка вебхука добавляет тип `bot_stopped`. Если MAX его отвергает, `MaxBotClient.SubscribeAsync` откатывается к
+  прежнему набору типов.
+- Отправка идёт через `IMaxBotMessenger` (есть `StubMaxBotMessenger`), результат классифицирует
+  `MaxSendResponseClassifier`.
+- Очередь — `OrderStaffMaxQueue`, её пишут `OrderNotificationPlanner` (новый заказ и отмена покупателем,
+  тексты `StaffMaxTexts`) и `OrderLimitWarner` (предупреждения о лимите владельцу).
+- Разбор очереди — `StaffMaxDispatchTask` (`staff-max-dispatch`). Пропускает строку с причиной, если магазин
+  отключил MAX, чата нет, получателя нет или платформа выключена. **Неактивный магазин пропускается**
+  (`StaffMaxShopInactive`, `6647d8c`).
+- Настройки `Notifications:StaffMax`: `Enabled` = **`false`** в `appsettings.json`, `LinkSessionTtlMinutes` 10,
+  `MaxParallel` 4, `MaxMessagesPerSecond` 10, `MaxAttempts` 4, `BatchSize` 100.
+- В `docker-compose.prod.yml` — `Notifications__StaffMax__Enabled=${STAFFMAX_ENABLED:-false}`. Это единственная новая
+  env-переменная цикла, она есть в `.env.production.example` и `.env.dev.example`.
+- При `true` API не стартует без `PHONEVERIFY_PROVIDER=max-bot`, `NOTIFICATIONS_ENCRYPTION_KEY` и
+  `PHONEVERIFY_EXTERNAL_KEY` (`DeploymentSafetyChecks.ValidateStaffMax`).
+- **На машине рубильник не включён**, живого смоука не было (DO-6, `DEPLOY.md` §23.5).
+
+**Г. Планировщик — полосы (закрывает C24-8).**
+- У `ScheduledTaskOptions` появился `Lane` (по умолчанию `main`). Каждая полоса крутит свой цикл тиков.
+- Тик полосы задаётся `ScheduledTasks:Lanes:{lane}:TickSeconds`, иначе берётся общий `TickSeconds`.
+- `main` тикает раз в 10 с. `realtime` тикает раз в 1 с, на ней `staff-push-dispatch`,
+  `customer-order-push-dispatch` и `staff-max-dispatch` с периодом 5 с. Раньше у первых двух период был 10 с.
+- Ретенция: новые правила `StaffMaxLinkRule` (остановленные привязки — 30 дней, сессии — 1 день),
+  `StaffMaxMessageRule` (90 дней), `ShopCustomerNoteRule`. Выгрузка субъекта (`SubjectDataExporter`) и удаление
+  аккаунта (`AccountDeletionService`) охватывают MAX-привязки и заметки.
+
+**Д. Долги цикла 24 (T-25-01…04).**
+- `PushAddressGuard` разворачивает IPv4, вложенный в NAT64 `64:ff9b::/96` и 6to4 `2002::/16`. NAT64 local-use
+  `64:ff9b:1::/48` и Teredo отвергаются целиком.
+- `WebPushHandlerFactory` выставляет `UseProxy = false`.
+- В `contracts/cycle24/openapi.yaml` появились `uniqueItems` и недостающие 400.
+- `OrderPickupContext(Zone, NowUtc, WorkingDay)` — `WorkingDay` **обязателен**, `Today` = `WorkingDay`.
+- `PickupSchedule.PickupText(…, today)` принимает обязательный `today`. Рабочий день используется везде: в планировщике
+  уведомлений (`BuildFacts(…, pickupContext.WorkingDay)`), в «Моих заказах», на табло
+  (BUG-25-01, `42409e8`), в экспорте и в конфликтах расписания (`ShopScheduleController`).
+
+**Е. Фронтенд (goods).**
+- Корень `/` и `/city/:cityId` — `CatalogHomePage` (каталог по городу, `utils/homeCity`). `LandingPage.tsx` удалён.
+- Новые страницы кабинета: `/cabinet/:shopId/history`, `/summary`, `/picklist` (печать — `styles/print.css`) и
+  `/cabinet/:shopId/customers/:customerRef` (заметка). Маршруты добавлены в `contracts/cycle23/goods-routes.json`.
+- Появились `StaffMaxCard` на `DevicesPage`, флаг `staffMaxEnabled` на `ShopNotificationsPage`,
+  `CatalogListingSection` в настройках, ссылка на карточку покупателя из `OrderDetailsModal`, `BusinessBlock`.
+- Новые API-клиенты: `api/{reports,customers,goodsCatalog,catalogListing,staffMax}.ts`. Логика отчётов —
+  `utils/reports.ts`.
+- ezbook: в админке тарифов (`PlansTab`) — флаг `AllowPublicListing` для линейки. Генерат —
+  `src/types/api-cycle25.generated.ts` (`npm run types:api:cycle25`).
+
+**Ж. CI и деплой.**
+- `ci.yml`: redocly линтует и `contracts/cycle25/openapi.yaml`, проверка генератов включает `types:api:cycle25`.
+- `deploy-remote.sh`: деплой **падает** с подсказкой отката, если `https://$GOODS_HOST/api/goods/catalog` не 200
+  `application/json` с массивом `"items"` (DO-3).
+- `DEPLOY.md` §23: §23.1 миграция, §23.2 рубильник `STAFFMAX_ENABLED`, §23.3 подписка `bot_stopped`, §23.4 проверки,
+  §23.5 ручной шаг DO-6.
+- Бенчмарк — `tools/bench/cycle25/` (`seed.py`, `seed_orders.sql`, `seed_shops.sql`, `bench25.py`). Со слов
+  вызывающего агента, p95 на 200 тыс. заказов:
+
+  | Операция | p95 |
+  |---|---|
+  | история | 120 мс |
+  | сводка | 159 мс |
+  | лист сборки | 18 мс |
+  | карточка | 6 мс |
+  | каталог | 8 мс |
+
+  Отдельного `BENCHMARK_CYCLE25.md` нет.
+
+**З. Тесты на `4739e0b`** (со слов вызывающего агента, CI зелёный):
+
+| Набор | Результат |
+|---|---|
+| юнит бэкенда | **2382/2382** |
+| функциональные | **1085/1085**, без пропусков |
+| vitest | **1077/1077** |
+
+- Новые функциональные файлы — `ServiceBooking.Tests/Tests/Cycle25{Catalog,Customer,PickList,RateLimit,Reports,
+  StaffMax,WorkingDay}Tests.cs`: 55 тестов `CY25-`. База — `Infrastructure/Cycle25TestBase.cs`, фабрики —
+  `StaffMaxTestFactory.cs` и `CatalogTestFactory.cs`.
+- Новые юнит-тесты: `ReportPeriod*`, `ReportTexts*`, `ReportTruncation*`, `PickListBuilder*`, `ShopSummaryMath*`,
+  `OrderPhoneMask*`, `OrderReportExpressions*`, `CustomerSearchTerm*`, `CatalogListingRules*`,
+  `GoodsCatalogOrdering*`, `StaffMaxPayload*`, `StaffMaxTexts*`, `MaxSendResponseClassifier*`,
+  `MaxBotClientSubscribe*`, `ScheduledTaskLane*`, `ShopAccessCycle25*`, `WebPushHandlerFactory*`, `LikePattern*`.
+- **Команды запуска не изменились (§7).** Тест-кейсы — `TEST_CATALOG.md`, раздел «Цикл 25» (стр. ~6100).
+  Сквозного браузерного (e2e) набора по-прежнему нет.
+
+**И. Документация.**
+- `API_DOCUMENTATION.md`: подраздел «Дополнение цикла 25…» (стр. ~4141, «НЕ ВЫПУЩЕНО»).
+- `CHANGELOG.md`: верхний раздел «Не выпущено — «Заказы» на goods.ezbook.ru, цикл 3…» (стр. ~20). Раздел
+  цикла 2 ниже (стр. ~219) переписан в `4739e0b`.
+- `README.md`: «О проекте» и «Чего пока нет» обновлены.
+- `docs/personal-data.md` и `INCIDENT_CHECK_PROCEDURE_CYCLE16.md` дополнены MAX-привязками и заметками.
+- `docs/history/` по-прежнему нет: документы цикла лежат в корне с суффиксом `_CYCLE25`.
+
+**К. Что заведомо не сделано.**
+- Юрист по L1–L20 не запускался.
+- DO-6 не выполнен: включение MAX на машине, живой смоук и регрессия подтверждения телефона.
+- vhost goods `/sw.js` no-cache по-прежнему ручной шаг (C24-1).
+- Риски — §9 «📊 Цикл 25».
 
 ### ⏰24 Итог цикла 24 «Заказы», цикл 2 «Время, приём, уведомления, тарифы магазинов» (goods.ezbook.ru) — `8d4e98d..f739382`
 
@@ -10132,7 +10305,7 @@ IP/телефона; у правил `GuestDataGateEventRule`/`PlatformNoticeRul
   `OrderEditService` опирается на отслеживание EF и `Order.Version`; при правках там снова легко
   получить двойное добавление.
 
-### ⏰ Цикл 24 — C24-1…C24-11 (открыто на `f739382`)
+### ⏰ Цикл 24 — C24-1…C24-11 (открыто на `f739382`; 📊25 на `4739e0b` закрыты C24-4, C24-5, C24-6, C24-8, C24-9)
 
 - **C24-1. 🟠 vhost goods на сервере не обновлён.** `deploy/nginx/goods.ezbook.conf` в репозитории содержит
   `location = /sw.js` (no-cache) и `location = /manifest.webmanifest`, но на боевой машине это не применено:
@@ -10147,22 +10320,22 @@ IP/телефона; у правил `GuestDataGateEventRule`/`PlatformNoticeRul
   `legal.json` нет, фронт показывает fallback. Срок `Retention:OrderPushSubscriptionDays` = 7 — техническое
   значение до ответа по L16. Галочка мессенджера у гостя работает без подтверждения номера (Q-24-3): при опечатке
   сообщение получит чужой человек.
-- **C24-4. Низкие находки проверки контракта не закрыты:** у дней недели категории
+- ✅📊25 **Закрыто (T-25-03, `9d22a7b`): `uniqueItems` и недостающие 400 добавлены в `contracts/cycle24/openapi.yaml`, повтор дня недели → 400 «День недели указан дважды».** Исходная запись: **C24-4. Низкие находки проверки контракта не закрыты:** у дней недели категории
   (`CategoryWeekdaysInput.weekdays`) в `openapi.yaml` нет `uniqueItems`; часть ответов 400 в контракте не
   описана.
-- **C24-5. `PushAddressGuard`: IPv4, вложенный в IPv6, не разворачивается**, кроме IPv4-mapped. Адреса NAT64
+- ✅📊25 **Закрыто (T-25-01, `1b0248f`): разворачиваются NAT64 `64:ff9b::/96` и 6to4 `2002::/16`, NAT64 local-use и Teredo отвергаются целиком.** Исходная запись: **C24-5. `PushAddressGuard`: IPv4, вложенный в IPv6, не разворачивается**, кроме IPv4-mapped. Адреса NAT64
   (`64:ff9b::/96`) и 6to4 (`2002::/16`) с внутренним IPv4 внутри считаются публичными. Находка ревью, не блокирующая.
-- **C24-6. HTTP-клиент web-push: `SocketsHttpHandler.UseProxy` не выставлен в `false`**
+- ✅📊25 **Закрыто (T-25-02): `WebPushHandlerFactory` выставляет `UseProxy = false`.** Исходная запись: **C24-6. HTTP-клиент web-push: `SocketsHttpHandler.UseProxy` не выставлен в `false`**
   (`NotificationServicesExtensions`). Если на машине задан системный прокси, соединение пойдёт через него, и
   `ConnectCallback`, по всей видимости, будет проверять адрес прокси, а не конечной точки push. Находка ревью, не блокирующая.
 - **C24-7. Лимиты в пределах линейки меняют решение Q5 цикла 23.** Магазины больше не занимают место салона, и
   наоборот. Тесты цикла 23, которые проверяли общий счёт, переписаны (`7d1320a`), поэтому старое поведение
   тестами больше не подтверждается.
-- **C24-8. `ScheduledTaskRunner` выполняет задачи последовательно.** Тик теперь 10 с, но долгий проход
+- ✅📊25 **Закрыто (`a8321f8`, `6647d8c`): у планировщика появились полосы. Диспетчеры push и MAX работают на полосе `realtime` с тиком 1 с, долгие задачи остаются на `main` с тиком 10 с. Внутри одной полосы задачи по-прежнему идут последовательно.** Исходная запись: **C24-8. `ScheduledTaskRunner` выполняет задачи последовательно.** Тик теперь 10 с, но долгий проход
   мессенджера (`notification-dispatch`, GREEN-API/MAX) или ретенции задерживает `staff-push-dispatch` и
   `customer-order-push-dispatch` дольше 10 с. Тик 10 с означает и в 6 раз больше пробуждений всех задач
   (каждая сверяет свой период).
-- **C24-9. «Сегодня» в хвосте ночного интервала считается двумя способами.** После CY24-35 карточки и экран
+- ✅📊25 **Закрыто (T-25-04, `f652ebe`, `cffa1b1`, `42409e8`): `OrderPickupContext.WorkingDay` и `today` в `PickupText` обязательны. Рабочий день используют планировщик уведомлений, «Мои заказы», табло, экспорт и конфликты расписания.** Исходная запись: **C24-9. «Сегодня» в хвосте ночного интервала считается двумя способами.** После CY24-35 карточки и экран
   заказов одного магазина считают от рабочего дня (`OrderPickupContext.WorkingDay`). Списки многих магазинов
   («Мои заказы», `OrderPickupContext.For`) и тексты уведомлений (`OrderNotificationPlanner.BuildFacts` —
   `DateTime.UtcNow` в поясе магазина) считают от календарной даты. После полуночи в ночном интервале push или
@@ -10174,6 +10347,43 @@ IP/телефона; у правил `GuestDataGateEventRule`/`PlatformNoticeRul
   Покупатель, запомнивший номер, увидит новый. Уведомление о смене времени передаёт прежний номер
   (`previousNumber`). Это поведение задумано, но на нём держатся уникальный индекс и счётчик
   `OrderDailyCounters`.
+
+### 📊 Цикл 25 — C25-1…C25-11 (открыто на `4739e0b`)
+
+Из C24 открытыми остаются:
+- C24-1 — vhost goods, подробности в C25-4 ниже;
+- C24-2 — push на реальных устройствах;
+- C24-3 — юрист L9–L16;
+- C24-7, C24-10, C24-11.
+
+- **C25-1. 🟠 DO-6 не выполнен — это шаг человека.** «MAX персоналу» на машине выключен (`STAFFMAX_ENABLED=false`).
+  Нужно:
+  - включить рубильник после предпосылок `DEPLOY.md` §23.2;
+  - проверить, что подписка вебхука приняла `bot_stopped` (§23.3);
+  - провести живой смоук привязки и получения сообщения;
+  - **прогнать регрессию подтверждения телефона**, потому что вебхук теперь делегирует обновления по префиксу `sm1.`/`v1.`.
+
+  Автотесты проверяют очередь и отправку только до HTTP-клиента (`StubMaxBotMessenger`).
+- **C25-2. 🟠 R25-2: один бот для двух задач.** Сообщения персоналу идут через того же бота MAX, что подтверждает
+  телефон. Бан или ограничение бота (например, за объём сообщений о заказах) остановит и подтверждение телефонов.
+  Лимит отправки — `Notifications:StaffMax:MaxMessagesPerSecond` = 10.
+- **C25-3. 🟠 Юрист по L1–L20 не запускался.** `ShopCustomerNoteNotice` (L17) вне `LegalTextKey.All`, фронт
+  показывает fallback. То же с текстами циклов 23–24 (C23-2, C24-3).
+- **C25-4. vhost goods `/sw.js` no-cache по-прежнему ручной шаг** (C24-1, `DEPLOY.md` §22.2).
+- **C25-5. В `contracts/cycle25/openapi.yaml` не описаны 400 после ревью:** заметка с NUL и даты вне 2000..2100.
+  В коде они есть (`ShopCustomerService`, `ReportPeriod.DateOutOfRange`), в контракте — нет.
+- **C25-6. `ShopScheduleController`: переполнение на крайних датах.** Маршрут особого дня вызывает
+  `date.AddDays(-1)`/`date.AddDays(1)` (стр. ~108–109). На `0001-01-01`/`9999-12-31` это
+  `ArgumentOutOfRangeException`, то есть, вероятно, 500. Горизонт особых дней проверяется в другой ветке
+  (стр. ~265). Не проверено, доходит ли до этого места дата вне горизонта.
+- **C25-7. Поиск по телефону в истории без нормализации 8→7** (`CustomerSearchTerm` оставляет только цифры).
+  Если ввести «8916…», номер, хранящийся как «7916…», не найдётся. Это продуктовый вопрос, решения нет.
+- **C25-8. react-router: умеренные advisories (GHSA-wrjc-x8rr-h8h6)** — были до цикла 25, не исправлены.
+- **C25-9. Флейк CY24-31 по времени суток.** Тест может падать около 03:30–04:05 по времени магазина. Причина —
+  разрыв круглосуточного магазина из цикла 23. Не исправлен.
+- **C25-10. `GET /api/companies/{slug}` отдаёт DTO магазина, если slug принадлежит магазину** — было до цикла 25.
+- **C25-11. Состояние staging неизвестно.** Деплой `4739e0b` запущен, результат не зафиксирован. На бою
+  (`origin/master` = `263c661`) нет циклов 23–25, и миграции `Cycle24…` и `Cycle25…` применятся при выкате одновременно.
 
 ## 10. Что уже существует в документации и тест-кейсах
 
