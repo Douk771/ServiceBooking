@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Orders;
 using ServiceBooking.API.DTOs.Shops;
+using ServiceBooking.API.DTOs.Companies;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Orders;
 using ServiceBooking.API.Services.PublicSites;
 using ServiceBooking.API.Services.Shops;
@@ -56,6 +58,8 @@ public class StorefrontController(
         var messengerOffered = settings.CustomerMessengerEnabled && await shopChannels.IsMessengerAvailableAsync(shop.Id, ct);
         var pickupSettings = ShopOrderingGate.PickupSettingsOf(settings);
 
+        var photos = shop.IsActive ? await CompanyPhotoQueries.OrderedAsync(db, shop.Id, ct) : [];
+
         StorefrontDto Build(List<StorefrontCategoryDto> categories) => new(
             shop.Slug, shop.Name, links.CompanyPageUrl(shop), shop.LogoUrl, shop.Description, shop.Address, cityName, shop.Phone,
             shop.YandexMapsUrl, shop.TwoGisUrl, IsAvailable: shop.IsActive, gate.Accepting, gate.ReasonText, settings.CustomerMode,
@@ -63,7 +67,8 @@ public class StorefrontController(
             gate.Code, pickupDate, dateNotice, ShopScheduleMapper.ToDto(gate.OpenState),
             new StorefrontWorkingHoursDto(PickupSchedule.SummaryLines(context.Schedule.Weekly)
                 .Select(l => new WorkingHoursSummaryLineDto(l.DayLabel, l.Text)).ToList()),
-            ShopScheduleMapper.ToPickupOptions(gate, pickupSettings), new StorefrontCustomerNotificationsDto(webPushOffered, messengerOffered));
+            ShopScheduleMapper.ToPickupOptions(gate, pickupSettings), new StorefrontCustomerNotificationsDto(webPushOffered, messengerOffered),
+            string.IsNullOrWhiteSpace(shop.Email) ? null : shop.Email, photos);
 
         // A blocked shop: the page exists but is empty ("Магазин недоступен").
         if (!shop.IsActive) return Ok(Build([]));
