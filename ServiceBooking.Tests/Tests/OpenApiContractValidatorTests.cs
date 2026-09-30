@@ -94,7 +94,7 @@ public class OpenApiContractValidatorTests
     [Theory]
     [InlineData("cycle26")]
     [InlineData("cycle29")]
-    public void Bundled_contracts_load_and_use_only_supported_keywords(string cycle)
+    public void Bundled_contracts_load_and_unknown_path_is_reported(string cycle)
     {
         var contract = OpenApiContract.Load(cycle);
         var schemaProbe = JsonDocument.Parse("{}").RootElement;

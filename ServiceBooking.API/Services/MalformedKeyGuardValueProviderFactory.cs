@@ -34,7 +34,8 @@ public sealed class MalformedKeyGuardValueProviderFactory(IValueProviderFactory 
     }
 
     /// <summary>
-    /// Wraps whichever of the two JQuery factories are registered. JQueryQueryStringValueProviderFactory is not in the
+    /// The Query branch is a guard for the future only: inactive on net8; per API_CONTRACT_CYCLE29.md §29.23.1 a malformed
+    /// query string is answered as before (not 400). Wraps whichever of the two JQuery factories are registered. JQueryQueryStringValueProviderFactory is not in the
     /// default list on net8 (the plain query factory does not normalise keys and cannot throw), so a missing one is skipped;
     /// only a missing form factory, which is always default, is an error.
     /// </summary>
