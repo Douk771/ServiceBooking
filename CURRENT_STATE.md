@@ -1121,7 +1121,7 @@ dotnet test ServiceBooking.Tests                        # функциональ
 cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p tsconfig.goods.json && npm run typecheck:node && npm run test:run
 ```
 - Фронт-тесты гонять с пустой `VITE_SMARTCAPTCHA_SITEKEY` (как в CI). **8 тестов
-  `frontend/goods/src/components/storefront/CartPanel.test.tsx` падают** — ловушка ниже, причина на `050816f` не выяснена.
+  `frontend/goods/src/components/storefront/CartPanel.test.tsx` падали (причина найдена и устранена веткой `fix/goods-cartpanel-test-captcha-env`, C34-1 закрыт, §9.1).
 - Точечно цикл 34 (vitest, без сети и без записи; `fetch` в тестах подменён):
   `cd frontend && npx vitest run goods/src/components/UpdateBanner`.
 - Скрипты `shots:seed`/`shots:capture` и `stack.sh` — **не тесты**: они поднимают Docker-стенд и пишут в его базу;
@@ -1145,12 +1145,9 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - два полных прогона параллельно на одном Docker дают ложные падения тестов, чувствительных ко времени;
   - по отчёту цикла 27 полный прогон на colima бывает нестабилен по таймаутам Npgsql;
   - флейк CY24-31 около 03:30–04:05 по времени магазина (C25-9);
-  - **8 тестов `goods/src/components/storefront/CartPanel.test.tsx` падают, причина не установлена** (C34-1, §9.1). По
-    отчёту цикла 34 (передан при постановке задачи, codebase-analyst сам не запускал) они падают и в этом чекауте, и на
-    чистом `origin/develop`, так что к циклу 34 не относятся. Похоже на сеть или окружение. Прежнее объяснение — локальный
-    `frontend/.env` с непустым `VITE_SMARTCAPTCHA_SITEKEY` (в CI ключ пуст, там тесты зелёные). В этом чекауте такой
-    `frontend/.env` есть, ключ в нём непустой (✔ `grep -c`, значение не читалось), так что эту версию прогон не опроверг.
-    Для «чистого `origin/develop`» не известно, был ли там `.env`.
+  - ~~8 тестов `CartPanel.test.tsx` падают~~ — **закрыто** (C34-1, §9.1): причиной был локальный `frontend/.env` с непустым
+    `VITE_SMARTCAPTCHA_SITEKEY`, в CI ключа нет. Тест теперь мокает `SmartCaptcha` (как `SubjectRequestPage.test.tsx`) и
+    зелёный при любом `.env`; ✔ 16/16 при заполненном ключе.
 - Подмножество: `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle26CompanyCardTests"`; цикл 31 —
   `--filter "FullyQualifiedName~Cycle31"` (`Cycle31CatalogListingTests`, `Cycle31GalleryRateLimitTests`; второй поднимает
   отдельный хост с продовыми лимитами).
@@ -1212,11 +1209,11 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 
 ### 9.1 Найдено или подтверждено в этом сканировании (✔)
 **Цикл 34 и фикс звука (✔ по коду и git на `050816f`, ничего не запускалось).**
-- **C34-1. 8 тестов `frontend/goods/src/components/storefront/CartPanel.test.tsx` падают, причина не выяснена.** По отчёту
-  цикла 34 они падают и в этом чекауте, и на чистом `origin/develop`, так что цикл 34 здесь ни при чём. Похоже на сеть или
-  окружение. Прежняя версия — локальный `frontend/.env` с ключом SmartCaptcha (§7.2) — не подтверждена и не опровергнута.
-  Пока причина не найдена, «зелёный» фронт-прогон локально получить нельзя, и новые падения легко потерять среди этих восьми.
-- **C34-2. Плашка работает, только если на машине стоит новый vhost goods.** Без `no-cache` на `location /` телефон может
+- ~~**C34-1.** 8 тестов `CartPanel.test.tsx` падают~~ **Закрыто** (ветка `fix/goods-cartpanel-test-captcha-env`). Причина: в
+  `frontend/.env` разработчика задан `VITE_SMARTCAPTCHA_SITEKEY`, виджет капчи требовал токен, которого тесты не создают; в CI
+  файла нет, поэтому там тесты были зелёными. Чинит мок `@/components/booking/SmartCaptcha` в тесте. ✔ проверено: с ключом
+  в `.env` падало 8 из 16, с пустым ключом и с моком — 16/16. Другие тесты с капчей должны мокать этот модуль так же.
+- **C34-2. Плашка работает, только если на машине стоит новый vhost goods (на 2026-10-01 владелец внёс блоки и проверил `curl`-ом заголовки).** Без `no-cache` на `location /` телефон может
   брать `index.html` из HTTP-кеша. `fetch` в хуке идёт с `cache: 'no-store'`, но это не отменяет кеш старого
   `index.html`, с которого запускается само приложение. Установка vhost — ручной шаг с sudo (`DEPLOY.md` §24), автоматики
   нет. На бою 🖥 неизвестно, стоит ли конфиг. Кроме того, приложения, уже открытые на старой сборке, получат плашку только
