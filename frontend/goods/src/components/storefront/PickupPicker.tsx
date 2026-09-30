@@ -84,7 +84,7 @@ export function PickupPicker({ slug, options, pickup, notice, onNoticeChange }: 
   }
 
   return (
-    <section aria-labelledby="pickup-title" className="rounded-2xl border border-line bg-white p-4 sm:p-5 mb-6" id="pickup" data-testid="pickup-picker">
+    <section aria-labelledby="pickup-title" className="rounded-2xl border border-line bg-white p-3 sm:p-5 mb-6" id="pickup" data-testid="pickup-picker">
       <h2 id="pickup-title" className="font-serif text-xl text-ink flex items-center gap-2">
         <Icon name="clock" size={18} strokeWidth={1.7} /> Когда заберёте
       </h2>
