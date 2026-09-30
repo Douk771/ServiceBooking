@@ -1,0 +1,457 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 31 («Общий блок фото, мультизагрузка, блок „Каталог“ у салона,
+# компактная шапка карточки»; ezbook.ru + goods.ezbook.ru).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл, порядок проверок и тексты — API_CONTRACT_CYCLE31.md (§31.20–§31.29),
+# решения — ARCHITECTURE_CYCLE31.md (§31.0–§31.18), требования — SPEC.md цикла 31. Нумерация § — с префиксом цикла,
+# как у цикла 29. При расхождении по ФОРМЕ прав ЭТОТ файл.
+#
+#   frontend  npx @stoplight/prism mock contracts/cycle31/openapi.yaml --port 4031
+#             npm run types:api:cycle31      (openapi-typescript -> src/types/api-cycle31.generated.ts)
+#   backend   npm run contracts:json          (redocly bundle -> contracts/cycle31/openapi.json; его читает
+#                                              ServiceBooking.Tests/Infrastructure/OpenApiContract.cs, §31.14)
+#   QA        schemathesis run contracts/cycle31/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle31/openapi.yaml
+#
+# Что описано (дельта цикла, не весь API):
+#   НОВОЕ   GET|PUT /api/companies/{id}/catalog-listing      — блок «Каталог ezbook.ru» салона (US-31-05);
+#   ТЕКСТ   GET|PUT /api/shops/{shopId}/catalog-listing      — форма цикла 25; пункт HiddenByOwner теперь
+#                                                               «Показ включен в настройках» (US-31-04). Описан здесь
+#                                                               целиком, потому что общий фронт-компонент блока
+#                                                               каталога рисует ОБА ответа одной вёрсткой;
+#   ЛИМИТ   POST   /api/companies/{id}/photos                — политика частоты `company-photos` вместо `uploads`;
+#           DELETE /api/companies/{id}/photos/{photoId}      — политика `company-photos-edit` вместо `uploads`;
+#           PUT    /api/companies/{id}/photos/order          — политика `company-photos-edit` вместо `uploads`.
+#           Форма запросов и ответов галереи прежняя (циклы 10/26/29).
+# Внешних $ref проект не использует. Ключевые слова — только из набора валидатора OpenApiContract.cs (§29.7.2
+# ARCHITECTURE_CYCLE29.md): никаких oneOf/pattern/const/uniqueItems.
+
+info:
+  title: ServiceBooking API — цикл 31 (галерея, блок каталога салона)
+  version: "31.1.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта без изменений: camelCase; enum — строкой; 400/429 — голая строка (text/plain); 401/403 —
+    пустое тело; 404 — пустое тело, не оракул; 409 блока каталога при запрете тарифом — JSON {code, message};
+    409 CompanyKindGuard (магазин на салонном маршруте) — голая строка. Текст, который видит человек, собирает сервер.
+
+    ГЛАВНЫЕ ПРАВИЛА ЦИКЛА, ЗАКРЕПЛЁННЫЕ ФОРМОЙ:
+      1. Блок каталога салона и блок каталога магазина отдают ОДНУ форму (showInCatalog, allowedByPlan, visible,
+         statusText, notAllowedByPlanText, checklist[]). Отличаются только коды и тексты пунктов.
+      2. visible у салона ⇔ салон присутствует в GET /api/companies и GET /api/companies/public (одно правило,
+         ARCHITECTURE_CYCLE31.md §31.5).
+      3. Для чужой компании маршрут салона отвечает 404 — так же, как для несуществующей.
+      4. Загрузка фото галереи не тратит окно `uploads` (логотип, аватар, картинки услуг и товаров, фото заметок), а
+         удаление и перестановка фото не тратят окно загрузки галереи.
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4031
+    description: prism mock по этой схеме
+
+tags:
+  - name: salon-catalog
+    description: Показ салона в каталоге ezbook.ru — переключатель, статус и чек-лист (кабинет салона).
+  - name: shop-catalog
+    description: Показ магазина в каталоге goods.ezbook.ru — форма цикла 25, новый текст одного пункта.
+  - name: company-photos
+    description: Галерея фото компании — салона и магазина. Меняются только политики частоты.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CompanyId:
+      name: id
+      in: path
+      required: true
+      description: Id компании (GUID).
+      schema: { type: string, format: uuid }
+    ShopId:
+      name: shopId
+      in: path
+      required: true
+      description: Id магазина (компании Kind = Orders).
+      schema: { type: string, format: uuid }
+    PhotoId:
+      name: photoId
+      in: path
+      required: true
+      description: Id фото галереи.
+      schema: { type: string, format: uuid }
+
+  responses:
+    PlainTextError:
+      description: Осознанный отказ — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    Unauthorized:
+      description: Нет или недействителен токен. Тело пустое.
+    Forbidden:
+      description: Нет прав. Тело пустое.
+    NotFound:
+      description: Не найдено (или не ваше — ответ тот же). Тело пустое.
+    NoContent:
+      description: Выполнено. Тело пустое.
+    PayloadTooLarge:
+      description: Тело больше RequestSizeLimit (5 МБ на запрос). Тело пустое.
+    UnsupportedMediaType:
+      description: Нет тела или Content-Type не application/json (отвечает фреймворк, тело пустое).
+    LegalGate:
+      description: Требуется принять новую редакцию правовых документов (LegalConsentFilter / RequiresOwnerTerms).
+      content:
+        text/plain:
+          schema: { type: string }
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    TooManyRequests:
+      description: |
+        Превышен лимит частоты. Для трёх маршрутов галереи тело — прежняя строка
+        «Too many uploads. Try again in a minute.» (utils/uploadError.ts опирается на код 429).
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: Too many uploads. Try again in a minute.
+
+  schemas:
+    # ─────────────────────────────── блок каталога: салон (НОВОЕ) ───────────────────────────────
+    SalonListingCheckCode:
+      type: string
+      description: |
+        Коды пунктов чек-листа салона. На сервере это тот же enum CatalogListingCheckCode, дополненный значением
+        SalonBlocked (в конец); маршрут салона отдаёт только эти три значения.
+          SalonBlocked     — «Салон заблокирован администратором» (только если салон неактивен, всегда done=false);
+          NotAllowedByPlan — «Показ в каталоге не входит в ваш тариф» (только если тариф не разрешает, всегда done=false);
+          HiddenByOwner    — «Показ включен в настройках» (всегда; done = showInCatalog).
+      enum: [SalonBlocked, NotAllowedByPlan, HiddenByOwner]
+    SalonListingCheckDto:
+      type: object
+      additionalProperties: false
+      required: [code, text, done]
+      properties:
+        code: { $ref: '#/components/schemas/SalonListingCheckCode' }
+        text: { type: string, minLength: 1, example: 'Показ включен в настройках' }
+        done: { type: boolean }
+    SalonCatalogListingDto:
+      type: object
+      additionalProperties: false
+      description: |
+        Та же форма, что у CatalogListingDto магазина (на сервере — тот же record). Порядок пунктов фиксирован:
+        SalonBlocked (если есть) → NotAllowedByPlan (если есть) → HiddenByOwner. visible ⇔ все пункты done.
+      required: [showInCatalog, allowedByPlan, visible, statusText, notAllowedByPlanText, checklist]
+      properties:
+        showInCatalog: { type: boolean, description: 'Настройка владельца (Company.ShowInPublicListing).' }
+        allowedByPlan: { type: boolean, description: 'Тариф разрешает показ (= CompanyDto.planAllowsPublicListing).' }
+        visible:
+          type: boolean
+          description: 'true ⇔ салон есть в GET /api/companies и в GET /api/companies/public прямо сейчас.'
+        statusText:
+          type: string
+          minLength: 1
+          description: '«Салон виден в каталоге ezbook.ru» | «Салона сейчас нет в каталоге».'
+          example: Салон виден в каталоге ezbook.ru
+        notAllowedByPlanText:
+          type: string
+          nullable: true
+          description: |
+            null, если тариф разрешает показ. Иначе — подпись под недоступным переключателем:
+            «Показ в каталоге не входит в ваш тариф — повысьте тариф, чтобы включить».
+        checklist:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items: { $ref: '#/components/schemas/SalonListingCheckDto' }
+
+    # ─────────────────────────────── блок каталога: магазин (форма цикла 25) ───────────────────────────────
+    ShopListingCheckCode:
+      type: string
+      description: 'Без изменений с цикла 25. Меняется только ТЕКСТ пункта HiddenByOwner: «Показ включен в настройках».'
+      enum: [ShopBlocked, NoWorkingHours, NoPublishedProducts, NotAllowedByPlan, HiddenByOwner]
+    ShopListingCheckDto:
+      type: object
+      additionalProperties: false
+      required: [code, text, done]
+      properties:
+        code: { $ref: '#/components/schemas/ShopListingCheckCode' }
+        text: { type: string, minLength: 1, example: 'Показ включен в настройках' }
+        done: { type: boolean }
+    ShopCatalogListingDto:
+      type: object
+      additionalProperties: false
+      description: 'CatalogListingDto цикла 25 (описан ЦЕЛИКОМ). Сервер всегда пишет notAllowedByPlanText (null, если тариф разрешает).'
+      required: [showInCatalog, allowedByPlan, visible, statusText, notAllowedByPlanText, checklist]
+      properties:
+        showInCatalog: { type: boolean }
+        allowedByPlan: { type: boolean }
+        visible: { type: boolean }
+        statusText: { type: string, minLength: 1, example: 'Магазин виден в каталоге goods.ezbook.ru' }
+        notAllowedByPlanText: { type: string, nullable: true, example: 'Показ в каталоге не входит в ваш тариф' }
+        checklist:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { $ref: '#/components/schemas/ShopListingCheckDto' }
+
+    # ─────────────────────────────── общее для обоих блоков ───────────────────────────────
+    CatalogListingInput:
+      type: object
+      required: [showInCatalog]
+      properties:
+        showInCatalog: { type: boolean, description: 'true — показывать, false — скрыть.' }
+    CatalogListingConflictDto:
+      type: object
+      additionalProperties: false
+      description: 'Отказ включить показ, когда тариф не разрешает. На сервере — CatalogConflictDto.'
+      required: [code, message]
+      properties:
+        code: { type: string, enum: [CatalogListingNotAllowedByPlan] }
+        message: { type: string, minLength: 1 }
+
+    # ─────────────────────────────── галерея (форма циклов 10/26, без изменений) ───────────────────────────────
+    CompanyPhotoDto:
+      type: object
+      required: [id, url, thumbnailUrl, width, height, position, isCover]
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string, example: /uploads/companies/9f1c2b7e-0000-4000-8000-000000000001.jpg }
+        thumbnailUrl: { type: string, example: /uploads/companies/3a7b1d40-0000-4000-8000-000000000002.jpg }
+        width: { type: integer }
+        height: { type: integer }
+        position: { type: integer, minimum: 0, maximum: 9, description: '0-based порядок показа; 0 — обложка.' }
+        isCover: { type: boolean, description: 'position == 0.' }
+    MultipartImageUpload:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+          description: 'JPEG / PNG / WEBP, не больше 5 МБ. Имя поля — ровно "file". Один файл на запрос.'
+    ReorderCompanyPhotosDto:
+      type: object
+      required: [photoIds]
+      properties:
+        photoIds:
+          type: array
+          maxItems: 10
+          description: 'Полная перестановка текущих фото компании; первое — обложка.'
+          items: { type: string, format: uuid }
+
+paths:
+  # ═══════════════════════════════ блок каталога салона (НОВОЕ) ═══════════════════════════════
+  /api/companies/{id}/catalog-listing:
+    parameters: [ { $ref: '#/components/parameters/CompanyId' } ]
+    get:
+      tags: [salon-catalog]
+      operationId: getSalonCatalogListingCycle31
+      summary: Виден ли салон в каталоге ezbook.ru и почему (владелец, SuperAdmin)
+      description: |
+        Порядок проверок (API_CONTRACT_CYCLE31.md §31.21): 401 (нет токена) → 451 (глобальный правовой гейт) →
+        404 (компании нет ИЛИ вызывающий не владелец и не SuperAdmin — ответ одинаковый) →
+        409 text/plain «Это магазин: записи, услуги и расписание для него недоступны.» (CompanyKindGuard) → 200.
+        Лимита частоты нет (как у маршрута магазина). Неактивный (заблокированный) салон владельцу доступен:
+        в чек-листе первым идёт SalonBlocked.
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Состояние показа салона.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SalonCatalogListingDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/PlainTextError' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+    put:
+      tags: [salon-catalog]
+      operationId: putSalonCatalogListingCycle31
+      summary: Показывать ли салон в каталоге ezbook.ru — сохраняется сразу (владелец, SuperAdmin)
+      description: |
+        Порядок проверок (§31.22): 401 → 451 (RequiresOwnerTerms / глобальный гейт; фильтры авторизации MVC идут до
+        разбора тела) → 415 (нет тела / не application/json) или 400 (нечитаемый JSON) — отвечает фреймворк, до
+        проверки прав, от {id} не зависит → 404 (нет компании или не ваша) → 409 text/plain (это магазин) →
+        400 text/plain «Не указано, показывать ли салон в каталоге» (showInCatalog отсутствует или null) →
+        409 application/json {code: CatalogListingNotAllowedByPlan} (включение, когда тариф не разрешает; выключение
+        разрешено всегда) → 200 с обновлённым состоянием. Повтор того же значения — 200, идемпотентно.
+        Меняет ровно одну колонку Company.ShowInPublicListing; PUT /api/companies/{id} с полем showInPublicListing
+        продолжает работать как раньше (совместимость, §31.23).
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CatalogListingInput' }
+      responses:
+        '200':
+          description: Сохранено; состояние показа после сохранения.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SalonCatalogListingDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            Два случая с разным телом:
+              * text/plain — компания является магазином (CompanyKindGuard.ShopRefusalText);
+              * application/json — тариф не разрешает показ (включить нельзя).
+          content:
+            text/plain:
+              schema: { type: string, example: 'Это магазин: записи, услуги и расписание для него недоступны.' }
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogListingConflictDto' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+
+  # ═══════════════════════════════ блок каталога магазина (форма цикла 25, новый текст) ═══════════════════════════════
+  /api/shops/{shopId}/catalog-listing:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [shop-catalog]
+      operationId: getShopCatalogListingCycle31
+      summary: Виден ли магазин в каталоге goods и почему (владелец и персонал магазина)
+      description: |
+        Поведение цикла 25 без изменений (ShopAccess, ViewShop). Изменение цикла 31 — только текст пункта
+        HiddenByOwner: «Показ включен в настройках» при любом значении done (US-31-04).
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Состояние показа магазина.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopCatalogListingDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [shop-catalog]
+      operationId: putShopCatalogListingCycle31
+      summary: Показывать ли магазин в каталоге goods (владелец) — без изменений, кроме текста пункта
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CatalogListingInput' }
+      responses:
+        '200':
+          description: Сохранено; состояние показа после сохранения.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopCatalogListingDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Тариф не разрешает показ.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogListingConflictDto' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+
+  # ═══════════════════════════════ галерея: только политики частоты ═══════════════════════════════
+  /api/companies/{id}/photos:
+    parameters: [ { $ref: '#/components/parameters/CompanyId' } ]
+    post:
+      tags: [company-photos]
+      operationId: uploadCompanyPhotoCycle31
+      summary: Загрузить одно фото в галерею — лимит частоты `company-photos` (20 в минуту на пользователя)
+      description: |
+        Форма и порядок проверок — цикл 29 без изменений: 401 → 429 → 451 → 400 (битая форма) → 404 → 403 →
+        400 (файл) → 200 (дубль по хешу) → 400 (лимит 10 фото) → 201.
+        Новое в цикле 31: политика частоты `company-photos` (RateLimits:company-photos:PermitLimit, по умолчанию 20,
+        окно 1 мин, ключ — пользователь, очереди нет) вместо общей `uploads`. Пакетного маршрута НЕТ: мультизагрузка
+        на клиенте — это последовательные одиночные запросы (ARCHITECTURE_CYCLE31.md §31.6).
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/MultipartImageUpload' }
+      responses:
+        '201':
+          description: Фото загружено, добавлено в конец (position = число фото до загрузки).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyPhotoDto' }
+        '200':
+          description: Этот файл уже загружен — возвращается существующее фото, дубль не создаётся.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyPhotoDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+
+  /api/companies/{id}/photos/{photoId}:
+    parameters:
+      - $ref: '#/components/parameters/CompanyId'
+      - $ref: '#/components/parameters/PhotoId'
+    delete:
+      tags: [company-photos]
+      operationId: deleteCompanyPhotoCycle31
+      summary: Удалить фото — лимит частоты `company-photos-edit` (60 в минуту на пользователя)
+      description: |
+        Форма и порядок — цикл 26 без изменений (reason → 400 → 404 → 403 → 404 → 204). Новое в цикле 31: политика
+        `company-photos-edit` (RateLimits:company-photos-edit:PermitLimit, по умолчанию 60, окно 1 мин) вместо `uploads`.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: reason
+          in: query
+          required: false
+          description: Только для SuperAdmin; единственное допустимое значение.
+          schema: { type: string, enum: [DepictedPersonRequest] }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+
+  /api/companies/{id}/photos/order:
+    parameters: [ { $ref: '#/components/parameters/CompanyId' } ]
+    put:
+      tags: [company-photos]
+      operationId: reorderCompanyPhotosCycle31
+      summary: Порядок фото (первое — обложка) — лимит частоты `company-photos-edit`
+      description: 'Форма и порядок — цикл 26 без изменений. Новое в цикле 31: политика `company-photos-edit` вместо `uploads`.'
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderCompanyPhotosDto' }
+      responses:
+        '200':
+          description: Новый порядок.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 10
+                items: { $ref: '#/components/schemas/CompanyPhotoDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '451': { $ref: '#/components/responses/LegalGate' }

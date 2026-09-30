@@ -25,7 +25,8 @@
     "types:api:cycle25": "openapi-typescript ../contracts/cycle25/openapi.yaml -o src/types/api-cycle25.generated.ts",
     "types:api:cycle26": "openapi-typescript ../contracts/cycle26/openapi.yaml -o src/types/api-cycle26.generated.ts",
     "types:api:cycle29": "openapi-typescript ../contracts/cycle29/openapi.yaml -o src/types/api-cycle29.generated.ts",
-    "types:api:cycle31": "openapi-typescript ../contracts/cycle31/openapi.yaml -o src/types/api-cycle31.generated.ts"
+    "types:api:cycle31": "openapi-typescript ../contracts/cycle31/openapi.yaml -o src/types/api-cycle31.generated.ts",
+    "contracts:json": "node scripts/contracts-to-json.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.56.2",

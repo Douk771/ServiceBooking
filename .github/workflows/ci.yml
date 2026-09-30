@@ -172,7 +172,8 @@ jobs:
             ../contracts/cycle24/openapi.yaml \
             ../contracts/cycle25/openapi.yaml \
             ../contracts/cycle26/openapi.yaml \
-            ../contracts/cycle29/openapi.yaml
+            ../contracts/cycle29/openapi.yaml \
+            ../contracts/cycle31/openapi.yaml
 
       # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
       # (e.g. @redocly/cli's own dependency tree) is explicitly out of scope for this threshold so the
@@ -206,7 +207,13 @@ jobs:
           npm run types:api:cycle25
           npm run types:api:cycle26
           npm run types:api:cycle29
-          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts src/types/api-cycle24.generated.ts src/types/api-cycle25.generated.ts src/types/api-cycle26.generated.ts src/types/api-cycle29.generated.ts
+          npm run types:api:cycle31
+          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts src/types/api-cycle24.generated.ts src/types/api-cycle25.generated.ts src/types/api-cycle26.generated.ts src/types/api-cycle29.generated.ts src/types/api-cycle31.generated.ts
+
+      - name: Contract JSON must match cycle31 yaml
+        run: |
+          npm run contracts:json
+          git diff --exit-code -- ../contracts/cycle31/openapi.json
 
       # Цикл 17: тексты правовых уведомлений пишет legal-counsel, а каркас кода появляется
       # раньше текста. Заглушка видна владельцу на экране «Ваша подписка», поэтому её нельзя
