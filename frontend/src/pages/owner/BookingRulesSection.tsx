@@ -11,6 +11,7 @@ import { parseBookingHorizonInput } from '../../utils/bookingHorizon'
 import { getCompanyManageErrorMessage } from '../../utils/companyManageError'
 import { httpStatusOf, plainErrorBody } from '../../utils/httpError'
 import { mapLinksFieldError } from '../../utils/mapLinksFieldError'
+import { SavedNote } from '../../components/company/CompanyProfileCard'
 import type { Company } from '../../types'
 import type { components as C32 } from '../../types/api-cycle32.generated'
 
@@ -181,11 +182,7 @@ export function BookingRulesSection({ company }: { company: Company }) {
           <Button type="submit" loading={saving}>
             Сохранить правила
           </Button>
-          {saved && (
-            <span role="status" className="text-sm text-success font-medium">
-              Сохранено
-            </span>
-          )}
+          <SavedNote show={saved} />
         </div>
       </form>
     </Card>

@@ -101,7 +101,7 @@ function initialValues(c: CompanyProfileSnapshot): Values {
   }
 }
 
-function SavedNote({ show }: { show: boolean }) {
+export function SavedNote({ show }: { show: boolean }) {
   return show ? (
     <span role="status" className="text-sm text-success font-medium">
       Сохранено
@@ -228,7 +228,9 @@ export function CompanyProfileCard({
       await companiesApi.update(company.id, body)
     } catch (err) {
       setSaving(false)
-      setErrors(mainPutErrors(err, !yandexChanged))
+      const r = mainPutErrors(err, !yandexChanged)
+      setErrors(r.field)
+      if (r.form) setFormError(r.form)
       return
     }
 
@@ -239,7 +241,7 @@ export function CompanyProfileCard({
     if (p.timeZoneId === null) {
       zone = { id: null, offsetMinutes: p.cityId !== undefined ? (city?.utcOffsetMinutes ?? null) : null, isManual: false }
     } else if (typeof p.timeZoneId === 'string') {
-      zone = { id: p.timeZoneId, offsetMinutes: utcOffsetMinutesOf(p.timeZoneId), isManual: true }
+      zone = { id: p.timeZoneId, offsetMinutes: utcOffsetMinutesOf(p.timeZoneId), isManual: p.timeZoneId !== city?.timeZoneId }
     } else if (p.cityId !== undefined && !prevZone.isManual && city) {
       zone = { id: city.timeZoneId, offsetMinutes: city.utcOffsetMinutes, isManual: false }
     }
@@ -279,21 +281,20 @@ export function CompanyProfileCard({
   }
 
   /** §32.4.6 — where an error of the main PUT goes. Routed by the raw server text, not by the mapper's wording. */
-  function mainPutErrors(err: unknown, yandexNotSent: boolean): FieldErrors {
+  function mainPutErrors(err: unknown, yandexNotSent: boolean): { field: FieldErrors; form?: string } {
     const status = httpStatusOf(err)
     const raw = plainErrorBody(err)
     const text = () => errorMessage(err, texts.saveFailed)
-    if (status === 409 && timeZoneLock) return { city: text() }
+    if (status === 409 && timeZoneLock) return { field: { city: text() } }
     if (status === 400) {
-      if (raw.includes('Город не найден')) return { city: raw }
-      if (manualTimeZone && raw === 'Неизвестный часовой пояс') return { timeZone: raw }
+      if (raw.includes('Город не найден')) return { field: { city: raw } }
+      if (manualTimeZone && raw === 'Неизвестный часовой пояс') return { field: { timeZone: raw } }
       let field = mapLinksFieldError(raw)
       // §567: the generic «Ссылка …» text belongs to Яндекс Карты only if that field was in the request.
       if (field === 'yandexMapsUrl' && !raw.includes('Яндекс') && yandexNotSent) field = 'twoGisUrl'
-      if (field === 'yandexMapsUrl' || field === 'twoGisUrl') return { [field]: raw }
+      if (field === 'yandexMapsUrl' || field === 'twoGisUrl') return { field: { [field]: raw } }
     }
-    setFormError(text())
-    return {}
+    return { field: {}, form: text() }
   }
 
   const hintId = (name: string) => `${ids}-${name}-hint`
@@ -308,7 +309,7 @@ export function CompanyProfileCard({
     if (!city) return null
     const b = baseline.current
     const fresh = city.id !== b.cityId
-    if (!fresh && b.zone.isManual) return `Часовой пояс: как у города ${city.label}`
+    if (!fresh && (b.zone.isManual || (b.zone.id === null && b.zone.offsetMinutes === null))) return `Часовой пояс: как у города ${city.label}`
     return `Часовой пояс: ${formatCityTimeZone(city.label, city.utcOffsetMinutes, city.timeZoneId)}`
   }
 

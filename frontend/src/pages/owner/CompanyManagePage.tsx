@@ -701,17 +701,24 @@ export function MembersTab({ companyId }: { companyId: string }) {
  * (not the owner): an empty form saved would overwrite the fields with empty strings.
  */
 export function SettingsTab({ companyId }: { companyId: string }) {
-  const { data: companies, isLoading } = useQuery({ queryKey: ['my-companies'], queryFn: companiesApi.getMy })
+  const { data: companies, isLoading, isError, refetch } = useQuery({ queryKey: ['my-companies'], queryFn: companiesApi.getMy })
   const company = companies?.find((c) => c.id === companyId)
   return (
     <div className="max-w-[760px] flex flex-col gap-5">
       {company ? (
-        <SalonProfileSection key={company.id} company={company} />
+        <SalonProfileSection key={`profile-${company.id}`} company={company} />
       ) : isLoading ? (
         <div className="h-72 bg-cream-deep rounded-2xl animate-pulse" />
+      ) : isError ? (
+        <div role="alert" className="text-sm text-danger flex items-center gap-3">
+          Не удалось загрузить настройки компании
+          <button type="button" className="underline" onClick={() => void refetch()}>
+            Повторить
+          </button>
+        </div>
       ) : null}
       <CompanyPhotosSection companyId={companyId} headingAs="h2" headingClassName={CARD_TITLE_CLASS} />
-      {company && <BookingRulesSection key={company.id} company={company} />}
+      {company && <BookingRulesSection key={`rules-${company.id}`} company={company} />}
       <SalonCatalogListingSection companyId={companyId} />
       {company && <WidgetCard company={company} />}
       <PhotoUsageCard companyId={companyId} />
