@@ -215,3 +215,48 @@ describe('ShopProfileSection — ARCHITECTURE_CYCLE26.md §552', () => {
     expect(keys).toEqual(expect.arrayContaining(['["shop","s1"]', '["my-shops"]', '["storefront"]']))
   })
 })
+
+// ARCHITECTURE_CYCLE29.md §29.10 (T-29-05, C26-3): the flag alone blocks nothing — offsets are compared.
+describe('T-29-05 — timeZoneChangeAllowed vs UTC offset (API_CONTRACT_CYCLE29.md §29.24)', () => {
+  const LOCKED = 'У магазина уже есть заказы — часовой пояс сменить нельзя (UTC+7).'
+
+  it('V29-10: false + same offset -> saved without dialog, no city error', async () => {
+    const user = userEvent.setup()
+    renderIt(shop({ timeZoneChangeAllowed: false, timeZoneChangeLockedText: LOCKED }))
+    await user.click(screen.getByText('pick-tomsk'))
+    await save(user)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(update).toHaveBeenCalledTimes(1)
+    expect(update.mock.calls[0][1]).toMatchObject({ cityId: 2 })
+    expect(await screen.findByRole('status')).toHaveTextContent('Сохранено')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('V29-11: false + other offset -> locked text at the city, nothing sent', async () => {
+    const user = userEvent.setup()
+    renderIt(shop({ timeZoneChangeAllowed: false, timeZoneChangeLockedText: LOCKED }))
+    await user.click(screen.getByText('pick-moscow'))
+    await save(user)
+    expect(screen.getByRole('alert')).toHaveTextContent(LOCKED)
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('V29-12: false + unknown shop offset -> treated as different', async () => {
+    const user = userEvent.setup()
+    renderIt(shop({ timeZoneChangeAllowed: false, timeZoneChangeLockedText: LOCKED, utcOffsetMinutes: null }))
+    await user.click(screen.getByText('pick-tomsk'))
+    await save(user)
+    expect(screen.getByRole('alert')).toHaveTextContent(LOCKED)
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('V29-13: true + other offset, confirmed, server 409 -> its text at the city field', async () => {
+    const user = userEvent.setup()
+    update.mockImplementation(() => err(409, 'Заказ появился, пояс сменить нельзя'))
+    renderIt(shop({ timeZoneChangeAllowed: true }))
+    await user.click(screen.getByText('pick-moscow'))
+    await save(user)
+    await user.click(screen.getByRole('button', { name: 'Сменить город' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Заказ появился, пояс сменить нельзя')
+  })
+})
