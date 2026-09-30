@@ -36,6 +36,17 @@ export function parseHorizonExceededDays(message: string): number | null {
   return match ? Number(match[1]) : null
 }
 
+/**
+ * The last date the server will accept for `to`: `today + horizonDays`, where "today" is the server's UTC date
+ * (`BookingHorizon.LastBookableDate(DateOnly.FromDateTime(DateTime.UtcNow), N)`), NOT the browser's local one.
+ * Between local midnight and the UTC offset (e.g. 00:00–07:00 in UTC+7) the two differ by a day; clamping from the local
+ * date then lands exactly on the rejected `to`, the retry is judged "not smaller" and the whole calendar stays empty.
+ */
+export function lastBookableDateUtc(now: Date, horizonDays: number): string {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + horizonDays))
+  return d.toISOString().slice(0, 10)
+}
+
 export function parseBookingHorizonInput(raw: string): ParsedBookingHorizon {
   const trimmed = raw.trim()
   if (trimmed === '') return { value: 0 }

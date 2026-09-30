@@ -6,7 +6,6 @@ import {
   endOfMonth,
   eachDayOfInterval,
   getDay,
-  addDays,
   addMonths,
   subMonths,
   isToday,
@@ -17,7 +16,7 @@ import {
 import { ru } from 'date-fns/locale'
 import { AxiosError } from 'axios'
 import { bookingsApi, type DayAvailability } from '../../api/bookings'
-import { parseHorizonExceededDays } from '../../utils/bookingHorizon'
+import { parseHorizonExceededDays, lastBookableDateUtc } from '../../utils/bookingHorizon'
 import { Icon } from '../ui/Icon'
 
 // US-65, §0.1 Q2/DAY_FULL_LABEL — customer's exact wording for "рабочий день, но свободных часов
@@ -122,9 +121,8 @@ export function BookingCalendar({
         const horizonDays = ax?.response?.status === 400 ? parseHorizonExceededDays(serverMsg) : null
         if (horizonDays == null) throw err
 
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-        const clampedTo = toDateStr(addDays(today, horizonDays))
+        // The server measures the horizon from ITS UTC date, so clamp from the UTC date too (see lastBookableDateUtc).
+        const clampedTo = lastBookableDateUtc(new Date(), horizonDays)
         if (clampedTo >= to) throw err // clamped range isn't actually smaller — the 400 was for another reason
 
         return bookingsApi.getAvailability(

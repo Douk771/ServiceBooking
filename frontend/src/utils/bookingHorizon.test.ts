@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseBookingHorizonInput, parseHorizonExceededDays, HORIZON_OUT_OF_RANGE_MESSAGE } from './bookingHorizon'
+import { parseBookingHorizonInput, parseHorizonExceededDays, lastBookableDateUtc, HORIZON_OUT_OF_RANGE_MESSAGE } from './bookingHorizon'
 
 describe('parseBookingHorizonInput', () => {
   it('treats an empty string as "use the default" (sent as 0)', () => {
@@ -50,5 +50,18 @@ describe('parseHorizonExceededDays', () => {
   it('returns null for unrelated 400 messages', () => {
     expect(parseHorizonExceededDays('Мастер не оказывает услугу: Стрижка')).toBeNull()
     expect(parseHorizonExceededDays('')).toBeNull()
+  })
+})
+
+describe('lastBookableDateUtc', () => {
+  it('measures the horizon from the UTC date, not the browser-local one (UTC+7 after local midnight)', () => {
+    // 2026-09-30 20:00 UTC is already 2026-10-01 03:00 in UTC+7. The server still has "today" = 30 Sep,
+    // so with a 30-day horizon its last bookable date is 30 Oct, not 31 Oct.
+    expect(lastBookableDateUtc(new Date('2026-09-30T20:00:00Z'), 30)).toBe('2026-10-30')
+  })
+
+  it('rolls over month and year boundaries', () => {
+    expect(lastBookableDateUtc(new Date('2026-12-20T12:00:00Z'), 30)).toBe('2027-01-19')
+    expect(lastBookableDateUtc(new Date('2026-01-31T23:59:00Z'), 1)).toBe('2026-02-01')
   })
 })
