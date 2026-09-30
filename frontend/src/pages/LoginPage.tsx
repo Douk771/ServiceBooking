@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { authApi } from '../api/auth'
 import { useAuthStore } from '../store/authStore'
+import { clearUserCache } from '../utils/clearUserCache'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { PhoneInput } from '../components/ui/PhoneInput'
@@ -45,7 +46,7 @@ export function LoginPage() {
       // Signing in over a live session (a direct /login link, or registering a second account without
       // logging out) would otherwise leave the previous user's cached queries in place, and the new
       // user gets a first frame of someone else's data. Navbar's logout clears for the same reason.
-      qc.clear()
+      clearUserCache(qc)
       setAuth(
         {
           id: res.userId,

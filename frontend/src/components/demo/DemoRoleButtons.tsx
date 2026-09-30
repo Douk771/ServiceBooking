@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { demoApi, type DemoRole } from '../../api/demo'
 import { useAuthStore } from '../../store/authStore'
+import { clearUserCache } from '../../utils/clearUserCache'
 import { useDemoStatus } from '../../hooks/useDemoStatus'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
@@ -37,7 +38,7 @@ export function DemoRoleButtons() {
     try {
       const res = await demoApi.login(role)
       // Same reasoning as the password sign-in: a previous user's cache must not show through for a frame.
-      qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'demo-status' })
+      clearUserCache(qc)
       setAuth(
         {
           id: res.userId,

@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { profileApi } from '../api/profile'
 import { useAuthStore } from '../store/authStore'
+import { clearUserCache } from '../utils/clearUserCache'
 import { GuestDataGateNotice } from '../components/profile/GuestDataGateNotice'
 import { TrialRegistryDeletionNotice } from '../components/profile/TrialRegistryDeletionNotice'
 import { Card } from '../components/ui/Card'
@@ -34,7 +35,7 @@ export function DeleteAccountPage() {
     mutationFn: () => profileApi.deleteAccount(password),
     onSuccess: () => {
       logout()
-      qc.clear()
+      clearUserCache(qc)
       navigate('/')
     },
     onError: (err: unknown) => {
