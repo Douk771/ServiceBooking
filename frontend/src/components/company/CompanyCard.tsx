@@ -3,7 +3,7 @@ import { Icon } from '../ui/Icon'
 import { CompanyPhotoGallery } from './CompanyPhotoGallery'
 import { CompanyMapLinks } from './CompanyMapLinks'
 import { CompanyLogoMark } from './CompanyLogoMark'
-import { COMPANY_ACTION_LINK_CLASS } from './companyActionLink'
+import { COMPANY_ACTION_LINK_CLASS, COMPANY_ACTION_STATIC_CLASS } from './companyActionLink'
 import { formatPhone, telHref } from '../../utils/phone'
 import { publicAddress } from '../../utils/publicAddress'
 import type { CompanyPhoto } from '../../types'
@@ -86,7 +86,7 @@ export function CompanyCard({ company, children }: { company: CompanyCardData; c
                   {formatPhone(company.phone)}
                 </a>
               ) : (
-                <span className={COMPANY_ACTION_LINK_CLASS}>
+                <span className={COMPANY_ACTION_STATIC_CLASS}>
                   <Icon name="phone" size={15} strokeWidth={1.6} />
                   {formatPhone(company.phone)}
                 </span>

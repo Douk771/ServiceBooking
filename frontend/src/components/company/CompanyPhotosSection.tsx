@@ -150,6 +150,7 @@ export function CompanyPhotosSection({
     onBatchSettled: invalidate,
   })
   const startBatch = (files: File[]) => {
+    if (isLoading) return
     setError('')
     batch.start(files, Math.max(0, MAX_PHOTOS - (photos?.length ?? 0)))
   }
@@ -310,7 +311,7 @@ export function CompanyPhotosSection({
           e.preventDefault()
           setDragOver(false)
           if (atLimit) return
-          if (batch.running) return
+          if (batch.running || isLoading) return
           const files = Array.from(e.dataTransfer.files ?? [])
           if (files.length > 0) startBatch(files)
         }}
@@ -330,6 +331,7 @@ export function CompanyPhotosSection({
             size="sm"
             variant="secondary"
             loading={batch.running}
+            disabled={isLoading}
             onClick={() => fileInputRef.current?.click()}
           >
             Выбрать фото
@@ -341,7 +343,7 @@ export function CompanyPhotosSection({
 
       {(batch.items.length > 0 || batch.overLimitMessage) && (
         <div className="mt-3 flex flex-col gap-2" data-testid="photo-batch-status">
-          {batch.items.length > 0 && (
+          {batch.total > 0 && (
             <p role="status" aria-live="polite" className="text-sm text-ink">
               Загружено {batch.done} из {batch.total}
             </p>

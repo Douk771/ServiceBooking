@@ -5,3 +5,7 @@
  */
 export const COMPANY_ACTION_LINK_CLASS =
   'min-h-[44px] px-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-gold-dark hover:text-gold-darker rounded-full hover:bg-cream-deep transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-2'
+
+/** Non-interactive variant (a phone that cannot be dialled): same look, no hover/focus affordances. */
+export const COMPANY_ACTION_STATIC_CLASS =
+  'min-h-[44px] px-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-gold-dark rounded-full'

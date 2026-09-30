@@ -211,7 +211,7 @@ describe('CompanyPhotosSection — цикл 31: мультизагрузка', (
   it('the input accepts several files and points at the people notice', async () => {
     list.mockResolvedValue([])
     renderSection()
-    await screen.findByText('0 / 10')
+    await screen.findByText('В галерее пока нет фотографий')
     expect(input()).toHaveAttribute('multiple')
     expect(input()).toHaveAttribute('aria-describedby', 'company-photo-people-notice')
     expect(screen.getByRole('button', { name: 'Выбрать фото' })).toBeInTheDocument()
@@ -222,7 +222,7 @@ describe('CompanyPhotosSection — цикл 31: мультизагрузка', (
     const d = [deferred<CompanyPhoto>(), deferred<CompanyPhoto>(), deferred<CompanyPhoto>()]
     d.forEach((x) => upload.mockImplementationOnce(() => x.promise))
     renderSection()
-    await screen.findByText('0 / 10')
+    await screen.findByText('В галерее пока нет фотографий')
 
     await userEvent.upload(input(), [img('a.jpg'), img('b.jpg'), img('c.jpg')])
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(1))
@@ -243,10 +243,28 @@ describe('CompanyPhotosSection — цикл 31: мультизагрузка', (
     list.mockResolvedValue([])
     upload.mockImplementation((_c: string, f: File) => Promise.resolve(photo({ id: f.name, position: f.name === 'a.jpg' ? 0 : 1 })))
     renderSection()
-    await screen.findByText('0 / 10')
+    await screen.findByText('В галерее пока нет фотографий')
     const zone = screen.getByText('Перетащите фото сюда или').parentElement as HTMLElement
     fireEvent.drop(zone, { dataTransfer: { files: [img('a.jpg'), img('b.jpg')] } })
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(2))
+  })
+
+  it('while the gallery is loading the picker is disabled and a drop sends nothing; all-rejected batch shows no "0 из 0"', async () => {
+    list.mockReturnValue(new Promise(() => {}))
+    renderSection()
+    expect(screen.getByRole('button', { name: 'Выбрать фото' })).toBeDisabled()
+    const zone = screen.getByText('Перетащите фото сюда или').parentElement as HTMLElement
+    fireEvent.drop(zone, { dataTransfer: { files: [img('a.jpg')] } })
+    expect(upload).not.toHaveBeenCalled()
+  })
+
+  it('all files rejected: no "Загружено 0 из 0" line', async () => {
+    list.mockResolvedValue([])
+    renderSection()
+    await screen.findByText('В галерее пока нет фотографий')
+    fireEvent.change(input(), { target: { files: [img('a.gif', 'image/gif')] } })
+    expect(await screen.findByText(/Формат не поддерживается/)).toBeInTheDocument()
+    expect(screen.queryByText(/Загружено 0 из 0/)).not.toBeInTheDocument()
   })
 
   it('8 photos + 5 files: two uploads and one message naming the three that did not fit', async () => {
@@ -263,7 +281,7 @@ describe('CompanyPhotosSection — цикл 31: мультизагрузка', (
     list.mockResolvedValue([])
     upload.mockResolvedValue(photo({ id: 'ok', position: 0 }))
     renderSection()
-    await screen.findByText('0 / 10')
+    await screen.findByText('В галерее пока нет фотографий')
     // userEvent.upload would drop the gif itself (it honours `accept`), so the change is fired directly.
     fireEvent.change(input(), { target: { files: [img('a.gif', 'image/gif'), img('big.jpg', 'image/jpeg', 6 * 1024 * 1024), img('ok.jpg')] } })
     await waitFor(() => expect(upload).toHaveBeenCalled())
@@ -279,7 +297,7 @@ describe('CompanyPhotosSection — цикл 31: мультизагрузка', (
       .mockRejectedValueOnce(axiosErr(400, 'Можно загрузить JPEG'))
       .mockResolvedValueOnce(photo({ id: 'n2', position: 1, isCover: false }))
     renderSection()
-    await screen.findByText('0 / 10')
+    await screen.findByText('В галерее пока нет фотографий')
     await userEvent.upload(input(), [img('a.jpg'), img('b.jpg'), img('c.jpg')])
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(3))
     expect(await screen.findByText(/ошибка: Поддерживаются только JPEG, PNG и WEBP/)).toBeInTheDocument()
@@ -320,7 +338,7 @@ describe('CompanyPhotosSection — цикл 31: мультизагрузка', (
       .mockRejectedValueOnce(axiosErr(403))
       .mockResolvedValueOnce(photo({ id: 'n0', position: 0 }))
     renderSection()
-    await screen.findByText('0 / 10')
+    await screen.findByText('В галерее пока нет фотографий')
     await userEvent.upload(input(), [img('a.jpg'), img('b.jpg')])
     const retry = await screen.findByRole('button', { name: 'Повторить неудавшиеся' })
     await userEvent.click(retry)
@@ -334,7 +352,7 @@ describe('CompanyPhotosSection — цикл 31: мультизагрузка', (
     list.mockResolvedValue([])
     upload.mockResolvedValue(photo({ id: 'n0', position: 0 }))
     renderSection()
-    await screen.findByText('0 / 10')
+    await screen.findByText('В галерее пока нет фотографий')
     await userEvent.upload(input(), [img('a.jpg')])
     await userEvent.click(await screen.findByRole('button', { name: 'Скрыть' }))
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
