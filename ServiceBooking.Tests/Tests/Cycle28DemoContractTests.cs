@@ -17,7 +17,7 @@ namespace ServiceBooking.Tests.Tests;
 /// <c>contracts/cycle28/openapi.yaml</c> (bundled to openapi.json). Form only; behaviour is covered by the CY28-* scenarios.
 /// A real host in demo mode on its OWN database "sbtest_&lt;key&gt;_demo" (lock 1 demands a name ending in _demo), no shared stand.
 /// </summary>
-public sealed class DemoHostFactory(string connectionString) : WebApplicationFactory<Program>
+public sealed class DemoHostFactory(string connectionString, IReadOnlyDictionary<string, string?>? overrides = null) : WebApplicationFactory<Program>
 {
     public TestHostIdentity Identity { get; private set; } = null!;
 
@@ -35,9 +35,14 @@ public sealed class DemoHostFactory(string connectionString) : WebApplicationFac
         builder.UseSetting("Notifications:Provider", "logging");
         builder.UseSetting("Notifications:StaffPush:Provider", "logging");
         builder.UseSetting("PhoneVerification:Provider", "stub");
+        // The scenario classes (Cycle28DemoScenarioTests, Cycle28DemoLocksTests) bend one setting at a time; null removes the value.
+        foreach (var (key, value) in overrides ?? new Dictionary<string, string?>())
+            builder.UseSetting(key, value);
     }
 }
 
+// One database slot "demo" exists per run (lock 1 demands a name ending in _demo, the slot grammar has no underscores): every demo class runs in this collection, one at a time.
+[Collection("Cycle28Generator")]
 public class Cycle28DemoContractTests : IAsyncLifetime
 {
     private static readonly OpenApiContract C28 = OpenApiContract.Load("cycle28");
@@ -165,5 +170,21 @@ public class Cycle28DemoOffContractTests(TestDatabaseFixture fixture) : ApiTestB
         var login = await http.PostAsJsonAsync("/api/demo/login", new { role = "owner" });
         login.StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await login.Content.ReadAsStringAsync()).Should().BeEmpty();
+    }
+
+    [Fact, TestCase("CY28-54")]
+    public async Task OutsideDemoMode_NightlyDemoResetIsNotEvenListed_AndNoDemoAnswersAppear()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var tasks = await AuthedClient(admin.Token).GetAsync("/api/admin/scheduled-tasks");
+        tasks.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await tasks.Content.ReadAsStringAsync());
+        doc.RootElement.EnumerateArray().Select(t => t.GetProperty("name").GetString()).Should().NotContain("demo-reset");
+
+        // the demo-only refusal never appears on a production configuration: the same route answers as before (not 403 + X-Demo-Restricted)
+        var user = await RegisterAsync();
+        var own = await AuthedClient(user.Token).PostAsJsonAsync("/api/profile/change-password", new { currentPassword = "wrong-password", newPassword = "Password123!2" });
+        own.Headers.Contains("X-Demo-Restricted").Should().BeFalse();
+        (await AnonymousClient().GetAsync("/api/companies/public?pageSize=1")).Headers.Contains("X-Robots-Tag").Should().BeFalse("production pages stay indexable");
     }
 }
