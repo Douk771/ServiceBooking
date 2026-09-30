@@ -9,7 +9,7 @@ public sealed record ZapisTariff(
     string Description, IReadOnlyList<string> Highlights);
 
 /// <summary>
-/// The pure description of the tariff grid approved by the customer (D-2, <c>TARIFFS_ZAPIS_DRAFT.md</c>, values §573.2). Ids are literals:
+/// The pure description of the tariff grid approved by the customer (D-2, values in ARCHITECTURE_CYCLE28.md §573.2). Ids are literals:
 /// the seeder finds a row by id first and by name second, so a row an administrator already created by hand is never duplicated.
 ///
 /// Advantages are worded ONLY through what the product really limits (§573.3, §573.4a): no "custom domain", no "priority support",
