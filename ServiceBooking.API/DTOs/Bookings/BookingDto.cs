@@ -78,7 +78,10 @@ public record BookingDto(
     // every other Client* field above; null everywhere else. Deliberately NOT the same value as
     // ClientRescheduleMinHours (that one is uncapped and describes reschedule, not cancel) — the
     // frontend must read this field for the "cancel not later than N h" text, not the reschedule one.
-    int? ClientCancelMinHours = null
+    int? ClientCancelMinHours = null,
+    // ARCHITECTURE_CYCLE28.md §577.4, API_CONTRACT_CYCLE28.md §593 — the booking belongs to a showcase (fictional) company. Filled on every route
+    // that returns a BookingDto; the frontend shows the "example" line in the booking card when true.
+    bool CompanyIsShowcase = false
 );
 
 // US-67 (API_CONTRACT_CYCLE6.md §43.2): one line per service in the visit, in visit order.

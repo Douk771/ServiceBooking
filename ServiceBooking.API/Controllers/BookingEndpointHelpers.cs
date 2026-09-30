@@ -4,6 +4,7 @@ using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
@@ -63,6 +64,6 @@ internal static class BookingEndpointHelpers
             totalDurationMinutes, items,
             b.BookingNoticeVersion, b.BookedForOther, b.GuardianConfirmedAtUtc, historyEventCount,
             clientRescheduleAllowed, clientRescheduleMinHours, companyBookingHorizonDays, clientCancelAllowed,
-            clientCancelMinHours);
+            clientCancelMinHours, b.ShowcaseKind != ShowcaseBookingKind.None);
     }
 }

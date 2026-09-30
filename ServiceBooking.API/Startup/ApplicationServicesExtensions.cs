@@ -280,6 +280,9 @@ internal static class ApplicationServicesExtensions
         ServiceBooking.API.Services.Retention.Rules.ConsentRecordRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.InactiveAccountRule>();
+    // ARCHITECTURE_CYCLE28.md §577.4 — deletes bookings made by site visitors in open showcase companies after Retention:ShowcaseVisitorBookingHours (24).
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.ShowcaseVisitorBookingRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.BookingPersonalizationRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,

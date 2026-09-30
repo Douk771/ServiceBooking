@@ -116,7 +116,7 @@ public sealed class CompanyDtoAssembler(
             BookingHorizon.Normalize(c.BookingHorizonDays),
             cover?.Url, cover?.ThumbnailUrl, photos,
             c.YandexMapsUrl, c.TwoGisUrl, ClientRescheduleWindow.Normalize(c.ClientRescheduleMinHours),
-            c.Kind.ToString(), siteLinks.CompanyPageUrl(c));
+            c.Kind.ToString(), siteLinks.CompanyPageUrl(c), c.IsShowcase, c.ShowcaseBookingOpen);
     }
 
     // ARCHITECTURE_CYCLE10.md §109.3: one batched query for the whole page's cover photos (Position ==
