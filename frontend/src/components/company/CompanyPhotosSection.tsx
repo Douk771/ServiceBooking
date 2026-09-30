@@ -1,6 +1,9 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { companyPhotosApi } from '../../api/companyPhotos'
+import type { CompanyPhoto } from '../../types'
+import { PHOTO_ACCEPT, PHOTO_MAX_PHOTOS } from '../../utils/photoBatch'
+import { usePhotoBatchUpload } from './usePhotoBatchUpload'
 import { getUploadErrorMessage } from '../../utils/uploadError'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -10,7 +13,13 @@ import { useLegalText } from '../../hooks/useLegalText'
 import { findSection, splitLegalSections } from '../../utils/legalSections'
 import { useAuthStore } from '../../store/authStore'
 
-const MAX_PHOTOS = 10
+const MAX_PHOTOS = PHOTO_MAX_PHOTOS
+
+/** ARCHITECTURE_CYCLE31.md §31.9.3 — a repeated answer (200 for a file that already exists) never adds a second tile. */
+function upsertById(old: CompanyPhoto[] | undefined, photo: CompanyPhoto): CompanyPhoto[] {
+  const rest = (old ?? []).filter((p) => p.id !== photo.id)
+  return [...rest, photo].sort((a, b) => a.position - b.position)
+}
 
 /**
  * Т20-07 п. 1 (D2 цикла 10, US-20-06) — the lawyer's uiText `CompanyPhotoPeopleNotice` shown right
@@ -135,12 +144,15 @@ export function CompanyPhotosSection({
     onChanged?.()
   }
 
-  const uploadMut = useMutation({
-    mutationFn: (file: File) => companyPhotosApi.upload(companyId, file),
-    onMutate: () => setError(''),
-    onSuccess: invalidate,
-    onError: (err) => setError(getUploadErrorMessage(err)),
+  const batch = usePhotoBatchUpload(companyId, {
+    onUploaded: (photo) =>
+      qc.setQueryData<CompanyPhoto[]>(['company-photos', companyId], (old) => upsertById(old, photo)),
+    onBatchSettled: invalidate,
   })
+  const startBatch = (files: File[]) => {
+    setError('')
+    batch.start(files, Math.max(0, MAX_PHOTOS - (photos?.length ?? 0)))
+  }
 
   const removeMut = useMutation({
     mutationFn: ({ photoId, reason }: { photoId: string; reason?: 'DepictedPersonRequest' }) =>
@@ -182,7 +194,7 @@ export function CompanyPhotosSection({
   }
 
   const atLimit = (photos?.length ?? 0) >= MAX_PHOTOS
-  const busy = uploadMut.isPending || removeMut.isPending || reordering
+  const busy = batch.running || removeMut.isPending || reordering
 
   return (
     <Card className="p-6">
@@ -192,13 +204,13 @@ export function CompanyPhotosSection({
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="aspect-square bg-cream-deep rounded-xl animate-pulse" />
           ))}
         </div>
       ) : photos && photos.length > 0 ? (
-        <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
           {photos.map((p, i) => (
             <div key={p.id} className="relative group">
               <img
@@ -211,7 +223,7 @@ export function CompanyPhotosSection({
                   Обложка
                 </span>
               )}
-              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 p-1.5 bg-gradient-to-t from-ink/70 to-transparent rounded-b-xl opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 p-1.5 bg-gradient-to-t from-ink/70 to-transparent rounded-b-xl transition-opacity motion-reduce:transition-none opacity-100 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
                 <button
                   type="button"
                   aria-label="Переместить левее"
@@ -225,10 +237,12 @@ export function CompanyPhotosSection({
                   <button
                     type="button"
                     disabled={busy}
+                    aria-label="Сделать обложкой"
                     onClick={() => makeCover(i)}
-                    className="text-[9px] font-medium bg-white/90 rounded-full px-1.5 h-6 disabled:opacity-40"
+                    className="h-6 min-w-6 px-1.5 inline-flex items-center justify-center rounded-full bg-white/90 text-[10px] font-medium disabled:opacity-40"
                   >
-                    Сделать обложкой
+                    <Icon name="star-outline" size={12} strokeWidth={2} className="md:hidden" />
+                    <span className="hidden md:inline">Сделать обложкой</span>
                   </button>
                 )}
                 <button
@@ -270,13 +284,14 @@ export function CompanyPhotosSection({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        multiple
+        accept={PHOTO_ACCEPT}
         aria-describedby="company-photo-people-notice"
         className="hidden"
         onChange={(e) => {
-          const f = e.target.files?.[0]
-          if (f) uploadMut.mutate(f)
+          const files = Array.from(e.target.files ?? [])
           e.target.value = ''
+          if (files.length > 0) startBatch(files)
         }}
       />
       {/* Review finding — §109.2 asks for a drop zone, not just the file picker button. This is a
@@ -295,8 +310,9 @@ export function CompanyPhotosSection({
           e.preventDefault()
           setDragOver(false)
           if (atLimit) return
-          const f = e.dataTransfer.files?.[0]
-          if (f) uploadMut.mutate(f)
+          if (batch.running) return
+          const files = Array.from(e.dataTransfer.files ?? [])
+          if (files.length > 0) startBatch(files)
         }}
         className={`rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors mb-1 ${
           atLimit
@@ -313,15 +329,60 @@ export function CompanyPhotosSection({
           <Button
             size="sm"
             variant="secondary"
-            loading={uploadMut.isPending}
+            loading={batch.running}
             onClick={() => fileInputRef.current?.click()}
           >
-            Выбрать файл
+            Выбрать фото
           </Button>
         )}
       </div>
       <p className="text-xs text-muted mt-1">JPEG, PNG или WEBP, до 5 МБ, не больше {MAX_PHOTOS} фото</p>
       {error && <p className="text-xs text-danger mt-1">{error}</p>}
+
+      {(batch.items.length > 0 || batch.overLimitMessage) && (
+        <div className="mt-3 flex flex-col gap-2" data-testid="photo-batch-status">
+          {batch.items.length > 0 && (
+            <p role="status" aria-live="polite" className="text-sm text-ink">
+              Загружено {batch.done} из {batch.total}
+            </p>
+          )}
+          {batch.items.length > 0 && (
+            <ul className="flex flex-col gap-1.5">
+              {batch.items.map((it) => (
+                <li key={it.key} className="text-xs flex flex-col gap-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="min-w-0 break-all line-clamp-2 text-ink-soft">{it.name}</span>
+                    <span className={`shrink-0 ${it.status === 'error' ? 'text-danger text-right' : 'text-muted'}`}>
+                      {it.status === 'queued' && 'в очереди'}
+                      {it.status === 'uploading' && `загружается${it.progress ? ` ${it.progress} %` : ''}`}
+                      {it.status === 'done' && 'готово'}
+                      {it.status === 'error' && `ошибка: ${it.error}`}
+                    </span>
+                  </div>
+                  {it.status === 'uploading' && (
+                    <div role="presentation" className="h-1 rounded-full bg-cream-deep overflow-hidden">
+                      <div className="h-full bg-gold transition-[width]" style={{ width: `${it.progress ?? 0}%` }} />
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {batch.overLimitMessage && <p className="text-xs text-danger">{batch.overLimitMessage}</p>}
+          {!batch.running && (
+            <div className="flex gap-2">
+              {batch.items.some((i) => i.status === 'error' && i.transient) && (
+                <Button size="sm" variant="secondary" onClick={batch.retryFailed}>
+                  Повторить неудавшиеся
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={batch.clear}>
+                Скрыть
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       {confirmingRemoval && (
         <SuperAdminRemovePhotoDialog

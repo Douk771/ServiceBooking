@@ -13,12 +13,18 @@ export const companyPhotosApi = {
    * already uploaded — either way the caller gets back a real `CompanyPhoto`, so callers don't need
    * to branch on status code.
    */
-  upload: (companyId: string, file: File) => {
+  upload: (companyId: string, file: File, onProgress?: (percent: number) => void) => {
     const form = new FormData()
     form.append('file', file)
     return api
       .post<CompanyPhoto>(`/companies/${companyId}/photos`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        // ARCHITECTURE_CYCLE31.md §31.9.2 (US-31-07) — optional, existing callers are unaffected.
+        onUploadProgress: onProgress
+          ? (e) => {
+              if (e.total) onProgress(Math.round((e.loaded / e.total) * 100))
+            }
+          : undefined,
       })
       .then((r) => r.data)
   },

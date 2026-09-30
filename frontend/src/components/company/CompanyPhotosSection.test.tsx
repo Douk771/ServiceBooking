@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CompanyPhotosSection } from './CompanyPhotosSection'
@@ -103,7 +103,7 @@ describe('CompanyPhotosSection — API_CONTRACT_CYCLE10.md §125–§128', () =>
     renderSection()
 
     await screen.findByText('10 / 10')
-    expect(screen.queryByRole('button', { name: 'Выбрать файл' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Выбрать фото' })).not.toBeInTheDocument()
     expect(screen.getByText(`Достигнут лимит в 10 фото`)).toBeInTheDocument()
   })
 
@@ -184,5 +184,173 @@ describe('CompanyPhotosSection — Т20-07 people-in-photo notice and SuperAdmin
     await user.click(screen.getByRole('button', { name: 'Удалить' }))
 
     await waitFor(() => expect(remove).toHaveBeenCalledWith('co1', 'p1', undefined))
+  })
+})
+
+// ARCHITECTURE_CYCLE31.md §31.9 / §31.8 — multi-file upload queue and the tile panel.
+describe('CompanyPhotosSection — цикл 31: мультизагрузка', () => {
+  const img = (name: string, type = 'image/jpeg', size = 1000) => {
+    const f = new File(['x'], name, { type })
+    Object.defineProperty(f, 'size', { value: size })
+    return f
+  }
+  const input = () => document.querySelector('input[type="file"]') as HTMLInputElement
+  const deferred = <T,>() => {
+    let resolve!: (v: T) => void
+    let reject!: (e: unknown) => void
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res
+      reject = rej
+    })
+    return { promise, resolve, reject }
+  }
+  const axiosErr = (status?: number, data = '') => ({ response: status === undefined ? undefined : { status, data } })
+  const gallery = (n: number) =>
+    Array.from({ length: n }, (_, i) => photo({ id: `p${i}`, position: i, isCover: i === 0 }))
+
+  it('the input accepts several files and points at the people notice', async () => {
+    list.mockResolvedValue([])
+    renderSection()
+    await screen.findByText('0 / 10')
+    expect(input()).toHaveAttribute('multiple')
+    expect(input()).toHaveAttribute('aria-describedby', 'company-photo-people-notice')
+    expect(screen.getByRole('button', { name: 'Выбрать фото' })).toBeInTheDocument()
+  })
+
+  it('uploads three files strictly one at a time, in selection order', async () => {
+    list.mockResolvedValue([])
+    const d = [deferred<CompanyPhoto>(), deferred<CompanyPhoto>(), deferred<CompanyPhoto>()]
+    d.forEach((x) => upload.mockImplementationOnce(() => x.promise))
+    renderSection()
+    await screen.findByText('0 / 10')
+
+    await userEvent.upload(input(), [img('a.jpg'), img('b.jpg'), img('c.jpg')])
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1))
+    expect(upload.mock.calls[0][1].name).toBe('a.jpg')
+
+    d[0].resolve(photo({ id: 'n0', position: 0 }))
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2))
+    expect(upload.mock.calls[1][1].name).toBe('b.jpg')
+    expect(screen.getByRole('status')).toHaveTextContent('Загружено 1 из 3')
+
+    d[1].resolve(photo({ id: 'n1', position: 1, isCover: false }))
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(3))
+    d[2].resolve(photo({ id: 'n2', position: 2, isCover: false }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Загружено 3 из 3'))
+  })
+
+  it('dropping two files uploads both', async () => {
+    list.mockResolvedValue([])
+    upload.mockImplementation((_c: string, f: File) => Promise.resolve(photo({ id: f.name, position: f.name === 'a.jpg' ? 0 : 1 })))
+    renderSection()
+    await screen.findByText('0 / 10')
+    const zone = screen.getByText('Перетащите фото сюда или').parentElement as HTMLElement
+    fireEvent.drop(zone, { dataTransfer: { files: [img('a.jpg'), img('b.jpg')] } })
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2))
+  })
+
+  it('8 photos + 5 files: two uploads and one message naming the three that did not fit', async () => {
+    list.mockResolvedValue(gallery(8))
+    upload.mockImplementation((_c: string, f: File) => Promise.resolve(photo({ id: f.name, position: 8, isCover: false })))
+    renderSection()
+    await screen.findByText('8 / 10')
+    await userEvent.upload(input(), ['a', 'b', 'c', 'd', 'e'].map((n) => img(`${n}.jpg`)))
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText(/Не добавлено 3 фото: в галерее не больше 10 фото: c\.jpg, d\.jpg, e\.jpg/)).toBeInTheDocument()
+  })
+
+  it('a wrong type and an oversized file show an error at the file, are not sent, the rest uploads', async () => {
+    list.mockResolvedValue([])
+    upload.mockResolvedValue(photo({ id: 'ok', position: 0 }))
+    renderSection()
+    await screen.findByText('0 / 10')
+    // userEvent.upload would drop the gif itself (it honours `accept`), so the change is fired directly.
+    fireEvent.change(input(), { target: { files: [img('a.gif', 'image/gif'), img('big.jpg', 'image/jpeg', 6 * 1024 * 1024), img('ok.jpg')] } })
+    await waitFor(() => expect(upload).toHaveBeenCalled())
+    expect(upload.mock.calls.every((c) => c[1].name === 'ok.jpg')).toBe(true)
+    expect(await screen.findByText(/Формат не поддерживается/)).toBeInTheDocument()
+    expect(screen.getByText(/Файл больше 5 МБ/)).toBeInTheDocument()
+  })
+
+  it('a 400 on the second file does not stop the third; the mapped text is shown at that file', async () => {
+    list.mockResolvedValue([])
+    upload
+      .mockResolvedValueOnce(photo({ id: 'n0', position: 0 }))
+      .mockRejectedValueOnce(axiosErr(400, 'Можно загрузить JPEG'))
+      .mockResolvedValueOnce(photo({ id: 'n2', position: 1, isCover: false }))
+    renderSection()
+    await screen.findByText('0 / 10')
+    await userEvent.upload(input(), [img('a.jpg'), img('b.jpg'), img('c.jpg')])
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(3))
+    expect(await screen.findByText(/ошибка: Поддерживаются только JPEG, PNG и WEBP/)).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Загружено 2 из 3')
+    expect(screen.queryByRole('button', { name: 'Повторить неудавшиеся' })).not.toBeInTheDocument()
+  })
+
+  it('a repeated answer (same id) does not add a second tile', async () => {
+    list.mockResolvedValue([photo({ id: 'p1', position: 0 })])
+    upload.mockResolvedValue(photo({ id: 'p1', position: 0 }))
+    renderSection()
+    await screen.findByText('1 / 10')
+    await userEvent.upload(input(), [img('a.jpg')])
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Загружено 1 из 1'))
+    expect(screen.getByText('1 / 10')).toBeInTheDocument()
+  })
+
+  it('during a batch arrows, cover, delete and the picker are disabled', async () => {
+    list.mockResolvedValue([photo({ id: 'p1', position: 0 }), photo({ id: 'p2', position: 1, isCover: false })])
+    const d = deferred<CompanyPhoto>()
+    upload.mockReturnValue(d.promise)
+    renderSection()
+    await screen.findByText('2 / 10')
+    await userEvent.upload(input(), [img('a.jpg')])
+    await waitFor(() => expect(upload).toHaveBeenCalled())
+    for (const b of [...screen.getAllByLabelText('Переместить правее'), ...screen.getAllByLabelText('Переместить левее'), ...screen.getAllByLabelText('Удалить фото'), screen.getByLabelText('Сделать обложкой')]) {
+      expect(b).toBeDisabled()
+    }
+    expect(screen.getByRole('button', { name: /Выбрать фото/ })).toBeDisabled()
+    d.resolve(photo({ id: 'n', position: 2, isCover: false }))
+    await waitFor(() => expect(screen.getAllByLabelText('Удалить фото')[0]).not.toBeDisabled())
+  })
+
+  it('"Повторить неудавшиеся" retries only the transient failure (429), not a 403', async () => {
+    list.mockResolvedValue([])
+    upload
+      .mockRejectedValueOnce(axiosErr(429, 'Too many uploads'))
+      .mockRejectedValueOnce(axiosErr(403))
+      .mockResolvedValueOnce(photo({ id: 'n0', position: 0 }))
+    renderSection()
+    await screen.findByText('0 / 10')
+    await userEvent.upload(input(), [img('a.jpg'), img('b.jpg')])
+    const retry = await screen.findByRole('button', { name: 'Повторить неудавшиеся' })
+    await userEvent.click(retry)
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(3))
+    expect(upload.mock.calls[2][1].name).toBe('a.jpg')
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Загружено 1 из 2'))
+    expect(screen.queryByRole('button', { name: 'Повторить неудавшиеся' })).not.toBeInTheDocument()
+  })
+
+  it('"Скрыть" clears the status panel', async () => {
+    list.mockResolvedValue([])
+    upload.mockResolvedValue(photo({ id: 'n0', position: 0 }))
+    renderSection()
+    await screen.findByText('0 / 10')
+    await userEvent.upload(input(), [img('a.jpg')])
+    await userEvent.click(await screen.findByRole('button', { name: 'Скрыть' }))
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+})
+
+// §31.8 / US-31-03 / R-6 — no browser e2e: a guard that the tile panel keeps the classes making it reachable without a mouse.
+describe('CompanyPhotosSection — цикл 31: плитка', () => {
+  it('cover button has an accessible name and the panel is visible on focus/touch', async () => {
+    list.mockResolvedValue([photo({ id: 'p1', position: 0 }), photo({ id: 'p2', position: 1, isCover: false })])
+    renderSection()
+    const cover = await screen.findByRole('button', { name: 'Сделать обложкой' })
+    const panel = cover.parentElement as HTMLElement
+    expect(panel.className).toContain('opacity-100')
+    expect(panel.className).toContain('group-focus-within:opacity-100')
+    expect(panel.className).toContain('[@media(hover:hover)_and_(pointer:fine)]:opacity-0')
+    expect(panel.parentElement?.parentElement?.className).toContain('grid-cols-2')
   })
 })
