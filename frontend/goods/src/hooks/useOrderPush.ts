@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { orderPushApi } from '../api/orderPush'
 import { describeDevice } from '@/hooks/useWebPush'
+import { registerPushWorker } from '@/utils/pushWorker'
 import { arrayBufferToBase64Url, urlBase64ToUint8Array } from '@/utils/webPushEncoding'
 import { detectIosEnvironment, getPushUnavailableReason, type PushUnavailableReason } from '@/utils/pushAvailability'
 import { getGoodsErrorMessage } from '../utils/orderError'
@@ -85,7 +86,7 @@ export function useOrderPush({ token, publicKey }: Options) {
       setPermission(perm)
       if (perm !== 'granted') return
       if (!publicKey) throw new Error('Уведомления в браузере пока не включены на платформе.')
-      const registration = await navigator.serviceWorker.register('/sw.js')
+      const registration = await registerPushWorker()
       await registration.update()
       let sub = await registration.pushManager.getSubscription()
       if (!sub) {
