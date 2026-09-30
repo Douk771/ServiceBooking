@@ -10,7 +10,10 @@ import { formatPhone } from '@/utils/phone'
 import { usePhoneVerificationConfig } from '@/hooks/usePhoneVerification'
 import { VerifyPhoneButton } from '@/components/phoneVerification/VerifyPhoneButton'
 import { PhoneVerifiedBadge } from '@/components/phoneVerification/PhoneVerifiedBadge'
+import { unsubscribeCurrentDeviceOnLogout } from '@/hooks/useWebPush'
+import { DevicesAndNotificationsSection } from '@/components/push/DevicesAndNotificationsSection'
 import { shopsApi } from '../api/shops'
+import { StaffMaxCard } from '../components/staffMax/StaffMaxCard'
 import { ErrorState, Skeleton } from '../components/StatePanels'
 import { getGoodsErrorMessage } from '../utils/orderError'
 
@@ -115,6 +118,8 @@ export function GoodsProfilePage() {
         )}
       </Card>
 
+      <DevicesAndNotificationsSection site="Orders" appName="Заказы" keepBrowserSubscription ordersExtra={<StaffMaxCard />} className="mb-4" />
+
       <Card className="p-6 mb-4">
         <h2 className="text-[15px] font-semibold text-ink mb-3">Данные и согласия</h2>
         <ul className="flex flex-col gap-2 text-sm">
@@ -139,7 +144,9 @@ export function GoodsProfilePage() {
 
       <Button
         variant="secondary"
-        onClick={() => {
+        onClick={async () => {
+          // ARCHITECTURE_CYCLE33.md §33.10.3: drop this browser's staff push row before the token is gone.
+          await unsubscribeCurrentDeviceOnLogout({ keepBrowserSubscription: true }).catch(() => undefined)
           logout()
           qc.clear()
           navigate('/')

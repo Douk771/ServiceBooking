@@ -36,7 +36,6 @@ import { HistoryPage } from './pages/cabinet/HistoryPage'
 import { SummaryPage } from './pages/cabinet/SummaryPage'
 import { PickListPage } from './pages/cabinet/PickListPage'
 import { CustomerPage } from './pages/cabinet/CustomerPage'
-import { DevicesPage } from './pages/cabinet/DevicesPage'
 import { SubscriptionPage } from './pages/cabinet/SubscriptionPage'
 import { shopsApi } from './api/shops'
 
@@ -120,7 +119,7 @@ export function GoodsApp() {
                     <Route path="/notices" element={<NoticesPage />} />
                     <Route path="/cabinet" element={<CabinetHomePage />} />
                     <Route path="/cabinet/new" element={<CreateShopPage />} />
-                    <Route path="/cabinet/devices" element={<DevicesPage />} />
+                    <Route path="/cabinet/devices" element={<Navigate to="/profile#devices" replace />} />
                     <Route path="/cabinet/subscription" element={<SubscriptionPage />} />
                     <Route element={<ShopLayout />}>
                       <Route path="/cabinet/:shopId/orders" element={<OrdersScreenPage />} />
