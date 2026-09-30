@@ -1,0 +1,51 @@
+/*
+ * Print layout of the pick list (US-25-08, ARCHITECTURE_CYCLE25.md §509.1): black on white, no menus or buttons, body
+ * text at least 14 pt. Scoped with :has(.picklist-root) so no other goods screen changes when this file is loaded.
+ */
+@media print {
+  body:has(.picklist-root) nav,
+  body:has(.picklist-root) footer,
+  body:has(.picklist-root) .no-print {
+    display: none !important;
+  }
+
+  body:has(.picklist-root),
+  body:has(.picklist-root) .bg-cream {
+    background: #fff !important;
+  }
+
+  .picklist-root {
+    max-width: none !important;
+    padding: 0 !important;
+    color: #000 !important;
+    font-size: 14pt !important;
+    line-height: 1.35 !important;
+  }
+
+  .picklist-root * {
+    color: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .picklist-root table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .picklist-root th,
+  .picklist-root td {
+    border-bottom: 1px solid #000;
+    padding: 4pt 6pt !important;
+    font-size: 14pt !important;
+  }
+
+  .picklist-root .picklist-group,
+  .picklist-root tr {
+    break-inside: avoid;
+  }
+
+  .picklist-root .picklist-title {
+    font-size: 18pt !important;
+  }
+}
