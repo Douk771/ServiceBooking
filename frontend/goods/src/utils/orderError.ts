@@ -1,11 +1,13 @@
 import type { AxiosError } from 'axios'
+import { getDemoRestrictedMessage } from '@/utils/demoHeaders'
 import type { OrderConflictDto, OrderRefusalDto } from '../types'
 
 /**
  * goods error mapping (API_CONTRACT_CYCLE23.md §406). Two shapes only:
  *  - 400/402/429/503 — a bare Russian string (`text/plain`) that is shown as-is;
  *  - 409 of the order domain — JSON `{ code, message, … }`: the UI branches on `code`, prints `message`.
- * 401/403/404 have empty bodies, 451 is handled globally by api/client.ts.
+ * 401/403/404 have empty bodies, 451 is handled globally by api/client.ts. The one 403 with a body is the demo refusal
+ * (403 + `X-Demo-Restricted`, API_CONTRACT_CYCLE35.md §35.23): its text is shown, every other 403 keeps its wording.
  */
 
 export function httpStatus(error: unknown): number | undefined {
@@ -31,6 +33,8 @@ function plainBody(error: unknown): string {
  * wording per status. `subject` fills "…не найден" style 404s ("Магазин", "Заказ").
  */
 export function getGoodsErrorMessage(error: unknown, fallback = 'Не удалось выполнить действие. Попробуйте ещё раз.'): string {
+  const demoRestricted = getDemoRestrictedMessage(error)
+  if (demoRestricted) return demoRestricted
   const status = httpStatus(error)
   const conflict = readConflict<{ code: string; message: string }>(error)
   if (conflict?.message) return conflict.message
