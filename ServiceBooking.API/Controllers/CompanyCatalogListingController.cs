@@ -25,7 +25,7 @@ public class CompanyCatalogListingController(AppDbContext db, SubscriptionResolv
     {
         var (company, error) = await LoadAsync(id, ct);
         if (error is not null) return error;
-        return Ok(await BuildAsync(company!, ct));
+        return Ok(Build(company!, await IsAllowedByPlanAsync(company!.Id)));
     }
 
     /// <summary>Switching ON is refused (409, JSON) when the tariff does not allow it; OFF always works.</summary>
@@ -39,12 +39,13 @@ public class CompanyCatalogListingController(AppDbContext db, SubscriptionResolv
         if (input?.ShowInCatalog is not { } show)
             return BadRequest(SalonListingRules.MissingValueText);
 
-        if (show && !(await subscriptionResolver.GetEffectivePlanAsync(id)).AllowPublicListing)
+        var allowed = await IsAllowedByPlanAsync(id);
+        if (show && !allowed)
             return Conflict(new CatalogConflictDto(CatalogConflictCode.CatalogListingNotAllowedByPlan, SalonListingRules.NotAllowedByPlanHintText));
 
         company!.ShowInPublicListing = show;
         await db.SaveChangesAsync(ct);
-        return Ok(await BuildAsync(company, ct));
+        return Ok(Build(company, allowed));
     }
 
     private async Task<(Company? Company, ActionResult? Error)> LoadAsync(Guid id, CancellationToken ct)
@@ -55,9 +56,11 @@ public class CompanyCatalogListingController(AppDbContext db, SubscriptionResolv
         return shopRefusal is not null ? (null, shopRefusal) : (company, null);
     }
 
-    private async Task<CatalogListingDto> BuildAsync(Company company, CancellationToken ct)
+    private async Task<bool> IsAllowedByPlanAsync(Guid companyId) =>
+        (await subscriptionResolver.GetEffectivePlanAsync(companyId)).AllowPublicListing;
+
+    private static CatalogListingDto Build(Company company, bool allowed)
     {
-        var allowed = (await subscriptionResolver.GetEffectivePlanAsync(company.Id)).AllowPublicListing;
         var verdict = SalonListingRules.Evaluate(new SalonListingInput(company.IsActive, allowed, company.ShowInPublicListing));
         return new CatalogListingDto(
             company.ShowInPublicListing, allowed, verdict.Visible, SalonListingRules.StatusText(verdict.Visible),

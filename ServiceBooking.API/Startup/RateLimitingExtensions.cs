@@ -227,7 +227,7 @@ internal static class RateLimitingExtensions
                 "order-create" => "Слишком много заказов подряд — попробуйте через несколько минут",
                 "order-push" => "Слишком много запросов — подождите минуту",
                 "shop-reports" or "goods-catalog" or "staff-max-link" => "Слишком много запросов — подождите минуту",
-                "uploads" or "company-photos" or "company-photos-edit" => "Too many uploads. Try again in a minute.",
+                // "uploads", "company-photos", "company-photos-edit" намеренно делят текст с веткой по умолчанию (контракт цикла 31).
                 _ => "Too many uploads. Try again in a minute."
             };
             // WriteAsync alone never sets Content-Type (unlike controller-level BadRequest(string)/Conflict(string),
