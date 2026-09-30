@@ -5,15 +5,27 @@ import type { PushConfig, PushSubscriptionDevice, StaffPushSettings } from '../t
 /** API_CONTRACT_CYCLE24.md §484 — which site's devices: ezbook sends nothing (server default `Services`), goods `Orders`. */
 export type PushSite = 'Services' | 'Orders'
 
+/** API_CONTRACT_CYCLE33.md §33.21-§33.22 — `allSites=true` asks for both sites; sent only when true. */
+export interface PushAllSitesOption {
+  allSites?: boolean
+}
+
 export const pushApi = {
-  getConfig: (site?: PushSite) =>
-    api.get<PushConfig>('/push/config', { params: site ? { site } : undefined }).then((r) => r.data),
+  getConfig: (site?: PushSite, opts?: PushAllSitesOption) =>
+    api
+      .get<PushConfig>('/push/config', {
+        params: site || opts?.allSites ? { ...(site ? { site } : {}), ...(opts?.allSites ? { allSites: true } : {}) } : undefined,
+      })
+      .then((r) => r.data),
 
   // §115.2 — currentEndpoint is optional; without it the server always answers isCurrent: false.
-  listSubscriptions: (currentEndpoint?: string, site?: PushSite) =>
+  listSubscriptions: (currentEndpoint?: string, site?: PushSite, opts?: PushAllSitesOption) =>
     api
       .get<{ items: PushSubscriptionDevice[] }>('/push/subscriptions', {
-        params: currentEndpoint || site ? { ...(currentEndpoint ? { currentEndpoint } : {}), ...(site ? { site } : {}) } : undefined,
+        params:
+          currentEndpoint || site || opts?.allSites
+            ? { ...(currentEndpoint ? { currentEndpoint } : {}), ...(site ? { site } : {}), ...(opts?.allSites ? { allSites: true } : {}) }
+            : undefined,
       })
       .then((r) => r.data.items),
 

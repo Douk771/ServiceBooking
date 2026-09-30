@@ -11,7 +11,7 @@ import type { StaffMaxLinkSessionDto, StaffMaxStatusDto } from '../../types'
 const KEY = ['staff-max']
 
 /**
- * «Заказы в MAX» on `/cabinet/devices` (US-25-01/02): staff connect their own MAX chat with a one-time link. The state,
+ * «Заказы в MAX» in the profile's «Устройства и уведомления» (US-25-01/02): staff connect their own MAX chat with a one-time link. The state,
  * its wording, the platform switch and the reason a link cannot be issued are all the server's (`GET /api/staff-max`);
  * the chat id is never in any answer. Polling runs ONLY while `status = Pending` and the link has not expired (§538).
  */

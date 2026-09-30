@@ -1,3 +1,4 @@
+using ServiceBooking.API.Services.Notifications;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.Core.Entities;
@@ -22,7 +23,7 @@ public sealed class CustomerOrderPushQueue(AppDbContext db)
         if (subscriptions.Count == 0) return;
 
         var now = DateTime.UtcNow;
-        var body = JsonSerializer.Serialize(new { title = payload.Title, body = payload.Body, tag = payload.Tag, url = payload.Url }, OrderStaffPushQueue.PayloadOptions);
+        var body = JsonSerializer.Serialize(new { title = payload.Title, body = payload.Body, tag = payload.Tag, url = payload.Url }, StaffPushPayloadJson.Options);
         foreach (var subscription in subscriptions)
             db.CustomerOrderPushNotifications.Add(new CustomerOrderPushNotification
             {

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/authStore'
+import { unsubscribeCurrentDeviceOnLogout } from '@/hooks/useWebPush'
 import { Icon } from '@/components/ui/Icon'
 
 /** "ezbook · Заказы" (SPEC US-23-04). Signed-in: «Мои заказы», «Кабинет», профиль, выход. */
@@ -13,10 +14,12 @@ export function GoodsNavbar() {
   const closeMenu = () => setMenuOpen(false)
   const authed = isAuthenticated()
 
-  // Same shared-computer rule as ezbook (US-19, C5): drop every cached query with the session. There is
-  // no push subscription to remove on goods (no service worker in cycle 1).
-  const handleLogout = () => {
+  // Same shared-computer rule as ezbook (US-19, C5): drop every cached query with the session. The staff push row of this
+  // browser is removed on the server BEFORE the token is cleared (ARCHITECTURE_CYCLE33.md §33.10.3); the browser
+  // subscription is kept because the buyer role shares it. Never blocks the logout.
+  const handleLogout = async () => {
     closeMenu()
+    await unsubscribeCurrentDeviceOnLogout({ keepBrowserSubscription: true }).catch(() => undefined)
     logout()
     qc.clear()
     navigate('/')

@@ -161,6 +161,7 @@ internal static class NotificationServicesExtensions
         builder.Configuration.GetSection(ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions.SectionName));
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.PushSubscriptionWriter>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.StaffPushScheduler>();
+    builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.StaffPushLinks>();
 
     // The "web-push" named client (§105.1) — request/URL logging silenced the same way as "green-api"
     // (rung 1 of defence against a key/token reaching a log); PushServiceClient handles its own

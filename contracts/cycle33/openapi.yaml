@@ -1,0 +1,452 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 33 («Устройства и уведомления» в профиле, одно включение на оба
+# сайта; ezbook.ru + goods.ezbook.ru).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл, порядок проверок и тексты — API_CONTRACT_CYCLE33.md (§33.20–§33.29),
+# решения — ARCHITECTURE_CYCLE33.md (§33.0–§33.17), требования — SPEC.md цикла 33. При расхождении по ФОРМЕ прав
+# ЭТОТ файл.
+#
+#   frontend  npx @stoplight/prism mock contracts/cycle33/openapi.yaml --port 4033
+#             npm run types:api:cycle33      (openapi-typescript -> src/types/api-cycle33.generated.ts)
+#   backend   npm run contracts:json          (-> contracts/cycle33/openapi.json; его читает
+#                                              ServiceBooking.Tests/Infrastructure/OpenApiContract.cs, CY33-20…23)
+#   QA        schemathesis run contracts/cycle33/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle33/openapi.yaml
+#
+# Что описано: ВСЕ маршруты /api/push/* сотрудников (фактическая форма на 49f0d60 + дельта цикла 33):
+#   ИЗМЕНЕНО  GET    /api/push/config                 — query allSites; поля companies[].kind, siteUrls;
+#   ИЗМЕНЕНО  GET    /api/push/subscriptions          — query allSites; поле items[].site; isCurrent учитывает сайт;
+#   ИЗМЕНЕНО  POST   /api/push/subscriptions          — в ответе поле site;
+#   БЕЗ ИЗМ.  DELETE /api/push/subscriptions/current  — описан, потому что с цикла 33 его зовёт и выход на goods;
+#   БЕЗ ИЗМ.  DELETE /api/push/subscriptions/{id}     — описан, потому что им удаляется устройство другого сайта.
+#   Компонент StaffPushPayload — тело web-push сотрудникам (контракт с service worker, в пути не входит).
+# Push покупателям (/api/orders/public/{token}/push-subscription*) цикл не меняет — см. contracts/cycle24.
+# Внешних $ref проект не использует. Ключевые слова — только из набора валидатора OpenApiContract.cs (§29.7.2
+# ARCHITECTURE_CYCLE29.md): никаких oneOf/pattern/const/uniqueItems и соседей у $ref.
+
+info:
+  title: ServiceBooking API — цикл 33 (push сотрудникам на оба сайта)
+  version: "33.1.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта без изменений: camelCase; enum — строкой; 400 от контроллера и 409/429 — голая строка
+    (text/plain); 400 автовалидации (неразбираемый bool в query) — application/problem+json; 401 — пустое тело;
+    404 — пустое тело, не оракул; 451 — глобальный правовой гейт.
+
+    ГЛАВНЫЕ ПРАВИЛА ЦИКЛА, ЗАКРЕПЛЁННЫЕ ФОРМОЙ:
+      1. allSites=true — компании и устройства ОБОИХ сайтов; без параметра ответы как до цикла (совместимость).
+      2. У каждого устройства есть site — где оно включено; isCurrent только для подписки сайта запроса.
+      3. siteUrls — адреса обоих сайтов из конфигурации сервера (PublicSites); из них страница берёт peer воркера.
+      4. maxSubscriptionsPerUser — потолок на ОДИН сайт; устройство другого сайта не вытесняется никогда.
+      5. Тело push: url относительный для подписки сайта события и абсолютный ({siteUrls[сайт события]}{путь}) для
+         подписки другого сайта.
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4033
+    description: prism mock по этой схеме
+
+tags:
+  - name: push
+    description: Web Push сотрудникам — конфигурация и устройства пользователя на ezbook.ru и goods.ezbook.ru.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    SiteQuery:
+      name: site
+      in: query
+      required: false
+      description: |
+        Сайт, с которого спрашивают: Services (ezbook.ru, по умолчанию) или Orders (goods.ezbook.ru). Регистр не важен.
+        Другие значения, числа и списки через запятую — 400 «Неизвестный тип компании».
+      schema:
+        type: string
+        enum: [Services, Orders]
+    AllSitesQuery:
+      name: allSites
+      in: query
+      required: false
+      description: |
+        Цикл 33. true — компании (config) или устройства (subscriptions) обоих сайтов. Не передан или false — только
+        сайта site, как до цикла. Неразбираемое значение — 400 application/problem+json.
+      schema:
+        type: boolean
+        default: false
+    CurrentEndpointQuery:
+      name: currentEndpoint
+      in: query
+      required: false
+      description: Endpoint подписки этого браузера на этом сайте. Без него у всех устройств isCurrent = false.
+      schema:
+        type: string
+        maxLength: 500
+    SubscriptionId:
+      name: id
+      in: path
+      required: true
+      description: Id устройства (PushSubscriptionDto.id).
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    PlainTextError:
+      description: Осознанный отказ — голая строка по-русски.
+      content:
+        text/plain:
+          schema:
+            type: string
+    BadRequest:
+      description: |
+        400. От контроллера — голая строка (например «Неизвестный тип компании»); от автовалидации (неразбираемый
+        allSites) — ValidationProblemDetails.
+      content:
+        text/plain:
+          schema:
+            type: string
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ValidationProblemDetails'
+    Unauthorized:
+      description: Нет или недействителен токен. Тело пустое.
+    NotFound:
+      description: Нет такого устройства или оно чужое — ответ тот же. Тело пустое.
+    NoContent:
+      description: Выполнено. Тело пустое.
+    PlainTextConflict:
+      description: 'Push выключен на платформе: «Уведомления на устройство пока не включены на платформе.»'
+      content:
+        text/plain:
+          schema:
+            type: string
+    TooManyRequests:
+      description: 'Политика push-subscribe (20 в час на пользователя): «Слишком много подписок устройств. Повторите позже.»'
+      content:
+        text/plain:
+          schema:
+            type: string
+    LegalGate:
+      description: Требуется принять новую редакцию правовых документов (глобальный LegalConsentFilter).
+      content:
+        text/plain:
+          schema:
+            type: string
+
+  schemas:
+    CompanyKind:
+      type: string
+      description: Вид компании и одновременно сайт push-подписки. Services — салон / ezbook.ru, Orders — магазин / goods.ezbook.ru.
+      enum: [Services, Orders]
+
+    PushSiteUrlsDto:
+      type: object
+      additionalProperties: false
+      description: Цикл 33. PublicSites:ServicesBaseUrl и PublicSites:OrdersBaseUrl — абсолютные origin без завершающего «/».
+      required: [services, orders]
+      properties:
+        services:
+          type: string
+          minLength: 1
+          example: https://ezbook.ru
+        orders:
+          type: string
+          minLength: 1
+          example: https://goods.ezbook.ru
+
+    PushConfigCompanyDtoCycle33:
+      type: object
+      additionalProperties: false
+      description: Компания, где вызывающий Master или CompanyOwner.
+      required: [companyId, companyName, staffPushEnabled, kind]
+      properties:
+        companyId:
+          type: string
+          format: uuid
+        companyName:
+          type: string
+        staffPushEnabled:
+          type: boolean
+          description: Настройка компании «push сотрудникам». false — сотрудники этой компании push не получают.
+        kind:
+          $ref: '#/components/schemas/CompanyKind'
+
+    PushConfigDtoCycle33:
+      type: object
+      additionalProperties: false
+      required: [enabled, publicKey, maxSubscriptionsPerUser, companies, site, siteUrls]
+      properties:
+        enabled:
+          type: boolean
+          description: Push включён на платформе (Notifications:StaffPush:Provider = web-push).
+        publicKey:
+          type: string
+          nullable: true
+          description: VAPID public key; null, когда enabled = false.
+        maxSubscriptionsPerUser:
+          type: integer
+          minimum: 1
+          description: Потолок устройств на ОДИН сайт (пользователь × сайт), а не на весь список.
+        companies:
+          type: array
+          description: |
+            allSites=false — только компании вида site. allSites=true — обоих видов, сначала Services, потом Orders,
+            внутри по имени. Пустой массив — у пользователя нет роли сотрудника или владельца: раздел профиля скрыт.
+          items:
+            $ref: '#/components/schemas/PushConfigCompanyDtoCycle33'
+        site:
+          $ref: '#/components/schemas/CompanyKind'
+        siteUrls:
+          $ref: '#/components/schemas/PushSiteUrlsDto'
+
+    PushSubscriptionDtoCycle33:
+      type: object
+      additionalProperties: false
+      description: Устройство пользователя. Ключи подписки и endpoint не отдаются никогда.
+      required: [id, deviceLabel, createdAtUtc, lastSuccessAtUtc, isCurrent, site]
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceLabel:
+          type: string
+          maxLength: 100
+          example: Chrome на Android
+        createdAtUtc:
+          type: string
+          format: date-time
+        lastSuccessAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: Последняя доставка, принятая сервисом push; null — ещё ни одной.
+        isCurrent:
+          type: boolean
+          description: true ⇔ endpoint совпал с currentEndpoint И сайт устройства совпал с site запроса. В ответе POST — всегда true.
+        site:
+          $ref: '#/components/schemas/CompanyKind'
+
+    PushSubscriptionListDtoCycle33:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          description: Порядок — createdAtUtc по убыванию.
+          items:
+            $ref: '#/components/schemas/PushSubscriptionDtoCycle33'
+
+    PushKeysInput:
+      type: object
+      required: [p256dh, auth]
+      properties:
+        p256dh:
+          type: string
+          minLength: 1
+          maxLength: 200
+        auth:
+          type: string
+          minLength: 1
+          maxLength: 100
+
+    PushSubscribeInput:
+      type: object
+      required: [endpoint, keys]
+      properties:
+        endpoint:
+          type: string
+          maxLength: 500
+          description: Адрес сервиса push (https). Уникален; повторная подписка того же браузера обновляет строку.
+        keys:
+          $ref: '#/components/schemas/PushKeysInput'
+        deviceLabel:
+          type: string
+          nullable: true
+          maxLength: 100
+        site:
+          type: string
+          enum: [Services, Orders]
+          nullable: true
+          description: Сайт, с которого включают. Не передан — Services. Новый фронт передаёт всегда.
+
+    DeleteCurrentPushSubscriptionInput:
+      type: object
+      required: [endpoint]
+      properties:
+        endpoint:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    ValidationProblemDetails:
+      type: object
+      additionalProperties: true
+      properties:
+        title:
+          type: string
+        status:
+          type: integer
+        errors:
+          type: object
+          additionalProperties: true
+
+    StaffPushPayload:
+      type: object
+      additionalProperties: false
+      description: |
+        Тело web-push сотрудникам — контракт сервера с service worker'ами (в HTTP-пути не входит). JSON без
+        \uXXXX-экранирования кириллицы, целиком ≤ 1000 символов (при превышении укорачивается body с «…»).
+        url — относительный путь для подписки сайта события; {siteUrls[сайт события]}{путь} для подписки другого
+        сайта. Воркер принимает только свой origin и origin соседа из /sw.js?peer= (API_CONTRACT_CYCLE33.md §33.28).
+      required: [title, body, tag, url]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          example: Новая запись
+        body:
+          type: string
+          example: Стрижка · 02.10.2026 в 12:30 · Анна · Салон на Ленина
+        tag:
+          type: string
+          description: 'b-{bookingId} | o-{orderId} | limit-{yyyy-MM} — схлопывает повторы в пределах одного сайта.'
+        url:
+          type: string
+          minLength: 1
+          example: https://goods.ezbook.ru/cabinet/7e21c0de-0000-0000-0000-000000000000/orders?order=5d3a0000-0000-0000-0000-000000000000
+
+paths:
+  /api/push/config:
+    get:
+      tags: [push]
+      operationId: getPushConfigCycle33
+      summary: Конфигурация push — включён ли, ключ, компании (одного или обоих сайтов), адреса сайтов
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SiteQuery'
+        - $ref: '#/components/parameters/AllSitesQuery'
+      responses:
+        '200':
+          description: Конфигурация.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushConfigDtoCycle33'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '451':
+          $ref: '#/components/responses/LegalGate'
+
+  /api/push/subscriptions:
+    get:
+      tags: [push]
+      operationId: listPushSubscriptionsCycle33
+      summary: Мои устройства — одного сайта или обоих (allSites=true), с признаком сайта
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CurrentEndpointQuery'
+        - $ref: '#/components/parameters/SiteQuery'
+        - $ref: '#/components/parameters/AllSitesQuery'
+      responses:
+        '200':
+          description: Устройства вызывающего.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushSubscriptionListDtoCycle33'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '451':
+          $ref: '#/components/responses/LegalGate'
+    post:
+      tags: [push]
+      operationId: createPushSubscriptionCycle33
+      summary: Включить уведомления на этом устройстве (потолок и вытеснение — внутри пользователя и сайта)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushSubscribeInput'
+      responses:
+        '201':
+          description: Создана.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushSubscriptionDtoCycle33'
+        '200':
+          description: Тот же endpoint — обновлена или переназначена вызывающему.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushSubscriptionDtoCycle33'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/PlainTextConflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '451':
+          $ref: '#/components/responses/LegalGate'
+
+  /api/push/subscriptions/current:
+    delete:
+      tags: [push]
+      operationId: deleteCurrentPushSubscriptionCycle33
+      summary: Отключить устройство по endpoint (выход из аккаунта на обоих сайтах); идемпотентно
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteCurrentPushSubscriptionInput'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '400':
+          $ref: '#/components/responses/PlainTextError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '451':
+          $ref: '#/components/responses/LegalGate'
+
+  /api/push/subscriptions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SubscriptionId'
+    delete:
+      tags: [push]
+      operationId: deletePushSubscriptionCycle33
+      summary: Отключить любое своё устройство — включённое на любом из двух сайтов
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '451':
+          $ref: '#/components/responses/LegalGate'

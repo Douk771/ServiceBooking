@@ -63,21 +63,6 @@ export function getPushUnavailableReason(input: PushAvailabilityInput): PushUnav
   return null
 }
 
-export const PUSH_UNAVAILABLE_MESSAGES: Record<PushUnavailableReason, string> = {
-  'ios-safari-not-installed':
-    'На айфоне уведомления приходят только приложению EZBOOK, добавленному на экран «Домой». Это займёт минуту:',
-  'ios-version-too-old':
-    'На этой версии iOS уведомления от сайтов не работают даже с экрана «Домой». Нужна iOS 16.4 или новее — обновить: Настройки → Основные → Обновление ПО.',
-  'unsupported-browser': 'Ваш браузер не умеет присылать уведомления. Записи по-прежнему видны на этой странице.',
-  'insecure-context': 'Уведомления работают только по защищённому соединению (HTTPS). На этом адресе они недоступны.',
-  'permission-denied':
-    'Вы запретили уведомления в браузере. Чтобы вернуть: значок замка в адресной строке → Уведомления → Разрешить.',
-  'ios-permission-denied':
-    'Вы запретили уведомления для EZBOOK. Чтобы вернуть: Настройки айфона → Уведомления → EZBOOK → Допуск уведомлений.',
-  'platform-disabled': 'Уведомления на устройство пока не включены на платформе.',
-  'company-disabled': 'Уведомления сотрудникам отключены владельцем салона.',
-}
-
 type NavigatorLike = Pick<Navigator, 'userAgent' | 'maxTouchPoints'> & { standalone?: boolean }
 
 /**

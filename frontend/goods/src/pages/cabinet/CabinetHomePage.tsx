@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { describeDevice, useWebPush } from '@/hooks/useWebPush'
+import { likelySameBrowserOnOtherSite } from '@/utils/staffPushTexts'
 import { shopsApi } from '../../api/shops'
 import { LinkButton } from '../../components/LinkButton'
 import { Icon } from '@/components/ui/Icon'
@@ -10,6 +12,16 @@ import { getGoodsErrorMessage } from '../../utils/orderError'
 export function CabinetHomePage() {
   const shops = useQuery({ queryKey: ['my-shops'], queryFn: shopsApi.my })
   const summary = useQuery({ queryKey: ['kinds-summary'], queryFn: shopsApi.kindsSummary, retry: false })
+  // US-33-08 (P2): a nudge for staff whose device has no order notifications yet. Also refreshes the worker's sibling origin.
+  const push = useWebPush({ site: 'Orders', keepBrowserSubscription: true })
+  const showPushNudge =
+    push.isStaff === true &&
+    push.hasOrders &&
+    !push.isLoading &&
+    !push.devicesError &&
+    push.reason === null &&
+    !push.isSubscribedOnThisDevice &&
+    !likelySameBrowserOnOtherSite(push.devices, 'Orders', describeDevice())
 
   return (
     <main className="max-w-[860px] mx-auto px-4 sm:px-8 pt-10">
@@ -62,16 +74,21 @@ export function CabinetHomePage() {
         </ul>
       )}
 
-      {shops.data && shops.data.length > 0 && (
-        <nav aria-label="Аккаунт" className="mt-8 flex gap-3 flex-wrap">
-          <Link to="/cabinet/devices" className="inline-flex items-center gap-2 min-h-[44px] rounded-full border border-line bg-white px-5 text-sm font-semibold !text-ink hover:border-line-strong">
-            <Icon name="bell" size={15} strokeWidth={1.8} /> Устройства и уведомления
+      {showPushNudge && (
+        <p className="mt-8 text-sm text-ink-soft" data-testid="push-nudge">
+          Уведомления о новых заказах на этом устройстве не включены —{' '}
+          <Link to="/profile#devices" className="text-gold hover:text-gold-dark font-medium">
+            включить в профиле
           </Link>
-          {shops.data.some((s) => s.myRole !== 'Staff') && (
-            <Link to="/cabinet/subscription" className="inline-flex items-center gap-2 min-h-[44px] rounded-full border border-line bg-white px-5 text-sm font-semibold !text-ink hover:border-line-strong">
-              <Icon name="credit-card" size={15} strokeWidth={1.8} /> Подписка
-            </Link>
-          )}
+          .
+        </p>
+      )}
+
+      {shops.data && shops.data.some((s) => s.myRole !== 'Staff') && (
+        <nav aria-label="Аккаунт" className="mt-8 flex gap-3 flex-wrap">
+          <Link to="/cabinet/subscription" className="inline-flex items-center gap-2 min-h-[44px] rounded-full border border-line bg-white px-5 text-sm font-semibold !text-ink hover:border-line-strong">
+            <Icon name="credit-card" size={15} strokeWidth={1.8} /> Подписка
+          </Link>
         </nav>
       )}
 

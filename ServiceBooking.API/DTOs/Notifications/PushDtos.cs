@@ -6,11 +6,16 @@ namespace ServiceBooking.API.DTOs.Notifications;
 public record PushConfigDto(
     bool Enabled, string? PublicKey, int MaxSubscriptionsPerUser, IReadOnlyList<PushConfigCompanyDto> Companies,
     // Cycle 24 (API_CONTRACT_CYCLE24.md §484): the site the answer is for — Services (ezbook, the default) or Orders (goods).
-    Core.Enums.CompanyKind Site = Core.Enums.CompanyKind.Services);
+    Core.Enums.CompanyKind Site = Core.Enums.CompanyKind.Services,
+    // Cycle 33 (API_CONTRACT_CYCLE33.md §33.21): base addresses of both sites; the frontend derives the service worker peer from it.
+    PushSiteUrlsDto? SiteUrls = null);
+
+/// <summary>Cycle 33: <c>siteUrls</c> of <c>GET /api/push/config</c> — <c>PublicSites</c> base addresses without a trailing slash.</summary>
+public record PushSiteUrlsDto(string Services, string Orders);
 
 /// <summary>One company the caller is staff of, and whether that company currently wants push at all —
 /// <c>StaffPushEnabled=false</c> means the frontend must not even ask for browser permission (US-118).</summary>
-public record PushConfigCompanyDto(Guid CompanyId, string CompanyName, bool StaffPushEnabled);
+public record PushConfigCompanyDto(Guid CompanyId, string CompanyName, bool StaffPushEnabled, Core.Enums.CompanyKind Kind = Core.Enums.CompanyKind.Services);
 
 /// <summary><c>GET /api/push/subscriptions</c>. Deliberately no keys anywhere in this shape — see
 /// <see cref="PushSubscriptionDto"/>'s own doc comment.</summary>
@@ -18,7 +23,8 @@ public record PushSubscriptionListDto(IReadOnlyList<PushSubscriptionDto> Items);
 
 /// <summary>⚠️ Ключи подписки (p256dh, auth) НЕ ОТДАЮТСЯ здесь ни в каком виде — this record has no
 /// property for them at all, so leaking them would require adding one, not forgetting to redact one.</summary>
-public record PushSubscriptionDto(Guid Id, string DeviceLabel, DateTime CreatedAtUtc, DateTime? LastSuccessAtUtc, bool IsCurrent);
+public record PushSubscriptionDto(Guid Id, string DeviceLabel, DateTime CreatedAtUtc, DateTime? LastSuccessAtUtc, bool IsCurrent,
+    Core.Enums.CompanyKind Site = Core.Enums.CompanyKind.Services);
 
 /// <summary><c>POST /api/push/subscriptions</c> request body — no owner field anywhere in this shape
 /// (US-123: "создать чужую подписку" невозможно по форме запроса, владелец берётся из токена).</summary>

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -15,7 +16,16 @@ import { ErrorState, InlineError, LoadingList } from '../../components/StatePane
 import { getGoodsErrorMessage } from '../../utils/orderError'
 import type { NotificationDeliveryMode, NotificationTransport, ShopNotificationSettingsDto } from '../../types'
 
-function Toggle({ label, hint, checked, disabled, onChange }: { label: string; hint?: string; checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
+/** US-33-06 — devices live in the profile now (ARCHITECTURE_CYCLE33.md §33.10.1). */
+function ProfileDevicesLink() {
+  return (
+    <Link to="/profile#devices" className="underline">
+      профиле
+    </Link>
+  )
+}
+
+function Toggle({ label, hint, checked, disabled, onChange }: { label: string; hint?: ReactNode; checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
   return (
     <label className={`flex items-start justify-between gap-4 py-2 min-h-[44px] ${disabled ? 'opacity-60' : 'cursor-pointer'}`}>
       <span className="min-w-0">
@@ -93,11 +103,15 @@ export function ShopNotificationsPage() {
         <h2 id="ntf-staff" className="font-serif text-xl text-ink">
           Сотрудникам магазина
         </h2>
-        <Toggle label="Push о новых заказах" hint="Сотрудник включает уведомления на своём устройстве в разделе «Устройства»." checked={draft.staffPushEnabled} onChange={(v) => set({ staffPushEnabled: v })} />
+        <Toggle label="Push о новых заказах" hint={<>Сотрудник включает уведомления на своём устройстве в <ProfileDevicesLink />, раздел «Устройства и уведомления».</>} checked={draft.staffPushEnabled} onChange={(v) => set({ staffPushEnabled: v })} />
         {!draft.platformPushEnabled && <p className="text-xs text-muted">Уведомления на устройство пока не включены на платформе.</p>}
         <Toggle
           label="Сообщения сотрудникам в MAX"
-          hint="Новые заказы и отмены покупателями приходят в MAX тем сотрудникам, кто подключил его в разделе «Устройства». Кнопка «Сохранить» — ниже, в блоке «Покупателям»."
+          hint={
+            <>
+              Новые заказы и отмены покупателями приходят в MAX тем сотрудникам, кто подключил его в <ProfileDevicesLink />, раздел «Устройства и уведомления». Кнопка «Сохранить» — ниже, в блоке «Покупателям».
+            </>
+          }
           checked={draft.staffMaxEnabled}
           onChange={(v) => set({ staffMaxEnabled: v })}
         />

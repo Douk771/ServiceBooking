@@ -299,7 +299,7 @@ public class Cycle24NotificationsTests(TestDatabaseFixture fixture) : Cycle24Tes
     }
 
     [Fact, TestCase("CY24-66")]
-    public async Task NewOrder_QueuesStaffPushOnlyToGoodsDevices_TextWithoutCustomerData_SettingOffStopsIt()
+    public async Task NewOrder_QueuesStaffPushToAllDevices_TextWithoutCustomerData_SettingOffStopsIt()
     {
         var shop = await CreateShopAsync();
         var staff = await AddShopStaffAsync(shop);
@@ -322,9 +322,11 @@ public class Cycle24NotificationsTests(TestDatabaseFixture fixture) : Cycle24Tes
 
         List<StaffPushNotification> Rows() { using var scope = Factory.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<AppDbContext>(); return db.StaffPushNotifications.Include(x => x.Subscription).Where(x => x.CompanyId == shop.Id).ToList(); }
         var rows = Rows();
-        rows.Should().HaveCount(2, "по одной строке на устройство goods (владелец и сотрудник); устройство ezbook не получает");
-        rows.Should().OnlyContain(x => x.OrderId != null && x.Subscription!.Site == CompanyKind.Orders && x.Type == NotificationType.StaffOrderCreated);
-        rows.Select(x => x.UserId).Should().BeEquivalentTo(new[] { shop.Owner.UserId, staff.UserId });
+        rows.Should().HaveCount(3, "цикл 33: по одной строке на каждое устройство получателя, любого сайта (2 у владельца, 1 у сотрудника)");
+        rows.Should().OnlyContain(x => x.OrderId != null && x.Type == NotificationType.StaffOrderCreated);
+        rows.Select(x => x.UserId).Should().BeEquivalentTo(new[] { shop.Owner.UserId, shop.Owner.UserId, staff.UserId });
+        rows.Single(x => x.Subscription!.Site == CompanyKind.Services).Payload.Should().Contain("\"url\":\"http", "на устройство ezbook url абсолютный");
+        rows.Where(x => x.Subscription!.Site == CompanyKind.Orders).Should().OnlyContain(x => x.Payload.Contains("\"url\":\"/cabinet/"));
         foreach (var row in rows)
         {
             row.Payload.Should().Contain($"Новый заказ № {number}");
@@ -337,7 +339,7 @@ public class Cycle24NotificationsTests(TestDatabaseFixture fixture) : Cycle24Tes
         (await AuthedClient(shop.OwnerToken).PutJsonAsync($"/api/shops/{shop.Id}/notification-settings",
             new ShopNotificationSettingsInput(false, true, false, null, null))).StatusCode.Should().Be(HttpStatusCode.OK);
         (await PushClient(push).PostJsonAsync($"/api/storefront/{shop.Slug}/orders", Guest([Line(p, 1)]))).StatusCode.Should().Be(HttpStatusCode.Created);
-        Rows().Should().HaveCount(2);
+        Rows().Should().HaveCount(3);
     }
 
     // ── US-24-20/22: сообщения покупателю в мессенджер ───────────────────────────
