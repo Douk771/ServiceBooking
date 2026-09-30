@@ -1,0 +1,114 @@
+# Демо-стенд demo.visit.ezbook.ru (цикл 28, проход B; ARCHITECTURE_CYCLE28.md §581, SPEC US-28-12).
+#
+# ОТДЕЛЬНЫЙ compose-проект `ezbook-demo`: свой Postgres, свои тома, своя сеть. С боевым стеком (docker-compose.prod.yml)
+# не делит ничего, кроме ОБРАЗА API и каталога ./legal (только чтение). Запуск и остановка демо боевой стек не задевают.
+#
+#   docker compose -f docker-compose.demo.yml --env-file .env.demo up -d
+#
+# Образ `servicebooking-api:latest` СОБИРАЕТ боевой compose (`up -d --build` в deploy-remote.sh). Здесь `build:` нет
+# намеренно: одна сборка на оба стека, демо всегда на том же коде, что бой. Если образа на машине ещё нет — сначала
+# боевой выкат (DEPLOY.md §25).
+#
+# Память (A9, §581.2): api-demo 400 МБ + postgres-demo 256 МБ = 656 МБ потолок, в покое ожидается 250-400 МБ.
+# Порт API — только на localhost (5001), наружу его отдаёт nginx-vhost demo.visit.ezbook.ru. Порт Postgres НЕ публикуется.
+#
+# Замки демо-режима (DeploymentSafetyChecks.ValidateDemoMode, §579.2): при DemoMode__Enabled=true API НЕ стартует, если
+# хост, origins, имя БД, издатель токенов или провайдеры похожи на боевые. Значения по умолчанию ниже их проходят;
+# менять их в .env.demo не нужно.
+
+name: ezbook-demo
+
+services:
+  postgres-demo:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    mem_limit: 256m
+    # ≤ 20 соединений; пул API ограничен ниже (Maximum Pool Size), ещё остаются слоты под `ops demo reset` и psql.
+    command: ["postgres", "-c", "shared_buffers=32MB", "-c", "max_connections=20", "-c", "work_mem=4MB"]
+    environment:
+      POSTGRES_DB: servicebooking_demo
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:?DEMO_POSTGRES_PASSWORD is required (.env.demo)}
+    volumes:
+      - demo_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d servicebooking_demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # Порт на хост не публикуется — до БД доходит только api-demo по сети compose-проекта.
+
+  api-demo:
+    image: servicebooking-api:latest
+    restart: unless-stopped
+    mem_limit: 400m
+    ports:
+      - "127.0.0.1:${DEMO_API_PORT:-5001}:8080"   # только localhost; vhost demo.visit.ezbook.ru проксирует сюда
+    environment:
+      # --- рантайм: серверный GC выключен, куча <= 256 МБ (0x10000000) ---
+      - DOTNET_gcServer=0
+      - DOTNET_GCHeapHardLimit=0x10000000
+      - ASPNETCORE_ENVIRONMENT=Production
+      # --- демо-режим и его замки (§579) ---
+      - DemoMode__Enabled=${DEMO_MODE_ENABLED:-true}
+      - DemoMode__ResetLocalTime=${DEMO_RESET_LOCAL_TIME:-04:00}
+      - DemoMode__TimeZoneId=${DEMO_TIMEZONE_ID:-Europe/Moscow}
+      - PublicSites__ServicesBaseUrl=${DEMO_PUBLIC_BASE_URL:-https://demo.visit.ezbook.ru}
+      - AllowedOrigins=${DEMO_ALLOWED_ORIGINS:-https://demo.visit.ezbook.ru}
+      # Имя БД обязано оканчиваться на _demo (замок 1, п. 3). Пул ограничен под max_connections=20 у postgres-demo.
+      - ConnectionStrings__DefaultConnection=Host=postgres-demo;Database=servicebooking_demo;Username=postgres;Password=${DEMO_POSTGRES_PASSWORD};Maximum Pool Size=10
+      # Издатель заканчивается на .Demo — боевой токен на демо не пройдёт и наоборот (замок 1, п. 4). Ключ СВОЙ, не боевой.
+      - Jwt__Key=${DEMO_JWT_KEY:?DEMO_JWT_KEY is required (.env.demo)}
+      - Jwt__Issuer=${DEMO_JWT_ISSUER:-ServiceBooking.Demo}
+      - Jwt__Audience=${DEMO_JWT_AUDIENCE:-ServiceBookingClient.Demo}
+      - SuperAdmin__Phone=${DEMO_SUPERADMIN_PHONE:?DEMO_SUPERADMIN_PHONE is required (.env.demo)}
+      - SuperAdmin__Password=${DEMO_SUPERADMIN_PASSWORD:?DEMO_SUPERADMIN_PASSWORD is required (.env.demo)}
+      # Тот же ключ капчи, что на бою: хост demo.visit.ezbook.ru добавляется в консоли SmartCaptcha (DEPLOY.md §25).
+      - SmartCaptcha__SecretKey=${SMARTCAPTCHA_SECRET_KEY:-}
+      # Подсеть сети этого проекта (см. networks ниже) — единственный узел, от которого доверяем X-Forwarded-For.
+      - ForwardedHeaders__TrustedNetworks__0=${DEMO_FORWARDEDHEADERS__TRUSTEDNETWORKS__0:?DEMO_FORWARDEDHEADERS__TRUSTEDNETWORKS__0 is required (.env.demo)}
+      # Ключ проверки «пробный один раз на телефон» нужен и демо: без него ValidateTrialSecrets роняет старт в Production (C28-15).
+      # Свой ключ, не боевой; база демо отдельная, так что наборы ключей не пересекаются.
+      - Trial__PhoneKeyHmac=${DEMO_TRIAL_PHONEKEY_HMAC:?DEMO_TRIAL_PHONEKEY_HMAC is required (.env.demo)}
+      - Trial__PhoneKeyId=${DEMO_TRIAL_PHONEKEY_ID:-k1}
+      # Демо никому ничего не отправляет: только logging/stub (замок 1, п. 5), MAX персоналу выключен.
+      - Notifications__Provider=${DEMO_NOTIFICATIONS_PROVIDER:-logging}
+      - Notifications__StaffPush__Provider=${DEMO_STAFFPUSH_PROVIDER:-logging}
+      - Notifications__StaffMax__Enabled=${DEMO_STAFFMAX_ENABLED:-false}
+      - PhoneVerification__Provider=${DEMO_PHONEVERIFY_PROVIDER:-stub}
+      # Ночной сброс заменяет еженедельный пересев витрины (замок 1, п. 6).
+      - Showcase__Reseed__Enabled=${DEMO_SHOWCASE_RESEED_ENABLED:-false}
+      - Storage__PrivateRoot=/app/private-uploads
+      # Sentry/GlitchTip не подключаем: ошибки демо не должны шуметь в боевом трекере.
+      - Sentry__Dsn=
+    volumes:
+      - demo_uploads:/app/wwwroot/uploads            # публичные файлы демо (логотипы, фото)
+      - demo_private_uploads:/app/private-uploads    # приватные файлы демо
+      - demo_logs:/app/logs                          # Serilog, одноразовая диагностика
+      - ./legal:/app/App_Data/legal:ro               # те же опубликованные документы, что на бою (C28-3)
+      # Записываемый bind-mount: отпечаток ключа и метка сброса/обслуживания (DemoMode__MaintenanceFlagPath по умолчанию
+      # App_Data/state/demo-resetting). Создать на хосте ДО первого запуска: mkdir -m 0700 state-demo (DEPLOY.md §25).
+      - ./state-demo:/app/App_Data/state
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health/live"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      postgres-demo:
+        condition: service_healthy
+
+networks:
+  default:
+    ipam:
+      config:
+        # Фиксированная подсеть: ForwardedHeaders__TrustedNetworks__0 должна совпадать с ней. Если она занята другой сетью
+        # на машине (`docker network inspect $(docker network ls -q) | grep Subnet`), поменяйте обе переменные.
+        - subnet: ${DEMO_NETWORK_SUBNET:-172.30.77.0/24}
+
+volumes:
+  demo_pg:
+  demo_uploads:
+  demo_private_uploads:
+  demo_logs:
