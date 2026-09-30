@@ -201,7 +201,7 @@ public class CompaniesController(
         var city = c.CityId.HasValue ? await db.Cities.FindAsync([c.CityId.Value], ct) : null;
         // §109.3: the public page is the ONE place `photos` is filled — gallery with zero extra
         // requests. The cover is just photos[0] here, so it's derived rather than queried a second time.
-        var photos = await companyDtoAssembler.GetPhotosOrderedAsync(c.Id);
+        var photos = await ServiceBooking.API.Services.Companies.CompanyPhotoQueries.OrderedAsync(db, c.Id, ct);
         var cover = photos.Count > 0 ? (photos[0].Url, photos[0].ThumbnailUrl) : ((string, string)?)null;
         // Reachable anonymously (no [Authorize]) — same §46.2 treatment as GetAll: no usage computed.
         return Ok(companyDtoAssembler.MapToDto(c, plan, averageRating, reviewCount, city, employeeCount: 0, usage: null,

@@ -165,13 +165,13 @@ public class Cycle25CatalogTests(TestDatabaseFixture fixture) : Cycle25TestBase(
         closed.OpenState.Text.Should().StartWith("Закрыто");
         page.Items.Single(i => i.Slug == apelsin.Slug).OpenState.IsOpen.Should().BeTrue("пауза приёма не закрывает часы: состояние «открыто» и «не принимает» независимы");
 
-        // карточка — только перечисленное в контракте: ни цен, ни фото, ни рейтингов, ни реквизитов продавца [legal L19]
+        // карточка — только перечисленное в контракте (с цикла 29 — плюс logoUrl, US-29-02): ни цен, ни фото, ни рейтингов, ни реквизитов продавца [legal L19]
         var raw = await host.CreateClient().GetStringAsync($"/api/goods/catalog?cityId={city}");
         using var doc = JsonDocument.Parse(raw);
         var props = doc.RootElement.GetProperty("items")[0].EnumerateObject().Select(p => p.Name).OrderBy(x => x).ToList();
-        props.Should().Equal("acceptance", "acceptanceText", "address", "cityName", "name", "openState", "path", "slug");
+        props.Should().Equal("acceptance", "acceptanceText", "address", "cityName", "logoUrl", "name", "openState", "path", "slug");
         raw.Should().NotContainEquivalentOf("price").And.NotContainEquivalentOf("rating").And.NotContainEquivalentOf("review")
-            .And.NotContainEquivalentOf("logo").And.NotContainEquivalentOf("photo").And.NotContainEquivalentOf("inn");
+            .And.NotContainEquivalentOf("photo").And.NotContainEquivalentOf("inn");
 
         // фильтр «Открыто сейчас»
         var openNow = await CatalogAsync(host, $"?cityId={city}&openNow=true");

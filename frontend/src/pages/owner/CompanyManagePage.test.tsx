@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MembersTab, SettingsTab } from './CompanyManagePage'
@@ -24,6 +24,12 @@ vi.mock('../../api/companies', () => ({
     uploadLogo: vi.fn(),
   },
 }))
+
+const saveAddress = vi.fn()
+vi.mock('../../api/companyAddress', () => ({
+  companyAddressApi: { saveAddress: (...a: unknown[]) => saveAddress(...a), notice: vi.fn() },
+}))
+vi.mock('../../api/cities', () => ({ citiesApi: { search: () => Promise.resolve([]) } }))
 
 vi.mock('../../api/services', () => ({
   servicesApi: { getByCompany: (...args: unknown[]) => getByCompany(...args) },
@@ -206,5 +212,96 @@ describe('SettingsTab — clientRescheduleMinHours hint and empty-field behaviou
     // an empty string/0 — an empty string would be a stray no-op to the API contract, 0 is a
     // legitimate explicit value the owner didn't type.
     expect(body.clientRescheduleMinHours).toBeUndefined()
+  })
+})
+
+// ARCHITECTURE_CYCLE29.md §29.9 (US-29-01): the four field groups and the city block inside the main form.
+describe('SettingsTab — cycle 29 field groups', () => {
+  function renderSettings() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={qc}>
+        <SettingsTab companyId="co1" />
+      </QueryClientProvider>,
+    )
+  }
+  const COMPANY = {
+    id: 'co1', name: 'Салон', address: 'Ленина, 1', cityId: 5, cityName: 'Барнаул', cityRegion: 'Алтайский край',
+    timeZoneId: 'Asia/Barnaul', utcOffsetMinutes: 420, allowSelfBooking: true, clientRescheduleMinHours: 2,
+    planAllowsOnlineBooking: true, planAllowsOnlinePayment: true, planAllowsPublicListing: true,
+  }
+
+  beforeEach(() => {
+    update.mockReset().mockResolvedValue({})
+    saveAddress.mockReset()
+    getMy.mockReset().mockResolvedValue([COMPANY])
+  })
+
+  it('V29-01: fields live in their own named groups', async () => {
+    renderSettings()
+    await screen.findByRole('group', { name: 'Город и часовой пояс' })
+    const main = screen.getByRole('group', { name: 'Основное' })
+    expect(within(main).getByLabelText('Название')).toBeInTheDocument()
+    expect(within(main).getByText('Описание')).toBeInTheDocument()
+    const contacts = screen.getByRole('group', { name: 'Контакты' })
+    expect(within(contacts).getByLabelText('Телефон')).toBeInTheDocument()
+    expect(within(contacts).getByLabelText('Email')).toBeInTheDocument()
+    const addr = screen.getByRole('group', { name: 'Адрес и карты' })
+    expect(within(addr).getByRole('group', { name: 'Город и часовой пояс' })).toBeInTheDocument()
+    expect(within(addr).getByLabelText('Ссылка на Яндекс Картах')).toBeInTheDocument()
+    expect(within(addr).getByLabelText('Ссылка на 2ГИС')).toBeInTheDocument()
+    const rec = screen.getByRole('group', { name: 'Запись' })
+    expect(within(rec).getByLabelText('На сколько дней вперёд клиент может записаться')).toBeInTheDocument()
+    expect(within(rec).getByLabelText('За сколько часов клиент может перенести или отменить запись')).toBeInTheDocument()
+    expect(within(rec).getAllByRole('checkbox')).toHaveLength(3)
+  })
+
+  it('V29-02: main save sends one update without cityId/timeZoneId/address', async () => {
+    renderSettings()
+    const name = await screen.findByLabelText('Название')
+    await waitFor(() => expect(name).toHaveValue('Салон'))
+    await userEvent.type(name, '!')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    const body = update.mock.calls[0][1] as Record<string, unknown>
+    expect(body).not.toHaveProperty('cityId')
+    expect(body).not.toHaveProperty('timeZoneId')
+    expect(body).not.toHaveProperty('address')
+    expect(saveAddress).not.toHaveBeenCalled()
+  })
+
+  it('V29-03: city save sends exactly { cityId, timeZoneId } and does not submit the main form', async () => {
+    renderSettings()
+    const city = await screen.findByRole('group', { name: 'Город и часовой пояс' })
+    await waitFor(() => expect(within(city).getByRole('combobox')).toHaveValue('Барнаул, Алтайский край'))
+    await userEvent.click(within(city).getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update).toHaveBeenCalledWith('co1', { cityId: 5, timeZoneId: null })
+  })
+
+  it('V29-04: Enter in the city and IANA fields does not submit anything', async () => {
+    renderSettings()
+    const city = await screen.findByRole('group', { name: 'Город и часовой пояс' })
+    const name = screen.getByLabelText('Название')
+    await waitFor(() => expect(name).toHaveValue('Салон'))
+    await userEvent.type(name, '!') // make the form dirty so "Сохранить изменения" is enabled
+    expect(screen.getByRole('button', { name: 'Сохранить изменения' })).toBeEnabled()
+    await userEvent.type(within(city).getByRole('combobox'), '{Enter}')
+    await userEvent.click(within(city).getByRole('checkbox'))
+    await userEvent.type(within(city).getByPlaceholderText('Asia/Barnaul'), '{Enter}')
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('V29-06: a 400 about the Yandex link shows next to its field inside the address group', async () => {
+    update.mockRejectedValue({ response: { status: 400, data: 'Ждём ссылку на Яндекс Карты — например, https://yandex.ru/maps/org/1' } })
+    renderSettings()
+    const name = await screen.findByLabelText('Название')
+    await waitFor(() => expect(name).toHaveValue('Салон'))
+    await userEvent.type(name, '!')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
+    const addr = screen.getByRole('group', { name: 'Адрес и карты' })
+    const field = await within(addr).findByLabelText('Ссылка на Яндекс Картах')
+    await waitFor(() => expect(field).toHaveAttribute('aria-describedby', 'yandexMapsUrl-error'))
+    expect(within(addr).getByText(/Ждём ссылку на Яндекс/)).toBeInTheDocument()
   })
 })

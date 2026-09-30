@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ezbook.ru/contracts/cycle30/seed-state.schema.json",
+  "title": "Состояние засева демо-данных goods для съёмки (цикл 30)",
+  "description": "frontend/scripts/screenshots/.state/seed.json — НЕ в git (пароль и токен локальной базы). Пишет seed-goods-demo.mjs (BE-30-1), читает capture-goods-screenshots.mjs (FE-30-3). ARCHITECTURE_CYCLE30.md §30.7; API_CONTRACT_CYCLE30.md §30.22. Без 'format', чтобы проверялось голым ajv-cli.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "seededAtUtc", "apiUrl", "shop", "owner", "orderPage", "board"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "seededAtUtc": { "$ref": "#/definitions/utc" },
+    "apiUrl": {
+      "type": "string",
+      "description": "Базовый адрес API стека съёмки. Боевые хосты сюда попасть не могут: засев отказывает до записи файла.",
+      "pattern": "^https?://[^/]+$",
+      "not": { "pattern": "ezbook\\.ru" }
+    },
+    "shop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "slug", "name", "timeZoneId"],
+      "properties": {
+        "id": { "$ref": "#/definitions/uuid" },
+        "slug": { "type": "string", "pattern": "^[a-z0-9-]{3,50}$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "timeZoneId": { "type": "string", "minLength": 1, "description": "IANA-пояс магазина (пояс города); съёмка ставит его браузеру." }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phone", "password"],
+      "properties": {
+        "phone": { "type": "string", "pattern": "^\\+79000000\\d{3}$", "description": "Только фиктивный диапазон +7 900 000-0x-xx." },
+        "password": { "type": "string", "minLength": 8 }
+      }
+    },
+    "orderPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token", "number", "status", "statusText", "pickupClock"],
+      "properties": {
+        "token": { "type": "string", "minLength": 16, "description": "PublicToken заказа C для /o/{token}." },
+        "number": { "type": "integer", "minimum": 1 },
+        "status": { "const": "Accepted" },
+        "statusText": { "type": "string", "minLength": 1 },
+        "pickupClock": { "type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$" }
+      }
+    },
+    "board": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["newOrders", "accepted", "ready", "earliestDueUtc"],
+      "properties": {
+        "newOrders": { "type": "integer", "minimum": 1 },
+        "accepted": { "type": "integer", "minimum": 1 },
+        "ready": { "type": "integer", "minimum": 1 },
+        "earliestDueUtc": { "$ref": "#/definitions/utc" }
+      }
+    }
+  },
+  "definitions": {
+    "utc": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$" },
+    "uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" }
+  }
+}

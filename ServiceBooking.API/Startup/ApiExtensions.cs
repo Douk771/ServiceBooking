@@ -15,10 +15,14 @@ internal static class ApiExtensions
     public static void AddServiceBookingControllers(this WebApplicationBuilder builder)
     {
     builder.Services.AddControllers(options =>
+        {
+            // Cycle 29 (ARCHITECTURE_CYCLE29.md §29.4): a malformed form/query key answers 400, not 500.
+            MalformedKeyGuardValueProviderFactory.Install(options.ValueProviderFactories);
             // Global, runs on every authenticated request (US-37, ARCHITECTURE.md §6.3) — a TypeFilter, so
             // LegalDocumentProvider is resolved from DI per-request rather than requiring a service-locator
             // pattern here.
-            options.Filters.Add<ServiceBooking.API.Services.Legal.LegalConsentFilter>())
+            options.Filters.Add<ServiceBooking.API.Services.Legal.LegalConsentFilter>();
+        })
         .ConfigureApiBehaviorOptions(options =>
         {
             // Cycle 6 contract finding: automatic model-state validation (missing/invalid query or body

@@ -2,6 +2,7 @@ import type { components } from '@/types/api-cycle23.generated'
 import type { components as C24 } from '@/types/api-cycle24.generated'
 import type { components as C25 } from '@/types/api-cycle25.generated'
 import type { components as C26 } from '@/types/api-cycle26.generated'
+import type { components as C29 } from '@/types/api-cycle29.generated'
 
 /**
  * goods types are read straight off the generated cycle-23 schema (ARCHITECTURE_CYCLE23.md §399.2) —
@@ -14,6 +15,8 @@ type N = C24['schemas']
 type M = C25['schemas']
 /** Cycle 26 (ARCHITECTURE_CYCLE26.md §545): StorefrontDto (+email, +photos), ShopManageDto (+city time-zone fields). */
 type L = C26['schemas']
+/** Cycle 29 (ARCHITECTURE_CYCLE29.md §29.3): goods catalog DTOs (+logoUrl). */
+type K = C29['schemas']
 
 export type CompanyKind = N['CompanyKind']
 export type ShopRole = N['ShopRole']
@@ -164,7 +167,7 @@ export type PickListTimeGroupDto = M['PickListTimeGroupDto']
 export type ShopCustomerCardDto = M['ShopCustomerCardDto']
 export type ShopCustomerNoteDto = M['ShopCustomerNoteDto']
 export type ShopCustomerNoteStateDto = M['ShopCustomerNoteStateDto']
-export type GoodsCatalogPageDto = M['GoodsCatalogPageDto']
-export type GoodsCatalogShopDto = M['GoodsCatalogShopDto']
+export type GoodsCatalogPageDto = K['GoodsCatalogPageDto']
+export type GoodsCatalogShopDto = K['GoodsCatalogShopDto']
 export type CatalogCityDto = M['CatalogCityDto']
 export type CatalogListingDto = M['CatalogListingDto']

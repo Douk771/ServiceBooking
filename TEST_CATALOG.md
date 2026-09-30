@@ -6237,36 +6237,92 @@ QA27-01..QA27-09 (стили круга и заголовка шага, `list-no
 | M27-04 | Аноним нажимает «Подключить магазин» | Переход на `/register?returnTo=%2Fcabinet%2Fnew` | US-27-04 |
 | M27-05 | Вошедший нажимает «Подключить магазин», затем «Войти в кабинет» | `/cabinet/new`, затем `/cabinet` | US-27-04 |
 
+## Цикл 29 — «Доделки цикла 26» (`CY29-`, `M29-`, `ServiceBooking.Tests/Tests/Cycle29QaTests.cs`, `Cycle29ContractTests.cs`)
+
+Написаны QA по спеке цикла 29 (US-29-02, US-29-04, T-29-07; теперь в архиве `SPEC_CYCLE29_CYCLE26_FOLLOWUPS.md`, корневой `SPEC.md` — уже спека цикла 30) и `API_CONTRACT_CYCLE29.md`, не по реализации. Решение архитектора «`?a[=1` → 400» отозвано (§29.23.1): на ASP.NET Core 8 строка запроса не падает, кейса на неё нет. Ключ `a]` без открывающей скобки framework разбирает без ошибки (фото принимается): 400 даёт только незакрытая `[`.
+
+| ID | US | Что проверяет | Тест |
+|---|---|---|---|
+| CY29-01 | US-29-04 | фото галереи, поле `file[`: 400 `text/plain` с текстом Q-29-6, в галерее 0, файлов на диске не прибавилось | `Cycle29QaTests.Gallery_MalformedFieldName_400_NothingSaved` |
+| CY29-02 | US-29-04 | логотип, поле `file[`: 400, `LogoUrl` прежний, файлов не прибавилось | `Logo_MalformedFieldName_400_LogoUnchanged` |
+| CY29-03 | US-29-04 | маршрут без файлов (`DELETE …/photos/{id}` с формой `reason[`): 400, фото не удалено; `PUT /api/companies/{id}` с multipart — 400 или 415, не 500, имя не изменено | `RouteWithoutFiles_MalformedForm_400_NothingChanged` |
+| CY29-04 | US-29-04 | аноним с битой формой: 401 | `Anonymous_MalformedForm_401` |
+| CY29-05 | US-29-04 | чужая и несуществующая компания с битой формой: одинаковый 400 (не оракул), ничего не записано | `ForeignOrUnknownCompany_MalformedForm_SameBody_NotOracle` |
+| CY29-07 | US-29-04 | регресс: допустимая скобка `meta[x]` рядом с файлом: 201 | `ValidBracketSyntax_StillWorks_201` |
+| CY29-08 | US-29-04 | аватар и фото услуги с битой формой: 400 | `OtherUploadRoutes_MalformedForm_400` |
+| CY29-10 | US-29-02 | каталог goods: без логотипа `logoUrl: null`, после загрузки строка, равная `logoUrl` витрины и `ShopManageDto` | `Catalog_LogoUrl_AppearsAfterUpload_AndMatchesStorefront` |
+| CY29-20 | T-29-07 | бесплатный тариф «Заказы»: 10 разных фото приняты, 11-е — 400 с текстом лимита галереи магазина | `ShopGallery_FreeOrdersPlan_10Accepted_11thRefusedByGalleryLimit` |
+| CY29-30 | T-29-02 | `GET /api/storefront/{slug}` магазина с ≥2 фото и email против схемы cycle26 | `Cycle29ContractTests.Storefront_MatchesCycle26Contract` |
+| CY29-31 | T-29-02 | `GET /api/companies/{id}/photos` против схемы cycle26 | `PublicPhotos_MatchCycle26Contract` |
+| CY29-32 | T-29-02 | `GET /api/shops/{shopId}` против схемы cycle26 | `ShopManage_MatchesCycle26Contract` |
+| CY29-33 | T-29-02 | `GET /api/goods/catalog` против схемы cycle29, `logoUrl` строка и `null` | `GoodsCatalog_MatchesCycle29Contract_WithAndWithoutLogo` |
+
+Vitest разработчика (не пересобиралось QA): `CatalogHomePage.test.tsx` (V29-32, ShopRow), `HomePage.test.tsx` (V29-33), `CompanyLogoMark.test.tsx`, `companyInitial.test.ts`, `CompanyManagePage.test.tsx` (V29-01…06), `EmbedPage.test.tsx` (V29-20…22), сравнение смещений (V29-10…13).
+
+### Ручные кейсы 360×740 (US-29-05, Q-29-5)
+
+Вердикт: **НЕ ВЫПОЛНЕНО QA** — у QA-агента в этом прогоне нет доступа к браузеру. Кейсы ждут ручного осмотра; для каждого проверяется `document.documentElement.scrollWidth <= window.innerWidth`, отсутствие наложений логотипа, перенос длинных строк, зона нажатия ≥ 44 px.
+
+| Кейс | Шаги | Ожидаемый результат | Критерий | Вердикт |
+|---|---|---|---|---|
+| M29-01 | ezbook `/company/:slug`, 360 px: с галереей и логотипом; без галереи с логотипом; без логотипа; длинное название ≥ 40 символов | Нет горизонтальной прокрутки, логотип не наезжает на текст | US-29-05 | частично (30.09.2026): салон без фото и адреса, 360 px — прокрутки нет; состояния с галереей и длинным названием не проверены |
+| M29-02 | goods `/:slug`, те же три состояния и раскрытые «Часы работы» | То же | US-29-05 | не выполнен |
+| M29-03 | goods `/` и `/city/:id`: карточки с логотипом и без | Логотип 56×56 не сжимается, название обрезается | US-29-02, US-29-05 | не выполнен |
+| M29-04 | ezbook `/`: карточки с логотипом и без | Буква вместо иконки, без прокрутки | US-29-03, US-29-05 | частично (30.09.2026): `/` на 360 px без прокрутки; карточки с логотипом не проверены |
+| M29-05 | goods `/cabinet/:shopId/settings`, пустой и заполненный профиль, ошибка у поля карты | Пары полей в одну колонку | US-29-05 | не выполнен |
+| M29-06 | ezbook `/owner/company/:id`, настройки, 360 px | Группы «Основное / Контакты / Адрес и карты / Запись», пары в одну колонку | US-29-01, US-29-05 | не выполнен |
+| M29-07 | ezbook `/embed/:slug`, 360 px, с фото и ссылками | Без прокрутки, ссылки карт в новой вкладке | US-29-07 | частично (30.09.2026): `/embed/:slug` без фото, 360 px — без прокрутки; с фото и ссылками не проверено |
+| M29-08 | 1280 px: кабинеты | Пары в две колонки | US-29-05 | не выполнен |
+| M29-09 | Перепроверка M27-02 (блок «Для бизнеса», 360 px) | Без горизонтальной прокрутки | US-29-05 | не выполнен |
+
+## Цикл 30 — блок «Для покупателей» и скриншоты на главной goods (`T30-` разработчик, `QA30-` QA, vitest)
+
+Автотесты: `T30-01..19` (`BuyersBlock.test.tsx`, `BusinessBlock.screenshot.test.tsx`, `shots.test.ts`, `CatalogHomePage.test.tsx`), `QA30-01..10` (`goods/src/components/BuyersBlock.qa.test.tsx`, написаны по SPEC независимо от реализации: тексты варианта A дословно, уровни заголовков, стиль панели шагов, кнопки, запретные слова, alt/width/height/lazy обоих скриншотов, `<picture>` с `md`-источником, бюджет веса файлов). T27/QA27 не менялись.
+
+| ID | Шаги | Ожидаемый результат | Критерий |
+|---|---|---|---|
+| M30-01 | Ширина 360, 768, 1280 px, `/` и `/city/:id` | Нет горизонтальной прокрутки; на 360 шаги и список в одну колонку, скриншот заказа по центру под списком, доска телефонная; от 768 доска десктопная, скриншот заказа справа от списка | US-30-04, US-30-05 |
+| M30-02 | Экран 2x (телефон или Retina), приблизить скриншоты | Текст на кадрах чёткий | US-30-04, US-30-05 |
+| M30-03 | Вкладка «Сеть», Slow 3G, загрузка `/` без прокрутки | Картинки не грузятся до прокрутки; при прокрутке нет сдвига вёрстки; грузится только один вариант доски | §6, R30-7 |
+| M30-04 | Суммарный вес картинок на главной (DevTools) | Не больше 450 КБ, доска ≤ 200 КБ, телефонный кадр ≤ 120 КБ | §6 |
+| M30-05 | Скринридер: пройти по блоку и картинкам | h2 -> h3 -> h4 по порядку, иконки не озвучиваются, alt читается осмысленно, номер и время в alt совпадают с кадром | US-30-02, US-30-04 |
+| M30-06 | Сверить три кадра со списками «В кадре нет» (SPEC US-30-04, US-30-05) | Нет localhost, «Просрочен», плашек связи и звука, реальных имён и телефонов; на десктопной доске видны вес («≈»), комментарий и предзаказ | US-30-04, US-30-05 |
+| M30-07 | Аноним: «Мои заказы» в блоке | `/login?returnTo=%2Forders` | US-30-03 |
+| M30-08 | «Выбрать магазин» и ссылка «Как сделать заказ» под h1 (мышь и клавиатура) | Прокрутка к сетке магазинов / к блоку, город и фильтры на `/city/:id` не сбрасываются, фокус виден | US-30-03 |
+| M30-09 | Телефон: заказ, включить push на странице заказа, сменить статус в кабинете (C24-2) | Уведомление приходит; иначе формулировку в пункте 3 пересмотреть | Q-30-6 |
+
 ## Цикл 26 — «Единая карточка компании» (`CY26-`, 24 функциональных теста (27 прогонов с наборами теории), `ServiceBooking.Tests/Tests/Cycle26CompanyCardTests.cs`)
 
 Написаны QA по `SPEC.md` (US-26-01…07, T-26-01) и `API_CONTRACT_CYCLE26.md` §558–§563, §566, §568, не по реализации. База — `Cycle25TestBase`. Города для сценариев смены пояса берутся из справочника по фактическому смещению от UTC (не по названию). Визуальная часть карточки (US-26-04, US-26-06, US-26-08) и `publicAddress` (US-26-05) закрыты vitest-тестами разработчика и ручным осмотром: сквозного браузерного набора в проекте нет.
 
-| ID | US | Что проверяет |
-|---|---|---|
-| CY26-01 | 01 | владелец магазина грузит фото: 201, первое — обложка, видно в публичной галерее; второе обложкой не становится |
-| CY26-02 | 01 | повторная загрузка того же файла: 200, дубля нет |
-| CY26-03 | 01 | 11-е фото: 400, текст про «магазина», не «салона»; в галерее 10 |
-| CY26-04 | 01 | регресс: у салона текст лимита прежний «В галерее салона …» |
-| CY26-05 | 01 | перестановка: неполный список, чужой id, дубль id — 400 с текстом магазина; полная — 200, обложка сменилась |
-| CY26-06 | 01 | удаление: позиции пересчитываются 0..n−1, повторное удаление — 404 |
-| CY26-07 | 01 | сотрудник магазина и владелец другого магазина — 403 на все три маршрута; аноним — 401 |
-| CY26-08 | 01 | не-картинка и запрос без файла — 400, ничего не сохранено |
-| CY26-09 | 01 | SuperAdmin загружает и удаляет; `reason=DepictedPersonRequest` — 204 и уведомление `PhotoRemoved` владельцу; неизвестный `reason` — 400 |
-| CY26-10 | 01 | владелец с `reason` в запросе — обычное 204, уведомления нет |
-| CY26-11 | T-26-01 | `photo-usage` и услуги для магазина по-прежнему не 200 (409), матрица CY23-04 не ослаблена |
-| CY26-20 | 02, Q-26-6 | витрина: `photos` в порядке `position` и с обложкой, `email`, `address` без города; правка галереи видна сразу |
-| CY26-21 | 02 | без фото — `[]`; пробельный email — `null` |
-| CY26-22 | 02 | неактивный магазин: `photos` пустой (или 404) |
-| CY26-30 | 03 | ссылки карт: сохранение, нетронутое не меняется, `""` очищает только своё поле |
-| CY26-31 | 03 | плохие ссылки Яндекса (http, `javascript:`, чужой домен, ссылка 2ГИС) — 400, остальное тело не сохранено (теория, 4 набора) |
-| CY26-32 | 03 | плохая ссылка 2ГИС и ссылка длиннее 500 — 400 с понятным текстом |
-| CY26-33 | 03 | сотрудник магазина не правит профиль — 403 |
-| CY26-40 | 07 | магазин без заказов: смена города на другой пояс — 200, пояс и `utcOffsetMinutes` от города, `cityRegion`, витрина показывает новый город |
-| CY26-41 | 07, R26-1 | магазин с заказом: город с другим смещением — 409 с текстом §566, идентичным `timeZoneChangeLockedText`; ничего не сохранено (ни ссылки карт, ни название) |
-| CY26-42 | 07 | магазин с заказом: город с тем же смещением — 200 |
-| CY26-43 | 07 | ручной `timeZoneId` ≠ поясу города — 400 «Часовой пояс магазина задаётся городом»; равный поясу или `null` — 200; неизвестный город и не-IANA — 400 |
-| CY26-44 | 07 | регресс: у салона ручной пояс работает как в цикле 4 (`timeZoneIsManual=true`) |
-| CY26-45 | 03, 06 | три параллельных сохранения разных полей профиля: все 200, ни одно значение не потеряно |
+| ID | US | Что проверяет | Тест |
+|---|---|---|---|
+| CY26-01 | 01 | владелец магазина грузит фото: 201, первое — обложка, видно в публичной галерее; второе обложкой не становится | `Cycle26CompanyCardTests.ShopOwner_UploadsPhoto_ItIsCover_VisibleInPublicGallery` |
+| CY26-02 | 01 | повторная загрузка того же файла: 200, дубля нет | `Cycle26CompanyCardTests.ShopOwner_SameFileTwice_NoDuplicate` |
+| CY26-03 | 01 | 11-е фото: 400, текст про «магазина», не «салона»; в галерее 10 | `Cycle26CompanyCardTests.ShopGallery_11thPhoto_400_WithShopText_NotSalonText` |
+| CY26-04 | 01 | регресс: у салона текст лимита прежний «В галерее салона …» | `Cycle26CompanyCardTests.SalonGallery_11thPhoto_TextUnchanged_Salon` |
+| CY26-05 | 01 | перестановка: неполный список, чужой id, дубль id — 400 с текстом магазина; полная — 200, обложка сменилась | `Cycle26CompanyCardTests.ShopGallery_Reorder_ChangesCover_IncompleteAndForeignIds_400WithShopText` |
+| CY26-06 | 01 | удаление: позиции пересчитываются 0..n−1, повторное удаление — 404 | `Cycle26CompanyCardTests.ShopGallery_Delete_RecomputesPositions` |
+| CY26-07 | 01 | сотрудник магазина и владелец другого магазина — 403 на все три маршрута; аноним — 401 | `Cycle26CompanyCardTests.ShopGallery_Rights_StaffAndForeignOwnerAndAnonymous_Refused` |
+| CY26-08 | 01 | не-картинка и запрос без файла — 400, ничего не сохранено | `Cycle26CompanyCardTests.ShopGallery_Upload_BadInputs_Refused_NothingSaved` |
+| CY26-09 | 01 | SuperAdmin загружает и удаляет; `reason=DepictedPersonRequest` — 204 и уведомление `PhotoRemoved` владельцу; неизвестный `reason` — 400 | `Cycle26CompanyCardTests.ShopGallery_SuperAdmin_DeleteWithReason_204_AndNoticePublished_ManageRoutesWork` |
+| CY26-10 | 01 | владелец с `reason` в запросе — обычное 204, уведомления нет | `Cycle26CompanyCardTests.ShopOwner_DeleteWithReasonParam_NoNotice` |
+| CY26-11 | T-26-01 | `photo-usage` и услуги для магазина по-прежнему не 200 (409), матрица CY23-04 не ослаблена | `Cycle26CompanyCardTests.SalonOnlyRoutes_ForShop_Still409` |
+| CY26-20 | 02, Q-26-6 | витрина: `photos` в порядке `position` и с обложкой, `email`, `address` без города; правка галереи видна сразу | `Cycle26CompanyCardTests.Storefront_ReturnsPhotosInOrder_AndEmail_AndAddressWithoutCity` |
+| CY26-21 | 02 | без фото — `[]`; пробельный email — `null` | `Cycle26CompanyCardTests.Storefront_NoPhotos_EmptyArray_BlankEmail_Null` |
+| CY26-22 | 02 | неактивный магазин: `photos` пустой (или 404) | `Cycle26CompanyCardTests.Storefront_InactiveShop_ShowsNoPhotos` |
+| CY26-30 | 03 | ссылки карт: сохранение, нетронутое не меняется, `""` очищает только своё поле | `Cycle26CompanyCardTests.ShopProfile_MapLinks_SaveClearAndUntouched` |
+| CY26-31 | 03 | плохие ссылки Яндекса (http, `javascript:`, чужой домен, ссылка 2ГИС) — 400, остальное тело не сохранено (теория, 4 набора) | `Cycle26CompanyCardTests.(Theory) ShopProfile_BadYandexLink_*` |
+| CY26-32 | 03 | плохая ссылка 2ГИС и ссылка длиннее 500 — 400 с понятным текстом | `Cycle26CompanyCardTests.ShopProfile_BadTwoGisLink_And_TooLong_400` |
+| CY26-33 | 03 | сотрудник магазина не правит профиль — 403 | `Cycle26CompanyCardTests.ShopProfile_Staff_CannotEditProfile` |
+| CY26-40 | 07 | магазин без заказов: смена города на другой пояс — 200, пояс и `utcOffsetMinutes` от города, `cityRegion`, витрина показывает новый город | `Cycle26CompanyCardTests.ShopWithoutOrders_CityChange_ToOtherZone_200_ZoneFollowsCity` |
+| CY26-41 | 07, R26-1 | магазин с заказом: город с другим смещением — 409 с текстом §566, идентичным `timeZoneChangeLockedText`; ничего не сохранено (ни ссылки карт, ни название) | `Cycle26CompanyCardTests.ShopWithOrder_CityChange_ToOtherOffset_409_NothingSaved_LockedTextInManageDto` |
+| CY26-42 | 07 | магазин с заказом: город с тем же смещением — 200 | `Cycle26CompanyCardTests.ShopWithOrder_CityChange_SameOffset_200` |
+| CY26-43 | 07 | ручной `timeZoneId` ≠ поясу города — 400 «Часовой пояс магазина задаётся городом»; равный поясу или `null` — 200; неизвестный город и не-IANA — 400 | `Cycle26CompanyCardTests.ShopProfile_ManualTimeZone_400_EqualToCityOrNull_Allowed_UnknownCity400` |
+| CY26-44 | 07 | регресс: у салона ручной пояс работает как в цикле 4 (`timeZoneIsManual=true`) | `Cycle26CompanyCardTests.Salon_TimeZoneOverride_StillManual_RegressionOfCycle4` |
+| CY26-45 | 03, 06 | три параллельных сохранения разных полей профиля: все 200, ни одно значение не потеряно | `Cycle26CompanyCardTests.ShopProfile_ConcurrentSaves_OfDifferentFields_NoLostUpdate` |
+
+**Сверено в цикле 29 (T-29-03):** 24 ID, 24 теста (все в `Cycle26CompanyCardTests.cs`, `CY26-31` — теория из 4 наборов), дописано 0: каталог и атрибуты `[TestCase("CY26-*")]` совпадают в обе стороны. Визуальные истории цикла 26 закрыты vitest разработчика: US-26-04 (карточка) — `CompanyPhotoGallery.test.tsx`, `CompanyMapLinks.test.tsx`; US-26-05 (адрес без города) — `PublicAddressNotice.test.tsx`; US-26-06 (профиль магазина) — `goods/src/components/profile/ShopProfileSection.test.tsx`; US-26-08 (настройки салона) — `CompanyManagePage.test.tsx`. Вёрстка на 360 px закрыта только ручным осмотром: см. `M29-` ниже.
 
 ## Цикл 28, проход A — backend: unit-тесты (`ServiceBooking.UnitTests`) и сценарии для QA (`CY28-*`)
 

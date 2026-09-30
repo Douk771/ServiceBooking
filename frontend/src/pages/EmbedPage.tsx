@@ -9,6 +9,8 @@ import { Icon } from '../components/ui/Icon'
 import { ShowcaseBadge } from '../components/showcase/ShowcaseBadge'
 import { ShowcaseNotice } from '../components/showcase/ShowcaseNotice'
 import { useNoindexMeta } from '../hooks/useNoindexMeta'
+import { CompanyPhotoGallery } from '../components/company/CompanyPhotoGallery'
+import { CompanyMapLinks } from '../components/company/CompanyMapLinks'
 import { BookingModal } from '../components/booking/BookingModal'
 import type { Service } from '../types'
 import { formatRub } from '../utils/money'
@@ -64,9 +66,9 @@ export function EmbedPage() {
             {company.name[0]}
           </div>
         )}
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="font-serif text-lg font-medium text-ink">{company.name}</h1>
+            <h1 className="font-serif text-lg font-medium text-ink break-words">{company.name}</h1>
             {company.isShowcase && <ShowcaseBadge />}
           </div>
           {company.address && (
@@ -74,10 +76,16 @@ export function EmbedPage() {
               <Icon name="map-pin" size={12} strokeWidth={1.8} /> {company.address}
             </p>
           )}
+          <CompanyMapLinks yandexUrl={company.yandexMapsUrl} twoGisUrl={company.twoGisUrl} />
         </div>
       </div>
 
       {company.isShowcase && <ShowcaseNotice compact className="mb-4" />}
+      {company.photos?.length ? (
+        <div className="mb-4">
+          <CompanyPhotoGallery photos={company.photos} companyName={company.name} />
+        </div>
+      ) : null}
 
       {/* Services */}
       {servicesLoading ? (

@@ -170,7 +170,9 @@ jobs:
             ../contracts/cycle20/openapi.yaml \
             ../contracts/cycle23/openapi.yaml \
             ../contracts/cycle24/openapi.yaml \
-            ../contracts/cycle25/openapi.yaml
+            ../contracts/cycle25/openapi.yaml \
+            ../contracts/cycle26/openapi.yaml \
+            ../contracts/cycle29/openapi.yaml
 
       # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
       # (e.g. @redocly/cli's own dependency tree) is explicitly out of scope for this threshold so the
@@ -189,6 +191,9 @@ jobs:
       - name: Type-check goods
         run: npx tsc --noEmit -p tsconfig.goods.json
 
+      - name: Type-check node (shots)
+        run: npm run typecheck:node
+
       # ARCHITECTURE_CYCLE17.md §310 п.4 / API_CONTRACT_CYCLE17.md §328 п.9 (долг C15-10).
       # Генераты лежат в репозитории, поэтому расходятся со схемой молча: контракт правят,
       # регенерацию забывают, и типы описывают вчерашний API. Именно это и случилось внутри
@@ -202,7 +207,9 @@ jobs:
           npm run types:api:cycle23
           npm run types:api:cycle24
           npm run types:api:cycle25
-          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts src/types/api-cycle24.generated.ts src/types/api-cycle25.generated.ts
+          npm run types:api:cycle26
+          npm run types:api:cycle29
+          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts src/types/api-cycle24.generated.ts src/types/api-cycle25.generated.ts src/types/api-cycle26.generated.ts src/types/api-cycle29.generated.ts
 
       # Цикл 17: тексты правовых уведомлений пишет legal-counsel, а каркас кода появляется
       # раньше текста. Заглушка видна владельцу на экране «Ваша подписка», поэтому её нельзя

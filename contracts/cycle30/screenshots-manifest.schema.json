@@ -1,0 +1,105 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ezbook.ru/contracts/cycle30/screenshots-manifest.schema.json",
+  "title": "Манифест скриншотов главной goods (цикл 30)",
+  "description": "frontend/goods/src/assets/screenshots/screenshots.json. Пишет capture-goods-screenshots.mjs, читают shots.ts и тесты T30-12…17. ARCHITECTURE_CYCLE30.md §30.5, §30.8; API_CONTRACT_CYCLE30.md §30.23. Без 'format', чтобы проверялось голым ajv-cli.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "capturedAt", "sourceCommit", "browser", "orderPage", "boardDesktop", "boardPhone"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "capturedAt": {
+      "type": "string",
+      "description": "Момент съёмки, ISO 8601 UTC.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "sourceCommit": {
+      "type": "string",
+      "description": "git rev-parse --short HEAD на момент съёмки; суффикс -dirty при незакоммиченных правках.",
+      "pattern": "^[0-9a-f]{7,40}(-dirty)?$"
+    },
+    "browser": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "orderPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cssWidth", "cssHeight", "files", "bytes", "orderNumber", "pickupClock", "statusText"],
+      "properties": {
+        "cssWidth": { "const": 390 },
+        "cssHeight": { "$ref": "#/definitions/cssHeight" },
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["1x", "2x"],
+          "properties": {
+            "1x": { "const": "order-page-1x.webp" },
+            "2x": { "const": "order-page-2x.webp" }
+          }
+        },
+        "bytes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["1x", "2x"],
+          "properties": {
+            "1x": { "type": "integer", "minimum": 1, "maximum": 122880 },
+            "2x": { "type": "integer", "minimum": 1, "maximum": 122880, "description": "Бюджет 120 КБ." }
+          }
+        },
+        "orderNumber": { "type": "integer", "minimum": 1, "maximum": 9999 },
+        "pickupClock": { "type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$", "description": "Время получения HH:mm в поясе магазина, как на кадре." },
+        "statusText": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Текст плашки статуса с сервера, ожидается «Принят»." }
+      }
+    },
+    "boardDesktop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cssWidth", "cssHeight", "files", "bytes", "orderCount"],
+      "properties": {
+        "cssWidth": { "type": "integer", "minimum": 1280, "maximum": 1440 },
+        "cssHeight": { "$ref": "#/definitions/cssHeight" },
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["1x", "2x"],
+          "properties": {
+            "1x": { "const": "board-desktop-1x.webp" },
+            "2x": { "const": "board-desktop-2x.webp" }
+          }
+        },
+        "bytes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["1x", "2x"],
+          "properties": {
+            "1x": { "type": "integer", "minimum": 1, "maximum": 204800 },
+            "2x": { "type": "integer", "minimum": 1, "maximum": 204800, "description": "Бюджет 200 КБ." }
+          }
+        },
+        "orderCount": { "type": "integer", "minimum": 5, "maximum": 7, "description": "Заказов в трёх колонках на момент съёмки (SPEC US-30-05: 5–7)." }
+      }
+    },
+    "boardPhone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cssWidth", "cssHeight", "files", "bytes"],
+      "properties": {
+        "cssWidth": { "const": 390 },
+        "cssHeight": { "$ref": "#/definitions/cssHeight" },
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["2x"],
+          "properties": { "2x": { "const": "board-phone-2x.webp" } }
+        },
+        "bytes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["2x"],
+          "properties": { "2x": { "type": "integer", "minimum": 1, "maximum": 122880, "description": "Бюджет 120 КБ." } }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "cssHeight": { "type": "integer", "minimum": 200, "maximum": 900, "description": "Высота кадра в CSS-пикселях после обрезки." }
+  }
+}

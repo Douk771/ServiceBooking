@@ -139,18 +139,6 @@ public sealed class CompanyDtoAssembler(
             .ToDictionary(kv => kv.Key, kv => (kv.Value.Url, kv.Value.ThumbnailUrl));
     }
 
-    // The full ordered gallery for exactly one company — only GET /api/companies/{slug} needs this
-    // (§109.3: the public page gets its gallery with zero extra requests; every other endpoint gets
-    // `photos: null` and, at most, the batched cover above).
-    public async Task<List<CompanyPhotoDto>> GetPhotosOrderedAsync(Guid companyId)
-    {
-        var photos = await db.CompanyPhotos
-            .Where(p => p.CompanyId == companyId)
-            .OrderBy(p => p.Position).ThenBy(p => p.CreatedAtUtc).ThenBy(p => p.Id)
-            .ToListAsync();
-        return photos.Select(CompanyPhotoDto.From).ToList();
-    }
-
     // ARCHITECTURE_CYCLE7.md §46.1: batched account-usage lookup for the two AUTHENTICATED list/detail
     // endpoints (GetMy/GetMemberOf/Update/UploadLogo) — two grouped queries total regardless of how
     // many companies/accounts are in `companies`, never one query per company.

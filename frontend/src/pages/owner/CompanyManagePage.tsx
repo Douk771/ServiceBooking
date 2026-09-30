@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
@@ -837,8 +837,10 @@ export function SettingsTab({ companyId }: { companyId: string }) {
               clientRescheduleMinHours,
             })
           })}
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-6"
         >
+          <fieldset className="min-w-0 flex flex-col gap-4 border-t border-line pt-5">
+            <legend className="text-[13px] font-semibold text-ink pr-2">Основное</legend>
           <Input label="Название" {...register('name')} />
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-ink-soft">Описание</label>
@@ -848,6 +850,16 @@ export function SettingsTab({ companyId }: { companyId: string }) {
               {...register('description')}
             />
           </div>
+          </fieldset>
+          <fieldset className="min-w-0 flex flex-col gap-4 border-t border-line pt-5">
+            <legend className="text-[13px] font-semibold text-ink pr-2">Контакты</legend>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Input label="Телефон" {...register('phone')} />
+            <Input label="Email" type="email" {...register('email')} />
+          </div>
+          </fieldset>
+          <fieldset className="min-w-0 flex flex-col gap-4 border-t border-line pt-5">
+            <legend className="text-[13px] font-semibold text-ink pr-2">Адрес и карты</legend>
           {/* ARCHITECTURE_CYCLE13.md §209/§211: address writes go through their own endpoint
               (`PUT /api/companies/{id}/address`), never through this form's submit — so this field
               owns its own save action instead of being `register('address')`d into `updateMut`. */}
@@ -858,10 +870,41 @@ export function SettingsTab({ companyId }: { companyId: string }) {
               onSaved={() => qc.invalidateQueries({ queryKey: ['my-companies'] })}
             />
           )}
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Телефон" {...register('phone')} />
-            <Input label="Email" type="email" {...register('email')} />
+          {company && <CityTimeZoneFields company={company} companyId={companyId} />}
+          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1">
+            <Input
+              label="Ссылка на Яндекс Картах"
+              placeholder="https://yandex.ru/maps/org/..."
+              aria-invalid={mapLinksError?.field === 'yandexMapsUrl' || undefined}
+              aria-describedby={mapLinksError?.field === 'yandexMapsUrl' ? 'yandexMapsUrl-error' : undefined}
+              {...register('yandexMapsUrl')}
+            />
+            <p className="text-xs text-muted">Вставьте ссылку на карточку компании — она сохранится как есть, без изменений</p>
+            {mapLinksError?.field === 'yandexMapsUrl' && (
+              <p id="yandexMapsUrl-error" className="text-xs text-danger">
+                {mapLinksError.text}
+              </p>
+            )}
           </div>
+          <div className="flex flex-col gap-1">
+            <Input
+              label="Ссылка на 2ГИС"
+              placeholder="https://2gis.ru/..."
+              aria-invalid={mapLinksError?.field === 'twoGisUrl' || undefined}
+              aria-describedby={mapLinksError?.field === 'twoGisUrl' ? 'twoGisUrl-error' : undefined}
+              {...register('twoGisUrl')}
+            />
+            {mapLinksError?.field === 'twoGisUrl' && (
+              <p id="twoGisUrl-error" className="text-xs text-danger">
+                {mapLinksError.text}
+              </p>
+            )}
+          </div>
+          </div>
+          </fieldset>
+          <fieldset className="min-w-0 flex flex-col gap-4 border-t border-line pt-5">
+            <legend className="text-[13px] font-semibold text-ink pr-2">Запись</legend>
           <div className="flex flex-col gap-1">
             <Input
               label="На сколько дней вперёд клиент может записаться"
@@ -901,35 +944,6 @@ export function SettingsTab({ companyId }: { companyId: string }) {
             </p>
             {mapLinksError?.field === 'clientRescheduleMinHours' && (
               <p id="clientRescheduleMinHours-error" className="text-xs text-danger">
-                {mapLinksError.text}
-              </p>
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <Input
-              label="Ссылка на Яндекс Картах"
-              placeholder="https://yandex.ru/maps/org/..."
-              aria-invalid={mapLinksError?.field === 'yandexMapsUrl' || undefined}
-              aria-describedby={mapLinksError?.field === 'yandexMapsUrl' ? 'yandexMapsUrl-error' : undefined}
-              {...register('yandexMapsUrl')}
-            />
-            <p className="text-xs text-muted">Вставьте ссылку на карточку компании — она сохранится как есть, без изменений</p>
-            {mapLinksError?.field === 'yandexMapsUrl' && (
-              <p id="yandexMapsUrl-error" className="text-xs text-danger">
-                {mapLinksError.text}
-              </p>
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <Input
-              label="Ссылка на 2ГИС"
-              placeholder="https://2gis.ru/..."
-              aria-invalid={mapLinksError?.field === 'twoGisUrl' || undefined}
-              aria-describedby={mapLinksError?.field === 'twoGisUrl' ? 'twoGisUrl-error' : undefined}
-              {...register('twoGisUrl')}
-            />
-            {mapLinksError?.field === 'twoGisUrl' && (
-              <p id="twoGisUrl-error" className="text-xs text-danger">
                 {mapLinksError.text}
               </p>
             )}
@@ -982,6 +996,7 @@ export function SettingsTab({ companyId }: { companyId: string }) {
               </p>
             )}
           </div>
+          </fieldset>
           {updateMut.isSuccess && (
             <p className="text-sm text-success flex items-center gap-1.5">
               <Icon name="check" size={14} strokeWidth={2} /> Сохранено
@@ -994,7 +1009,6 @@ export function SettingsTab({ companyId }: { companyId: string }) {
         </form>
       </Card>
 
-      {company && <CityTimeZoneCard company={company} companyId={companyId} />}
       <CompanyPhotosSection companyId={companyId} />
       {company && <WidgetCard company={company} />}
       <PhotoUsageCard companyId={companyId} />
@@ -1004,7 +1018,15 @@ export function SettingsTab({ companyId }: { companyId: string }) {
 
 // ── City & time zone (US-30) ─────────────────────────────────────────────────
 
-function CityTimeZoneCard({ company, companyId }: { company: import('../../types').Company; companyId: string }) {
+/**
+ * ARCHITECTURE_CYCLE29.md §29.9.3 — this block sits inside the main <form>; Enter in its text inputs must not
+ * trigger the implicit submit of the main form (its own «Сохранить» is type="button").
+ */
+function swallowImplicitSubmit(e: React.KeyboardEvent) {
+  if (e.key === 'Enter' && e.target instanceof HTMLInputElement) e.preventDefault()
+}
+
+function CityTimeZoneFields({ company, companyId }: { company: import('../../types').Company; companyId: string }) {
   const qc = useQueryClient()
   const [city, setCity] = useState<City | null>(
     company.cityId != null && company.cityName
@@ -1021,6 +1043,7 @@ function CityTimeZoneCard({ company, companyId }: { company: import('../../types
   const [manualZone, setManualZone] = useState(!!company.timeZoneIsManual)
   const [zoneId, setZoneId] = useState(company.timeZoneId ?? '')
   const [error, setError] = useState('')
+  const titleId = useId()
 
   const mut = useMutation({
     mutationFn: () =>
@@ -1041,13 +1064,12 @@ function CityTimeZoneCard({ company, companyId }: { company: import('../../types
   const effectiveOffset = manualZone ? null : city?.utcOffsetMinutes
 
   return (
-    <Card className="p-6 mt-[18px]">
-      <h2 className="text-lg font-semibold text-ink mb-1">Город и часовой пояс</h2>
-      <p className="text-sm text-muted mb-4">
+    <div role="group" aria-labelledby={titleId} className="flex flex-col gap-3" onKeyDown={swallowImplicitSubmit}>
+      <h3 id={titleId} className="text-sm font-semibold text-ink">Город и часовой пояс</h3>
+      <p className="text-sm text-muted">
         От часового пояса зависит момент отправки напоминаний клиентам — «за 24 часа» считается по местному времени
         салона, а не по Москве.
       </p>
-      <div className="flex flex-col gap-3">
         <CityCombobox
           value={city}
           onChange={(c) => {
@@ -1085,6 +1107,7 @@ function CityTimeZoneCard({ company, companyId }: { company: import('../../types
           </p>
         )}
         <Button
+          type="button"
           className="self-start"
           loading={mut.isPending}
           disabled={!city && !effectiveZoneId}
@@ -1092,8 +1115,7 @@ function CityTimeZoneCard({ company, companyId }: { company: import('../../types
         >
           Сохранить
         </Button>
-      </div>
-    </Card>
+    </div>
   )
 }
 

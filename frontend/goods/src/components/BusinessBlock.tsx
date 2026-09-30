@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
 import { Icon } from '@/components/ui/Icon'
+import { ScreenshotFigure } from './ScreenshotFigure'
+import { boardShot } from '../assets/screenshots/shots'
 
 const benefits = [
   'Все заказы на одном экране — на планшете у кассы, компьютере или телефоне, со звуком о новом заказе.',
@@ -17,6 +19,7 @@ const steps = [
 
 /**
  * «Для бизнеса» — bottom block of the catalog home (ARCHITECTURE_CYCLE27.md §546).
+ * Board screenshot: ARCHITECTURE_CYCLE30.md §30.4.3.
  * Steps markup is a copy of `#how` in frontend/src/pages/HomePage.tsx (the ezbook sample).
  */
 export function BusinessBlock() {
@@ -57,6 +60,7 @@ export function BusinessBlock() {
           ))}
         </ul>
       </div>
+      <ScreenshotFigure className="mt-12 md:mt-16" {...boardShot} imgClassName="max-w-[320px] mx-auto md:max-w-none" />
       <div className="mt-12 md:mt-16 rounded-[28px] bg-cream-deep px-6 py-10 sm:px-10 md:px-12 md:py-14">
         <h3 id="biz-steps-title" className="font-serif text-[26px] sm:text-[28px] leading-[1.2] font-medium text-ink mb-8 md:mb-10">
           Как начать принимать заказы

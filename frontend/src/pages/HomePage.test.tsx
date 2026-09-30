@@ -203,3 +203,20 @@ describe('HomePage — pagination (Б2)', () => {
     })
   })
 })
+
+describe('HomePage — cycle 29 (US-29-03) logo mark', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    citiesSearch.mockReset().mockResolvedValue([])
+  })
+
+  it('V29-33: letter instead of icon without logo; logo image has alt=""', async () => {
+    getPublic.mockReset().mockResolvedValue({
+      items: [company({ name: '«Ромашка»', slug: 'r' }), company({ id: 'c2', name: 'Лотос', slug: 'l', logoUrl: '/uploads/l.jpg' })],
+      page: 1, pageSize: 100, total: 2, hasNext: false,
+    })
+    renderPage()
+    expect(await screen.findByTestId('company-logo-initial')).toHaveTextContent('Р')
+    expect(screen.getByTestId('company-logo-img')).toHaveAttribute('alt', '')
+  })
+})
