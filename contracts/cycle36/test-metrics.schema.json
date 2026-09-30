@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ezbook.ru/contracts/cycle36/test-metrics.schema.json",
+  "title": "Одна строка файла TestResults/sb-test-metrics-<runKey>.jsonl (цикл 36)",
+  "description": "JSON Lines: каждая строка файла — отдельный JSON-объект по этой схеме. Пишет тестовая инфраструктура ServiceBooking.Tests (BE-36-01, TestRunMetrics), читает tools/test-timing/analyze.py (DO-36-01, DO-36-04). ARCHITECTURE_CYCLE36.md §36.5; API_CONTRACT_CYCLE36.md §36.23. Запись лучшим усилием: ошибка записи не роняет прогон. Без 'format', чтобы проверялось голым ajv-cli.",
+  "type": "object",
+  "required": ["v", "event", "runKey", "utc"],
+  "properties": {
+    "v": { "const": 1, "description": "Версия формата строки." },
+    "event": {
+      "enum": ["run-start", "server-ready", "template-ready", "class-db-created", "class-db-dropped", "class-recorded", "host-booted", "host-disposed"]
+    },
+    "runKey": { "type": "string", "pattern": "^[0-9a-f]{8}$" },
+    "utc": { "$ref": "#/definitions/utc" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "event": { "const": "run-start" } } },
+      "then": {
+        "required": ["mode", "parallel", "pid"],
+        "properties": {
+          "mode": { "enum": ["container", "external"] },
+          "parallel": { "type": "integer", "minimum": 1, "description": "TestParallelism.MaxParallelThreads этого процесса." },
+          "pid": { "type": "integer", "minimum": 1 },
+          "orderSeed": { "type": "integer", "description": "Семя RandomTestCaseOrderer, если уже известно." }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "enum": ["server-ready", "template-ready"] } } },
+      "then": {
+        "required": ["ms"],
+        "properties": {
+          "ms": { "$ref": "#/definitions/ms", "description": "server-ready: подъём контейнера или подключение к внешнему серверу; template-ready: миграция шаблона." }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "enum": ["class-db-created", "class-db-dropped"] } } },
+      "then": {
+        "required": ["slot", "ms"],
+        "properties": {
+          "slot": { "$ref": "#/definitions/slot" },
+          "ms": { "$ref": "#/definitions/ms" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "class-recorded" } } },
+      "then": {
+        "required": ["slot", "testClass"],
+        "properties": {
+          "slot": { "$ref": "#/definitions/slot" },
+          "testClass": { "type": "string", "minLength": 1, "description": "Полное имя тест-класса (Type.FullName, для вложенных — с '+')." }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "enum": ["host-booted", "host-disposed"] } } },
+      "then": {
+        "required": ["slot", "factoryTag", "factoryType", "ms"],
+        "properties": {
+          "slot": { "$ref": "#/definitions/slot" },
+          "factoryTag": { "type": "string", "minLength": 1, "description": "factoryTag из TestHostSettings.Apply." },
+          "factoryType": { "type": "string", "minLength": 1, "description": "Короткое имя типа фабрики (CustomWebApplicationFactory, PushEnabledFactory, ...)." },
+          "ms": { "$ref": "#/definitions/ms", "description": "host-booted: от вызова TestHostSettings.Apply до IHostApplicationLifetime.ApplicationStarted; host-disposed: длительность DisposeAsync, если измерена." }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "utc": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$" },
+    "ms": { "type": "number", "minimum": 0 },
+    "slot": { "type": "string", "pattern": "^[a-z0-9]{1,16}$", "description": "Слот базы класса: c07, demo, ... (последний сегмент sbtest_<key>_<slot>)." }
+  }
+}
