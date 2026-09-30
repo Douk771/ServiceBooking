@@ -5,6 +5,7 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import globals from 'globals'
 import prettierConfig from 'eslint-config-prettier'
+import { GOODS_SHARED_EZBOOK_PAGES, goodsAllowedPagesRegex } from './goods-shared-sources.js'
 
 // US-50 (T-F6). Rules are picked to describe the codebase's already-established conventions
 // (CURRENT_STATE.md §6) rather than to introduce a new style: named exports (only App.tsx has a
@@ -58,8 +59,8 @@ export default tseslint.config(
           patterns: [
             { group: ['@/App', '**/src/App', '../../src/App', '../src/App'], message: 'goods must not import the ezbook app shell.' },
             {
-              regex: '(^@/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage|NoticesPage|BillingPage|owner/NotificationsSection|owner/CompanyPhotosSection)$))|(src/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage|NoticesPage|BillingPage|owner/NotificationsSection|owner/CompanyPhotosSection)$))',
-              message: 'goods may import only LegalDocumentPage, SubjectRequestPage, ConsentsPage, LoginPage, RegisterPage, NoticesPage, BillingPage (cycle 24, ARCHITECTURE_CYCLE24.md §462.2) owner/NotificationsSection (ChannelCard, §462.1) and owner/CompanyPhotosSection (cycle 26, ARCHITECTURE_CYCLE26.md §551) from ezbook pages.',
+              regex: goodsAllowedPagesRegex(),
+              message: `goods may import only these ezbook pages: ${GOODS_SHARED_EZBOOK_PAGES.join(', ')} (single list: goods-shared-sources.js, ARCHITECTURE_CYCLE31.md §31.7). Shared components live in src/components/.`,
             },
           ],
         },
