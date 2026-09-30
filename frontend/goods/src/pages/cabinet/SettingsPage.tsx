@@ -1,12 +1,10 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { companiesApi } from '@/api/companies'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
-import { PhoneInput } from '@/components/ui/PhoneInput'
-import { CompanyAddressField } from '@/components/company/CompanyAddressField'
-import { getLogoErrorMessage } from '@/utils/companyManageError'
+import { CompanyPhotosSection } from '@/pages/owner/CompanyPhotosSection'
+import { ShopProfileSection } from '../../components/profile/ShopProfileSection'
 import { shopsApi } from '../../api/shops'
 import { useShopContext } from '../../hooks/useShop'
 import { InlineError } from '../../components/StatePanels'
@@ -18,9 +16,15 @@ import type { OrderAcceptanceMode, SellerInfoInput, ShopCustomerMode, ShopManage
 /** US-23-09 / US-23-10 — owner-only: shop profile + logo, ordering rules, seller details [legal L2]. */
 export function SettingsPage() {
   const { shop } = useShopContext()
+  const qc = useQueryClient()
   return (
     <main className="max-w-[760px] mx-auto px-4 sm:px-8 pt-8 flex flex-col gap-5">
-      <ProfileSection shop={shop} />
+      <ShopProfileSection key={shop.id} shop={shop} />
+      <CompanyPhotosSection
+        companyId={shop.id}
+        kind="shop"
+        onChanged={() => void qc.invalidateQueries({ queryKey: ['storefront'] })}
+      />
       <RulesSection shop={shop} />
       <CatalogListingSection shopId={shop.id} />
       <SellerSection shop={shop} />
@@ -48,110 +52,6 @@ function SavedNote({ show }: { show: boolean }) {
       Сохранено
     </span>
   ) : null
-}
-
-function ProfileSection({ shop }: { shop: ShopManageDto }) {
-  const refresh = useRefreshShop(shop.id)
-  const [name, setName] = useState(shop.name)
-  const [description, setDescription] = useState(shop.description ?? '')
-  const [phone, setPhone] = useState(shop.phone ?? '')
-  const [email, setEmail] = useState(shop.email ?? '')
-  const [saved, setSaved] = useState(false)
-  const [logoError, setLogoError] = useState('')
-  const logoInput = useRef<HTMLInputElement>(null)
-
-  const save = useMutation({
-    mutationFn: () =>
-      companiesApi.update(shop.id, { name: name.trim(), description: description.trim(), phone, email: email.trim() }),
-    onSuccess: () => {
-      refresh.refetch()
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
-    },
-    onMutate: () => setSaved(false),
-  })
-  const logo = useMutation({
-    mutationFn: (file: File) => companiesApi.uploadLogo(shop.id, file),
-    onMutate: () => setLogoError(''),
-    onSuccess: () => refresh.refetch(),
-    onError: (e) => setLogoError(getLogoErrorMessage(e)),
-  })
-
-  return (
-    <Card className="p-6">
-      <h2 className="text-[15px] font-semibold text-ink mb-4">Профиль магазина</h2>
-
-      <div className="flex items-center gap-4 mb-5">
-        {shop.logoUrl ? (
-          <img src={shop.logoUrl} alt="Логотип магазина" className="w-16 h-16 rounded-xl object-cover" />
-        ) : (
-          <span className="w-16 h-16 rounded-xl bg-cream-deep flex items-center justify-center text-gold-dark font-serif text-2xl">{shop.name[0]}</span>
-        )}
-        <div>
-          <input
-            ref={logoInput}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            aria-label="Файл логотипа"
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              if (f) logo.mutate(f)
-              e.target.value = ''
-            }}
-          />
-          <Button variant="secondary" size="sm" loading={logo.isPending} onClick={() => logoInput.current?.click()}>
-            {shop.logoUrl ? 'Заменить логотип' : 'Загрузить логотип'}
-          </Button>
-          {logoError && <p className="text-xs text-danger mt-1">{logoError}</p>}
-        </div>
-      </div>
-
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(e) => {
-          e.preventDefault()
-          if (name.trim()) save.mutate()
-        }}
-      >
-        <Input label="Название *" value={name} maxLength={200} onChange={(e) => setName(e.target.value)} />
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="settings-description" className="text-[13px] font-medium text-[#4A4038]">
-            Описание
-          </label>
-          <textarea
-            id="settings-description"
-            rows={2}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep resize-none bg-white text-ink"
-          />
-        </div>
-        <div className="grid sm:grid-cols-2 gap-4">
-          <PhoneInput label="Телефон для покупателей" value={phone} onChange={setPhone} />
-          <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        </div>
-        {save.isError && <InlineError>{getGoodsErrorMessage(save.error, 'Не удалось сохранить профиль.')}</InlineError>}
-        <div className="flex items-center gap-3">
-          <Button type="submit" loading={save.isPending} disabled={!name.trim()}>
-            Сохранить
-          </Button>
-          <SavedNote show={saved} />
-        </div>
-      </form>
-
-      <div className="mt-6 pt-5 border-t border-line">
-        {/* Cycle 19 removed the geocoder: CompanyAddressField (formerly AddressVerifyField) is a plain field
-            that keeps the public-address notice gate. */}
-        <CompanyAddressField
-          companyId={shop.id}
-          initialAddress={shop.address ?? ''}
-          onSaved={() => refresh.refetch()}
-        />
-        <p className="text-xs text-muted mt-2">Адрес виден покупателям на странице магазина{shop.cityName ? `. Город: ${shop.cityName}` : ''}.</p>
-      </div>
-    </Card>
-  )
 }
 
 const customerModes: { value: ShopCustomerMode; title: string; text: string }[] = [
