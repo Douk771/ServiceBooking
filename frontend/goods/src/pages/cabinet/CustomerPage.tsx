@@ -12,7 +12,7 @@ import { ErrorState, InlineError, LoadingList } from '../../components/StatePane
 import { OrderHistoryTable } from '../../components/reports/OrderHistoryTable'
 import { OrderDetailsModal } from '../../components/orders/OrderDetailsModal'
 import { NotFoundPage } from '../NotFoundPage'
-import { dialHref } from '../../utils/dial'
+import { telHref } from '@/utils/phone'
 import { getGoodsErrorMessage, httpStatus } from '../../utils/orderError'
 import { NOTE_MAX_LENGTH, noteLength } from '../../utils/reports'
 import type { OrderHistoryRowDto, ShopCustomerCardDto, ShopCustomerNoteDto } from '../../types'
@@ -64,7 +64,7 @@ export function CustomerPage() {
       <header className="mt-2 mb-6">
         <h2 className="font-serif text-[30px] text-ink" data-testid="customer-name">{card.name || 'Покупатель'}</h2>
         <p className="mt-1 flex items-center gap-2 flex-wrap text-sm">
-          <a href={dialHref(card.phone) || undefined} className="inline-flex items-center gap-1.5 font-medium text-ink underline underline-offset-2 hover:no-underline min-h-[36px]">
+          <a href={telHref(card.phone) || undefined} className="inline-flex items-center gap-1.5 font-medium text-ink underline underline-offset-2 hover:no-underline min-h-[36px]">
             <Icon name="phone" size={14} strokeWidth={1.8} />
             {card.phoneDisplay}
           </a>

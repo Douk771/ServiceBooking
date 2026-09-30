@@ -39,12 +39,7 @@ public class CompanyPhotosController(
         var exists = await db.Companies.AnyAsync(c => c.Id == id && c.IsActive, ct);
         if (!exists) return NotFound();
 
-        var photos = await db.CompanyPhotos
-            .Where(p => p.CompanyId == id)
-            .OrderBy(p => p.Position).ThenBy(p => p.CreatedAtUtc).ThenBy(p => p.Id)
-            .ToListAsync(ct);
-
-        return Ok(photos.Select(CompanyPhotoDto.From).ToList());
+        return Ok(await CompanyPhotoQueries.OrderedAsync(db, id, ct));
     }
 
     [HttpPost("{id:guid}/photos")]
@@ -56,8 +51,6 @@ public class CompanyPhotosController(
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
         if (!await IsOwnerOrSuperAdmin(id)) return Forbid();
-        // §389.2: the photo gallery is salon-only in cycle 1 (rights first, kind second).
-        if (CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
 
         var validation = await imageUploadService.ReadAndProcessAsync(
             file, [ImageProfile.CompanyPhoto, ImageProfile.CompanyPhotoThumb]);
@@ -88,7 +81,7 @@ public class CompanyPhotosController(
         if (photoCount >= CompanyPhotoOrdering.MaxPhotosPerCompany)
         {
             await tx.RollbackAsync();
-            return BadRequest("В галерее салона может быть не больше 10 фотографий");
+            return BadRequest(CompanyPhotoTexts.LimitReached(company.Kind));
         }
 
         // §127: written to disk BEFORE the row is committed — if SaveChangesAsync fails, the new files
@@ -150,8 +143,6 @@ public class CompanyPhotosController(
         if (company is null) return NotFound();
         var isSuperAdmin = User.IsInRole("SuperAdmin");
         if (!isSuperAdmin && !await IsOwnerOrSuperAdmin(id)) return Forbid();
-        // §389.2: the photo gallery is salon-only in cycle 1 (rights first, kind second).
-        if (CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
 
         var photo = await db.CompanyPhotos.FirstOrDefaultAsync(p => p.Id == photoId && p.CompanyId == id);
         // A photoId belonging to a DIFFERENT company is indistinguishable from "doesn't exist" —
@@ -195,8 +186,6 @@ public class CompanyPhotosController(
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
         if (!await IsOwnerOrSuperAdmin(id)) return Forbid();
-        // §389.2: the photo gallery is salon-only in cycle 1 (rights first, kind second).
-        if (CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
 
         await using var tx = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"company-photos:{id}");
@@ -206,10 +195,10 @@ public class CompanyPhotosController(
         {
             CompanyPhotoOrdering.ApplyOrder(current, dto.PhotoIds);
         }
-        catch (InvalidPhotoReorderException ex)
+        catch (InvalidPhotoReorderException)
         {
             await tx.RollbackAsync();
-            return BadRequest(ex.Message);
+            return BadRequest(CompanyPhotoTexts.ReorderMismatch(company.Kind));
         }
 
         await db.SaveChangesAsync();

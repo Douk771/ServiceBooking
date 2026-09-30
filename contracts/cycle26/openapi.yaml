@@ -1,0 +1,694 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 26 («Единая карточка компании», ezbook.ru + goods.ezbook.ru).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл, порядок проверок и тексты — API_CONTRACT_CYCLE26.md
+# (§557–§569), решения — ARCHITECTURE_CYCLE26.md (§543–§556), требования — SPEC.md цикла 26.
+# При расхождении по ФОРМЕ прав ЭТОТ файл.
+#
+#   frontend  npx @stoplight/prism mock contracts/cycle26/openapi.yaml --port 4026
+#             npm run types:api:cycle26   (openapi-typescript -> src/types/api-cycle26.generated.ts)
+#   QA        schemathesis run contracts/cycle26/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle26/openapi.yaml
+#
+# Новых маршрутов цикл НЕ добавляет. Здесь описаны существующие маршруты, у которых меняется форма или поведение:
+#   * GET  /api/storefront/{slug}            — StorefrontDto: + email, + photos (описан ЦЕЛИКОМ);
+#   * GET  /api/shops/{shopId}               — ShopManageDto: + cityRegion, utcOffsetMinutes, timeZoneChangeAllowed,
+#                                              timeZoneChangeLockedText (описан ЦЕЛИКОМ; та же форма у всех маршрутов,
+#                                              отвечающих ShopManageDto: PUT settings, PUT seller, PUT slug, POST /api/shops);
+#   * /api/companies/{id}/photos*            — для магазина больше не 409 (форма прежняя, цикл 10);
+#   * PUT  /api/companies/{id}               — для магазина новые 400/409 про часовой пояс (форма прежняя; описано
+#                                              только подмножество полей, которым пользуется профиль магазина);
+#   * PUT  /api/companies/{id}/address       — без изменений, описан для генерата goods.
+# Вложенные схемы goods скопированы из contracts/cycle24/openapi.yaml БЕЗ изменений (внешних $ref проект не использует).
+
+info:
+  title: ServiceBooking API — цикл 26 (единая карточка компании)
+  version: "26.1.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта без изменений: camelCase; enum — строкой; DateTime — ISO-8601 UTC; DateOnly — "YYYY-MM-DD";
+    400/402/429 — голая строка по-русски; 401/403 — пустое тело; 404 — пустое тело, не оракул; 409 маршрутов
+    /api/companies/* — голая строка; 409 домена магазина — JSON (CatalogConflictDto). Текст, который видит человек,
+    собирает сервер.
+
+    ГЛАВНЫЕ ПРАВИЛА ЦИКЛА, ЗАКРЕПЛЁННЫЕ ФОРМОЙ:
+      1. Фото магазина приходят ВМЕСТЕ с витриной (StorefrontDto.photos), отдельного запроса витрина не делает.
+         У заблокированного магазина (isAvailable = false) photos — пустой массив.
+      2. Галерея — одна для салона и магазина: те же маршруты, те же права (владелец, SuperAdmin), тот же лимит 10.
+      3. Часовой пояс магазина задаётся только городом. Смена города на город с другим смещением UTC при
+         существующих заказах запрещена (409); кабинет узнаёт это заранее по ShopManageDto.timeZoneChangeAllowed.
+      4. «Город, адрес» собирает ФРОНТ одной функцией (publicAddress); сервер отдаёт cityName и address раздельно.
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4026
+    description: prism mock по этой схеме
+
+tags:
+  - name: company-photos
+    description: Галерея фото компании — салона и (с цикла 26) магазина.
+  - name: company-profile
+    description: Профиль компании — поля карточки, адрес. Магазин пишет свой профиль этими же маршрутами.
+  - name: shops
+    description: Магазин для кабинета goods (ShopManageDto).
+  - name: storefront
+    description: Публичная страница магазина — единая карточка компании и ассортимент на дату.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CompanyId:
+      name: id
+      in: path
+      required: true
+      description: Id компании (салона или магазина).
+      schema: { type: string, format: uuid }
+    PhotoId:
+      name: photoId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ShopId:
+      name: shopId
+      in: path
+      required: true
+      description: Id магазина (Company.Id компании типа Orders). Id салона → 404.
+      schema: { type: string, format: uuid }
+    Slug:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 100 }
+
+  responses:
+    PlainTextError:
+      description: Осознанный отказ — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    PlainTextConflict:
+      description: 409 маршрута /api/companies/* — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    Unauthorized:
+      description: Нет или недействителен токен. Тело пустое.
+    Forbidden:
+      description: Нет прав. Тело пустое.
+    NotFound:
+      description: Не найдено. Тело пустое.
+    NoContent:
+      description: Выполнено, тела нет.
+    PayloadTooLarge:
+      description: Тело больше RequestSizeLimit (5 МБ). Тело пустое.
+    LegalGate:
+      description: Требуется принять новую редакцию правовых документов владельца.
+      content:
+        text/plain:
+          schema: { type: string }
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    TooManyRequests:
+      description: Превышен лимит частоты — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+
+  schemas:
+    # ─────────────────────────────── перечисления (как в cycle24) ───────────────────────────────
+    CompanyKind:
+      type: string
+      enum: [Services, Orders]
+    ShopRole:
+      type: string
+      enum: [Owner, Staff, SuperAdmin]
+    ShopAcceptanceMode:
+      type: string
+      description: 'Accepting — принимаем; Paused — пауза до pausedUntilUtc; Stopped — «не принимаем, пока не включу».'
+      enum: [Accepting, Paused, Stopped]
+    ShopNotAcceptingCode:
+      type: string
+      enum: [Blocked, NoWorkingHours, Stopped, Paused, NotAllowedByPlan, MonthlyLimitReached, NoPickupTimeAvailable]
+    OrderLimitWarningLevel:
+      type: string
+      enum: [None, Warning80, Reached]
+    StorefrontUnavailableReason:
+      type: string
+      enum: [SoldOut, InsufficientStock, ShopNotAccepting]
+    ShopCustomerMode:
+      type: string
+      enum: [Anyone, VerifiedPhoneOnly]
+    OrderAcceptanceMode:
+      type: string
+      enum: [Manual, Auto]
+    ProductUnit:
+      type: string
+      enum: [Piece, Weight]
+
+    # ─────────────────────────────── галерея (форма цикла 10, без изменений) ───────────────────────────────
+    CompanyPhotoDto:
+      type: object
+      required: [id, url, thumbnailUrl, width, height, position, isCover]
+      properties:
+        id: { type: string, format: uuid }
+        url:
+          type: string
+          description: Полноразмерная (до 1600 px), публичный класс хранения.
+          example: /uploads/companies/9f1c2b7e-0000-4000-8000-000000000001.jpg
+        thumbnailUrl:
+          type: string
+          description: Миниатюра (до 480 px). Кабинет показывает её.
+          example: /uploads/companies/3a7b1d40-0000-4000-8000-000000000002.jpg
+        width: { type: integer }
+        height: { type: integer }
+        position: { type: integer, minimum: 0, maximum: 9, description: '0-based порядок показа; 0 — обложка.' }
+        isCover: { type: boolean, description: 'position == 0.' }
+    ReorderCompanyPhotosDto:
+      type: object
+      required: [photoIds]
+      properties:
+        photoIds:
+          type: array
+          minItems: 1
+          maxItems: 10
+          description: ПОЛНАЯ перестановка текущих фото компании; первый — обложка.
+          items: { type: string, format: uuid }
+
+    # ─────────────────────────────── профиль компании (подмножество) ───────────────────────────────
+    UpdateCompanyProfileInput:
+      type: object
+      additionalProperties: true
+      description: |
+        Подмножество UpdateCompanyDto, которым пользуется профиль магазина (салонные поля — горизонт записи, флаги
+        и т. п. — остаются, но здесь не описаны). Отсутствующее поле или null — «не менять», КРОМЕ ссылок карт
+        (пустая строка = очистить) и timeZoneId (явный null = пояс города). Для магазина фронт timeZoneId не шлёт.
+      properties:
+        name: { type: string, maxLength: 200 }
+        description: { type: string }
+        phone: { type: string, description: 'Каноническая форма 7XXXXXXXXXX или пустая строка.' }
+        email: { type: string }
+        cityId: { type: integer, minimum: 1, description: 'Смена города. Для магазина пояс всегда следует за городом.' }
+        timeZoneId:
+          type: string
+          nullable: true
+          description: 'Салон: ручной IANA-пояс / null — пояс города. Магазин: значение, отличное от пояса города → 400.'
+        yandexMapsUrl: { type: string, maxLength: 600, description: '"" — удалить ссылку; иначе https-ссылка на Яндекс Карты.' }
+        twoGisUrl: { type: string, maxLength: 600, description: '"" — удалить ссылку; иначе https-ссылка на 2ГИС.' }
+    SaveCompanyAddressInput:
+      type: object
+      required: [address]
+      properties:
+        address: { type: string, maxLength: 300, description: 'Пишется байт в байт; "" — очистить.' }
+        verify: { type: boolean, nullable: true, description: 'Принимается и игнорируется (цикл 19).' }
+    CompanyProfileDto:
+      type: object
+      additionalProperties: true
+      description: |
+        Подмножество CompanyDto, которым отвечают PUT /api/companies/{id} и PUT …/address (полная форма — API_DOCUMENTATION.md).
+        Профиль магазина ответ не читает — после успеха перечитывает GET /api/shops/{shopId}.
+      required: [id, name, slug]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        kind: { $ref: '#/components/schemas/CompanyKind' }
+        description: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        cityId: { type: integer, nullable: true }
+        cityName: { type: string, nullable: true }
+        timeZoneId: { type: string, nullable: true }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+    CompanyAddressUpdateResultDto:
+      type: object
+      required: [company]
+      properties:
+        company: { $ref: '#/components/schemas/CompanyProfileDto' }
+
+    # ─────────────────────────────── магазин (как cycle24 + поля цикла 26) ───────────────────────────────
+    PickupSettingsDto:
+      type: object
+      required: [asapEnabled, scheduledEnabled, slotStepMinutes, preorderDays, minPrepMinutes]
+      properties:
+        asapEnabled: { type: boolean }
+        scheduledEnabled: { type: boolean }
+        slotStepMinutes: { type: integer, enum: [15, 30, 60] }
+        preorderDays: { type: integer, minimum: 0, maximum: 14 }
+        minPrepMinutes: { type: integer, minimum: 0, maximum: 180 }
+    ShopAcceptanceDto:
+      type: object
+      required: [mode, statusText]
+      properties:
+        mode: { $ref: '#/components/schemas/ShopAcceptanceMode' }
+        pausedUntilUtc: { type: string, format: date-time, nullable: true }
+        statusText: { type: string, example: 'Пауза до 13:30' }
+        changedAtUtc: { type: string, format: date-time, nullable: true }
+        changedByName: { type: string, nullable: true }
+        changedText: { type: string, nullable: true, example: 'Изменено: Анна, 12:58' }
+    ShopOpenStateDto:
+      type: object
+      required: [isOpen, text]
+      properties:
+        isOpen: { type: boolean }
+        text: { type: string, example: 'Открыто до 21:00' }
+        opensAtUtc: { type: string, format: date-time, nullable: true }
+        closesAtUtc: { type: string, format: date-time, nullable: true }
+    AsapOptionDto:
+      type: object
+      required: [available]
+      properties:
+        available: { type: boolean }
+        readyAtUtc: { type: string, format: date-time, nullable: true }
+        text: { type: string, nullable: true, example: '≈ к 13:20' }
+    OrderLimitDto:
+      type: object
+      required: [used, monthLabel, warningLevel]
+      properties:
+        used: { type: integer, minimum: 0 }
+        limit: { type: integer, nullable: true, description: 'null — без ограничения.' }
+        monthLabel: { type: string, example: 'октябрь 2026' }
+        warningLevel: { $ref: '#/components/schemas/OrderLimitWarningLevel' }
+        text: { type: string, nullable: true }
+    SetupChecklistItemDto:
+      type: object
+      required: [code, text, done]
+      properties:
+        code: { type: string, example: WorkingHours }
+        text: { type: string, example: 'Задайте часы работы' }
+        done: { type: boolean }
+    ShopSettingsDto:
+      type: object
+      required: [customerMode, acceptanceMode, allowCustomerCancel, trackStock]
+      properties:
+        customerMode: { $ref: '#/components/schemas/ShopCustomerMode' }
+        acceptanceMode: { $ref: '#/components/schemas/OrderAcceptanceMode' }
+        allowCustomerCancel: { type: boolean }
+        trackStock: { type: boolean }
+        updatedAtUtc: { type: string, format: date-time, nullable: true }
+    SellerInfoDto:
+      type: object
+      additionalProperties: true
+      required: [isComplete, requiredFields]
+      properties:
+        legalForm: { type: string, nullable: true }
+        legalName: { type: string, nullable: true }
+        inn: { type: string, nullable: true }
+        ogrn: { type: string, nullable: true }
+        legalAddress: { type: string, nullable: true }
+        isComplete: { type: boolean }
+        requiredFields:
+          type: array
+          items: { type: string }
+    ShopManageDto:
+      type: object
+      description: ShopManageDto цикла 24 + четыре поля цикла 26 (API_CONTRACT_CYCLE26.md §562).
+      required: [id, name, slug, isActive, publicUrl, myRole, settings, seller, acceptingOrders, phoneVerificationAvailable, timeZoneId,
+                 pickupSettings, workingHoursSet, acceptance, openState, setupChecklist, orderLimit, productLimit,
+                 cityRegion, utcOffsetMinutes, timeZoneChangeAllowed, timeZoneChangeLockedText]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        cityId: { type: integer, nullable: true }
+        cityName: { type: string, nullable: true }
+        cityRegion: { type: string, nullable: true, description: 'Цикл 26. Регион города — для начального значения CityCombobox.' }
+        timeZoneId: { type: string }
+        utcOffsetMinutes:
+          type: integer
+          nullable: true
+          description: 'Цикл 26. Смещение пояса магазина от UTC сейчас, в минутах (Барнаул — 420). null — пояс не распознан.'
+        timeZoneChangeAllowed:
+          type: boolean
+          description: 'Цикл 26. false — у магазина есть заказы: город можно сменить только на город с тем же utcOffsetMinutes.'
+        timeZoneChangeLockedText:
+          type: string
+          nullable: true
+          description: 'Цикл 26. Текст запрета (тот же, что в 409 PUT /api/companies/{id}); null, когда timeZoneChangeAllowed = true.'
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+        isActive: { type: boolean }
+        publicUrl: { type: string }
+        myRole: { $ref: '#/components/schemas/ShopRole' }
+        settings: { $ref: '#/components/schemas/ShopSettingsDto' }
+        seller: { $ref: '#/components/schemas/SellerInfoDto' }
+        acceptingOrders: { type: boolean }
+        notAcceptingReason: { type: string, nullable: true }
+        notAcceptingCode:
+          allOf: [ { $ref: '#/components/schemas/ShopNotAcceptingCode' } ]
+          nullable: true
+        phoneVerificationAvailable: { type: boolean }
+        productCount: { type: integer, minimum: 0 }
+        pickupSettings: { $ref: '#/components/schemas/PickupSettingsDto' }
+        workingHoursSet: { type: boolean }
+        acceptance: { $ref: '#/components/schemas/ShopAcceptanceDto' }
+        openState: { $ref: '#/components/schemas/ShopOpenStateDto' }
+        setupChecklist:
+          type: array
+          items: { $ref: '#/components/schemas/SetupChecklistItemDto' }
+        orderLimit: { $ref: '#/components/schemas/OrderLimitDto' }
+        productLimit: { type: integer }
+
+    # ─────────────────────────────── витрина (как cycle24 + поля цикла 26) ───────────────────────────────
+    FoodInfoDto:
+      type: object
+      properties:
+        compositionAndAllergens: { type: string, nullable: true, maxLength: 2000 }
+    PickupDateDto:
+      type: object
+      required: [date, label, hasSlots]
+      properties:
+        date: { type: string, format: date }
+        label: { type: string, example: 'Завтра' }
+        hasSlots: { type: boolean }
+        reasonText: { type: string, nullable: true }
+    PickupOptionsDto:
+      type: object
+      required: [asapEnabled, scheduledEnabled, dates]
+      properties:
+        asapEnabled: { type: boolean }
+        scheduledEnabled: { type: boolean }
+        asap:
+          allOf: [ { $ref: '#/components/schemas/AsapOptionDto' } ]
+          nullable: true
+        dates:
+          type: array
+          items: { $ref: '#/components/schemas/PickupDateDto' }
+    PublicSellerInfoDto:
+      type: object
+      properties:
+        legalForm: { type: string, nullable: true }
+        legalName: { type: string, nullable: true }
+        inn: { type: string, nullable: true }
+        ogrn: { type: string, nullable: true }
+        legalAddress: { type: string, nullable: true }
+    StorefrontProductDto:
+      type: object
+      required: [id, name, unit, price, minQuantity, maxQuantity, foodInfo, available]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        imageUrl: { type: string, nullable: true }
+        thumbnailUrl: { type: string, nullable: true }
+        unit: { $ref: '#/components/schemas/ProductUnit' }
+        price: { type: number }
+        portionText: { type: string, nullable: true }
+        weightStepGrams: { type: integer, nullable: true }
+        minQuantity: { type: integer }
+        maxQuantity: { type: integer }
+        foodInfo: { $ref: '#/components/schemas/FoodInfoDto' }
+        available: { type: boolean }
+        unavailableReason:
+          allOf: [ { $ref: '#/components/schemas/StorefrontUnavailableReason' } ]
+          nullable: true
+    StorefrontCategoryDto:
+      type: object
+      required: [name, products]
+      properties:
+        id: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        products:
+          type: array
+          items: { $ref: '#/components/schemas/StorefrontProductDto' }
+    WorkingHoursSummaryLineDto:
+      type: object
+      required: [dayLabel, text]
+      properties:
+        dayLabel: { type: string, example: 'пн–пт' }
+        text: { type: string, example: '09:00–21:00' }
+    StorefrontDto:
+      type: object
+      description: StorefrontDto цикла 24 + email и photos (цикл 26, API_CONTRACT_CYCLE26.md §561).
+      required: [slug, name, isAvailable, acceptingOrders, customerMode, allowCustomerCancel, categories, publicUrl,
+                 date, openState, workingHours, pickup, customerNotifications, email, photos]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        publicUrl: { type: string }
+        logoUrl: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        address: { type: string, nullable: true, description: 'Как в профиле, без города. «Город, адрес» собирает фронт (publicAddress).' }
+        cityName: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        email:
+          type: string
+          nullable: true
+          description: 'Цикл 26. Email для покупателей; пустой/пробельный в профиле → null.'
+        photos:
+          type: array
+          maxItems: 10
+          description: 'Цикл 26. Галерея в порядке position (первое — обложка). Пустой массив — фото нет или isAvailable = false.'
+          items: { $ref: '#/components/schemas/CompanyPhotoDto' }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+        isAvailable: { type: boolean }
+        acceptingOrders: { type: boolean }
+        notAcceptingReason: { type: string, nullable: true }
+        notAcceptingCode:
+          allOf: [ { $ref: '#/components/schemas/ShopNotAcceptingCode' } ]
+          nullable: true
+        customerMode: { $ref: '#/components/schemas/ShopCustomerMode' }
+        allowCustomerCancel: { type: boolean }
+        seller:
+          allOf: [ { $ref: '#/components/schemas/PublicSellerInfoDto' } ]
+          nullable: true
+        date: { type: string, format: date }
+        dateNotice: { type: string, nullable: true }
+        openState: { $ref: '#/components/schemas/ShopOpenStateDto' }
+        workingHours:
+          type: object
+          required: [lines]
+          properties:
+            lines:
+              type: array
+              items: { $ref: '#/components/schemas/WorkingHoursSummaryLineDto' }
+        pickup: { $ref: '#/components/schemas/PickupOptionsDto' }
+        customerNotifications:
+          type: object
+          required: [webPushOffered, messengerOffered]
+          properties:
+            webPushOffered: { type: boolean }
+            messengerOffered: { type: boolean }
+        categories:
+          type: array
+          items: { $ref: '#/components/schemas/StorefrontCategoryDto' }
+
+paths:
+  # ─────────────────────────────── галерея ───────────────────────────────
+  /api/companies/{id}/photos:
+    parameters: [ { $ref: '#/components/parameters/CompanyId' } ]
+    get:
+      tags: [company-photos]
+      operationId: getCompanyPhotosCycle26
+      summary: Фото компании (салона или магазина) — анонимно
+      description: 'Без изменений. Компания не найдена или деактивирована → 404. Кабинет goods читает галерею здесь.'
+      security: []
+      responses:
+        '200':
+          description: Фото в порядке показа; пустой массив, если фото нет.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 10
+                items: { $ref: '#/components/schemas/CompanyPhotoDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [company-photos]
+      operationId: uploadCompanyPhotoCycle26
+      summary: Загрузить фото компании (с цикла 26 — и магазина)
+      description: |
+        Порядок проверок: 401 → компания не найдена 404 → не владелец и не SuperAdmin 403 → файл 400 → дубль по хешу 200 →
+        лимит 10 → 400 (текст зависит от типа компании, §560.2) → 201. Для магазина 409 больше НЕ отвечает.
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary, description: 'JPEG / PNG / WEBP, не больше 5 МБ.' }
+      responses:
+        '201':
+          description: Фото загружено, добавлено в конец.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyPhotoDto' }
+        '200':
+          description: Этот файл уже загружен — возвращается существующее фото, дубль не создаётся.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyPhotoDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/companies/{id}/photos/{photoId}:
+    parameters:
+      - $ref: '#/components/parameters/CompanyId'
+      - $ref: '#/components/parameters/PhotoId'
+    delete:
+      tags: [company-photos]
+      operationId: deleteCompanyPhotoCycle26
+      summary: Удалить фото компании (с цикла 26 — и магазина)
+      description: |
+        Порядок: reason неизвестный → 400 → компания 404 → права 403 → фото этой компании нет → 404 → 204.
+        reason=DepictedPersonRequest учитывается только от SuperAdmin (уведомление владельцу, текст нейтральный «компании»).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: reason
+          in: query
+          required: false
+          schema: { type: string, enum: [DepictedPersonRequest] }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/companies/{id}/photos/order:
+    parameters: [ { $ref: '#/components/parameters/CompanyId' } ]
+    put:
+      tags: [company-photos]
+      operationId: reorderCompanyPhotosCycle26
+      summary: Порядок фото компании (первое — обложка; с цикла 26 — и магазина)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderCompanyPhotosDto' }
+      responses:
+        '200':
+          description: Новый порядок.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 10
+                items: { $ref: '#/components/schemas/CompanyPhotoDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ─────────────────────────────── профиль компании ───────────────────────────────
+  /api/companies/{id}:
+    parameters: [ { $ref: '#/components/parameters/CompanyId' } ]
+    put:
+      tags: [company-profile]
+      operationId: updateCompanyProfileCycle26
+      summary: Поля карточки компании (салона или магазина)
+      description: |
+        Форма прежняя. Изменение цикла 26 — только для магазина (Kind = Orders), §563:
+          * timeZoneId со значением, отличным от пояса города → 400 «Часовой пояс магазина задаётся городом»;
+          * смена города всегда ставит пояс города (ручной пояс сбрасывается);
+          * новый пояс с другим смещением UTC при существующих заказах → 409 (голая строка = timeZoneChangeLockedText).
+        Запрос атомарен: при 400/409 ничего из тела не сохраняется. Салон — без изменений.
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCompanyProfileInput' }
+      responses:
+        '200':
+          description: Компания после сохранения (CompanyDto).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyProfileDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/PlainTextConflict' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/companies/{id}/address:
+    parameters: [ { $ref: '#/components/parameters/CompanyId' } ]
+    put:
+      tags: [company-profile]
+      operationId: saveCompanyAddressCycle26
+      summary: Адрес компании (без изменений; профиль магазина пишет адрес здесь)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveCompanyAddressInput' }
+      responses:
+        '200':
+          description: Компания после сохранения.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyAddressUpdateResultDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ─────────────────────────────── магазин ───────────────────────────────
+  /api/shops/{shopId}:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [shops]
+      operationId: getShopCycle26
+      summary: Магазин для кабинета — с полями смены города (цикл 26)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: ShopManageDto цикла 26.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ─────────────────────────────── витрина ───────────────────────────────
+  /api/storefront/{slug}:
+    parameters: [ { $ref: '#/components/parameters/Slug' } ]
+    get:
+      tags: [storefront]
+      operationId: getStorefrontCycle26
+      summary: Страница магазина — карточка (с фото и email) и ассортимент на дату
+      security: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: 'Дата выдачи; не передана — сегодня. Недоступная дата → ассортимент на сегодня + dateNotice.'
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Магазин и ассортимент на дату.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StorefrontDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }

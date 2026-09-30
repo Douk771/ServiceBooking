@@ -7,8 +7,8 @@ import { CompanyMapLinks } from '@/components/company/CompanyMapLinks'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { Modal } from '@/components/ui/Modal'
-import { formatPhone } from '@/utils/phone'
-import { dialHref } from '../utils/dial'
+import { formatPhone, telHref } from '@/utils/phone'
+import { publicAddress } from '@/utils/publicAddress'
 import { ordersApi } from '../api/orders'
 import { OrderStatusBadge } from '../components/OrderStatusBadge'
 import { OrderTimeline } from '../components/OrderTimeline'
@@ -178,13 +178,13 @@ export function OrderPage() {
           {(order.shop.address || order.shop.cityName) && (
             <p className="flex items-start gap-1.5">
               <Icon name="map-pin" size={14} strokeWidth={1.8} className="mt-0.5 shrink-0" />
-              {[order.shop.cityName, order.shop.address].filter(Boolean).join(', ')}
+              {publicAddress(order.shop.cityName, order.shop.address)}
             </p>
           )}
           {order.shop.phone && (
             <p className="flex items-center gap-1.5">
               <Icon name="phone" size={14} strokeWidth={1.8} />
-              <a href={dialHref(order.shop.phone) || undefined} className="text-ink font-medium hover:text-gold-dark">
+              <a href={telHref(order.shop.phone) || undefined} className="text-ink font-medium hover:text-gold-dark">
                 {formatPhone(order.shop.phone)}
               </a>
             </p>

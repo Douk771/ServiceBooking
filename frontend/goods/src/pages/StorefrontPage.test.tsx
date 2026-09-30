@@ -18,7 +18,7 @@ vi.mock('../api/legalNotice', () => ({
 }))
 
 const dto = (over: Partial<StorefrontDto> = {}): StorefrontDto => ({
-  slug: 'shaurma', name: 'Шаурма на Ленина', publicUrl: 'https://goods.ezbook.ru/shaurma', description: 'Свежая', address: 'ул. Ленина, 12', cityName: 'Барнаул', phone: '79001234567',
+  slug: 'shaurma', name: 'Шаурма на Ленина', publicUrl: 'https://goods.ezbook.ru/shaurma', description: 'Свежая', address: 'ул. Ленина, 12', cityName: 'Барнаул', phone: '79001234567', email: null, photos: [],
   isAvailable: true, acceptingOrders: true, customerMode: 'Anyone', allowCustomerCancel: true, seller: null,
   date: '2026-09-30', openState: { isOpen: true, text: 'Открыто до 21:00' }, workingHours: { lines: [{ dayLabel: 'пн–пт', text: '09:00–21:00' }] },
   pickup: { asapEnabled: true, scheduledEnabled: true, asap: { available: true, text: '≈ к 13:20' }, dates: [{ date: '2026-09-30', label: 'Сегодня', hasSlots: true }, { date: '2026-10-01', label: 'Завтра', hasSlots: true }, { date: '2026-10-02', label: 'пт 2 окт', hasSlots: false, reasonText: 'Сегодня уже не успеем приготовить — выберите другой день' }] },
@@ -111,6 +111,27 @@ describe('StorefrontPage', () => {
     renderPage()
     expect(await screen.findByText('Открыто до 21:00')).toBeInTheDocument()
     expect(screen.getByText('пн–пт')).toBeInTheDocument()
+  })
+
+  it('puts the open state inside the unified card and builds «город, адрес» once', async () => {
+    get.mockResolvedValue(dto({ address: 'Барнаул, Ленина, 12', email: 'shop@example.ru' }))
+    renderPage()
+    const openState = await screen.findByTestId('open-state')
+    expect(openState.closest('.rounded-3xl')).toContainElement(screen.getByRole('heading', { name: 'Шаурма на Ленина' }))
+    expect(screen.getByText('Барнаул, Ленина, 12')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'shop@example.ru' })).toHaveAttribute('href', 'mailto:shop@example.ru')
+    expect(screen.getByRole('link', { name: /Позвонить/ })).toHaveAttribute('href', 'tel:+79001234567')
+  })
+
+  it('shows the photo carousel when the storefront carries photos, and none otherwise', async () => {
+    get.mockResolvedValue(dto({ photos: [{ id: 'ph1', url: '/u/1.jpg', thumbnailUrl: '/u/1t.jpg', width: 800, height: 600, position: 0, isCover: true }] }))
+    const { unmount } = renderPage()
+    expect(await screen.findByRole('group', { name: 'Фотографии Шаурма на Ленина' })).toBeInTheDocument()
+    unmount()
+    get.mockResolvedValue(dto())
+    renderPage()
+    await screen.findByRole('heading', { name: 'Шаурма на Ленина' })
+    expect(screen.queryByRole('group', { name: /Фотографии/ })).toBeNull()
   })
 
   it('shows the server reason code text when not accepting and keeps the assortment visible', async () => {

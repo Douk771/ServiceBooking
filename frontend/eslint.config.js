@@ -58,8 +58,8 @@ export default tseslint.config(
           patterns: [
             { group: ['@/App', '**/src/App', '../../src/App', '../src/App'], message: 'goods must not import the ezbook app shell.' },
             {
-              regex: '(^@/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage|NoticesPage|BillingPage|owner/NotificationsSection)$))|(src/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage|NoticesPage|BillingPage|owner/NotificationsSection)$))',
-              message: 'goods may import only LegalDocumentPage, SubjectRequestPage, ConsentsPage, LoginPage, RegisterPage, NoticesPage, BillingPage (cycle 24, ARCHITECTURE_CYCLE24.md §462.2) and owner/NotificationsSection (ChannelCard, §462.1) from ezbook pages.',
+              regex: '(^@/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage|NoticesPage|BillingPage|owner/NotificationsSection|owner/CompanyPhotosSection)$))|(src/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage|NoticesPage|BillingPage|owner/NotificationsSection|owner/CompanyPhotosSection)$))',
+              message: 'goods may import only LegalDocumentPage, SubjectRequestPage, ConsentsPage, LoginPage, RegisterPage, NoticesPage, BillingPage (cycle 24, ARCHITECTURE_CYCLE24.md §462.2) owner/NotificationsSection (ChannelCard, §462.1) and owner/CompanyPhotosSection (cycle 26, ARCHITECTURE_CYCLE26.md §551) from ezbook pages.',
             },
           ],
         },

@@ -23,13 +23,15 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         )}
         <input
           ref={ref}
+          {...props}
           id={inputId}
+          aria-invalid={error ? true : props['aria-invalid']}
+          aria-describedby={error ? [props['aria-describedby'], `${inputId}-error`].filter(Boolean).join(' ') : props['aria-describedby']}
           className={`rounded-xl border px-4 py-3 text-sm outline-none transition-all bg-white text-ink placeholder:text-muted
           ${error ? 'border-danger focus:ring-2 focus:ring-danger-bg' : 'border-line focus:border-gold focus:ring-[3px] focus:ring-cream-deep'}
           ${className}`}
-          {...props}
         />
-        {error && <p className="text-xs text-danger">{error}</p>}
+        {error && <p id={`${inputId}-error`} className="text-xs text-danger">{error}</p>}
       </div>
     )
   },

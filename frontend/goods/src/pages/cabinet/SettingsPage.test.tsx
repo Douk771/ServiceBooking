@@ -13,6 +13,7 @@ let failWith: unknown = null
 vi.mock('../../api/shops', () => ({
   shopsApi: { updateSettings: (...a: unknown[]) => (failWith ? Promise.reject(failWith) : updateSettings(...a)), updateSeller: vi.fn() },
 }))
+vi.mock('@/api/companyPhotos', () => ({ companyPhotosApi: { list: () => new Promise(() => {}) } }))
 vi.mock('@/api/companies', () => ({ companiesApi: { update: vi.fn(), uploadLogo: vi.fn() } }))
 vi.mock('@/components/company/CompanyAddressField', () => ({ CompanyAddressField: () => <div>address-field</div> }))
 
@@ -44,6 +45,12 @@ beforeEach(() => {
 })
 
 describe('SettingsPage — ordering rules', () => {
+  it('shows the shop profile and the shop gallery block (cycle 26)', () => {
+    renderPage(shop())
+    expect(screen.getByRole('heading', { name: 'Профиль магазина' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Фотографии магазина' })).toBeInTheDocument()
+  })
+
   it('warns about MAX BEFORE saving the strict mode, and sends all four fields', async () => {
     updateSettings.mockResolvedValue(shop())
     const user = userEvent.setup()

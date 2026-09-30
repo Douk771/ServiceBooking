@@ -25,20 +25,19 @@ export function formatPhone(canonical: string | null | undefined): string {
 }
 
 /**
- * ARCHITECTURE_CYCLE15.md §254 — builds a `tel:` URI from whatever canonical/free-form phone the
- * company card has. Keeps only digits and a leading `+`, so `+7 (900) 000-00-00` → `tel:+79000000000`.
- * Lives here, not as a second phone module, per §254 ("there already is one").
+ * ARCHITECTURE_CYCLE15.md §254 / ARCHITECTURE_CYCLE26.md §549.2 — builds a `tel:` URI for the company card
+ * and every goods phone link. Always `tel:+digits`: a bare `tel:79001234567` is dialled as a national
+ * number on some phones. A leading `8` of an 11-digit number (no `+`) becomes `+7`.
  *
- * Empty/missing input → empty string, mirroring {@link formatPhone}, so callers can build
- * `href={telHref(phone) || undefined}` without a separate `if`.
+ * Empty/missing input or no digits → empty string, so callers can write `href={telHref(phone) || undefined}`.
  */
 export function telHref(raw: string | null | undefined): string {
   if (!raw) return ''
   const trimmed = raw.trim()
-  const hasLeadingPlus = trimmed.startsWith('+')
   const digits = trimmed.replace(/\D/g, '')
   if (!digits) return ''
-  return `tel:${hasLeadingPlus ? '+' : ''}${digits}`
+  if (!trimmed.startsWith('+') && digits.length === 11 && digits[0] === '8') return `tel:+7${digits.slice(1)}`
+  return `tel:+${digits}`
 }
 
 /**

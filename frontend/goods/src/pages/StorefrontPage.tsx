@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { CompanyMapLinks } from '@/components/company/CompanyMapLinks'
+import { CompanyCard, CompanyCardSkeleton, type CompanyCardData } from '@/components/company/CompanyCard'
 import { Icon } from '@/components/ui/Icon'
-import { formatPhone } from '@/utils/phone'
-import { dialHref } from '../utils/dial'
 import { storefrontApi } from '../api/storefront'
 import { CartPanel } from '../components/storefront/CartPanel'
 import { PickupPicker } from '../components/storefront/PickupPicker'
 import { ProductCard } from '../components/storefront/ProductCard'
-import { ErrorState, LoadingList, Skeleton } from '../components/StatePanels'
+import { ErrorState, LoadingList } from '../components/StatePanels'
 import { useCart } from '../hooks/useCart'
 import { usePickupChoice } from '../hooks/usePickupChoice'
 import { defaultChoice, isChoiceStillOffered } from '../utils/pickup'
@@ -18,7 +16,22 @@ import { orderTotal } from '../utils/orderMoney'
 import { formatMoney } from '../utils/quantityFormat'
 import { getGoodsErrorMessage, httpStatus } from '../utils/orderError'
 import { NotFoundPage } from './NotFoundPage'
-import type { StorefrontProductDto } from '../types'
+import type { StorefrontDto, StorefrontProductDto } from '../types'
+
+function toCardData(shop: StorefrontDto): CompanyCardData {
+  return {
+    name: shop.name,
+    description: shop.description,
+    logoUrl: shop.logoUrl,
+    phone: shop.phone,
+    email: shop.email,
+    address: shop.address,
+    cityName: shop.cityName,
+    yandexMapsUrl: shop.yandexMapsUrl,
+    twoGisUrl: shop.twoGisUrl,
+    photos: shop.photos ?? [], // rollout window: an API on cycle 25 omits the field
+  }
+}
 
 const LEGAL_FORM_LABELS: Record<string, string> = { Ip: 'ИП', Company: 'Организация', SelfEmployed: 'Самозанятый' }
 
@@ -96,7 +109,9 @@ export function StorefrontPage() {
   if (shopQuery.isLoading)
     return (
       <main className="max-w-[860px] mx-auto px-4 sm:px-8 pt-10">
-        <Skeleton className="h-28 mb-8" />
+        <div className="mb-8">
+          <CompanyCardSkeleton />
+        </div>
         <LoadingList rows={3} rowClass="h-32" />
       </main>
     )
@@ -131,52 +146,28 @@ export function StorefrontPage() {
 
   return (
     <main className={`max-w-[860px] mx-auto px-4 sm:px-8 pt-8 ${cartCount > 0 ? 'pb-28' : 'pb-8'}`}>
-      <header className="flex gap-5 items-start mb-6">
-        {shop.logoUrl ? (
-          <img src={shop.logoUrl} alt="" className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover shrink-0" />
-        ) : (
-          <span className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-cream-deep flex items-center justify-center text-gold-dark font-serif text-3xl shrink-0">{shop.name[0]}</span>
-        )}
-        <div className="min-w-0">
-          <h1 className="font-serif text-[30px] sm:text-[38px] leading-tight text-ink">{shop.name}</h1>
-          {shop.description && <p className="mt-1.5 text-[15px] text-ink-soft max-w-[560px]">{shop.description}</p>}
-          <div className="mt-2.5 flex flex-col gap-1 text-sm text-ink-soft">
-            {(shop.address || shop.cityName) && (
-              <p className="flex items-start gap-1.5">
-                <Icon name="map-pin" size={14} strokeWidth={1.8} className="mt-0.5 shrink-0" />
-                <span>{[shop.cityName, shop.address].filter(Boolean).join(', ')}</span>
-              </p>
+      {/* ARCHITECTURE_CYCLE26.md §550 — the shared card; the open-state block lives in its module slot. */}
+      <div className="mb-6">
+        <CompanyCard company={toCardData(shop)}>
+          <div className="flex flex-col gap-2" data-testid="open-state">
+            <p className={`inline-flex items-center gap-2 self-start rounded-full px-3.5 py-1.5 text-sm font-semibold ${shop.openState.isOpen ? 'bg-success-bg text-success' : 'bg-cream-deep text-ink-soft'}`}>
+              <Icon name="clock" size={14} strokeWidth={1.8} />
+              {shop.openState.text}
+            </p>
+            {shop.workingHours.lines.length > 0 && (
+              <details className="text-sm text-ink-soft">
+                <summary className="cursor-pointer text-gold hover:text-gold-dark w-fit">Часы работы</summary>
+                <ul className="mt-1.5 flex flex-col gap-0.5">
+                  {shop.workingHours.lines.map((l) => (
+                    <li key={l.dayLabel}>
+                      <span className="inline-block min-w-[64px] font-medium text-ink">{l.dayLabel}</span> {l.text}
+                    </li>
+                  ))}
+                </ul>
+              </details>
             )}
-            {shop.phone && (
-              <p className="flex items-center gap-1.5">
-                <Icon name="phone" size={14} strokeWidth={1.8} />
-                <a href={dialHref(shop.phone) || undefined} className="text-ink hover:text-gold-dark font-medium">
-                  {formatPhone(shop.phone)}
-                </a>
-              </p>
-            )}
-            <CompanyMapLinks yandexUrl={shop.yandexMapsUrl} twoGisUrl={shop.twoGisUrl} />
           </div>
-        </div>
-      </header>
-
-      <div className="mb-5 flex flex-col gap-2" data-testid="open-state">
-        <p className={`inline-flex items-center gap-2 self-start rounded-full px-3.5 py-1.5 text-sm font-semibold ${shop.openState.isOpen ? 'bg-success-bg text-success' : 'bg-cream-deep text-ink-soft'}`}>
-          <Icon name="clock" size={14} strokeWidth={1.8} />
-          {shop.openState.text}
-        </p>
-        {shop.workingHours.lines.length > 0 && (
-          <details className="text-sm text-ink-soft">
-            <summary className="cursor-pointer text-gold hover:text-gold-dark w-fit">Часы работы</summary>
-            <ul className="mt-1.5 flex flex-col gap-0.5">
-              {shop.workingHours.lines.map((l) => (
-                <li key={l.dayLabel}>
-                  <span className="inline-block min-w-[64px] font-medium text-ink">{l.dayLabel}</span> {l.text}
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
+        </CompanyCard>
       </div>
 
       {!shop.acceptingOrders && (

@@ -49,8 +49,16 @@ describe('telHref', () => {
     expect(telHref('+7 (900) 000-00-00')).toBe('tel:+79000000000')
   })
 
-  it('keeps a canonical digits-only number as-is with a tel: prefix', () => {
-    expect(telHref('79990000000')).toBe('tel:79990000000')
+  it('adds + to a canonical digits-only number (was tel:7999… before cycle 26)', () => {
+    expect(telHref('79990000000')).toBe('tel:+79990000000')
+  })
+
+  it('turns a leading 8 of an 11-digit number into +7', () => {
+    expect(telHref('89990000000')).toBe('tel:+79990000000')
+  })
+
+  it('does not rewrite a leading 8 when the number has an explicit +', () => {
+    expect(telHref('+89990000000')).toBe('tel:+89990000000')
   })
 
   it('preserves a leading + when present', () => {

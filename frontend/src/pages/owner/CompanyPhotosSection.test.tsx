@@ -38,11 +38,11 @@ function photo(overrides: Partial<CompanyPhoto> = {}): CompanyPhoto {
   }
 }
 
-function renderSection() {
+function renderSection(props: Partial<React.ComponentProps<typeof CompanyPhotosSection>> = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <CompanyPhotosSection companyId="co1" />
+      <CompanyPhotosSection companyId="co1" {...props} />
     </QueryClientProvider>,
   )
 }
@@ -68,6 +68,25 @@ describe('CompanyPhotosSection — API_CONTRACT_CYCLE10.md §125–§128', () =>
 
     expect(await screen.findByText('В галерее пока нет фотографий')).toBeInTheDocument()
     expect(screen.getByText('0 / 10')).toBeInTheDocument()
+  })
+
+  it('salon (default) keeps the salon heading; shop kind uses shop heading and empty state', async () => {
+    list.mockResolvedValue([])
+    const { unmount } = renderSection()
+    expect(await screen.findByText('Фотографии салона')).toBeInTheDocument()
+    unmount()
+    renderSection({ kind: 'shop' })
+    expect(await screen.findByText('Фотографии магазина')).toBeInTheDocument()
+    expect(await screen.findByText('В галерее магазина пока нет фотографий')).toBeInTheDocument()
+  })
+
+  it('calls onChanged after a successful removal', async () => {
+    list.mockResolvedValue([photo()])
+    remove.mockResolvedValue(undefined)
+    const onChanged = vi.fn()
+    renderSection({ onChanged })
+    await userEvent.click(await screen.findByRole('button', { name: /Удалить/ }))
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
   })
 
   it('labels position 0 as the cover', async () => {
