@@ -19,7 +19,7 @@ interface Props {
  * a `City` picked from the dropdown is valid, so `onChange` fires a full `City` or `null`, never a
  * string. Keyboard: ↑/↓ moves the highlighted option, Enter selects it, Escape closes the list.
  */
-export function CityCombobox({ label = 'Город', value, onChange, error, placeholder = 'Начните вводить город...' }: Props) {
+export function CityCombobox({ label = 'Город', value, onChange, error, placeholder = 'Начните вводить город...', describedBy }: Props) {
   const [query, setQuery] = useState(value?.label ?? '')
   const [open, setOpen] = useState(false)
   const [highlighted, setHighlighted] = useState(0)
