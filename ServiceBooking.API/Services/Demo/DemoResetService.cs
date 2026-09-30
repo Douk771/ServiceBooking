@@ -82,6 +82,8 @@ public sealed class DemoResetService(
             lines.Add($"будет очищено таблиц: {tables.Count} (кроме справочников: города, роли, тарифы, настройки платформы), и файловые хранилища демо");
             var (plannedPhotos, plannedFiles) = generator.CountAssets(graph);
             lines.Add($"будет создано: {graph.Counts(plannedPhotos, plannedFiles)} reviews={graph.Reviews.Count} clientNotes={graph.ClientNotes.Count}");
+            // API_CONTRACT_CYCLE35.md §35.26: the shops of «Заказы» have their own line; the first one keeps its format.
+            if (graph.HasShops) lines.Add($"будет создано (Заказы): {graph.OrdersCounts(generator.CountProductImages(graph))}");
             lines.Add("режим: только показать (добавьте --yes, чтобы выполнить)");
             return new DemoResetResult(ExitOk, lines);
         }
@@ -124,6 +126,7 @@ public sealed class DemoResetService(
 
             stopwatch.Stop();
             lines.Add($"выполнено: очищено таблиц={tables.Count} файлов={deletedFiles}; создано: {graph.Counts(photos, files)} reviews={graph.Reviews.Count} clientNotes={graph.ClientNotes.Count} за {stopwatch.Elapsed:mm\\:ss}");
+            if (graph.HasShops) lines.Add($"выполнено (Заказы): {graph.OrdersCounts(generator.CountProductImages(graph))}");
             logger.LogInformation("demo reset done in {Elapsed}: {Tables} tables wiped, {Files} files deleted", stopwatch.Elapsed, tables.Count, deletedFiles);
             return new DemoResetResult(ExitOk, lines);
         }

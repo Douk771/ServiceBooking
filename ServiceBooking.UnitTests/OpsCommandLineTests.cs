@@ -105,4 +105,52 @@ public class OpsCommandLineTests
         foreach (var word in new[] { "tariffs plan", "tariffs apply", "showcase plan", "showcase create", "showcase recreate", "showcase delete", "demo reset" })
             OpsCommandLine.Help.Should().Contain(word);
     }
+
+    // ── ARCHITECTURE_CYCLE35.md §35.9.6: --profile ──────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("--profile", "demo")]
+    [InlineData("--PROFILE", "DEMO")]
+    [InlineData("--profile=demo")]
+    public void Parse_ProfileDemo_IsRecognisedInAnyForm_AndIsNotAHostArgument(params string[] profileTokens)
+    {
+        var cli = OpsCommandLine.Parse(["ops", "showcase", "plan", .. profileTokens]);
+
+        cli!.Error.Should().BeNull();
+        cli.Action.Should().Be(OpsAction.ShowcasePlan);
+        cli.Profile.Should().Be(OpsCommandLine.DemoProfile);
+        cli.HostArgs.Should().BeEmpty("--profile=demo must not reach the host configuration");
+    }
+
+    [Fact]
+    public void Parse_WithoutProfile_ThereIsNoProfile_SoTheProductionOutputOfCycle28StaysUntouched() =>
+        OpsCommandLine.Parse(["ops", "showcase", "plan"])!.Profile.Should().BeNull();
+
+    [Fact]
+    public void Parse_ProfileProd_IsAccepted() =>
+        OpsCommandLine.Parse(["ops", "showcase", "create", "--profile", "prod"])!.Profile.Should().Be(OpsCommandLine.ProdProfile);
+
+    [Theory]
+    [InlineData("showcase", "create")]
+    [InlineData("showcase", "recreate")]
+    [InlineData("showcase", "delete")]
+    public void Parse_ProfileDemo_OnAChangingCommand_StillParses_TheRunnerRefusesItWithExitCode2(params string[] words)
+    {
+        var cli = OpsCommandLine.Parse(["ops", .. words, "--profile", "demo", "--yes"]);
+
+        cli!.Error.Should().BeNull();
+        cli.Profile.Should().Be("demo");
+        OpsCommandLine.DemoProfileRefusal.Should().Be("Профиль demo создаётся только сбросом демо: ops demo reset");
+    }
+
+    [Theory]
+    [InlineData("--profile")]
+    [InlineData("--profile", "staging")]
+    [InlineData("--profile=")]
+    public void Parse_ProfileWithoutOrWithAnUnknownValue_IsAnError(params string[] profileTokens) =>
+        OpsCommandLine.Parse(["ops", "showcase", "plan", .. profileTokens])!.Error.Should().NotBeNullOrEmpty();
+
+    [Fact]
+    public void Parse_ProfileOnANonShowcaseCommand_IsAnError() =>
+        OpsCommandLine.Parse(["ops", "demo", "reset", "--profile", "demo"])!.Error.Should().Contain("showcase");
 }

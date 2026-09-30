@@ -85,6 +85,13 @@ public static class OpsCommandRunner
     private static async Task<int> RunShowcaseAsync(IServiceProvider sp, OpsCommandLine cli, TextWriter output, CancellationToken ct)
     {
         var commands = sp.GetRequiredService<ShowcaseCommands>();
+        // --profile demo (ARCHITECTURE_CYCLE35.md §35.9.6): plan only; the changing commands answer exit code 2. Without --profile (or with prod) nothing changes.
+        if (cli.Profile == OpsCommandLine.DemoProfile)
+        {
+            var demo = await commands.RunDemoProfileAsync(cli.Action!.Value, DateTime.UtcNow);
+            foreach (var line in demo.Lines) await output.WriteLineAsync(line);
+            return demo.ExitCode;
+        }
         var result = await commands.RunAsync(cli.Action!.Value, cli.PlanOf, cli.Confirmed, DateTime.UtcNow, ct);
         foreach (var line in result.Lines) await output.WriteLineAsync(line);
         return result.ExitCode;

@@ -25,6 +25,30 @@ public class ShowcaseCommands(
     /// 0.5 s with fresh statistics took 7 s without them); the whole changing command runs under the same budget the insert already has.</summary>
     private const int CommandTimeoutSeconds = 300;
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE35.md §35.9.6, API_CONTRACT_CYCLE35.md §35.26 — <c>--profile demo</c>. Only the PLAN exists: it prints what a demo reset would create (the salon line and the line of
+    /// the shops of «Заказы»), changes nothing and needs no database (the graph is pure, the assets are files). Every changing command answers exit code 2: the demo profile is
+    /// created by the reset of the demo only (<c>ops demo reset</c>), which takes both locks of the demo.
+    /// </summary>
+    public Task<ShowcaseCommandResult> RunDemoProfileAsync(OpsAction action, DateTime nowUtc)
+    {
+        if (action != OpsAction.ShowcasePlan)
+            return Task.FromResult(new ShowcaseCommandResult(ExitRefused, [OpsCommandLine.DemoProfileRefusal]));
+
+        var profile = ShowcaseProfile.Demo;
+        var graph = ShowcaseDataset.Build(profile, nowUtc);
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(nowUtc, TimeZoneInfo.FindSystemTimeZoneById("Europe/Moscow")));
+        var (photos, files) = generator.CountAssets(graph);
+        var lines = new List<string>
+        {
+            $"ops showcase plan — профиль {profile.Name}, сегодня {today:yyyy-MM-dd} (по поясу каждой компании)",
+            $"будет создано: {graph.Counts(photos, files)} reviews={graph.Reviews.Count} clientNotes={graph.ClientNotes.Count}",
+            $"будет создано (Заказы): {graph.OrdersCounts(generator.CountProductImages(graph))}",
+            "режим: только показать (профиль demo создаётся только сбросом демо: ops demo reset --yes)",
+        };
+        return Task.FromResult(new ShowcaseCommandResult(ExitOk, lines));
+    }
+
     public async Task<ShowcaseCommandResult> RunAsync(
         OpsAction action, ShowcasePlanKind? planOf, bool confirmed, DateTime nowUtc, CancellationToken ct)
     {
