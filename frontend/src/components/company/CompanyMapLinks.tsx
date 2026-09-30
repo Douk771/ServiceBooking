@@ -1,8 +1,11 @@
 import { Icon } from '../ui/Icon'
+import { COMPANY_ACTION_LINK_CLASS } from './companyActionLink'
 
 interface Props {
   yandexUrl?: string | null
   twoGisUrl?: string | null
+  /** Appended to the wrapper's classes. The card header passes `contents` so the links join its action row (§31.11.2). */
+  className?: string
 }
 
 /**
@@ -23,17 +26,17 @@ interface Props {
  * component trusts `company.yandexMapsUrl`/`twoGisUrl` completely and renders nothing when a field
  * is empty (§285 п. 1/2 — an unfilled field means no button at all, not a disabled one).
  */
-export function CompanyMapLinks({ yandexUrl, twoGisUrl }: Props) {
+export function CompanyMapLinks({ yandexUrl, twoGisUrl, className = '' }: Props) {
   if (!yandexUrl && !twoGisUrl) return null
 
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <div className={`flex flex-wrap items-center gap-1 ${className}`.trim()}>
       {yandexUrl && (
         <a
           href={yandexUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="min-h-[44px] px-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-gold-dark hover:text-gold-darker rounded-full hover:bg-cream-deep transition-colors"
+          className={COMPANY_ACTION_LINK_CLASS}
         >
           <Icon name="external-link" size={14} strokeWidth={1.7} />
           Открыть в Яндекс Картах
@@ -45,7 +48,7 @@ export function CompanyMapLinks({ yandexUrl, twoGisUrl }: Props) {
           href={twoGisUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="min-h-[44px] px-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-gold-dark hover:text-gold-darker rounded-full hover:bg-cream-deep transition-colors"
+          className={COMPANY_ACTION_LINK_CLASS}
         >
           <Icon name="external-link" size={14} strokeWidth={1.7} />
           Открыть в 2ГИС
