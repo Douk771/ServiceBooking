@@ -9,6 +9,9 @@ import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
 import { Pagination } from '../components/ui/Pagination'
 import { BookingModal } from '../components/booking/BookingModal'
+import { ShowcaseBadge } from '../components/showcase/ShowcaseBadge'
+import { ShowcaseNotice } from '../components/showcase/ShowcaseNotice'
+import { useNoindexMeta } from '../hooks/useNoindexMeta'
 import { CompanyCard, CompanyCardSkeleton, type CompanyCardData } from '../components/company/CompanyCard'
 import type { Company, Service } from '../types'
 import { formatRub } from '../utils/money'
@@ -85,6 +88,8 @@ export function CompanyPage() {
   // Cycle 23 (ARCHITECTURE_CYCLE23.md §389.3-1): a goods shop has no booking page here — this address is only
   // ever reached through an old link, so send the visitor to the shop's own page on goods.
   const isShop = company?.kind === 'Orders'
+  // API_CONTRACT_CYCLE28.md §591 — a showcase company's page is kept out of search indexes (nginx sends the same via X-Robots-Tag).
+  useNoindexMeta(!!company?.isShowcase)
   useEffect(() => {
     if (isShop && company?.publicUrl) window.location.replace(company.publicUrl)
   }, [isShop, company?.publicUrl])
@@ -155,6 +160,7 @@ export function CompanyPage() {
       {/* ARCHITECTURE_CYCLE26.md §550 — the shared card; `photos` arrives with the company (cycle 10). */}
       <div className="mb-10">
         <CompanyCard company={toCardData(company)}>
+          {company.isShowcase && <ShowcaseBadge />}
           {!company.allowSelfBooking && (
             <div className="inline-flex items-center gap-1.5 bg-warning-bg text-warning text-xs px-3 py-1 rounded-full">
               <Icon name="alert-circle" size={12} strokeWidth={1.8} />
@@ -162,6 +168,7 @@ export function CompanyPage() {
             </div>
           )}
         </CompanyCard>
+        {company.isShowcase && <ShowcaseNotice className="mt-3" />}
       </div>
 
       {/* Services */}
