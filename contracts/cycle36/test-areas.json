@@ -36,7 +36,8 @@
         "src/utils/clientRescheduleError",
         "src/utils/clientKey",
         "src/utils/dateFormat",
-        "src/utils/timezone"
+        "src/utils/timezone",
+        "src/pages/owner/BookingRulesSection"
       ]
     },
     {
@@ -55,7 +56,11 @@
         "src/utils/inn",
         "src/utils/providesServicesError",
         "src/utils/photoBatch",
-        "goods/src/components/CatalogListingSection"
+        "goods/src/components/CatalogListingSection",
+        "src/pages/owner/CompanyManagePage",
+        "src/pages/owner/SalonCatalogListingSection",
+        "src/pages/owner/SalonProfileSection",
+        "src/pages/owner/SettingsTab"
       ]
     },
     {
@@ -86,7 +91,10 @@
         "goods/src/components/order/OrderPushCard",
         "goods/src/components/staffMax/",
         "goods/src/pages/cabinet/ShopNotificationsPage",
-        "goods/src/cabinetDevicesRedirect"
+        "goods/src/cabinetDevicesRedirect",
+        "src/pages/owner/NotificationLogTab",
+        "src/pages/owner/NotificationSettingsTab",
+        "src/pages/owner/NotificationTemplatesTab"
       ]
     },
     {
@@ -134,7 +142,8 @@
         "src/utils/healthConsent",
         "src/utils/subjectRequestError",
         "src/utils/templateMarkers",
-        "src/legalRoutes"
+        "src/legalRoutes",
+        "src/pages/owner/TemplateAcknowledgementModal"
       ]
     },
     {
