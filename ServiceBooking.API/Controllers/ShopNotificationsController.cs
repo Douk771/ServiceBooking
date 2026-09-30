@@ -29,7 +29,7 @@ namespace ServiceBooking.API.Controllers;
 [Authorize]
 public class ShopNotificationsController(
     AppDbContext db, ShopAccessResolver access, ShopChannelReader channelReader, IOptions<WebPushOptions> webPushOptions,
-    PlatformSettings platformSettings) : ControllerBase
+    PlatformSettings platformSettings, ServiceBooking.API.Services.StaffMax.StaffMaxAvailability staffMaxAvailability) : ControllerBase
 {
     public const string NoChannelText = "Подключите номер для сообщений покупателям";
     public const string NotFundedText = "Номер не оплачен — оставьте заявку на опцию в разделе «Подписка»";
@@ -70,6 +70,9 @@ public class ShopNotificationsController(
         }
         shopSettings.CustomerWebPushEnabled = input.CustomerWebPushEnabled;
         shopSettings.CustomerMessengerEnabled = input.CustomerMessengerEnabled;
+        // Cycle 25 (§524): the shop's MAX flag is independent of the platform switch and can be saved while the feature is off. Switching it off also
+        // holds what is already queued (the dispatcher re-reads it at send time).
+        if (input.StaffMaxEnabled is { } staffMaxEnabled) shopSettings.StaffMaxEnabled = staffMaxEnabled;
         shopSettings.UpdatedAtUtc = now;
         shopSettings.UpdatedByUserId = userId;
 
@@ -112,6 +115,8 @@ public class ShopNotificationsController(
 
         return new ShopNotificationSettingsDto(
             notificationSettings.StaffPushEnabled, shopSettings.CustomerWebPushEnabled, shopSettings.CustomerMessengerEnabled,
-            notificationSettings.DeliveryMode, notificationSettings.PriorityTransport, messengerAvailable, unavailableText, platformPush, channelDtos);
+            notificationSettings.DeliveryMode, notificationSettings.PriorityTransport, messengerAvailable, unavailableText, platformPush, channelDtos,
+            shopSettings.StaffMaxEnabled, staffMaxAvailability.Enabled,
+            staffMaxAvailability.Enabled ? null : ServiceBooking.API.Services.StaffMax.StaffMaxAvailability.NotEnabledText);
     }
 }

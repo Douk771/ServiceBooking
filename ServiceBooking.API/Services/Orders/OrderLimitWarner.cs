@@ -13,7 +13,9 @@ namespace ServiceBooking.API.Services.Orders;
 /// counter was incremented: when the count crosses <c>ceil(0.8 × limit)</c> (and again at the limit) the flag on the counter row is set — exactly
 /// once, by an UPDATE guarded with <c>IS NULL</c> — and a push to the account owner is queued on the devices they subscribed from goods.
 /// </summary>
-public class OrderLimitWarner(AppDbContext db, OrderMonthlyCounter counter, OrderStaffPushQueue pushQueue)
+public class OrderLimitWarner(
+    AppDbContext db, OrderMonthlyCounter counter, OrderStaffPushQueue pushQueue, OrderStaffMaxQueue maxQueue,
+    ServiceBooking.API.Services.StaffMax.StaffMaxAvailability maxAvailability, ServiceBooking.API.Services.PublicSites.PublicSiteLinks links)
 {
     public async Task AfterIncrementAsync(
         Company shop, Guid billingAccountId, DateOnly month, MonthlyUsage usage, OrdersPlan plan, DateTime nowUtc, CancellationToken ct)
@@ -33,6 +35,14 @@ public class OrderLimitWarner(AppDbContext db, OrderMonthlyCounter counter, Orde
         if (ownerId is null) return;
 
         var payload = OrderNotificationTexts.OwnerOrderLimitWarning(reached, usage.Count, limit, month);
-        await pushQueue.QueueForOwnerAsync(shop.Id, ownerId, $"{NotificationType.OwnerOrderLimitWarning}:{billingAccountId}:{month:yyyy-MM}:{(reached ? "reached" : "80")}", payload, ct);
+        var keySeed = $"{NotificationType.OwnerOrderLimitWarning}:{billingAccountId}:{month:yyyy-MM}:{(reached ? "reached" : "80")}";
+        await pushQueue.QueueForOwnerAsync(shop.Id, ownerId, keySeed, payload, ct);
+
+        // ARCHITECTURE_CYCLE25.md §499.2 (P1, US-25-04): the same warning to the owner's MAX chat, with the same key seed. The shop's own MAX switch does
+        // not hold it back (like push, §459.6) — only the platform switch does.
+        if (maxAvailability.Enabled)
+            await maxQueue.QueueForOwnerAsync(
+                shop.Id, ownerId, keySeed,
+                ServiceBooking.API.Services.StaffMax.StaffMaxTexts.OwnerOrderLimitWarning(reached, usage.Count, limit, month, links.OrdersSubscriptionUrl()), ct);
     }
 }

@@ -91,8 +91,12 @@ public record ShopChannelStatusDto(
 public record ShopNotificationSettingsDto(
     bool StaffPushEnabled, bool CustomerWebPushEnabled, bool CustomerMessengerEnabled, NotificationDeliveryMode DeliveryMode,
     NotificationTransport PriorityTransport, bool MessengerAvailable, string? MessengerUnavailableText, bool PlatformPushEnabled,
-    List<ShopChannelStatusDto> Channels);
+    List<ShopChannelStatusDto> Channels,
+    // Cycle 25 (API_CONTRACT_CYCLE25.md §524): the shop's "Сообщения сотрудникам в MAX" flag and whether the platform has the feature on.
+    bool StaffMaxEnabled = true, bool StaffMaxAvailable = false, string? StaffMaxUnavailableText = null);
 
 public record ShopNotificationSettingsInput(
     bool StaffPushEnabled, bool CustomerWebPushEnabled, bool CustomerMessengerEnabled, NotificationDeliveryMode? DeliveryMode,
-    NotificationTransport? PriorityTransport);
+    NotificationTransport? PriorityTransport,
+    // Cycle 25 (§524): null / not sent — leave unchanged, so the cycle-24 frontend keeps working.
+    bool? StaffMaxEnabled = null);

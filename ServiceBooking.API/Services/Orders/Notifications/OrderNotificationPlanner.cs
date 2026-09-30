@@ -12,11 +12,13 @@ namespace ServiceBooking.API.Services.Orders.Notifications;
 /// cannot exist. What to send is the pure <see cref="OrderNotificationPlan"/> (a table); here only the parts that need the database are done:
 /// who the staff are, which browsers subscribed, which channels the shop has. Only rows are ADDED to the caller's transaction, SaveChanges is
 /// the caller's — and there are no network calls (a broken push service cannot break an order action).
-/// The recipients of staff notifications are chosen here and nowhere else, which is where a future "staff chat in MAX" target (cycle 25) joins.
+/// The recipients of staff notifications are chosen here and nowhere else: push (cycle 24) and the staff chat in MAX (cycle 25) are queued side by side.
 /// </summary>
 public sealed class OrderNotificationPlanner(
     AppDbContext db, OrderStaffPushQueue staffQueue, CustomerOrderPushQueue customerQueue, OrderMessageScheduler messenger,
-    ShopGateLoader gates, ServiceBooking.API.Services.Notifications.INotificationClock clock)
+    ShopGateLoader gates, ServiceBooking.API.Services.Notifications.INotificationClock clock,
+    OrderStaffMaxQueue staffMaxQueue, ServiceBooking.API.Services.StaffMax.StaffMaxAvailability staffMaxAvailability,
+    ServiceBooking.API.Services.PublicSites.PublicSiteLinks links)
 {
     public async Task OnEventAsync(Order order, OrderEvent orderEvent, CancellationToken ct = default)
     {
@@ -25,7 +27,8 @@ public sealed class OrderNotificationPlanner(
         var notificationSettings = await db.CompanyNotificationSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == order.CompanyId, ct);
         var flags = new OrderNotificationFlags(
             notificationSettings?.StaffPushEnabled ?? new CompanyNotificationSettings().StaffPushEnabled,
-            settings.CustomerWebPushEnabled, settings.CustomerMessengerEnabled, order.NotifyByMessenger);
+            settings.CustomerWebPushEnabled, settings.CustomerMessengerEnabled, order.NotifyByMessenger,
+            StaffMaxEnabled: settings.StaffMaxEnabled && staffMaxAvailability.Enabled);
 
         var plan = OrderNotificationPlan.For(orderEvent.Kind, orderEvent.ToStatus, flags);
         if (plan.IsEmpty) return;
@@ -41,6 +44,16 @@ public sealed class OrderNotificationPlanner(
                 ? OrderNotificationTexts.StaffOrderCancelledByCustomer(facts, shop.Id, order.Id)
                 : OrderNotificationTexts.StaffOrderCreated(facts, shop.Id, order.Id);
             await staffQueue.QueueForStaffAsync(order, orderEvent.Id, staffType, payload, ct);
+        }
+
+        if (plan.StaffMaxType is { } staffMaxType)
+        {
+            // ARCHITECTURE_CYCLE25.md §499.2: the same event and recipients as push, its own switch; the text carries no customer data.
+            var orderUrl = links.StaffOrdersUrl(shop.Id, order.Id);
+            var text = staffMaxType == NotificationType.StaffOrderCancelledByCustomer
+                ? ServiceBooking.API.Services.StaffMax.StaffMaxTexts.OrderCancelledByCustomer(facts, orderUrl)
+                : ServiceBooking.API.Services.StaffMax.StaffMaxTexts.OrderCreated(facts, orderUrl);
+            await staffMaxQueue.QueueForStaffAsync(order, orderEvent.Id, staffMaxType, text, ct);
         }
 
         if (plan.CustomerType is { } customerType)

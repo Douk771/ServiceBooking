@@ -14,7 +14,7 @@ namespace ServiceBooking.API.Services.PhoneVerification.Max;
 /// publicly documented surface as of this cycle; §147.1's own note applies equally here — if a live-bot
 /// recon shows a different shape, only this file and its tests change.
 /// </summary>
-public sealed class MaxBotClient : IMaxBotClient, IDisposable
+public sealed class MaxBotClient : IMaxBotClient, IMaxBotMessenger, IDisposable
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptions<PhoneVerificationOptions> _options;
@@ -151,6 +151,43 @@ public sealed class MaxBotClient : IMaxBotClient, IDisposable
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             _logger.LogWarning("max-bot: sendMessage timed out");
+        }
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE25.md §499.3 — one text message to a chat with a CLASSIFIED result (<see cref="MaxSendResponseClassifier"/>). Goes through the same
+    /// two limiters as <see cref="SendMessageAsync"/>, so the phone confirmation and the staff messages share MAX's budget. A limiter that does not grant a
+    /// lease is <see cref="MaxSendOutcome.RateLimited"/>. The chat id and the token are never logged.
+    /// </summary>
+    public async Task<MaxSendOutcome> SendAsync(string chatId, string text, CancellationToken ct)
+    {
+        var maxOptions = _options.Value.Max;
+        if (string.IsNullOrWhiteSpace(maxOptions.BotToken))
+            return new MaxSendOutcome.Rejected(0, "bot token is not configured");
+
+        using var globalLease = await _globalLimiter.AcquireAsync(1, ct);
+        if (!globalLease.IsAcquired) return new MaxSendOutcome.RateLimited();
+        using var chatLease = await _perChatLimiter.AcquireAsync(chatId, 1, ct);
+        if (!chatLease.IsAcquired) return new MaxSendOutcome.RateLimited();
+
+        try
+        {
+            using var client = CreateClient(maxOptions);
+            using var response = await client.PostAsJsonAsync($"messages?chat_id={Uri.EscapeDataString(chatId)}", new { text }, ct);
+            var outcome = MaxSendResponseClassifier.Classify((int)response.StatusCode);
+            if (outcome is not MaxSendOutcome.Sent)
+                _logger.LogWarning("max-bot: staff message returned {StatusCode}", (int)response.StatusCode);
+            return outcome;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning("max-bot: staff message failed ({Error})", ex.GetType().Name);
+            return new MaxSendOutcome.Transient(ex.GetType().Name);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("max-bot: staff message timed out");
+            return new MaxSendOutcome.Transient("timeout");
         }
     }
 

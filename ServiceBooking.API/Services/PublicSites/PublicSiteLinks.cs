@@ -31,6 +31,12 @@ public sealed class PublicSiteLinks(IOptions<PublicSitesOptions> options)
         ? $"{SiteBaseUrl(kind)}/{slug}"
         : $"{SiteBaseUrl(kind)}/company/{slug}";
 
+    /// <summary>ARCHITECTURE_CYCLE25.md §499.2 — the staff's order card in the cabinet: {Orders}/cabinet/{shopId}/orders?order={orderId}.</summary>
+    public string StaffOrdersUrl(Guid shopId, Guid orderId) => $"{SiteBaseUrl(CompanyKind.Orders)}/cabinet/{shopId}/orders?order={orderId}";
+
+    /// <summary>The owner's subscription page in the goods cabinet: {Orders}/cabinet/subscription.</summary>
+    public string OrdersSubscriptionUrl() => $"{SiteBaseUrl(CompanyKind.Orders)}/cabinet/subscription";
+
     /// <summary>{Orders}/o/{token}.</summary>
     public string OrderPageUrl(string token) => $"{SiteBaseUrl(CompanyKind.Orders)}/o/{token}";
 

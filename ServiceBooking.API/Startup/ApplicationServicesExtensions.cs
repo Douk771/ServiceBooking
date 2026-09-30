@@ -85,6 +85,7 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddSingleton<ServiceBooking.API.Services.Orders.CustomerOrderNotificationsBuilder>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.OrderNotificationPlanner>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.OrderStaffPushQueue>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.OrderStaffMaxQueue>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.CustomerOrderPushQueue>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.OrderMessageScheduler>();
     builder.Services.AddHttpClient<CaptchaService>();
@@ -170,6 +171,14 @@ internal static class ApplicationServicesExtensions
             ? sp.GetRequiredService<ServiceBooking.API.Services.PhoneVerification.Max.MaxBotClient>()
             : sp.GetRequiredService<ServiceBooking.API.Services.PhoneVerification.Max.StubMaxBotClient>());
 
+    // ARCHITECTURE_CYCLE25.md §499.3: the outgoing side of MAX for staff is a SEPARATE interface, implemented by the same MaxBotClient singleton
+    // (shared rate limiters); under "stub" it is a structural no-op with no HttpClient.
+    builder.Services.AddSingleton<ServiceBooking.API.Services.PhoneVerification.Max.StubMaxBotMessenger>();
+    builder.Services.AddSingleton<ServiceBooking.API.Services.PhoneVerification.Max.IMaxBotMessenger>(sp =>
+        string.Equals(phoneVerificationProvider, "max-bot", StringComparison.OrdinalIgnoreCase)
+            ? sp.GetRequiredService<ServiceBooking.API.Services.PhoneVerification.Max.MaxBotClient>()
+            : sp.GetRequiredService<ServiceBooking.API.Services.PhoneVerification.Max.StubMaxBotMessenger>());
+
     // Request/URL logging silenced the same way as "green-api"/"web-push" — the bot token lives in the
     // Authorization header (О3), never a query string, but this client's own request logging is muted
     // regardless as a second rung of defence.
@@ -227,6 +236,8 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaffPushDispatchTask>();
     // ARCHITECTURE_CYCLE24.md §456.2 — web-push to customers without an account (10-second period from configuration).
     builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.CustomerOrderPushDispatchTask>();
+    // ARCHITECTURE_CYCLE25.md §499.4 — MAX messages to staff (5-second period, "realtime" lane).
+    builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaffMaxDispatchTask>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.OrderPushSubscriptionWriter>();
     // ARCHITECTURE_CYCLE14.md §146.3 — the SIXTH task, "max-webhook-renew" (period 4h, under the platform's
     // own 8h no-response-drops-the-subscription window, О4). Registered unconditionally, same as every other
