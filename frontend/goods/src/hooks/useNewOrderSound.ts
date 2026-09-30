@@ -14,8 +14,37 @@ function audioContextCtor(): AudioCtor | undefined {
 let sharedCtx: AudioContext | null = null
 let sharedEnabled = false
 
+// The choice survives a reload (the audio unlock itself cannot: the browser wants a fresh gesture, see the gesture hook below).
+const STORAGE_KEY = 'goods.newOrderSound'
+
+function readWanted(): boolean {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeWanted(on: boolean) {
+  try {
+    if (on) window.localStorage.setItem(STORAGE_KEY, '1')
+    else window.localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    // storage blocked — the choice just will not be remembered
+  }
+}
+
+/** After a reload: build the (suspended) context from the remembered choice; the first tap anywhere resumes it. */
+function restoreFromStorage() {
+  const Ctor = audioContextCtor()
+  if (!Ctor || sharedEnabled || !readWanted()) return
+  sharedCtx = sharedCtx ?? new Ctor()
+  sharedEnabled = true
+}
+
 function initialState(): SoundState {
   if (!audioContextCtor()) return 'unsupported'
+  restoreFromStorage()
   if (!sharedEnabled || !sharedCtx) return 'off'
   return sharedCtx.state === 'running' ? 'on' : 'blocked'
 }
@@ -69,6 +98,7 @@ export function useNewOrderSound() {
     if (!sharedCtx) sharedCtx = new Ctor()
     sharedCtx.onstatechange = sync
     sharedEnabled = true
+    writeWanted(true)
     try {
       await sharedCtx.resume()
     } catch {
@@ -80,8 +110,23 @@ export function useNewOrderSound() {
 
   const disable = useCallback(() => {
     sharedEnabled = false
+    writeWanted(false)
     setState('off')
   }, [])
+
+  useEffect(() => {
+    // A remembered choice after a reload: the first tap/key anywhere on the page is the gesture that unlocks audio.
+    if (!sharedEnabled || !sharedCtx || sharedCtx.state === 'running') return
+    const unlock = () => {
+      void sharedCtx?.resume().finally(sync)
+    }
+    // iOS Safari only counts touchend/click as an audio-unlocking gesture, not always pointerdown.
+    const events = ['pointerdown', 'touchend', 'click', 'keydown'] as const
+    for (const e of events) window.addEventListener(e, unlock, { capture: true })
+    return () => {
+      for (const e of events) window.removeEventListener(e, unlock, { capture: true })
+    }
+  }, [sync])
 
   useEffect(() => {
     // Re-bind to this mount and pick up a state change that happened while the page was away.
