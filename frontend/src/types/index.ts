@@ -567,6 +567,8 @@ export type LegalTextKey =
   | 'GuestDataGateRevokeNotice'
   | 'HealthDataWrittenConsentForm'
   | 'CompanyPhotoPeopleNotice'
+  /** API_CONTRACT_CYCLE25.md §530 [legal L17] — warning under the shop's note about a buyer (goods). */
+  | 'ShopCustomerNoteNotice'
 export type ConsentPurpose = 'ProviderDelivery' | 'WorkPhotos' | 'HealthData' | 'ChannelOffer'
 type ConsentAct = 'Acknowledged' | 'Accepted' | 'Consented' | 'Confirmed'
 export type ConsentSource =

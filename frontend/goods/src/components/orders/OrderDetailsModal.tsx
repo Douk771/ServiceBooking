@@ -1,8 +1,10 @@
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { Modal } from '@/components/ui/Modal'
 import { ordersApi } from '../../api/orders'
+import { customersApi } from '../../api/customers'
 import { ErrorState, LoadingList } from '../StatePanels'
 import { getGoodsErrorMessage } from '../../utils/orderError'
 import type { OrderActorKind } from '../../types'
@@ -12,8 +14,26 @@ const ACTOR: Record<OrderActorKind, string> = { Customer: 'Покупатель'
 /** US-23-26 (P1) — the order journal: time, author and the server-built text of every event. */
 export function OrderDetailsModal({ shopId, orderId, number, onClose }: { shopId: string; orderId: string; number: number; onClose: () => void }) {
   const q = useQuery({ queryKey: ['staff-order', shopId, orderId], queryFn: () => ordersApi.get(shopId, orderId) })
+  const order = q.data
+  // The buyer card exists only while the order still has the buyer's data (an erased order has no `customerPhone`).
+  const cardOrderId = order && order.customerPhone ? order.id : null
+  // P1 (US-25-10): a one-line hint «Есть заметка» so the shop sees it before handing the order over. Best effort — no error UI.
+  const noteQ = useQuery({
+    queryKey: ['shop-customer-note', shopId, cardOrderId],
+    queryFn: () => customersApi.getNote(shopId, cardOrderId as string),
+    enabled: cardOrderId !== null,
+    retry: false,
+  })
   return (
     <Modal title={`Журнал заказа № ${number}`} onClose={onClose}>
+      {order && cardOrderId && (
+        <div className="mb-4 text-sm" data-testid="order-buyer">
+          <Link to={`/cabinet/${shopId}/customers/${cardOrderId}`} onClick={onClose} className="font-medium text-ink underline underline-offset-2 hover:no-underline">
+            {order.customerName || 'Покупатель'}: карточка покупателя
+          </Link>
+          {noteQ.data?.note && <p className="mt-1 text-ink-soft" data-testid="order-buyer-note">Есть заметка: {noteQ.data.note.text}</p>}
+        </div>
+      )}
       {q.isLoading ? (
         <LoadingList rows={3} rowClass="h-12" />
       ) : q.isError || !q.data ? (
