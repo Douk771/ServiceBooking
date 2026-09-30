@@ -27,12 +27,14 @@ public class FileStorage
 {
     private readonly string _publicRoot;
     private readonly string _privateRoot;
+    private readonly string _contentRoot;
     private readonly long _minFreeDiskBytes;
 
     public FileStorage(IConfiguration config, IWebHostEnvironment env)
     {
         _publicRoot = ResolvePublicRoot(config, env.ContentRootPath);
         _privateRoot = ResolvePrivateRoot(config, env.ContentRootPath);
+        _contentRoot = env.ContentRootPath;
 
         var minFreeMb = config.GetValue("Storage:MinFreeDiskMb", 1024);
         _minFreeDiskBytes = minFreeMb * 1024L * 1024L;
@@ -109,6 +111,56 @@ public class FileStorage
         foreach (var file in Directory.EnumerateFiles(dir))
             if (!keepFileNames.Contains(Path.GetFileName(file))) File.Delete(file);
         if (!Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE28.md §580 step 4 — the demo reset's wipe of the file storage: deletes EVERY file under the public and the private root (and the folders left
+    /// empty), except the showcase pictures the new data points at (<paramref name="keepShowcaseFiles"/>: plain names inside <c>showcase/</c> of the public root).
+    /// Only a demo instance calls it, and only after both demo locks; the roots of a demo are its own volumes. As one more line of defence it REFUSES to touch a root
+    /// that is (or contains) the application's own content root, or that sits closer than two levels below the filesystem root — a mistyped <c>Storage:PublicRoot</c>
+    /// must never turn a cleanup into deleting the application. Returns the number of files deleted.
+    /// </summary>
+    public int ClearAllFiles(IReadOnlySet<string> keepShowcaseFiles)
+    {
+        var publicRoot = PublicRootFullPath;
+        var privateRoot = PrivateRootFullPath;
+        foreach (var root in new[] { publicRoot, privateRoot })
+            if (!IsSafeToClear(root, Path.GetFullPath(_contentRoot)))
+                throw new InvalidOperationException($"Refusing to clear the storage root '{root}': it is the application's own folder or too close to the filesystem root.");
+
+        var showcaseFolder = Path.Combine(publicRoot, AreaFolder(PublicArea.Showcase));
+        var deleted = ClearFolder(publicRoot, file =>
+            string.Equals(Path.GetDirectoryName(file), showcaseFolder, StringComparison.Ordinal) && keepShowcaseFiles.Contains(Path.GetFileName(file)));
+        deleted += ClearFolder(privateRoot, _ => false);
+        return deleted;
+    }
+
+    /// <summary>Pure rule of <see cref="ClearAllFiles"/>: a root may be cleared when it is not the content root, does not contain it, and has at least two
+    /// segments below the filesystem root.</summary>
+    internal static bool IsSafeToClear(string rootFullPath, string contentRootFullPath)
+    {
+        var root = Path.TrimEndingDirectorySeparator(rootFullPath);
+        var content = Path.TrimEndingDirectorySeparator(contentRootFullPath);
+        if (string.Equals(root, content, StringComparison.Ordinal)) return false;
+        if (content.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal)) return false;
+        var below = root[(Path.GetPathRoot(root)?.Length ?? 0)..];
+        return below.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries).Length >= 2;
+    }
+
+    private static int ClearFolder(string root, Func<string, bool> keep)
+    {
+        if (!Directory.Exists(root)) return 0;
+        var deleted = 0;
+        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).ToList())
+        {
+            if (keep(file)) continue;
+            File.Delete(file);
+            deleted++;
+        }
+        // Folders left empty (deepest first); the root itself stays.
+        foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length).ToList())
+            if (!Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
+        return deleted;
     }
 
     /// <summary>How many files a public area folder holds (0 when it does not exist).</summary>

@@ -35,7 +35,10 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
 
     private async Task<TariffCatalogReport> RunAsync(bool apply, CancellationToken ct)
     {
-        await using var transaction = apply ? await db.Database.BeginTransactionAsync(ct) : null;
+        // Composable under an AMBIENT transaction (cycle 28, pass B): the demo reset calls this inside its own single transaction and commits it itself. Only when
+        // there is none does the seeder open — and commit — a transaction of its own (the operator's `ops tariffs apply`).
+        var ownsTransaction = apply && db.Database.CurrentTransaction is null;
+        await using var transaction = ownsTransaction ? await db.Database.BeginTransactionAsync(ct) : null;
         if (apply && !await AdvisoryLock.TryAcquireAsync(db, ShowcaseCatalog.TariffsLockKey))
             return TariffCatalogReport.Busy;
 
@@ -84,7 +87,7 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
         if (apply)
         {
             await db.SaveChangesAsync(ct);
-            await transaction!.CommitAsync(ct);
+            if (transaction is not null) await transaction.CommitAsync(ct);
             lines.Add($"готово; изменения будут видны в каталоге цен на работающей машине в течение {CacheSeconds} секунд");
             logger.LogInformation("ops tariffs apply: created {Created} plans, {Rules} rules, {Aligned} free-tariff fields",
                 created.Count, rulesAdded, aligned);

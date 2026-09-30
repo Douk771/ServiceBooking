@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.Services.Demo;
 using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.API.Services.Showcase.Tariffs;
 using ServiceBooking.Infrastructure.Data;
@@ -46,7 +47,7 @@ public static class OpsCommandRunner
             {
                 OpsAction.TariffsPlan => await RunTariffsAsync(scope.ServiceProvider, apply: false, output, ct),
                 OpsAction.TariffsApply => await RunTariffsAsync(scope.ServiceProvider, apply: true, output, ct),
-                OpsAction.DemoReset => await RunDemoResetAsync(scope.ServiceProvider, output),
+                OpsAction.DemoReset => await RunDemoResetAsync(scope.ServiceProvider, cli.Confirmed, output, ct),
                 _ => await RunShowcaseAsync(scope.ServiceProvider, cli, output, ct),
             };
         }
@@ -72,15 +73,13 @@ public static class OpsCommandRunner
         return ExitOk;
     }
 
-    private static async Task<int> RunDemoResetAsync(IServiceProvider sp, TextWriter output)
+    private static async Task<int> RunDemoResetAsync(IServiceProvider sp, bool confirmed, TextWriter output, CancellationToken ct)
     {
-        // The demo stand is pass B of cycle 28 (BE-9/BE-10). Until then the command exists only so that the negative case of the
-        // contract holds: on a production configuration it refuses with code 2.
-        var enabled = sp.GetRequiredService<IConfiguration>().GetValue("DemoMode:Enabled", false);
-        await output.WriteLineAsync(enabled
-            ? "Демо-стенд не реализован в этой сборке (проход B цикла 28)."
-            : "Демо-режим не включён (DemoMode:Enabled=false): сброс невозможен.");
-        return ExitRefused;
+        // ARCHITECTURE_CYCLE28.md §580: both locks (DemoMode:Enabled and the database mark instance.kind = demo) are checked INSIDE the service, before anything
+        // is touched — on a production configuration this answers exit code 2 and changes nothing.
+        var result = await sp.GetRequiredService<DemoResetService>().ResetAsync(DateTime.UtcNow, confirmed, ct);
+        foreach (var line in result.Lines) await output.WriteLineAsync(line);
+        return result.ExitCode;
     }
 
     private static async Task<int> RunShowcaseAsync(IServiceProvider sp, OpsCommandLine cli, TextWriter output, CancellationToken ct)
