@@ -25,6 +25,16 @@ public class ShowcaseDatasetTests
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
     }
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE35.md §35.9.5, R35-6 — the production showcase is byte-for-byte what it was before cycle 35 (commit a1e2259). This literal was computed
+    /// on that commit, BEFORE the generator of shops was written. It is never edited to make a test pass: a different value means the profile <c>prod</c> changed.
+    /// </summary>
+    private const string FrozenProdFingerprint = "8516AE2F8C4D46F7C5A36AFE0BC8BEF85F337AB94699E769452DDE202D41897C";
+
+    [Fact]
+    public void Build_Prod_IsFrozenSinceCycle34_TheShopsGeneratorDoesNotTouchIt() =>
+        Fingerprint(ShowcaseDataset.Build(ShowcaseProfile.Prod, Now)).Should().Be(FrozenProdFingerprint);
+
     [Fact]
     public void Build_TwoRunsWithTheSameArguments_GiveTheSameGraph()
     {

@@ -30,6 +30,32 @@ public class ShowcaseDemoProfileTests
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
     }
 
+    /// <summary>The users of the salon part of the demo graph: the generator of shops (cycle 35) appends its people AFTER every salon user and takes its phones after
+    /// the salon ones (ARCHITECTURE_CYCLE35.md §35.9.1), so the salon users are exactly the first <see cref="SalonUserCount"/> of the list.</summary>
+    private const int SalonUserCount = 159;
+
+    /// <summary>ARCHITECTURE_CYCLE35.md §35.9.5 — the salon part of the demo (companies of kind Services, their bookings, events, working hours, reviews, notes,
+    /// subscriptions and the users who are not shop people), computed on commit a1e2259 BEFORE the shops generator existed. Never edited to make a test pass.</summary>
+    private const string FrozenDemoSalonFingerprint = "B0BBF722A1288490F76478AE6E0E18E8021E361E52643B044DDEB675DC2B60CC";
+
+    private static string SalonFingerprint(ShowcaseGraph g)
+    {
+        var sb = new StringBuilder();
+        foreach (var u in g.Users.Take(SalonUserCount)) sb.Append(u.Id).Append(u.PhoneNumber).Append(u.FirstName).Append(u.LastName).Append(u.SecurityStamp).Append(u.CreatedAt.Ticks).Append(';');
+        foreach (var c in g.Companies.Where(c => c.Kind == CompanyKind.Services)) sb.Append(c.Id).Append(c.Slug).Append(c.Name).Append(c.CreatedAt.Ticks).Append(c.ShowcaseBookingOpen).Append(';');
+        foreach (var s in g.Subscriptions) sb.Append(s.Id).Append(s.PlanConfigId).Append(s.PaidUntil?.Ticks).Append(';');
+        foreach (var b in g.Bookings) sb.Append(b.Id).Append(b.ClientId).Append(b.GuestPhone).Append(b.Status).Append(b.Date).Append(b.StartTime).Append(b.Price).Append(b.CreatedAt.Ticks).Append(';');
+        foreach (var e in g.BookingEvents) sb.Append(e.Id).Append(e.Kind).Append(e.ActorKind).Append(e.OccurredAtUtc.Ticks).Append(e.NewDate).Append(e.NewStartTime).Append(';');
+        foreach (var w in g.WorkingHours) sb.Append(w.Id).Append(w.Date).Append(w.IsWorking).Append(';');
+        foreach (var r in g.Reviews) sb.Append(r.Id).Append(r.Rating).Append(r.Comment).Append(r.CreatedAt.Ticks).Append(';');
+        foreach (var n in g.ClientNotes) sb.Append(n.Id).Append(n.Note).Append(n.CreatedAt.Ticks).Append(';');
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
+    }
+
+    [Fact]
+    public void Demo_SalonPart_IsFrozenSinceCycle34_TheShopsGeneratorDoesNotMoveAByte() =>
+        SalonFingerprint(Demo.Value).Should().Be(FrozenDemoSalonFingerprint);
+
     // ── profile and determinism ─────────────────────────────────────────────────────────────────────
 
     [Fact]
