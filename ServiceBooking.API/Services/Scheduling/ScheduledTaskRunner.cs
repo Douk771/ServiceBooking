@@ -22,8 +22,23 @@ public sealed class ScheduledTaskRunner(
             return;
         }
 
-        var tickSeconds = config.GetValue("ScheduledTasks:TickSeconds", 60);
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(tickSeconds));
+        // ARCHITECTURE_CYCLE25.md §499.5: one tick loop PER LANE, run in parallel. A task of the "realtime" lane (the notification dispatchers)
+        // is never held back by a long task of the "main" lane. Tasks of one lane stay sequential; the rest of the runner (state snapshot,
+        // advisory lock per task, time budget, state write) is unchanged.
+        List<string> lanes;
+        using (var laneScope = scopeFactory.CreateScope())
+            lanes = laneScope.ServiceProvider.GetServices<IScheduledTask>()
+                .Select(t => ScheduledTaskOptions.For(config, t).Lane)
+                .Append(ScheduledTaskOptions.MainLane)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+        await Task.WhenAll(lanes.Select(lane => RunLaneAsync(lane, stoppingToken)));
+    }
+
+    private async Task RunLaneAsync(string lane, CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(ScheduledTaskOptions.TickOf(config, lane));
 
         do
         {
@@ -31,16 +46,16 @@ public sealed class ScheduledTaskRunner(
             // the loop forever — the whole point of this component is to keep trying on schedule.
             try
             {
-                await TickAsync(stoppingToken);
+                await TickAsync(lane, stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.LogError(ex, "Scheduled task runner tick failed unexpectedly");
+                logger.LogError(ex, "Scheduled task runner tick failed unexpectedly (lane {Lane})", lane);
             }
         } while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
     }
 
-    private async Task TickAsync(CancellationToken stoppingToken)
+    private async Task TickAsync(string lane, CancellationToken stoppingToken)
     {
         // Tasks are resolved fresh every tick from a throwaway scope: they are Scoped (they need an
         // AppDbContext), and the runner itself is a singleton that must never hold one open.
@@ -61,7 +76,7 @@ public sealed class ScheduledTaskRunner(
             if (stoppingToken.IsCancellationRequested) return;
 
             var options = ScheduledTaskOptions.For(config, task);
-            if (!options.Enabled) continue;
+            if (!options.Enabled || !string.Equals(options.Lane, lane, StringComparison.Ordinal)) continue;
 
             if (!ScheduledTaskSchedule.IsDue(snapshot.GetValueOrDefault(task.Name), options.Period, DateTime.UtcNow)) continue;
 
