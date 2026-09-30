@@ -247,8 +247,8 @@ public sealed class SubjectDataExporter(
         var shopCustomerNotes = guestMatchPhone is null
             ? new List<ExportShopCustomerNoteDto>()
             : await db.ShopCustomerNotes.AsNoTracking().Where(n => n.Phone == guestMatchPhone)  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
-                .Join(db.Companies, n => n.CompanyId, c => c.Id, (n, c) => new ExportShopCustomerNoteDto(c.Name, n.UpdatedAtUtc))
-                .OrderBy(n => n.ShopName).ToListAsync(ct);
+                .Join(db.Companies, n => n.CompanyId, c => c.Id, (n, c) => new { c.Name, n.UpdatedAtUtc })
+                .OrderBy(x => x.Name).Select(x => new ExportShopCustomerNoteDto(x.Name, x.UpdatedAtUtc)).ToListAsync(ct);
 
         var export = new ProfileExportDto(
             DateTime.UtcNow,
