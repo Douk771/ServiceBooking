@@ -658,7 +658,7 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 ### 7.1 Наборы тестов
 | Набор | Фреймворк | Объём (✔ подсчёт атрибутов) | Последний известный прогон (↪ из отчётов, на `b23c13c`) |
 |---|---|---|---|
-| Юнит бэкенда `ServiceBooking.UnitTests` | xUnit 2.5.3 + FluentAssertions 6.12; без БД и без Docker | 177 файлов, 1 581 `[Fact]/[Theory]` | 2 382/2 382 (с разворотом теорий); на `b23c13c` (цикл 29): 2 407/2 407 |
+| Юнит бэкенда `ServiceBooking.UnitTests` | xUnit 2.5.3 + FluentAssertions 6.12; без БД и без Docker | 177 файлов, 1 581 `[Fact]/[Theory]` | 2 407/2 407 на `b23c13c` (цикл 29, 30.09.2026); на `b23c13c` (цикл 29): 2 407/2 407 |
 | Функциональные API `ServiceBooking.Tests` | xUnit 2.5.3 + `Microsoft.AspNetCore.Mvc.Testing` (`WebApplicationFactory<Program>`) + **реальный PostgreSQL 16** через Testcontainers 3.10 (или внешний сервер) | 81 файл тестов, 1 063 `[Fact]/[Theory]` | 1 153/1 153 на `b23c13c` (цикл 29, 30.09.2026) |
 | Фронтенд (оба сайта) | Vitest 3.2 + jsdom + Testing Library | 154 файла `*.test.ts(x)`, около 1 087 `it/test` (на `1837373`) | 1 157/1 157 в 157 файлах на `b23c13c` (цикл 29, 30.09.2026) |
 
