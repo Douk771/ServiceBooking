@@ -86,6 +86,9 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.OrderNotificationPlanner>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.OrderStaffPushQueue>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.OrderStaffMaxQueue>();
+    // ARCHITECTURE_CYCLE25.md §501–§504: reports (history, summary, pick list) and the customer card.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Reports.OrderReportQueries>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Reports.ShopReportService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.CustomerOrderPushQueue>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.OrderMessageScheduler>();
     builder.Services.AddHttpClient<CaptchaService>();

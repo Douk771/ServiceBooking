@@ -43,7 +43,8 @@ public class Cycle24AvailabilityTests(TestDatabaseFixture fixture) : Cycle24Test
         var dup = await c.PutJsonAsync($"/api/shops/{shop.Id}/products/{all.Id}", new ProductInput(
             all.CategoryId, all.Name, null, ProductUnit.Piece, all.Price, null, null, null, true, null, [DayOfWeek.Monday, DayOfWeek.Monday]));
         dup.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await dup.Content.ReadAsStringAsync()).Should().Contain("Неизвестный день недели");
+        // T-25-03 (API_CONTRACT_CYCLE25.md §534): a repeated day now has its own text.
+        (await dup.Content.ReadAsStringAsync()).Should().Contain("День недели указан дважды");
 
         // создание с днями
         var created = await c.PostJsonAsync($"/api/shops/{shop.Id}/products", new ProductInput(
