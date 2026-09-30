@@ -12,6 +12,7 @@ import { Icon } from '../../components/ui/Icon'
 import { Avatar } from '../../components/ui/Avatar'
 import { CityCombobox } from '../../components/ui/CityCombobox'
 import { ScheduleTab } from './ScheduleTab'
+import { SalonCatalogListingSection } from './SalonCatalogListingSection'
 import { CompanyPhotosSection } from '../../components/company/CompanyPhotosSection'
 import { CompanyAddressField } from '../../components/company/CompanyAddressField'
 import { NotificationSettingsTab } from './NotificationSettingsTab'
@@ -716,7 +717,6 @@ export function SettingsTab({ companyId }: { companyId: string }) {
           email: company.email ?? '',
           allowSelfBooking: company.allowSelfBooking,
           requirePrepayment: company.requirePrepayment ?? false,
-          showInPublicListing: company.showInPublicListing ?? true,
           bookingHorizonDays: company.bookingHorizonDays || '',
           yandexMapsUrl: company.yandexMapsUrl ?? '',
           twoGisUrl: company.twoGisUrl ?? '',
@@ -980,22 +980,6 @@ export function SettingsTab({ companyId }: { companyId: string }) {
               </p>
             )}
           </div>
-          <div>
-            <label className="flex items-center gap-3 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
-              <input
-                type="checkbox"
-                className="w-4 h-4 rounded accent-gold"
-                disabled={company ? !company.planAllowsPublicListing : false}
-                {...register('showInPublicListing')}
-              />
-              <span className="text-sm text-ink-soft">Показывать компанию в общем списке</span>
-            </label>
-            {company && !company.planAllowsPublicListing && (
-              <p className="text-xs text-warning mt-1 ml-7">
-                Отображение в общем списке не входит в текущий тариф — повысьте тариф, чтобы включить
-              </p>
-            )}
-          </div>
           </fieldset>
           {updateMut.isSuccess && (
             <p className="text-sm text-success flex items-center gap-1.5">
@@ -1009,6 +993,7 @@ export function SettingsTab({ companyId }: { companyId: string }) {
         </form>
       </Card>
 
+      <SalonCatalogListingSection companyId={companyId} />
       <CompanyPhotosSection companyId={companyId} />
       {company && <WidgetCard company={company} />}
       <PhotoUsageCard companyId={companyId} />
