@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { HOME_CITY_KEY, parseCityId, readStoredCity, writeStoredCity } from './homeCity'
 

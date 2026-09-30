@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { getGoodsErrorMessage, readConflict, readRefusal, isLoginRequired } from './orderError'
 import { isSlugFormatValid, normalizeSlugInput } from './slug'

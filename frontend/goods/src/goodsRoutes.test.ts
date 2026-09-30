@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import routesJson from '../../../contracts/cycle23/goods-routes.json'
 import legalJson from '../../../contracts/cycle11/legal-routes.json'

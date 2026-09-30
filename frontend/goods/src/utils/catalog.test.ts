@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { filterProducts, groupProducts, moveItem } from './catalogGroups'
 import { parsePrice, validateProduct } from './productForm'

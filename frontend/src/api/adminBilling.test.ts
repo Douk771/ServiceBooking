@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi } from 'vitest'
 import { adminBillingApi } from './adminBilling'
 import { api } from './client'

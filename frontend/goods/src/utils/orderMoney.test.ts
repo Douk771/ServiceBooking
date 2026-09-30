@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import vectors from '../../../../contracts/cycle23/order-money-vectors.json'
 import { lineTotal, orderTotal, type PreviewLine } from './orderMoney'

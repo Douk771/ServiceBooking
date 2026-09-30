@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { optionRulesToForm, optionRulesToPayload, MAX_HIGHLIGHTS, PUBLIC_MAX_HIGHLIGHTS, MAX_HIGHLIGHT_LENGTH } from './planForm'
 

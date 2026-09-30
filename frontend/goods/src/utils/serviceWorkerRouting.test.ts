@@ -1,3 +1,4 @@
+// @vitest-environment node
 import goodsWorker from '../../public/sw.js?raw'
 import { describeWorkerRouting } from '@/test/workerRouting'
 

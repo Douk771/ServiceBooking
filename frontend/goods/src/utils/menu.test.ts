@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { groupByCategory, initialSelection, sameSelection, toggleId } from './menu'
 import type { DailyMenuProductDto } from '../types'

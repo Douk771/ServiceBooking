@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { AxiosError, AxiosHeaders, type AxiosResponse } from 'axios'
 import { getTrialErrorMessage, isTrialTermsVersionMismatch } from './trialError'

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { parseBookingHorizonInput, parseHorizonExceededDays, lastBookableDateUtc, HORIZON_OUT_OF_RANGE_MESSAGE } from './bookingHorizon'
 

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { isEdited, linesFromOrder, previewEditTotal, toEditPayload, validateEdit, type EditLine } from './orderEdit'
 import { parseActualGrams } from './issue'

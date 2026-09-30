@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { urlBase64ToUint8Array, arrayBufferToBase64Url } from './webPushEncoding'
 

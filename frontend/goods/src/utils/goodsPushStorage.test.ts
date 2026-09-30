@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { ORDER_PUSH_STORAGE_TTL_MS, orderPushStorageKey, orderPushStoredAtKey, pruneOrderPushStorage } from './goodsPush'
 

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { applyDayTo, crossesMidnight, emptyWeek, firstWeekError, intervalFieldError, isValidTime, weekFromDto, weekToInput } from './hours'
 import type { WorkingDayDto } from '../types'

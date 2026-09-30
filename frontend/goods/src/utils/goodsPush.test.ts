@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { goodsPushMessage, orderPushStorageKey } from './goodsPush'
 import type { PushUnavailableReason } from '@/utils/pushAvailability'
