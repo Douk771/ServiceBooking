@@ -286,7 +286,12 @@ public class Cycle28ShowcaseContentTests(TestDatabaseFixture fixture) : Cycle28S
             (await db.MailLogs.CountAsync()).Should().Be(0);
             (await db.Reviews.CountAsync(r => r.Company.IsShowcase)).Should().Be(0, "D-4: no reviews on the production showcase");
             foreach (var (table, _) in ShowcaseOwnership.NeverWritten)
+            {
+                // The table name comes from the code constant ShowcaseOwnership.NeverWritten, never from input: identifiers cannot be SQL parameters.
+#pragma warning disable EF1002
                 (await db.Database.SqlQueryRaw<int>($"SELECT COUNT(*)::int AS \"Value\" FROM \"{table}\"").ToListAsync()).Single().Should().Be(0, table);
+#pragma warning restore EF1002
+            }
         });
     }
 

@@ -106,9 +106,9 @@ public sealed class ShowcaseAssetStoreTests : IDisposable
     }
 
     [Fact]
-    public void FileStorage_ShowcaseArea_IsItsOwnFolder_AndCanBeRemovedWhole()
+    public async Task FileStorage_ShowcaseArea_IsItsOwnFolder_AndCanBeRemovedWhole()
     {
-        _storage.SavePublicNamedAsync(PublicArea.Showcase, "x.jpg", [1]).GetAwaiter().GetResult().Should().Be("/uploads/showcase/x.jpg");
+        (await _storage.SavePublicNamedAsync(PublicArea.Showcase, "x.jpg", [1])).Should().Be("/uploads/showcase/x.jpg");
         _storage.CountPublicAreaFiles(PublicArea.Showcase).Should().Be(1);
 
         _storage.DeletePublicAreaFolder(PublicArea.Showcase);
