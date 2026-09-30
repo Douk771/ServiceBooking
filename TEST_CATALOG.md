@@ -6461,3 +6461,45 @@ Vitest разработчиков (не пересобирались QA): `Compa
 | M31-08 | goods `/myasnoy`, 1280 и 360 px: полная карточка, только название, раскрытые «Часы работы» | Контакты не выше 2 строк на 1280, кнопки не меньше 44 px, без пустых зазоров и прокрутки; скриншоты «до/после» | US-31-06 | не выполнен |
 | M31-09 | ezbook `/company/:slug`, 1280 и 360 px, в том числе «Запись только через мастера» | Та же компактная шапка, слот предупреждений не ломает раскладку | US-31-06 | не выполнен |
 | M31-10 | ezbook `/embed/:slug` | Не изменился | US-31-06, R-5 | не выполнен |
+
+
+## Цикл 33 — «Устройства и уведомления» в профиле, одно включение на оба сайта (`CY33-`, `M33-`, `ServiceBooking.Tests/Tests/Cycle33UnifiedPushTests.cs`)
+
+Функциональные кейсы написаны QA по `SPEC.md` цикла 33 и `API_CONTRACT_CYCLE33.md`, не по реализации. Хост — `PushDispatchTestFactory` без автотика (проход диспетчера запускается явно). Номера CY33-01…13 совпадают с `ARCHITECTURE_CYCLE33.md` §33.13.1 там, где кейс там описан; CY33-14…18 добавлены QA. Контрактные CY33-20…23 (сверка с `OpenApiContract.Load("cycle33")`) этим файлом не покрыты — см. вердикт.
+
+| Кейс | Критерий | Шаги / ожидание | Тест |
+|---|---|---|---|
+| CY33-01 | US-33-03, US-33-04 | мастер салона A и магазина B с подписками ezbook и goods; запись -> 2 строки; у ezbook `url` относительный, у goods абсолютный `{services}/my-bookings…` | `Booking_GoesToDevicesOfBothSites_GoodsDeviceGetsAbsoluteUrl` |
+| CY33-02 | US-33-03, US-33-04 | то же для заказа; у ezbook-подписки `url` = `{orders}/cabinet/{shopId}/orders…` | `Order_GoesToDevicesOfBothSites_EzbookDeviceGetsAbsoluteUrl` |
+| CY33-03 | US-33-03 | сотрудник только магазина на ezbook получает заказы, мастер только салона на goods получает записи, чужих видов нет | `SingleKindStaff_OnForeignSite_GetsOnlyTheirKind_NoExtraRows` |
+| CY33-04 | US-33-03 | магазин выключил push сотрудникам: новых строк о заказах нет, записи идут; ранее поставленные `Skipped/StaffPushDisabledByCompany` | `ShopDisablesStaffPush_OrdersStopEverywhere_…` |
+| CY33-05 | US-33-03 | сотрудника убрали из магазина после постановки: `Skipped/MasterNoLongerInCompany` | `WorkerRemovedFromShopAfterQueueing_…` |
+| CY33-06 | Безопасность §6 | общий компьютер, endpoint ezbook взял другой: `Skipped/PushSubscriptionReassigned`, отправки нет | `SharedComputer_EzbookEndpointTakenByAnotherUser_…` |
+| CY33-07 | US-33-05 | `GET subscriptions?allSites=true`: оба сайта, `site`, порядок по убыванию, `isCurrent` только при совпадении endpoint и сайта; без `allSites` как раньше | `Subscriptions_AllSites_…` |
+| CY33-08 | Q-33-5, T-33-03 | `GET config?allSites=true`: компании обоих видов, `kind`, салоны раньше магазинов, `siteUrls`; `allSites=abc`/`site=Nope` 400; аноним 401 | `Config_AllSites_…` |
+| CY33-09 | US-33-05 | удаление устройства goods из-под ezbook по id 204; чужой 404; подписка покупателя с тем же endpoint цела; новых строк нет | `DeleteGoodsDeviceFromOtherSite_…` |
+| CY33-10 | О-33-4 | лимит на сайт: устройство goods ничего не вытесняет, 11-е ezbook вытесняет самое старое ezbook | `DeviceLimit_IsPerSite_…` |
+| CY33-11 | US-33-05 | `DELETE …/current` для goods-endpoint удаляет только строку сотрудника | `DeleteCurrent_ForGoodsEndpoint_…` |
+| CY33-12 | US-33-03 | название салона 200 символов и длинные услуги: запись создаётся, JSON ≤ 1000, без `\u`, без телефона | `BookingBody_NamesTheSalon_…` |
+| CY33-12b | US-33-03 | в теле push о записи есть название салона | `BookingBody_ContainsSalonName` |
+| CY33-14 | Q-33-5 | клиент без роли: `companies` пуст (раздел не показывается) | `Config_ClientWithoutStaffRole_…` |
+| CY33-15 | US-33-07 | один endpoint на обоих сайтах: не больше одной строки и отправки на одно событие | `SameEndpointOnBothSites_IsNotSilentlyDoubled_…` |
+| CY33-16 | граничный | 6 параллельных подписок на один endpoint: успех, одна строка | `ConcurrentSubscribe_SameEndpoint_ProducesSingleRow` |
+| CY33-17 | Приватность | в теле заказа на обоих устройствах нет имени и телефона покупателя | `OrderBody_StillHasNoCustomerData_OnBothDevices` |
+| CY33-18 | граничный | `site` неизвестного значения при подписке: 400 | `UnknownSiteValue_OnSubscribe_Is400` |
+
+Vitest разработчиков (не пересобирались QA): раздел профиля на обоих сайтах, перенаправление `/cabinet/devices`, ссылка на `/my-bookings`, отсутствие кнопки в кабинете, `staffPushTexts`, `api/push`, маршрутизация воркера. Браузерного e2e нет (Р-33-2).
+
+### Ручные кейсы (T-33-04, гейт выката, не мержа)
+
+Вердикт: **НЕ ВЫПОЛНЕНО QA** — нет реальных Android и iPhone, стенда с включённым push и VAPID-ключами.
+
+| Кейс | Шаги | Ожидаемый результат | Критерий | Вердикт |
+|---|---|---|---|---|
+| M33-01 | Android Chrome, включить на ezbook.ru, создать запись салона и заказ магазина | приходят оба push, нажатие на запись открывает `/my-bookings` на ezbook.ru, на заказ — кабинет goods | US-33-03, US-33-04 | не выполнен |
+| M33-02 | То же, но включить на goods.ezbook.ru | то же | US-33-03, US-33-04 | не выполнен |
+| M33-03 | iPhone, сайт на экране «Домой», то же | то же; переход на другой сайт допустимо в Safari | О-33-3 | не выполнен |
+| M33-04 | Удалить устройство, включённое на goods, из профиля ezbook | пропадает из обоих профилей, push перестают приходить | US-33-05 | не выполнен |
+| M33-05 | Включить на обоих сайтах в одном браузере | нет молчаливых дублей или честное предупреждение в разделе | US-33-07 | не выполнен |
+| M33-06 | Профиль на 360 и 1280 px на обоих сайтах | раздел компактный, без горизонтальной прокрутки, цели касания не меньше 44 px | US-33-01, US-33-02 | не выполнен |
+| M33-07 | Выйти из аккаунта на goods на общем компьютере | push сотрудника (оба вида) на этом браузере не приходят | §6, О-33-5 | не выполнен |

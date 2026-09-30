@@ -38,7 +38,7 @@ import { PickListPage } from './pages/cabinet/PickListPage'
 import { CustomerPage } from './pages/cabinet/CustomerPage'
 import { SubscriptionPage } from './pages/cabinet/SubscriptionPage'
 import { shopsApi } from './api/shops'
-import { CABINET_DEVICES_PATH, cabinetDevicesRedirect } from './cabinetDevicesRoute'
+import { cabinetDevicesRedirect } from './cabinetDevicesRoute'
 
 /**
  * Routes reachable while a "Material" change to a GLOBAL-gate document is pending acceptance (same reasoning
@@ -120,7 +120,7 @@ export function GoodsApp() {
                     <Route path="/notices" element={<NoticesPage />} />
                     <Route path="/cabinet" element={<CabinetHomePage />} />
                     <Route path="/cabinet/new" element={<CreateShopPage />} />
-                    <Route path={CABINET_DEVICES_PATH} element={cabinetDevicesRedirect} />
+                    <Route path="/cabinet/devices" element={cabinetDevicesRedirect} />
                     <Route path="/cabinet/subscription" element={<SubscriptionPage />} />
                     <Route element={<ShopLayout />}>
                       <Route path="/cabinet/:shopId/orders" element={<OrdersScreenPage />} />
