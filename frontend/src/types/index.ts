@@ -3,6 +3,7 @@ import type { components as Cycle19Components } from './api-cycle19.generated'
 import type { components as Cycle14Components } from './api-cycle14.generated'
 import type { components as Cycle23Components } from './api-cycle23.generated'
 import type { components as Cycle31Components } from './api-cycle31.generated'
+import type { components as Cycle33Components } from './api-cycle33.generated'
 
 // ── Cycle 19 (ARCHITECTURE_CYCLE19.md §388.5, API_CONTRACT_CYCLE19.md §413): automatic address checking removed,
 // only the notice-acknowledgement result survives from cycle 13's address types. Read straight off
@@ -20,8 +21,11 @@ export type NotificationDeliveryMode = Cycle9Components['schemas']['Notification
 export type TransportOffer = Cycle9Components['schemas']['TransportOfferDto']
 
 // API_CONTRACT_CYCLE9.md §115 — staff Web Push. Read straight off the generated schema (§118 п. 1).
-export type PushConfig = Cycle9Components['schemas']['PushConfigDto']
-export type PushSubscriptionDevice = Cycle9Components['schemas']['PushSubscriptionDto']
+// ARCHITECTURE_CYCLE33.md §33.9.3 — config/devices moved to the cycle 33 schema (kind, siteUrls, site).
+export type PushConfig = Cycle33Components['schemas']['PushConfigDtoCycle33']
+export type PushConfigCompany = Cycle33Components['schemas']['PushConfigCompanyDtoCycle33']
+export type PushSiteUrls = Cycle33Components['schemas']['PushSiteUrlsDto']
+export type PushSubscriptionDevice = Cycle33Components['schemas']['PushSubscriptionDtoCycle33']
 export type StaffPushSettings = Cycle9Components['schemas']['StaffPushSettingsDto']
 
 // API_CONTRACT_CYCLE14.md §162-§166 — platform-wide phone verification (MAX bot). Read straight off

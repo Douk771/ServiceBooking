@@ -2,30 +2,36 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { PushUnavailableNotice } from './PushUnavailableNotice'
 
-// ARCHITECTURE_CYCLE21.md §363 (US-21-01) — "install it" must come with "how".
-describe('PushUnavailableNotice — cycle 21', () => {
-  it('CY21-13 iPhone outside the installed app → explanation plus numbered Home Screen steps', () => {
-    render(<PushUnavailableNotice reason="ios-safari-not-installed" />)
-    expect(screen.getByText(/только приложению EZBOOK, добавленному на экран «Домой»/)).toBeInTheDocument()
-    const steps = screen.getByRole('list', { name: /Как добавить EZBOOK на экран «Домой»/ })
+// ARCHITECTURE_CYCLE33.md §33.8.2 — «install it» must come with «how»; the app name depends on the site.
+describe('PushUnavailableNotice — cycle 33', () => {
+  it('iPhone outside the installed app → explanation plus 4 numbered Home Screen steps with the app name', () => {
+    render(<PushUnavailableNotice reason="ios-safari-not-installed" appName="Заказы" />)
+    expect(screen.getByText(/только приложению «Заказы», добавленному на экран «Домой»/)).toBeInTheDocument()
+    const steps = screen.getByRole('list', { name: /Как добавить «Заказы» на экран «Домой»/ })
     const items = steps.querySelectorAll('li')
     expect(items).toHaveLength(4)
     expect(items[0]).toHaveTextContent('«Поделиться»')
     expect(items[1]).toHaveTextContent('На экран «Домой»')
-    // Separate storage in the installed app: without this line the master lands on a login form and
-    // assumes the install failed.
     expect(items[2]).toHaveTextContent('войдите заново')
+    expect(items[3]).toHaveTextContent('«Профиль» → «Устройства и уведомления»')
+    expect(screen.queryByText(/Достаточно сделать это/)).not.toBeInTheDocument()
   })
 
-  it('CY21-14 other reasons show no install steps', () => {
-    render(<PushUnavailableNotice reason="ios-version-too-old" />)
+  it('showOneSiteHint adds the «one of the two sites» sentence', () => {
+    render(<PushUnavailableNotice reason="ios-safari-not-installed" appName="Запись" showOneSiteHint />)
+    expect(screen.getByText(/ezbook\.ru или goods\.ezbook\.ru/)).toBeInTheDocument()
+  })
+
+  it('other reasons show no install steps and expose reason for tests', () => {
+    render(<PushUnavailableNotice reason="ios-version-too-old" appName="Запись" />)
     expect(screen.getByText(/iOS 16\.4 или новее/)).toBeInTheDocument()
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
+    expect(screen.getByTestId('push-unavailable')).toHaveAttribute('data-reason', 'ios-version-too-old')
   })
 
-  it('CY21-15 permission denied in the installed iPhone app points to iPhone Settings, not the address bar', () => {
-    render(<PushUnavailableNotice reason="ios-permission-denied" />)
-    expect(screen.getByText(/Настройки айфона → Уведомления → EZBOOK/)).toBeInTheDocument()
+  it('permission denied in the installed iPhone app points to iPhone Settings with the app name', () => {
+    render(<PushUnavailableNotice reason="ios-permission-denied" appName="Запись" />)
+    expect(screen.getByText(/Настройки айфона → Уведомления → «Запись»/)).toBeInTheDocument()
     expect(screen.queryByText(/адресной строке/)).not.toBeInTheDocument()
   })
 })
