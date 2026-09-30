@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { companiesApi } from '@/api/companies'
 import { companyAddressApi } from '@/api/companyAddress'
@@ -82,6 +82,10 @@ export function ShopProfileSection({ shop }: { shop: ShopManageDto }) {
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (savedTimer.current) clearTimeout(savedTimer.current)
+  }, [])
   const [step, setStep] = useState<'tz' | 'address' | null>(null)
   const [logoError, setLogoError] = useState('')
   const logoInput = useRef<HTMLInputElement>(null)
@@ -199,7 +203,8 @@ export function ShopProfileSection({ shop }: { shop: ShopManageDto }) {
     setSaving(false)
     setErrors({})
     setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+    if (savedTimer.current) clearTimeout(savedTimer.current)
+    savedTimer.current = setTimeout(() => setSaved(false), 2500)
     refetchShop()
   }
 
