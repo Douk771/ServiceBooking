@@ -267,7 +267,8 @@ public static class EnvStatus
 
         var maxParallelThreads = ResolveMaxParallelThreads(workingCopyRoot, fallbackMaxParallelThreads);
         var poolSizePerHost = TestInfrastructure.PoolMaxSize;
-        var required = RequiredConnections(maxParallelThreads, hostsPerClass, poolSizePerHost);
+        var classConcurrency = TestInfrastructure.ClassConcurrencyFor(maxParallelThreads);
+        var required = RequiredConnectionsWithDemo(maxParallelThreads, classConcurrency, TestInfrastructure.DemoDatabaseSlotCount, hostsPerClass, poolSizePerHost);
 
         var externalConnection = Environment.GetEnvironmentVariable("SERVICEBOOKING_TEST_CONNECTION");
         int? serverMaxConnections;
@@ -312,9 +313,9 @@ public static class EnvStatus
 
         var detail = ok
             ? $"Бюджет сходится: нужно {required} соединений (P={maxParallelThreads}, пул={poolSizePerHost}, " +
-              $"хостов на класс={hostsPerClass}) из безопасных {safeLimit:F0} (max_connections={serverMaxConnections}). {serverSource}"
+              $"хостов на класс={hostsPerClass}, классов одновременно={classConcurrency}, демо-баз до {Math.Min(maxParallelThreads, TestInfrastructure.DemoDatabaseSlotCount)}) из безопасных {safeLimit:F0} (max_connections={serverMaxConnections}). {serverSource}"
             : $"Бюджет не сходится: нужно {required} соединений (P={maxParallelThreads}, пул={poolSizePerHost}, " +
-              $"хостов на класс={hostsPerClass}), безопасный предел {safeLimit:F0} из max_connections={serverMaxConnections}. " +
+              $"хостов на класс={hostsPerClass}, классов одновременно={classConcurrency}, демо-баз до {Math.Min(maxParallelThreads, TestInfrastructure.DemoDatabaseSlotCount)}), безопасный предел {safeLimit:F0} из max_connections={serverMaxConnections}. " +
               "Что сделать (любое из): " +
               "1) снизить параллелизм — ДВА места должны совпадать: SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS=2 " +
               "(эта переменная влияет только на арифметику ЭТОЙ проверки) И фактический параллелизм раннера, " +
@@ -339,6 +340,11 @@ public static class EnvStatus
     /// number duplicated twice"; now there is exactly one multiplication in the repository.</summary>
     public static int RequiredConnections(int maxParallelThreads, int hostsPerClass, int poolSizePerHost) =>
         maxParallelThreads * hostsPerClass * poolSizePerHost + 4;
+
+    /// <summary>Cycle 36: connections of a run = classes inside the class gate (<c>classConcurrency</c> x hosts x pool) + the demo databases alive together
+    /// (at most <c>min(P, demoDatabases)</c>, one host and one pool each) + the fixed reserve.</summary>
+    public static int RequiredConnectionsWithDemo(int maxParallelThreads, int classConcurrency, int demoDatabases, int hostsPerClass, int poolSizePerHost) =>
+        RequiredConnections(classConcurrency, hostsPerClass, poolSizePerHost) + Math.Min(maxParallelThreads, demoDatabases) * poolSizePerHost;
 
     /// <summary>The 90% safety margin from §93.4 — kept in one place so "safe limit" always means the
     /// same number in the detail message and in the Ok decision below.</summary>

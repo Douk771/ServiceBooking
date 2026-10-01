@@ -1,3 +1,5 @@
+using ServiceBooking.TestKit;
+
 namespace ServiceBooking.Tests.Infrastructure;
 
 /// <summary>
@@ -20,19 +22,14 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// </summary>
 public static class ClassConcurrencyGate
 {
-    public const int DefaultFactor = 3;
-
-    private const string EnvironmentVariable = "SERVICEBOOKING_TEST_CLASS_CONCURRENCY";
+    public const int DefaultFactor = TestInfrastructure.ClassConcurrencyFactor;
 
     private static readonly SemaphoreSlim Slots = new(Limit(), int.MaxValue);
 
     /// <summary>The real ceiling of classes that hold their own database (and hosts) at one moment — what the connection budget must be counted from.</summary>
     public static int EffectiveLimit { get; } = Limit();
 
-    private static int Limit() =>
-        int.TryParse(Environment.GetEnvironmentVariable(EnvironmentVariable), out var configured) && configured > 0
-            ? configured
-            : TestParallelism.MaxParallelThreads * DefaultFactor;
+    private static int Limit() => TestInfrastructure.ClassConcurrencyFor(TestParallelism.MaxParallelThreads);
 
     public static Task EnterAsync() => Slots.WaitAsync();
 

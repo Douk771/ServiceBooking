@@ -89,6 +89,11 @@ public static class TestRunEnvironment
     private static readonly SemaphoreSlim EnvironmentGate = new(1, 1);
     private static readonly SemaphoreSlim DropGate = new(1, 1);
 
+    /// <summary>At most P demo databases (one host, one pool each) alive together: what the connection budget assumes. The template of the seeded demo is not counted (no host after its build).</summary>
+    private static readonly SemaphoreSlim DemoGate = new(TestParallelism.MaxParallelThreads, int.MaxValue);
+
+    private static bool IsGatedDemoSlot(string slot) => slot.EndsWith("demo", StringComparison.Ordinal) && slot != DemoDatabaseSlots.Template;
+
     private static TestServerLease? _server;
     private static TestDatabaseLease? _databases;
     private static bool _bannerPrinted;
@@ -103,6 +108,21 @@ public static class TestRunEnvironment
     /// process), then clones and returns this class' own database. Call exactly once per
     /// <see cref="TestDatabaseFixture"/>, from <see cref="IAsyncLifetime.InitializeAsync"/>.</summary>
     public static async Task<TestClassDatabaseLease> LeaseClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default, string? sourceSlot = null)
+    {
+        var gatedDemo = IsGatedDemoSlot(classSlot);
+        if (gatedDemo) await DemoGate.WaitAsync(cancellationToken);
+        try
+        {
+            return await LeaseClassDatabaseCoreAsync(classSlot, cancellationToken, sourceSlot);
+        }
+        catch
+        {
+            if (gatedDemo) DemoGate.Release();
+            throw;
+        }
+    }
+
+    private static async Task<TestClassDatabaseLease> LeaseClassDatabaseCoreAsync(string classSlot, CancellationToken cancellationToken, string? sourceSlot)
     {
         var databases = await EnsureEnvironmentAsync(cancellationToken);
 
@@ -125,6 +145,18 @@ public static class TestRunEnvironment
     /// <see cref="EnvironmentGate"/> (L2) — a slow DROP for one finishing class must never block another
     /// class' <see cref="LeaseClassDatabaseAsync"/> from starting.</summary>
     internal static async Task ReleaseClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await DropClassDatabaseCoreAsync(classSlot, cancellationToken);
+        }
+        finally
+        {
+            if (IsGatedDemoSlot(classSlot)) DemoGate.Release();
+        }
+    }
+
+    private static async Task DropClassDatabaseCoreAsync(string classSlot, CancellationToken cancellationToken)
     {
         await DropGate.WaitAsync(cancellationToken);
         try
@@ -253,12 +285,14 @@ public static class TestRunEnvironment
         // T9 review (M4): was `maxParallelThreads * 2 * TestInfrastructure.PoolMaxSize + 4` typed out here
         // a second time, next to an identical literal in EnvStatus.RequiredConnections — despite both
         // copies' comments claiming "no number duplicated". Now the one formula EnvStatus exposes.
-        // Cycle 36 review (N4): the number of connections is held by classes that are inside ClassConcurrencyGate, not by P threads
-        // (the gate lets 3 x P classes in by default, or SERVICEBOOKING_TEST_CLASS_CONCURRENCY). The demo databases are leased outside the gate, one host and one
-        // pool each; the demo collections start first and run at most P at a time, so min(P, number of demo databases) of them are alive together.
+        // Cycle 36 review (N4): connections are held by the classes inside ClassConcurrencyGate (3 x P by default, or SERVICEBOOKING_TEST_CLASS_CONCURRENCY) and by the
+        // demo databases, which are leased outside the gate but through DemoGate: at most P of them at once, one host and one pool each. The template of the seeded demo
+        // is built once and has no host afterwards. The same formula is used by `doctor` (EnvStatus.RequiredConnectionsWithDemo).
+        if (DemoDatabaseSlots.All.Length != TestInfrastructure.DemoDatabaseSlotCount)
+            throw new TestSafetyException($"[sb-test] DemoDatabaseSlots.All has {DemoDatabaseSlots.All.Length} slots, TestInfrastructure.DemoDatabaseSlotCount says {TestInfrastructure.DemoDatabaseSlotCount}: the connection budget would be wrong.");
         var concurrentClasses = ClassConcurrencyGate.EffectiveLimit;
         var concurrentDemoDatabases = Math.Min(maxParallelThreads, DemoDatabaseSlots.All.Length);
-        var required = EnvStatus.RequiredConnections(concurrentClasses, hostsPerClass, TestInfrastructure.PoolMaxSize) + concurrentDemoDatabases * TestInfrastructure.PoolMaxSize;
+        var required = EnvStatus.RequiredConnectionsWithDemo(maxParallelThreads, concurrentClasses, DemoDatabaseSlots.All.Length, hostsPerClass, TestInfrastructure.PoolMaxSize);
 
         await using var connection = new Npgsql.NpgsqlConnection(_server.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken);

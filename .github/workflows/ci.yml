@@ -38,9 +38,9 @@ jobs:
       # а бюджет соединений (ARCHITECTURE_CYCLE8_PHASE2.md §93.4) читает эту же переменную, так что расхождения нет.
       SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS: "2"
       # ClassConcurrencyGate (цикл 36): одновременно живых классов по умолчанию 3 x P. Бюджет соединений в тестах (N4)
-      # считается по этому пределу плюс min(P, 6) демо-баз (по одному хосту, пул 8, вне гейта):
+      # считается по этому пределу плюс min(P, 9) демо-баз (9 слотов; не больше P одновременно через DemoGate, по одному хосту, пул 8):
       # N классов x 2 хоста x пул 8 + 2 x 8 + 4 <= 90 (90 % от max_connections=100 у postgres:16) -> N <= 4.
-      # При смене P пересчитайте: N = floor((90 - 4 - min(P, 6) x 8) / 16).
+      # При смене P пересчитайте: N = floor((90 - 4 - min(P, 9) x 8) / 16).
       SERVICEBOOKING_TEST_CLASS_CONCURRENCY: "4"
     steps:
       - uses: actions/checkout@v5

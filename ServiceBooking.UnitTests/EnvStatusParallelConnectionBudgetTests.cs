@@ -191,4 +191,13 @@ public class EnvStatusParallelConnectionBudgetTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    [Fact]
+    public void RequiredConnectionsWithDemo_adds_at_most_P_demo_pools_to_the_class_gate()
+    {
+        // CI: P=2, gate 4, 9 demo slots -> 4*2*8+4 + min(2,9)*8 = 84
+        EnvStatus.RequiredConnectionsWithDemo(2, 4, 9, 2, 8).Should().Be(84);
+        // fewer demo slots than P: only those count
+        EnvStatus.RequiredConnectionsWithDemo(8, 4, 3, 2, 8).Should().Be(4 * 2 * 8 + 4 + 3 * 8);
+    }
 }
