@@ -16,7 +16,7 @@ namespace ServiceBooking.Tests.Tests;
 /// </summary>
 public class Cycle31GalleryRateLimitTests(TestDatabaseFixture fixture) : Cycle25TestBase(fixture)
 {
-    private sealed class ProdLimitsHost(string connectionString) : WebApplicationFactory<Program>
+    private sealed class ProdLimitsHost(string connectionString, int? editWindowMinutes = null) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -24,6 +24,11 @@ public class Cycle31GalleryRateLimitTests(TestDatabaseFixture fixture) : Cycle25
             builder.UseSetting("Uploads:PerUserPerMinute", "10");
             builder.UseSetting("RateLimits:company-photos:PermitLimit", "20");
             builder.UseSetting("RateLimits:company-photos-edit:PermitLimit", "60");
+            // Лимит 60 остаётся продовым; окно растягивается только там, где тест делает 62 запроса подряд:
+            // под нагрузкой они не укладываются в минуту, фиксированное окно успевало смениться, и 61-я правка
+            // проходила (флейк). Утверждение — «после 60 правок в окне 61-я получает 429» — не меняется.
+            if (editWindowMinutes is { } window)
+                builder.UseSetting("RateLimits:company-photos-edit:WindowMinutes", window.ToString());
         }
     }
 
@@ -95,7 +100,7 @@ public class Cycle31GalleryRateLimitTests(TestDatabaseFixture fixture) : Cycle25
     public async Task Edits_61stInWindow_429_LogoUploadsWindowStillLive_ItsOwn11thIs429()
     {
         var (owner, company) = await CreateOwnerWithCompanyAsync();
-        await using var host = new ProdLimitsHost(ConnectionString);
+        await using var host = new ProdLimitsHost(ConnectionString, editWindowMinutes: 60);
         var c = ClientOn(host, owner.Token);
         var photos = await FillAsync(c, company.Id, 2);
         var ids = photos.Select(p => p.Id).ToArray();
