@@ -11,7 +11,7 @@ namespace ServiceBooking.Tests.Tests;
 /// QA cycle 35 — contract check (form only) of the NEW part of /api/demo/*: status for product=orders, login of the three shop roles, the 400 for a bad
 /// product, against <c>contracts/cycle35/openapi.json</c>. Cycle28DemoContractTests covers only the salon product.
 /// </summary>
-[Collection("Cycle28Generator")]
+[Collection("Cycle28Demo")]
 public class Cycle35DemoContractTests : IAsyncLifetime
 {
     private static readonly OpenApiContract C35 = OpenApiContract.Load("cycle35");

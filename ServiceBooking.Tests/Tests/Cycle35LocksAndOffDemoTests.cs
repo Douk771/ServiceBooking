@@ -19,7 +19,7 @@ namespace ServiceBooking.Tests.Tests;
 /// QA cycle 35 — US-35-07 (the lock of the demo configuration also demands a demo address of "Заказы"). Written from SPEC_CYCLE35 and API_CONTRACT_CYCLE35.
 /// Each production-looking value of the two new settings, one at a time, stops the start with a message that names it.
 /// </summary>
-[Collection("Cycle28Generator")]
+[Collection("Cycle28Demo")]
 public class Cycle35DemoLocksTests : IAsyncLifetime
 {
     private TestClassDatabaseLease _lease = null!;
