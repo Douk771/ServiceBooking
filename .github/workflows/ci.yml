@@ -37,10 +37,11 @@ jobs:
       # функциональных тестов берёт его отсюда же (`-- xUnit.MaxParallelThreads=$SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS`),
       # а бюджет соединений (ARCHITECTURE_CYCLE8_PHASE2.md §93.4) читает эту же переменную, так что расхождения нет.
       SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS: "2"
-      # ClassConcurrencyGate (цикл 36): одновременно живых классов по умолчанию 3 x P. Задано явно, чтобы пик
-      # соединений в CI (max_connections=100 у postgres:16) не менялся молча при смене множителя по умолчанию:
-      # 6 классов x 2 хоста x пул 8 = 96 в худшем случае при 97 доступных, на деле пулы Npgsql открываются лениво.
-      SERVICEBOOKING_TEST_CLASS_CONCURRENCY: "6"
+      # ClassConcurrencyGate (цикл 36): одновременно живых классов по умолчанию 3 x P. Бюджет соединений в тестах
+      # считается по P, а не по этому пределу (N4), поэтому предел задан явно и по худшему случаю:
+      # N классов x 2 хоста x пул 8 + 4 <= 90 (90 % от max_connections=100 у postgres:16) -> N <= 5.
+      # При смене P пересчитайте: N = floor((90 - 4) / 16).
+      SERVICEBOOKING_TEST_CLASS_CONCURRENCY: "5"
     steps:
       - uses: actions/checkout@v5
 
@@ -141,8 +142,12 @@ jobs:
           # Скрипт лежит файлом, а не инлайном: встроенный сюда python с первой колонки
           # обрывает блочный скаляр YAML, и GitHub отказывается разбирать весь workflow.
           python3 deploy/ci/check-drift-probe.py "$probe_file"
-          dotnet dotnet-ef migrations remove --no-build --configuration Release --project ServiceBooking.Infrastructure --startup-project ServiceBooking.API
+          # НЕ `migrations remove --no-build`: без сборки он снимает последнюю миграцию из скомпилированной сборки, то есть
+          # НАСТОЯЩУЮ, а не пробную. Пробу убираем руками: каталог целиком и снапшот из git.
           rm -rf ServiceBooking.Infrastructure/Migrations/__probe
+          git checkout -- ServiceBooking.Infrastructure/Migrations/AppDbContextModelSnapshot.cs
+          git diff --exit-code -- ServiceBooking.Infrastructure/Migrations
+          test -z "$(git status --porcelain -- ServiceBooking.Infrastructure/Migrations)"
 
       # ARCHITECTURE_CYCLE17.md §308.2, cheap check: catches ROUGHLY the C15-4 shape of bug (a
       # Designer.cs losing properties a later one and today's snapshot both have) with a plain-text

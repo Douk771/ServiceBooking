@@ -141,10 +141,16 @@ NOTES=""
 [ -z "$FILTER" ] || NOTES="partial run, --filter $FILTER: not comparable. "
 [ "$ROUTE_LOG" = 0 ] || NOTES="${NOTES}route-log enabled: timings not comparable. "
 
-python3 - "$OUT_DIR/env.json" <<PY
+# Значения идут в Python через окружение, а не подстановкой в heredoc: --filter, имя хоста и JSON colima
+# могут содержать кавычки и обратные слэши (heredoc ниже поэтому в кавычках и ничего не раскрывает).
+SB_HOST="$HOSTNAME_V" SB_OS="$OS_V" SB_CORES="$CORES" SB_MEM_BYTES="$MEM_BYTES" SB_MODE="$MODE" SB_PARALLEL="$PARALLEL" \
+SB_BUILD_MODE="$BUILD_MODE" SB_DOTNET="$DOTNET_V" SB_NODE="$NODE_V" SB_CONCURRENT="$CONCURRENT" SB_FOREIGN="$FOREIGN" \
+SB_NOTES="$NOTES" SB_LABEL="$LABEL" SB_COMMIT="$COMMIT" SB_DIRTY="$DIRTY" SB_SEED="$SEED_VALUE" SB_COLIMA_JSON="$COLIMA_JSON" \
+python3 - "$OUT_DIR/env.json" <<'PY'
 import json, sys, os
+E = os.environ
 colima = None
-raw = '''$COLIMA_JSON'''.strip()
+raw = E.get("SB_COLIMA_JSON", "").strip()
 if raw:
     try:
         c = json.loads(raw)
@@ -152,17 +158,17 @@ if raw:
     except Exception:
         colima = None
 docker = "colima" if colima else ("docker-engine" if os.path.exists("/var/run/docker.sock") else "none")
-if "${CI:-}" == "true": docker = "github-service"
+if E.get("CI") == "true": docker = "github-service"
 env = {
-  "host": "$HOSTNAME_V", "os": "$OS_V", "cpuCores": int("$CORES"), "memoryGb": round(int("$MEM_BYTES") / 1073741824, 2),
-  "dockerRuntime": docker, "mode": "$MODE", "parallelism": int("$PARALLEL"), "build": "$BUILD_MODE",
-  "dotnetSdk": "$DOTNET_V", "node": "$NODE_V", "concurrentSuites": $( [ "$CONCURRENT" = 1 ] && echo True || echo False ),
-  "foreignRunsDetected": $( [ "$FOREIGN" = true ] && echo True || echo False ),
+  "host": E["SB_HOST"], "os": E["SB_OS"], "cpuCores": int(E["SB_CORES"]), "memoryGb": round(int(E["SB_MEM_BYTES"]) / 1073741824, 2),
+  "dockerRuntime": docker, "mode": E["SB_MODE"], "parallelism": int(E["SB_PARALLEL"]), "build": E["SB_BUILD_MODE"],
+  "dotnetSdk": E["SB_DOTNET"], "node": E["SB_NODE"], "concurrentSuites": E["SB_CONCURRENT"] == "1",
+  "foreignRunsDetected": E["SB_FOREIGN"] == "true",
 }
 if colima: env["colima"] = colima
-notes = "$NOTES".strip()
+notes = E["SB_NOTES"].strip()
 if notes: env["notes"] = notes
-json.dump({"label": "$LABEL", "buildSeconds": None, "commit": "$COMMIT", "dirty": $( [ "$DIRTY" = true ] && echo True || echo False ), "seed": int("$SEED_VALUE"), "environment": env,
+json.dump({"label": E["SB_LABEL"], "buildSeconds": None, "commit": E["SB_COMMIT"], "dirty": E["SB_DIRTY"] == "true", "seed": int(E["SB_SEED"]), "environment": env,
            "createdAtUtc": __import__("datetime").datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}, open(sys.argv[1], "w"), indent=2)
 PY
 [ -s "$OUT_DIR/env.json" ] || { echo "failed to write env.json" >&2; exit 2; }
