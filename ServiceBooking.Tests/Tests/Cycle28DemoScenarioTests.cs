@@ -290,53 +290,6 @@ public class Cycle28DemoScenarioTests(DemoScenarioFixture fixture) : Cycle28Demo
 
     // ── US-28-10: what demo roles cannot do ──────────────────────────────────────────────────────
 
-    [Fact, TestCase("CY28-44")]
-    public async Task RestrictedActions_AreRefusedForEveryDemoRole_NotForSelfRegisteredVisitors_NotForAnonymous()
-    {
-        const string text = "В демо-версии это действие недоступно.";
-        var routes = new (HttpMethod Method, string Url)[]
-        {
-            (HttpMethod.Post, "/api/profile/change-password"), (HttpMethod.Post, "/api/profile/change-phone"),
-            (HttpMethod.Post, "/api/profile/delete-account"), (HttpMethod.Post, "/api/billing/subscription/request"),
-        };
-
-        foreach (var role in new[] { "owner", "master", "client" })
-        {
-            var auth = await DemoLoginAsync(role);
-            foreach (var (method, url) in routes)
-            {
-                // a body that would pass validation, no body at all, and a body of the wrong shape: the refusal comes first in every case
-                foreach (HttpContent? body in new HttpContent?[]
-                         {
-                             JsonContent.Create(new { currentPassword = "x", newPassword = "Password123!2", phone = "79001234567", planId = Guid.NewGuid() }),
-                             null,
-                             new StringContent("not json", Encoding.UTF8, "application/json"),
-                         })
-                {
-                    using var request = new HttpRequestMessage(method, url) { Content = body };
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Token);
-                    var response = await _factory.CreateClient().SendAsync(request);
-                    var answer = await response.Content.ReadAsStringAsync();
-                    response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{role} {method} {url}: {answer}");
-                    answer.Should().Be(text, $"{role} {url}");
-                    response.Headers.GetValues("X-Demo-Restricted").Should().ContainSingle().Which.Should().Be("1");
-                }
-            }
-        }
-
-        // Anonymous: the ordinary 401, nothing demo-specific to learn.
-        var anonymous = await Client().PostAsJsonAsync("/api/profile/change-password", new { });
-        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        anonymous.Headers.Contains("X-Demo-Restricted").Should().BeFalse();
-
-        // A visitor who registered himself gets the old behaviour (his data is erased at night anyway): no demo refusal, no demo header.
-        var visitor = await RegisterVisitorAsync();
-        var own = await Client(visitor.Token).PostAsJsonAsync("/api/profile/change-password", new { currentPassword = "wrong-password", newPassword = "Password123!2" });
-        own.Headers.Contains("X-Demo-Restricted").Should().BeFalse();
-        own.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
-        (await own.Content.ReadAsStringAsync()).Should().NotBe(text);
-    }
-
     // ── US-28-09: nothing leaves, nothing is indexed ─────────────────────────────────────────────
 
     [Fact, TestCase("CY28-45")]
@@ -432,6 +385,54 @@ public class Cycle28DemoMutationTests : Cycle28DemoScenarioBase, IAsyncLifetime
     public async Task InitializeAsync() => _state = await DemoScenarioState.CreateAsync();
 
     public async Task DisposeAsync() => await _state.DisposeAsync();
+
+    // Moved from the read-only class (cycle 36 review N2): RegisterVisitorAsync writes a user, which a read-only scenario must not do.
+    [Fact, TestCase("CY28-44")]
+    public async Task RestrictedActions_AreRefusedForEveryDemoRole_NotForSelfRegisteredVisitors_NotForAnonymous()
+    {
+        const string text = "В демо-версии это действие недоступно.";
+        var routes = new (HttpMethod Method, string Url)[]
+        {
+            (HttpMethod.Post, "/api/profile/change-password"), (HttpMethod.Post, "/api/profile/change-phone"),
+            (HttpMethod.Post, "/api/profile/delete-account"), (HttpMethod.Post, "/api/billing/subscription/request"),
+        };
+
+        foreach (var role in new[] { "owner", "master", "client" })
+        {
+            var auth = await DemoLoginAsync(role);
+            foreach (var (method, url) in routes)
+            {
+                // a body that would pass validation, no body at all, and a body of the wrong shape: the refusal comes first in every case
+                foreach (HttpContent? body in new HttpContent?[]
+                         {
+                             JsonContent.Create(new { currentPassword = "x", newPassword = "Password123!2", phone = "79001234567", planId = Guid.NewGuid() }),
+                             null,
+                             new StringContent("not json", Encoding.UTF8, "application/json"),
+                         })
+                {
+                    using var request = new HttpRequestMessage(method, url) { Content = body };
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Token);
+                    var response = await _factory.CreateClient().SendAsync(request);
+                    var answer = await response.Content.ReadAsStringAsync();
+                    response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{role} {method} {url}: {answer}");
+                    answer.Should().Be(text, $"{role} {url}");
+                    response.Headers.GetValues("X-Demo-Restricted").Should().ContainSingle().Which.Should().Be("1");
+                }
+            }
+        }
+
+        // Anonymous: the ordinary 401, nothing demo-specific to learn.
+        var anonymous = await Client().PostAsJsonAsync("/api/profile/change-password", new { });
+        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        anonymous.Headers.Contains("X-Demo-Restricted").Should().BeFalse();
+
+        // A visitor who registered himself gets the old behaviour (his data is erased at night anyway): no demo refusal, no demo header.
+        var visitor = await RegisterVisitorAsync();
+        var own = await Client(visitor.Token).PostAsJsonAsync("/api/profile/change-password", new { currentPassword = "wrong-password", newPassword = "Password123!2" });
+        own.Headers.Contains("X-Demo-Restricted").Should().BeFalse();
+        own.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
+        (await own.Content.ReadAsStringAsync()).Should().NotBe(text);
+    }
 
     [Fact, TestCase("CY28-46")]
     public async Task VisitorBooksReschedulesCancels_AndNothingIsSent_AnywhereIncludingMailing()
