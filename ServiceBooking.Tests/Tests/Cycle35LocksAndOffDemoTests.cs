@@ -26,7 +26,10 @@ public class Cycle35DemoLocksTests : IAsyncLifetime
 
     public async Task InitializeAsync() => _lease = await TestRunEnvironment.LeaseClassDatabaseAsync(Cycle35DemoSlots.Read);
 
-    public async Task DisposeAsync() => await _lease.DropAsync();
+    public async Task DisposeAsync()
+    {
+        if (_lease is not null) await _lease.DropAsync(); // InitializeAsync may have failed before the lease was taken
+    }
 
     private static string Everything(Exception exception)
     {

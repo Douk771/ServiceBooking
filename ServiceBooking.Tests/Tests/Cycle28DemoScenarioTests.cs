@@ -31,6 +31,7 @@ public sealed class DemoScenarioState
     private TestClassDatabaseLease _lease = null!;
     private string _slot = DemoDatabaseSlots.Salon;
     private bool _seeded;
+    private DateTime? _resetAtUtc;
 
     public DemoHostFactory Factory { get; private set; } = null!;
     public TimeSpan FirstResetTook { get; private set; }
@@ -40,9 +41,10 @@ public sealed class DemoScenarioState
 
     /// <param name="seeded">true: the demo is not reset here but cloned from the seeded template (<see cref="DemoSeededTemplate"/>) — only for scenarios that need a
     /// fresh demo as their ARRANGE step; false: the real product reset is run (the reset itself is a subject, or the budget of the first fill is checked).</param>
-    public static async Task<DemoScenarioState> CreateAsync(string slot = DemoDatabaseSlots.Salon, bool seeded = false)
+    /// <param name="resetAtUtc">only with <paramref name="seeded"/> = false: the moment ("now") the real reset is generated at (default: the current time).</param>
+    public static async Task<DemoScenarioState> CreateAsync(string slot = DemoDatabaseSlots.Salon, bool seeded = false, DateTime? resetAtUtc = null)
     {
-        var state = new DemoScenarioState { _slot = slot, _seeded = seeded };
+        var state = new DemoScenarioState { _slot = slot, _seeded = seeded, _resetAtUtc = resetAtUtc };
         try
         {
             await state.InitializeAsync();
@@ -71,10 +73,17 @@ public sealed class DemoScenarioState
         else
         {
             var sw = Stopwatch.StartNew();
-            var writer = new StringWriter();
-            var exit = await OpsCommandRunner.RunAsync(Factory.Services, OpsCommandLine.Parse(["ops", "demo", "reset", "--yes"])!, writer);
+            if (_resetAtUtc is { } at)
+            {
+                await DemoSeededTemplate.ResetAtAsync(Factory, at);
+            }
+            else
+            {
+                var writer = new StringWriter();
+                var exit = await OpsCommandRunner.RunAsync(Factory.Services, OpsCommandLine.Parse(["ops", "demo", "reset", "--yes"])!, writer);
+                exit.Should().Be(0, writer.ToString());
+            }
             FirstResetTook = sw.Elapsed;
-            exit.Should().Be(0, writer.ToString());
         }
 
         using var scope = Factory.Services.CreateScope();
@@ -381,7 +390,10 @@ public sealed class DemoScenarioFixture : IAsyncLifetime
 
     public async Task InitializeAsync() => State = await DemoScenarioState.CreateAsync();
 
-    public async Task DisposeAsync() => await State.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        if (State is not null) await State.DisposeAsync(); // InitializeAsync may have failed before the state existed
+    }
 }
 
 /// <summary>
@@ -400,7 +412,10 @@ public abstract class Cycle28DemoMutationBase : Cycle28DemoScenarioBase, IAsyncL
 
     public async Task InitializeAsync() => _state = await DemoScenarioState.CreateAsync(DemoDatabaseSlots.SalonMutations, Seeded);
 
-    public async Task DisposeAsync() => await _state.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        if (_state is not null) await _state.DisposeAsync(); // InitializeAsync may have failed before the state existed
+    }
 
     // Moved from the read-only class (cycle 36 review N2): RegisterVisitorAsync writes a user, which a read-only scenario must not do.
 }
@@ -504,56 +519,9 @@ public class Cycle28DemoMutationTests : Cycle28DemoMutationBase
         (await mail.Content.ReadAsStringAsync()).Should().Be("В демо-версии рассылка не отправляется.");
         (await Db(db => db.MailLogs.CountAsync())).Should().Be(_neverWritten["MailLogs"]);
     }
-
-    [Fact, TestCase("CY28-51")]
-    public async Task NightlyTask_IsListedOnlyInDemo_SkipsWithoutStamp_ResetsWhenStale_ThenIsNotDue()
-    {
-        var superAdmin = await (await Client().PostAsJsonAsync("/api/auth/login", new LoginDto(_factory.Identity.SuperAdminPhone, _factory.Identity.SuperAdminPassword)))
-            .Content.ReadFromJsonAsync<AuthResponseDto>(Web);
-        var tasks = await JsonAsync(await Client(superAdmin!.Token).GetAsync("/api/admin/scheduled-tasks"));
-        tasks.EnumerateArray().Select(t => t.GetProperty("name").GetString()).Should().Contain("demo-reset");
-
-        async Task<ScheduledTaskOutcome> RunTaskAsync()
-        {
-            using var scope = _factory.Services.CreateScope();
-            var task = scope.ServiceProvider.GetServices<IScheduledTask>().Single(t => t.Name == "demo-reset");
-            return await task.ExecuteAsync(CancellationToken.None);
-        }
-
-        // fresh reset from InitializeAsync: nothing is due
-        var idle = await RunTaskAsync();
-        idle.Affected.Should().Be(0);
-        idle.Summary.Should().Contain("not due");
-
-        // the first fill of a demo is the operator's job: no stamp, no reset from the schedule
-        string? stamp = null;
-        await Db(async db =>
-        {
-            var row = await db.PlatformSettings.FirstAsync(s => s.Key == "demo.last-reset-utc");
-            stamp = row.Value;
-            db.PlatformSettings.Remove(row);
-            await db.SaveChangesAsync();
-        });
-        var noStamp = await RunTaskAsync();
-        noStamp.Affected.Should().Be(0);
-        (await Db(db => db.Companies.CountAsync())).Should().BeGreaterThan(0, "the data was not touched");
-
-        // a stale stamp (the machine missed the night): the task runs the reset once, then it is not due any more
-        var visitor = await RegisterVisitorAsync();
-        await Db(async db =>
-        {
-            db.PlatformSettings.Add(new PlatformSetting { Key = "demo.last-reset-utc", Value = DateTime.UtcNow.AddDays(-2).ToString("O"), UpdatedAt = DateTime.UtcNow });
-            await db.SaveChangesAsync();
-        });
-        var due = await RunTaskAsync();
-        due.Affected.Should().Be(1, due.Summary);
-        (await Db(db => db.Users.CountAsync(u => u.Id == visitor.UserId))).Should().Be(0, "the nightly reset removes what the visitor created");
-        (await RunTaskAsync()).Summary.Should().Contain("not due");
-        stamp.Should().NotBeNull();
-    }
 }
 
-/// <summary>CY28-49/50: the reset itself is the subject, so these run the real product reset (the others get the demo from the seeded template).</summary>
+/// <summary>CY28-49/50/51: the reset (or the nightly task that resets, whose "due" depends on the age of the last reset) is the subject, so these run the real product reset (the others get the demo from the seeded template).</summary>
 [Collection("Cycle28DemoMutations")]
 public class Cycle28DemoResetTests : Cycle28DemoMutationBase
 {
@@ -656,6 +624,53 @@ public class Cycle28DemoResetTests : Cycle28DemoMutationBase
         (await JsonAsync(await http.GetAsync("/api/demo/status"))).GetProperty("resetting").GetBoolean().Should().BeFalse();
         (await DemoLoginAsync("client")).Roles.Should().Contain("Client");
     }
+
+    [Fact, TestCase("CY28-51")]
+    public async Task NightlyTask_IsListedOnlyInDemo_SkipsWithoutStamp_ResetsWhenStale_ThenIsNotDue()
+    {
+        var superAdmin = await (await Client().PostAsJsonAsync("/api/auth/login", new LoginDto(_factory.Identity.SuperAdminPhone, _factory.Identity.SuperAdminPassword)))
+            .Content.ReadFromJsonAsync<AuthResponseDto>(Web);
+        var tasks = await JsonAsync(await Client(superAdmin!.Token).GetAsync("/api/admin/scheduled-tasks"));
+        tasks.EnumerateArray().Select(t => t.GetProperty("name").GetString()).Should().Contain("demo-reset");
+
+        async Task<ScheduledTaskOutcome> RunTaskAsync()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var task = scope.ServiceProvider.GetServices<IScheduledTask>().Single(t => t.Name == "demo-reset");
+            return await task.ExecuteAsync(CancellationToken.None);
+        }
+
+        // fresh reset from InitializeAsync: nothing is due
+        var idle = await RunTaskAsync();
+        idle.Affected.Should().Be(0);
+        idle.Summary.Should().Contain("not due");
+
+        // the first fill of a demo is the operator's job: no stamp, no reset from the schedule
+        string? stamp = null;
+        await Db(async db =>
+        {
+            var row = await db.PlatformSettings.FirstAsync(s => s.Key == "demo.last-reset-utc");
+            stamp = row.Value;
+            db.PlatformSettings.Remove(row);
+            await db.SaveChangesAsync();
+        });
+        var noStamp = await RunTaskAsync();
+        noStamp.Affected.Should().Be(0);
+        (await Db(db => db.Companies.CountAsync())).Should().BeGreaterThan(0, "the data was not touched");
+
+        // a stale stamp (the machine missed the night): the task runs the reset once, then it is not due any more
+        var visitor = await RegisterVisitorAsync();
+        await Db(async db =>
+        {
+            db.PlatformSettings.Add(new PlatformSetting { Key = "demo.last-reset-utc", Value = DateTime.UtcNow.AddDays(-2).ToString("O"), UpdatedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+        });
+        var due = await RunTaskAsync();
+        due.Affected.Should().Be(1, due.Summary);
+        (await Db(db => db.Users.CountAsync(u => u.Id == visitor.UserId))).Should().Be(0, "the nightly reset removes what the visitor created");
+        (await RunTaskAsync()).Summary.Should().Contain("not due");
+        stamp.Should().NotBeNull();
+    }
 }
 
 /// <summary>
@@ -669,7 +684,10 @@ public class Cycle28DemoLocksTests : IAsyncLifetime
 
     public async Task InitializeAsync() => _lease = await TestRunEnvironment.LeaseClassDatabaseAsync("demo");
 
-    public async Task DisposeAsync() => await _lease.DropAsync();
+    public async Task DisposeAsync()
+    {
+        if (_lease is not null) await _lease.DropAsync(); // InitializeAsync may have failed before the lease was taken
+    }
 
     private static string Everything(Exception exception)
     {

@@ -27,8 +27,8 @@ public class Cycle35DemoContractTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        try { await _factory.DisposeAsync(); }
-        finally { await _lease.DropAsync(); }
+        try { if (_factory is not null) await _factory.DisposeAsync(); }
+        finally { if (_lease is not null) await _lease.DropAsync(); }
     }
 
     private static async Task<JsonElement> JsonAsync(HttpResponseMessage r, HttpStatusCode expected)

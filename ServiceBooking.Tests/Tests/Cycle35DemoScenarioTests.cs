@@ -20,10 +20,10 @@ namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
 /// QA cycle 35, "Вызов 2" — the demo stand of "Заказы" as a visitor and an operator see it (US-35-02 … US-35-07). Written from SPEC_CYCLE35_GOODS_DEMO_STAND.md and
-/// API_CONTRACT_CYCLE35.md, not from the implementation. One host in demo mode on its own database "sbtest_&lt;key&gt;_demo" after one operator reset.
-/// Cycle 36 (BE-36-03): the reset takes seconds, so the scenarios that only READ the generated demo (<see cref="Cycle35DemoScenarioTests"/>) share one reset per class,
-/// and the scenarios that write (<see cref="Cycle35DemoMutationBase"/>) still start from their own fresh reset. Both live in the collection "Cycle28Demo": one
-/// database slot "demo" is never leased by two classes at once.
+/// API_CONTRACT_CYCLE35.md, not from the implementation. One host in demo mode per database "sbtest_&lt;key&gt;_&lt;variant&gt;_demo".
+/// Cycle 36: the scenarios that only READ the generated demo (<see cref="Cycle35DemoScenarioTests"/>) share one real reset per class; the scenarios that write
+/// (<see cref="Cycle35DemoMutationBase"/>) get a fresh demo per test by cloning the seeded template (<see cref="DemoSeededTemplate"/>), except the ones whose subject is the reset
+/// itself (<see cref="Cycle35DemoResetTests"/>), which run the real reset. Every group has its own collection and its own demo database (<see cref="Cycle35DemoSlots"/>).
 /// </summary>
 public abstract class Cycle35DemoScenarioBase
 {
@@ -143,7 +143,10 @@ public sealed class Cycle35DemoScenarioFixture : IAsyncLifetime
 
     public async Task InitializeAsync() => State = await DemoScenarioState.CreateAsync(Cycle35DemoSlots.Read);
 
-    public async Task DisposeAsync() => await State.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        if (State is not null) await State.DisposeAsync(); // InitializeAsync may have failed before the state existed
+    }
 }
 
 /// <summary>Scenarios that only read the generated demo (no write through the API, no reset): one shared reset per class.</summary>
@@ -496,7 +499,10 @@ public abstract class Cycle35DemoMutationBase : Cycle35DemoScenarioBase, IAsyncL
 
     public async Task InitializeAsync() => _state = await DemoScenarioState.CreateAsync(Slot, Seeded);
 
-    public async Task DisposeAsync() => await _state.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        if (_state is not null) await _state.DisposeAsync(); // InitializeAsync may have failed before the state existed
+    }
 
 
     protected async Task AssertNothingQueuedAsync() => await Db(async db =>
@@ -847,10 +853,14 @@ public class Cycle35DemoResetTests : Cycle35DemoMutationBase
             return string.Join(";", shops) + "#" + string.Join(";", products) + "#" + orders + "/" + items;
         });
 
+        // What is claimed: the generator is deterministic for ONE moment. The second reset is the product service (DemoResetService, the code behind
+        // «ops demo reset --yes») called with the moment the first reset recorded in demo.last-reset-utc, so the two generations differ in nothing but the run.
+        // The route through the «ops» command line (and its argument parsing) is covered by CY35-60/61, which call it. Resets at different moments of the day
+        // legitimately differ (orders «as soon as possible» and the journal are cut at «now»), so a reset at «now» is not compared here.
         var first = await Fingerprint();
-        var (exit, output) = await OpsAsync("demo", "reset", "--yes");
-        exit.Should().Be(0, output);
-        (await Fingerprint()).Should().Be(first, "the generator is deterministic: same date, same set (only dates move)");
+        var firstMoment = await DemoSeededTemplate.ReadLastResetUtcAsync(_factory);
+        await DemoSeededTemplate.ResetAtAsync(_factory, firstMoment);
+        (await Fingerprint()).Should().Be(first, "the generator is deterministic: same moment, same set");
     }
 
     [Fact, TestCase("CY35-60")]

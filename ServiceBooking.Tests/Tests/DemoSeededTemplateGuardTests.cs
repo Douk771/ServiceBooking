@@ -9,7 +9,7 @@ namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
 /// Cycle 36 guard: the seeded demo template (<see cref="DemoSeededTemplate"/>) must not drift away from the product. One database gets the real product reset, another is
-/// cloned from the template; both must hold the same rows (count of every table, the identity of companies and users) and the same published files.
+/// cloned from the template; both must hold the same rows (count of every table, the content (hash of the deterministic columns) of the key tables) and the same published files.
 /// </summary>
 [Collection("DemoSeededGuard")]
 public class DemoSeededTemplateGuardTests : IAsyncLifetime
@@ -19,7 +19,9 @@ public class DemoSeededTemplateGuardTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _real = await DemoScenarioState.CreateAsync(DemoDatabaseSlots.GuardReal, seeded: false);
+        // The generator depends on "now" (orders «as soon as possible» and the event journal are cut at it): the real reset is made at the moment of the template.
+        await DemoSeededTemplate.EnsureAsync();
+        _real = await DemoScenarioState.CreateAsync(DemoDatabaseSlots.GuardReal, seeded: false, resetAtUtc: DemoSeededTemplate.ResetAtUtc);
         _clone = await DemoScenarioState.CreateAsync(DemoDatabaseSlots.GuardClone, seeded: true);
     }
 
@@ -48,14 +50,38 @@ public class DemoSeededTemplateGuardTests : IAsyncLifetime
         return counts;
     }
 
-    private static async Task<List<string>> IdentityAsync(DemoScenarioState state)
+    /// <summary>SHA-256 of the deterministic columns of the key tables (random ids are left out: bookings, orders, items and the SuperAdmin get new Guids on every reset).</summary>
+    private static async Task<Dictionary<string, string>> ContentHashesAsync(DemoScenarioState state)
     {
         using var scope = state.Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var companies = await db.Companies.AsNoTracking().OrderBy(c => c.Id).Select(c => c.Id + "|" + c.Slug + "|" + c.Name).ToListAsync();
-        var users = await db.Users.AsNoTracking().Where(u => u.IsShowcase).OrderBy(u => u.Id).Select(u => u.Id + "|" + u.PhoneNumber).ToListAsync();
-        // Bookings and orders are counted per table above; here only what the generator makes deterministic (shops, demo people; the SuperAdmin of the host is random).
-        return [.. companies, .. users];
+        static string Hash(IEnumerable<string> rows) =>
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join("\n", rows.Order(StringComparer.Ordinal)))));
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        string F(IFormattable? v) => v?.ToString(null, inv) ?? "";
+
+        var hashes = new Dictionary<string, string>();
+        hashes["Companies"] = Hash((await db.Companies.AsNoTracking().Select(c => new { c.Id, c.Slug, c.Name, c.Phone, c.Kind, c.CreatedAt }).ToListAsync())
+            .Select(c => $"{c.Id}|{c.Slug}|{c.Name}|{c.Phone}|{c.Kind}|{F(c.CreatedAt)}"));
+        hashes["ShowcaseUsers"] = Hash((await db.Users.AsNoTracking().Where(u => u.IsShowcase).Select(u => new { u.Id, u.PhoneNumber, u.FirstName, u.LastName }).ToListAsync())
+            .Select(u => $"{u.Id}|{u.PhoneNumber}|{u.FirstName}|{u.LastName}"));
+        hashes["Services"] = Hash((await db.Services.AsNoTracking().Select(x => new { x.Id, x.CompanyId, x.Name, x.Price, x.DurationMinutes }).ToListAsync())
+            .Select(x => $"{x.Id}|{x.CompanyId}|{x.Name}|{F(x.Price)}|{x.DurationMinutes}"));
+        hashes["Products"] = Hash((await db.Products.AsNoTracking().Select(x => new { x.Id, x.CompanyId, x.Name, x.Price, x.Unit }).ToListAsync())
+            .Select(x => $"{x.Id}|{x.CompanyId}|{x.Name}|{F(x.Price)}|{x.Unit}"));
+        hashes["Bookings"] = Hash((await db.Bookings.AsNoTracking().Select(x => new { x.CompanyId, x.Date, x.StartTime, x.Status, x.Price, x.GuestPhone, x.CreatedAt }).ToListAsync())
+            .Select(x => $"{x.CompanyId}|{x.Date:yyyy-MM-dd}|{x.StartTime}|{x.Status}|{F(x.Price)}|{x.GuestPhone}|{F(x.CreatedAt)}"));
+        hashes["Orders"] = Hash((await db.Orders.AsNoTracking().Select(x => new { x.CompanyId, x.Number, x.Status, x.CustomerPhone, x.EstimatedTotal, x.CreatedAtUtc }).ToListAsync())
+            .Select(x => $"{x.CompanyId}|{x.Number}|{x.Status}|{x.CustomerPhone}|{F(x.EstimatedTotal)}|{F(x.CreatedAtUtc)}"));
+        hashes["OrderItems"] = Hash((await db.OrderItems.AsNoTracking().Select(x => new { x.NameSnapshot, x.QuantityOrdered, x.UnitPrice }).ToListAsync())
+            .Select(x => $"{x.NameSnapshot}|{F(x.QuantityOrdered)}|{F(x.UnitPrice)}"));
+        hashes["OrderEvents"] = Hash((await db.OrderEvents.AsNoTracking().Select(x => new { x.CompanyId, x.Kind, x.OccurredAtUtc, x.ToStatus }).ToListAsync())
+            .Select(x => $"{x.CompanyId}|{x.Kind}|{F(x.OccurredAtUtc)}|{x.ToStatus}"));
+        hashes["Reviews"] = Hash((await db.Reviews.AsNoTracking().Select(x => new { x.Rating, x.Comment, x.CreatedAt }).ToListAsync())
+            .Select(x => $"{x.Rating}|{x.Comment}|{F(x.CreatedAt)}"));
+        hashes["ClientNotes"] = Hash((await db.ClientNotes.AsNoTracking().Select(x => new { x.Note, x.CreatedAt }).ToListAsync())
+            .Select(x => $"{x.Note}|{F(x.CreatedAt)}"));
+        return hashes;
     }
 
     private static string[] Files(string slot) =>
@@ -77,7 +103,9 @@ public class DemoSeededTemplateGuardTests : IAsyncLifetime
         var different = real.Where(p => clone[p.Key] != p.Value).Select(p => $"{p.Key}: real {p.Value}, clone {clone[p.Key]}").ToList();
         different.Should().BeEmpty("a table of the seeded template differs from a real reset");
 
-        (await IdentityAsync(_clone)).Should().Equal(await IdentityAsync(_real), "ids, slugs, names and phones are deterministic for one date");
+        var realHashes = await ContentHashesAsync(_real);
+        var cloneHashes = await ContentHashesAsync(_clone);
+        cloneHashes.Where(p => realHashes[p.Key] != p.Value).Select(p => p.Key).Should().BeEmpty("the content of a table of the seeded template differs from a real reset at the same moment");
         Files(DemoDatabaseSlots.GuardClone).Should().Equal(Files(DemoDatabaseSlots.GuardReal), "the published pictures are copied with the template");
     }
 }

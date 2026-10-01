@@ -43,7 +43,7 @@ public sealed class DemoHostFactory(string connectionString, IReadOnlyDictionary
     }
 }
 
-// One database slot "demo" exists per run (lock 1 demands a name ending in _demo, the slot grammar has no underscores): every demo class runs in this collection, one at a time.
+// The classes of this collection share the database slot "demo" one at a time (lock 1 demands a name ending in _demo). Other demo collections have their own slots, see DemoDatabaseSlots.
 [Collection("Cycle28Demo")]
 public class Cycle28DemoContractTests : IAsyncLifetime
 {
@@ -63,8 +63,8 @@ public class Cycle28DemoContractTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        try { await _factory.DisposeAsync(); }
-        finally { await _lease.DropAsync(); }
+        try { if (_factory is not null) await _factory.DisposeAsync(); }
+        finally { if (_lease is not null) await _lease.DropAsync(); }
     }
 
     private static async Task<JsonElement> JsonAsync(HttpResponseMessage r, HttpStatusCode expected)
