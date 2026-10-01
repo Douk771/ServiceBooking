@@ -33,7 +33,7 @@ public class ShowcaseDatasetTests
 
     [Fact]
     public void Build_Prod_IsFrozenSinceCycle34_TheShopsGeneratorDoesNotTouchIt() =>
-        Fingerprint(ShowcaseDataset.Build(ShowcaseProfile.Prod, Now)).Should().Be(FrozenProdFingerprint);
+        FrozenFingerprintCulture.Run(() => Fingerprint(ShowcaseDataset.Build(ShowcaseProfile.Prod, Now))).Should().Be(FrozenProdFingerprint);
 
     [Fact]
     public void Build_TwoRunsWithTheSameArguments_GiveTheSameGraph()

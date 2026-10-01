@@ -54,7 +54,7 @@ public class ShowcaseDemoProfileTests
 
     [Fact]
     public void Demo_SalonPart_IsFrozenSinceCycle34_TheShopsGeneratorDoesNotMoveAByte() =>
-        SalonFingerprint(Demo.Value).Should().Be(FrozenDemoSalonFingerprint);
+        FrozenFingerprintCulture.Run(() => SalonFingerprint(Demo.Value)).Should().Be(FrozenDemoSalonFingerprint);
 
     // ── profile and determinism ─────────────────────────────────────────────────────────────────────
 
