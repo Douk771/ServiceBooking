@@ -263,15 +263,15 @@ internal static class RateLimitingExtensions
         });
     }
 
+    /// <summary>Window of the "uploads" policy: 1 minute unless <c>Uploads:WindowMinutes</c> says otherwise (a test-only substitution point, no production config sets it).</summary>
+    internal static TimeSpan UploadsWindow(IConfiguration configuration) =>
+        TimeSpan.FromMinutes(Math.Max(1, configuration.GetValue("Uploads:WindowMinutes", 1)));
+
     // Cycle 22 D9 — the user-keyed twin of IpWindowPolicy, shared by data-export, push-subscribe,
     // address-verify, phone-change and booking-reschedule: partition by the caller's user id ("anonymous"
     // if the JWT carries none — all five routes require [Authorize]), PermitLimit/WindowMinutes read from
     // RateLimits:{policyName}:* with the given defaults. Configuration is still resolved on every request,
     // exactly as the five inline copies did.
-    /// <summary>Window of the "uploads" policy: 1 minute unless <c>Uploads:WindowMinutes</c> says otherwise (a test-only substitution point, no production config sets it).</summary>
-    internal static TimeSpan UploadsWindow(IConfiguration configuration) =>
-        TimeSpan.FromMinutes(Math.Max(1, configuration.GetValue("Uploads:WindowMinutes", 1)));
-
     private static RateLimitPartition<string> UserWindowPolicy(
         HttpContext ctx, string policyName, int defaultPermitLimit, int defaultWindowMinutes)
     {

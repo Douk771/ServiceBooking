@@ -29,7 +29,9 @@ public class UploadsWindowTests
     public void ShippedConfigs_DoNotSetTheWindow(string file)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "ServiceBooking.API", file);
-        if (!File.Exists(path)) return; // not every environment file exists
+        // appsettings.json always exists; the environment files may not.
+        if (file == "appsettings.json") File.Exists(path).Should().BeTrue("the check must really read the shipped base config: " + path);
+        else if (!File.Exists(path)) return;
         using var doc = JsonDocument.Parse(File.ReadAllText(path), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
         if (doc.RootElement.TryGetProperty("Uploads", out var uploads))
             uploads.TryGetProperty("WindowMinutes", out _).Should().BeFalse(file);

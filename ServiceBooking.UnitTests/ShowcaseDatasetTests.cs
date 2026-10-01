@@ -32,8 +32,11 @@ public class ShowcaseDatasetTests
     private const string FrozenProdFingerprint = "8516AE2F8C4D46F7C5A36AFE0BC8BEF85F337AB94699E769452DDE202D41897C";
 
     [Fact]
-    public void Build_Prod_IsFrozenSinceCycle34_TheShopsGeneratorDoesNotTouchIt() =>
-        FrozenFingerprintCulture.Run(() => Fingerprint(ShowcaseDataset.Build(ShowcaseProfile.Prod, Now))).Should().Be(FrozenProdFingerprint);
+    public void Build_Prod_IsFrozenSinceCycle34_TheShopsGeneratorDoesNotTouchIt()
+    {
+        var graph = ShowcaseDataset.Build(ShowcaseProfile.Prod, Now); // built under the current culture: only the formatting of the hash is culture-bound
+        FrozenFingerprintCulture.Run(() => Fingerprint(graph)).Should().Be(FrozenProdFingerprint);
+    }
 
     [Fact]
     public void Build_TwoRunsWithTheSameArguments_GiveTheSameGraph()
