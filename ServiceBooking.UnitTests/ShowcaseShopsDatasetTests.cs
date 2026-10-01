@@ -310,6 +310,41 @@ public class ShowcaseShopsDatasetTests
         night.Count(o => o.Status == OrderStatus.Ready).Should().BeInRange(2, 10);
     }
 
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 0)]
+    [InlineData(4, 25)]
+    [InlineData(6, 55)]
+    [InlineData(7, 55)]
+    [InlineData(9, 30)]
+    [InlineData(10, 55)]
+    [InlineData(12, 0)]
+    [InlineData(14, 40)]
+    [InlineData(16, 55)]
+    [InlineData(18, 10)]
+    [InlineData(19, 30)]
+    [InlineData(20, 5)]
+    [InlineData(21, 0)]
+    public void TheCoffeeShopHasAReadyOrderRightAfterAResetAtAnyHour_AndItsJournalAgrees(int hourUtc, int minute)
+    {
+        var now = new DateTime(2026, 10, 1, hourUtc, minute, 0, DateTimeKind.Utc);
+        var g = ShowcaseDataset.Build(ShowcaseProfile.Demo, now);
+        var coffee = Shop(g, "kofeinya").Id;
+        var today = DateOnly.FromDateTime(now.AddHours(3)); // the coffee shop is in Moscow
+
+        var ready = g.Orders.Where(o => o.CompanyId == coffee && o.PickupDate == today && o.Status == OrderStatus.Ready).ToList();
+        ready.Should().NotBeEmpty($"the column «Готовы к выдаче» is not empty after a reset at {now:HH:mm} UTC (US-35-02)");
+
+        foreach (var order in ready)
+        {
+            var events = g.OrderEvents.Where(e => e.OrderId == order.Id).OrderBy(e => e.OccurredAtUtc).ToList();
+            events.Last().ToStatus.Should().Be(OrderStatus.Ready, "the last event of the journal is the status");
+            order.ReadyAtUtc.Should().NotBeNull().And.Subject.Should().BeOnOrBefore(now);
+            events.Should().OnlyContain(e => e.OccurredAtUtc <= now, "nothing of the journal is in the future");
+            order.CompletedAtUtc.Should().BeNull();
+        }
+    }
+
     [Fact]
     public void TheCoffeeShopHasPreordersForTomorrow_TheBakeryForTwoDays_TheCanteenHasNone()
     {

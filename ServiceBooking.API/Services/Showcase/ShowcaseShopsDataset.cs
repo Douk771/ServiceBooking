@@ -46,6 +46,7 @@ public static class ShowcaseShopsDataset
 
         Number(orders);
         MarkPreparedEarly(shops, orders, nowUtc);
+        EnsureReadyOrder(shops, orders, nowUtc);
         foreach (var order in orders) WriteOrder(graph, p, order, nowUtc);
         FinishShops(graph, p, shops, orders, nowUtc);
     }
@@ -104,6 +105,12 @@ public static class ShowcaseShopsDataset
 
         /// <summary>One of the two first orders of today, due at the opening: "собран с вечера", already Ready at the moment of the reset (§35.10.2).</summary>
         public bool PreparedEarly { get; set; }
+
+        /// <summary>
+        /// A reset after the last pickup of the day: every order of today is already over by its plan, so one of them is left "Ready, not collected yet" (it is closed by the
+        /// demo task on its next pass). Keeps the column «Готовы к выдаче» from being empty at any hour of the reset.
+        /// </summary>
+        public bool HeldReady { get; set; }
 
         public int Number { get; set; }
         public PickupKind Kind => EndUtc is null ? PickupKind.Asap : PickupKind.Slot;
@@ -726,6 +733,45 @@ public static class ShowcaseShopsDataset
         }
     }
 
+    /// <summary>
+    /// US-35-02: the column «Готовы к выдаче» is never empty right after a reset, whatever the hour of it (a manual reset before a meeting is made by day, §35.10.2). The
+    /// planned timeline gives a Ready order only for a pickup in the next ~5–15 minutes, so a shop that has none at this moment (and none prepared at the opening) gets
+    /// one: the nearest upcoming order of today is "prepared in advance"; when the day is already over, the last simple order of today is "not collected yet". The reset
+    /// at 04:00 is not touched: there the two orders at the opening are already marked. The orders of the demo customer are never chosen: their scenario is fixed.
+    /// </summary>
+    private static void EnsureReadyOrder(List<ShopCtx> shops, List<OrderCtx> orders, DateTime nowUtc)
+    {
+        foreach (var shop in shops)
+        {
+            var today = orders
+                .Where(o => o.Shop == shop && o.PickupDate == shop.LocalToday && !o.Key.StartsWith("demo-customer:", StringComparison.Ordinal))
+                .Select(o => (Order: o, Plan: ShowcaseOrderTimeline.Plan(o.Id, o.CreatedUtc, o.StartUtc, shop.Spec.Acceptance)))
+                .ToList();
+
+            // Ready already by the timeline, or prepared in advance (the mark of the opening only counts while the planned moment of readiness is still ahead).
+            if (today.Any(t => t.Plan.ReadyAtUtc > nowUtc ? t.Order.PreparedEarly : t.Plan.ClosedAtUtc > nowUtc)) continue;
+
+            var upcoming = today
+                .Where(t => t.Plan.ReadyAtUtc > nowUtc && t.Order.CreatedUtc < nowUtc.AddMinutes(-4))
+                .OrderBy(t => t.Order.StartUtc).ThenBy(t => t.Order.Key, StringComparer.Ordinal)
+                .Select(t => t.Order)
+                .FirstOrDefault();
+            if (upcoming is not null)
+            {
+                upcoming.PreparedEarly = true;
+                continue;
+            }
+
+            // Only what the demo task can close later: no weighed lines and no stock to write off (it leaves such an order for a visitor).
+            var finished = today
+                .Where(t => t.Plan.ClosedAtUtc <= nowUtc && t.Order.Lines.All(l => l.Product.Spec.Unit != ProductUnit.Weight && !ReservesStock(shop, l)))
+                .OrderByDescending(t => t.Order.StartUtc).ThenBy(t => t.Order.Key, StringComparer.Ordinal)
+                .Select(t => t.Order)
+                .FirstOrDefault();
+            if (finished is not null) finished.HeldReady = true;
+        }
+    }
+
     private static AppUser StaffOf(OrderCtx order, ShowcaseRandom rng, bool live)
     {
         var all = new List<AppUser> { order.Shop.Owner };
@@ -767,6 +813,7 @@ public static class ShowcaseShopsDataset
         var plan = ShowcaseOrderTimeline.Plan(order.Id, order.CreatedUtc, order.StartUtc, mode, forced);
         IReadOnlyList<ShowcaseOrderStep> steps = live ? ShowcaseOrderTimeline.StateAt(plan, nowUtc).Steps : ShowcaseOrderTimeline.AllSteps(plan);
         if (live && order.PreparedEarly && plan.ReadyAtUtc > nowUtc) steps = PreparedEarlySteps(order, plan, nowUtc);
+        else if (live && order.HeldReady) steps = [.. steps.Where(s => s.To is not (OrderStatus.Issued or OrderStatus.NotPickedUp))];
 
         if (order.Edited && steps.Count > 0 && plan.Fate == ShowcaseOrderFate.Issued)
         {
