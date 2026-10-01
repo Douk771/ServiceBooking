@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "unitWallSecondsWarn": 0,
-  "functionalWallSecondsWarn": 350,
+  "functionalWallSecondsWarn": 305,
   "vitestWallSecondsWarn": 120,
   "classWallSecondsWarn": 60,
   "testSecondsWarn": 10,
