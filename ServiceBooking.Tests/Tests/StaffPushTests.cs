@@ -257,6 +257,7 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         // машине это давало TimeoutException вместо неверного статуса (PUSH-006 упал так на develop,
         // а поднятие бюджета с 20s до 60s в a5d831c проблему не сняло).
         var factory = fixture.ClassHost("pushdispatch", cs => new PushDispatchTestFactory(cs, disableAutomaticTicking: true));
+        factory.Clock.Set(DateTime.UtcNow); // the host is shared by the class: every test starts at the real "now", not at the moment the host was built
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -283,6 +284,7 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         // ещё 500 мс, пока попытка запишется». Ожидание завершения прохода и есть та гарантия, которую
         // Task.Delay изображал на глазок.
         var factory = fixture.ClassHost("pushdispatch", cs => new PushDispatchTestFactory(cs, disableAutomaticTicking: true));
+        factory.Clock.Set(DateTime.UtcNow); // the host is shared by the class: every test starts at the real "now", not at the moment the host was built
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -309,6 +311,7 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         // only asserts a terminal decision ProcessRowAsync reaches by RE-READING rights from the DB, so
         // the runner's own scheduling machinery (advisory lock, due-time bookkeeping) is immaterial here.
         var factory = fixture.ClassHost("pushdispatch", cs => new PushDispatchTestFactory(cs, disableAutomaticTicking: true));
+        factory.Clock.Set(DateTime.UtcNow); // the host is shared by the class: every test starts at the real "now", not at the moment the host was built
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -342,6 +345,7 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         // Cycle 14 (flaky-CI fix): same deterministic single-pass trigger as the sibling test above —
         // see PushDispatchTestFactory's doc comment on RunStaffPushDispatchPassAsync.
         var factory = fixture.ClassHost("pushdispatch", cs => new PushDispatchTestFactory(cs, disableAutomaticTicking: true));
+        factory.Clock.Set(DateTime.UtcNow); // the host is shared by the class: every test starts at the real "now", not at the moment the host was built
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 

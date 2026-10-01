@@ -34,7 +34,12 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     }
 
     /// <summary>Цикл 36, L1: хост класса (ручные проходы диспетчера; утверждения теста фильтруют записи по своим подпискам и endpoint).</summary>
-    private PushDispatchTestFactory NewPush() => Fixture.ClassHost("pushdispatch", cs => new PushDispatchTestFactory(cs, disableAutomaticTicking: true));
+    private PushDispatchTestFactory NewPush()
+    {
+        var host = Fixture.ClassHost("pushdispatch", cs => new PushDispatchTestFactory(cs, disableAutomaticTicking: true));
+        host.Clock.Set(DateTime.UtcNow); // the host is shared by the class: every test starts at the real "now", not at the moment the host was built
+        return host;
+    }
 
     private sealed record Sub(Guid Id, string Site);
 
