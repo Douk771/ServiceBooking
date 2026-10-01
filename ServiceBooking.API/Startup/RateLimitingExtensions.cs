@@ -28,7 +28,7 @@ internal static class RateLimitingExtensions
             {
                 PermitLimit = ctx.RequestServices.GetRequiredService<IConfiguration>().GetValue("Uploads:PerUserPerMinute", 10),
                 // Uploads:WindowMinutes exists for tests only (a long window keeps a burst of requests inside ONE window under load); production keeps 1.
-                Window = TimeSpan.FromMinutes(Math.Max(1, ctx.RequestServices.GetRequiredService<IConfiguration>().GetValue("Uploads:WindowMinutes", 1))),
+                Window = UploadsWindow(ctx.RequestServices.GetRequiredService<IConfiguration>()),
                 QueueLimit = 0 // reject immediately rather than queue — no benefit to making the caller wait
             }));
 
@@ -268,6 +268,10 @@ internal static class RateLimitingExtensions
     // if the JWT carries none — all five routes require [Authorize]), PermitLimit/WindowMinutes read from
     // RateLimits:{policyName}:* with the given defaults. Configuration is still resolved on every request,
     // exactly as the five inline copies did.
+    /// <summary>Window of the "uploads" policy: 1 minute unless <c>Uploads:WindowMinutes</c> says otherwise (a test-only substitution point, no production config sets it).</summary>
+    internal static TimeSpan UploadsWindow(IConfiguration configuration) =>
+        TimeSpan.FromMinutes(Math.Max(1, configuration.GetValue("Uploads:WindowMinutes", 1)));
+
     private static RateLimitPartition<string> UserWindowPolicy(
         HttpContext ctx, string policyName, int defaultPermitLimit, int defaultWindowMinutes)
     {
