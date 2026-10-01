@@ -22,7 +22,8 @@ namespace ServiceBooking.Tests.Tests;
 /// against the implementation — see each test's own <c>TestCase</c> id / comment for which US-14-xx it
 /// proves.
 ///
-/// Every test that needs the subsystem actually ENABLED uses its own <see cref="PhoneVerificationEnabledFactory"/>
+/// Every test that needs the subsystem actually ENABLED uses the class' <see cref="PhoneVerificationEnabledFactory"/>
+/// (<c>Fixture.ClassHost("phv", …)</c>, cycle 36 L1; the recording bot client is cleared by tests that assert on it)
 /// against this class' own database (same pattern as <c>PushEnabledFactory</c>/<c>NotificationTestFactory</c>)
 /// — <see cref="Factory"/> itself stays on the Testing default (<c>PhoneVerification:Provider = "stub"</c>),
 /// which is exactly what the "disabled by default" tests below need.
