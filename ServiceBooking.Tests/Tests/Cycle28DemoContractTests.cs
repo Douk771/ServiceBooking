@@ -42,7 +42,7 @@ public sealed class DemoHostFactory(string connectionString, IReadOnlyDictionary
 }
 
 // One database slot "demo" exists per run (lock 1 demands a name ending in _demo, the slot grammar has no underscores): every demo class runs in this collection, one at a time.
-[Collection("Cycle28Generator")]
+[Collection("Cycle28Demo")]
 public class Cycle28DemoContractTests : IAsyncLifetime
 {
     private static readonly OpenApiContract C28 = OpenApiContract.Load("cycle28");

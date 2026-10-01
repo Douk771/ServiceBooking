@@ -89,9 +89,17 @@ public abstract class Cycle28ShowcaseTestBase(TestDatabaseFixture fixture) : Api
 }
 
 /// <summary>
-/// The showcase generator writes ~10 thousand bookings per run and the tests create and delete it a dozen times. On the shared, small test database
-/// server this starves every other class running at the same moment (30 s command timeouts in unrelated tests), so the collection runs ALONE:
-/// xUnit does not start it in parallel with any other collection.
+/// The showcase generator writes ~10 thousand bookings per run and the tests create and delete it a dozen times. The collection keeps these classes
+/// one after another (never two generators at once). Cycle 36 (BE-36-03): it no longer carries <c>DisableParallelization</c> — a collection with that
+/// flag runs strictly AFTER every other collection and alone, which put ~5 minutes of single-threaded tail at the end of the run. Starvation of other
+/// classes, the original reason, is now bounded by <see cref="ClassConcurrencyGate"/>.
 /// </summary>
-[CollectionDefinition("Cycle28Generator", DisableParallelization = true)]
+[CollectionDefinition("Cycle28Generator")]
 public sealed class Cycle28GeneratorCollection;
+
+/// <summary>
+/// The demo classes share the one database slot "demo" (lock 1 demands a name ending in _demo), so they run one after another inside this collection;
+/// with other collections they run in parallel.
+/// </summary>
+[CollectionDefinition("Cycle28Demo")]
+public sealed class Cycle28DemoCollection;
