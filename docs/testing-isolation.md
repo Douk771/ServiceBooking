@@ -93,11 +93,11 @@ npm run test:run                            # весь набор
 
 **Быстрый контур не заменяет полный прогон перед мерджем.**
 
-Файл без обращений к DOM (`document`, `window`, `localStorage`, `render`, `renderHook`, `Notification`) первой строкой
+Файл без обращений к DOM (`document`, `window`, `navigator`, `localStorage`, `render`, `renderHook`, `Notification`) первой строкой
 несёт `// @vitest-environment node`: так он не платит за jsdom. Новый чистый `*.test.ts` — добавляйте эту строку сразу; если тест
-красный в `node`, значит, ему нужен DOM, и строку не ставят. `navigator` в список не входит: Node его предоставляет,
-и тесты, которые подменяют его поля сами (`src/utils/pushWorker.test.ts`), работают в `node`. На jsdom остаются 7 из 94 `*.test.ts`
-(без строки `@vitest-environment node`), плюс все `*.test.tsx`. Пул vitest — `threads` (`frontend/vitest.config.ts`).
+красный в `node`, значит, ему нужен DOM, и строку не ставят. `navigator` в список входит: в Node 20 (CI) глобального
+`navigator` нет (он появился в Node 21), поэтому тесты, которые его подменяют (`src/utils/pushWorker.test.ts`), остаются на
+jsdom. На jsdom остаются 8 из 94 `*.test.ts` (без строки `@vitest-environment node`), плюс все `*.test.tsx`. Пул vitest — `threads` (`frontend/vitest.config.ts`).
 
 ### Из Rider / IDE
 
