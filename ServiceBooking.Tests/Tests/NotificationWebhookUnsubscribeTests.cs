@@ -179,8 +179,9 @@ public class NotificationWebhookUnsubscribeTests(TestDatabaseFixture fixture) : 
         // NotificationTestBase's `[Collection("Api")]` (this class's own DB-side version of "never assume
         // a shared resource starts empty").
         // Цикл 36, L1: у теста СВОЙ хост, как и до перевода класса на общий хост. Проверка читает дописанные в файл лога байты;
-        // файловый приёмник Serilog у долгоживущего хоста сбрасывает буфер с задержкой, и через 500 мс после запросов новых байт
-        // может ещё не быть (флейк). Свежий хост пишет сразу.
+        // при общем хосте класса тест падал (на общем хосте новых байт в файле через 500 мс не оказывалось). Причина НЕ УСТАНОВЛЕНА:
+        // версия «файловый приёмник Serilog не сбрасывает буфер сразу» не подтверждена. Свежий хост
+        // на этом тесте ведёт себя стабильно, поэтому оставлен он; разбираться в первопричине — отдельный долг.
         await using var host = new NotificationTestFactory(ConnectionString);
         _ = host.Services;
         var phone = "79993334455";
