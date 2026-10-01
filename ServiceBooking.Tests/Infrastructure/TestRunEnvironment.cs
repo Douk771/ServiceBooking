@@ -254,10 +254,11 @@ public static class TestRunEnvironment
         // a second time, next to an identical literal in EnvStatus.RequiredConnections — despite both
         // copies' comments claiming "no number duplicated". Now the one formula EnvStatus exposes.
         // Cycle 36 review (N4): the number of connections is held by classes that are inside ClassConcurrencyGate, not by P threads
-        // (the gate lets 3 x P classes in by default, or SERVICEBOOKING_TEST_CLASS_CONCURRENCY). The demo database is leased outside the gate
-        // (the one demo collection runs one class at a time) with a single host and one pool.
+        // (the gate lets 3 x P classes in by default, or SERVICEBOOKING_TEST_CLASS_CONCURRENCY). The demo databases are leased outside the gate, one host and one
+        // pool each; the demo collections start first and run at most P at a time, so min(P, number of demo databases) of them are alive together.
         var concurrentClasses = ClassConcurrencyGate.EffectiveLimit;
-        var required = EnvStatus.RequiredConnections(concurrentClasses, hostsPerClass, TestInfrastructure.PoolMaxSize) + TestInfrastructure.PoolMaxSize;
+        var concurrentDemoDatabases = Math.Min(maxParallelThreads, DemoDatabaseSlots.All.Length);
+        var required = EnvStatus.RequiredConnections(concurrentClasses, hostsPerClass, TestInfrastructure.PoolMaxSize) + concurrentDemoDatabases * TestInfrastructure.PoolMaxSize;
 
         await using var connection = new Npgsql.NpgsqlConnection(_server.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken);
@@ -281,7 +282,7 @@ public static class TestRunEnvironment
 
         throw new TestSafetyException(
             "[sb-test] Отказ: бюджет соединений не сходится.\n" +
-            $"  Параллелизм P={maxParallelThreads}, классов одновременно={concurrentClasses} (+ база demo), пул на хост={TestInfrastructure.PoolMaxSize}, хостов на класс=2 " +
+            $"  Параллелизм P={maxParallelThreads}, классов одновременно={concurrentClasses} (+ демо-баз {concurrentDemoDatabases}), пул на хост={TestInfrastructure.PoolMaxSize}, хостов на класс=2 " +
             $"→ нужно {required} соединений.\n" +
             $"  Сервер отдаёт max_connections={maxConnections}, безопасный предел {safeLimit:F0}.\n" +
             "  Что сделать (любое из):\n" +

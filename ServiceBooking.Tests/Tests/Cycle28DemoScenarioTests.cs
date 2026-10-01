@@ -29,6 +29,7 @@ namespace ServiceBooking.Tests.Tests;
 public sealed class DemoScenarioState
 {
     private TestClassDatabaseLease _lease = null!;
+    private string _slot = DemoDatabaseSlots.Salon;
 
     public DemoHostFactory Factory { get; private set; } = null!;
     public TimeSpan FirstResetTook { get; private set; }
@@ -36,9 +37,9 @@ public sealed class DemoScenarioState
     /// <summary>Row counts of the tables that the generator must never write — taken right after the first reset, before any visitor acted.</summary>
     public Dictionary<string, int> NeverWritten { get; private set; } = null!;
 
-    public static async Task<DemoScenarioState> CreateAsync()
+    public static async Task<DemoScenarioState> CreateAsync(string slot = DemoDatabaseSlots.Salon)
     {
-        var state = new DemoScenarioState();
+        var state = new DemoScenarioState { _slot = slot };
         try
         {
             await state.InitializeAsync();
@@ -53,7 +54,7 @@ public sealed class DemoScenarioState
 
     private async Task InitializeAsync()
     {
-        _lease = await TestRunEnvironment.LeaseClassDatabaseAsync("demo");
+        _lease = await TestRunEnvironment.LeaseClassDatabaseAsync(_slot);
         // 00:00 local: "the nightly slot" is always already behind us, so the nightly task is due exactly when the last reset is older than today.
         Factory = new DemoHostFactory(_lease.ConnectionString, new Dictionary<string, string?> { ["DemoMode:ResetLocalTime"] = "00:00" });
         _ = Factory.Services;
@@ -375,14 +376,14 @@ public sealed class DemoScenarioFixture : IAsyncLifetime
 /// The scenarios of <see cref="Cycle28DemoScenarioTests"/> that change the demo (guest and visitor bookings, registered visitors, resets): each starts from its own
 /// fresh reset, exactly as before the cycle-36 split. Order of the tests is random, so every scenario that creates visitor data cleans up by itself or tolerates it.
 /// </summary>
-[Collection("Cycle28Demo")]
+[Collection("Cycle28DemoMutations")]
 public class Cycle28DemoMutationTests : Cycle28DemoScenarioBase, IAsyncLifetime
 {
     private DemoScenarioState _state = null!;
 
     protected override DemoScenarioState State => _state;
 
-    public async Task InitializeAsync() => _state = await DemoScenarioState.CreateAsync();
+    public async Task InitializeAsync() => _state = await DemoScenarioState.CreateAsync(DemoDatabaseSlots.SalonMutations);
 
     public async Task DisposeAsync() => await _state.DisposeAsync();
 

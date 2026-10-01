@@ -22,7 +22,7 @@ namespace ServiceBooking.Tests.Tests;
 /// QA cycle 35, "Вызов 2" — the demo stand of "Заказы" as a visitor and an operator see it (US-35-02 … US-35-07). Written from SPEC_CYCLE35_GOODS_DEMO_STAND.md and
 /// API_CONTRACT_CYCLE35.md, not from the implementation. One host in demo mode on its own database "sbtest_&lt;key&gt;_demo" after one operator reset.
 /// Cycle 36 (BE-36-03): the reset takes seconds, so the scenarios that only READ the generated demo (<see cref="Cycle35DemoScenarioTests"/>) share one reset per class,
-/// and the scenarios that write (<see cref="Cycle35DemoMutationTests"/>) still start from their own fresh reset. Both live in the collection "Cycle28Demo": one
+/// and the scenarios that write (<see cref="Cycle35DemoMutationBase"/>) still start from their own fresh reset. Both live in the collection "Cycle28Demo": one
 /// database slot "demo" is never leased by two classes at once.
 /// </summary>
 public abstract class Cycle35DemoScenarioBase
@@ -119,9 +119,29 @@ public abstract class Cycle35DemoScenarioBase
     // ── US-35-02: the generated shops ────────────────────────────────────────────────────────────
 }
 
+/// <summary>Collections and database slots of the cycle-35 demo classes. Every slot is a separate demo database whose name still ends with "_demo" (lock 1 of the demo
+/// mode); the classes of one collection share it one after another, the collections run in parallel.</summary>
+public static class Cycle35DemoSlots
+{
+    public const string ReadCollection = "Cycle35DemoRead";
+    public const string Read = DemoDatabaseSlots.Read35;
+    public const string A = DemoDatabaseSlots.A35;
+    public const string B = DemoDatabaseSlots.B35;
+    public const string C = DemoDatabaseSlots.C35;
+}
+
+public sealed class Cycle35DemoScenarioFixture : IAsyncLifetime
+{
+    public DemoScenarioState State { get; private set; } = null!;
+
+    public async Task InitializeAsync() => State = await DemoScenarioState.CreateAsync(Cycle35DemoSlots.Read);
+
+    public async Task DisposeAsync() => await State.DisposeAsync();
+}
+
 /// <summary>Scenarios that only read the generated demo (no write through the API, no reset): one shared reset per class.</summary>
-[Collection("Cycle28Demo")]
-public class Cycle35DemoScenarioTests(DemoScenarioFixture fixture) : Cycle35DemoScenarioBase, IClassFixture<DemoScenarioFixture>
+[Collection(Cycle35DemoSlots.ReadCollection)]
+public class Cycle35DemoScenarioTests(Cycle35DemoScenarioFixture fixture) : Cycle35DemoScenarioBase, IClassFixture<Cycle35DemoScenarioFixture>
 {
     protected override DemoScenarioState State => fixture.State;
 
@@ -404,26 +424,30 @@ public class Cycle35DemoScenarioTests(DemoScenarioFixture fixture) : Cycle35Demo
     }
 }
 
-/// <summary>Scenarios that write (orders, settings, visitors, resets): each starts from its own fresh reset. Order of the tests is random.</summary>
-[Collection("Cycle28Demo")]
-public class Cycle35DemoMutationTests : Cycle35DemoScenarioBase, IAsyncLifetime
+/// <summary>
+/// Scenarios that write (orders, settings, visitors, resets): each starts from its own fresh reset. Order of the tests is random. Cycle 36: the 12 scenarios are
+/// spread over three classes, each in its own collection with its own demo database (<see cref="Cycle35DemoSlots"/>), so that their resets run in parallel.
+/// </summary>
+public abstract class Cycle35DemoMutationBase : Cycle35DemoScenarioBase, IAsyncLifetime
 {
     private DemoScenarioState _state = null!;
 
+    protected abstract string Slot { get; }
+
     protected override DemoScenarioState State => _state;
 
-    public async Task InitializeAsync() => _state = await DemoScenarioState.CreateAsync();
+    public async Task InitializeAsync() => _state = await DemoScenarioState.CreateAsync(Slot);
 
     public async Task DisposeAsync() => await _state.DisposeAsync();
 
-    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, string token, HttpContent? body)
+    protected async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, string token, HttpContent? body)
     {
         using var request = new HttpRequestMessage(method, url) { Content = body };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return await _factory.CreateClient().SendAsync(request);
     }
 
-    private async Task AssertNothingQueuedAsync() => await Db(async db =>
+    protected async Task AssertNothingQueuedAsync() => await Db(async db =>
     {
         (await db.OutboundNotifications.CountAsync()).Should().Be(0, "no WhatsApp/MAX message about an order");
         (await db.StaffPushNotifications.CountAsync()).Should().Be(0, "no push to staff");
@@ -431,6 +455,14 @@ public class Cycle35DemoMutationTests : Cycle35DemoScenarioBase, IAsyncLifetime
         (await db.StaffMaxMessages.CountAsync(m => m.Status == NotificationStatus.Pending)).Should().Be(0, "no message to staff in MAX waits in the queue");
         return 0;
     });
+
+    protected static string Pad(string s) => s.PadRight(s.Length + (4 - s.Length % 4) % 4, '=');
+}
+
+[Collection("Cycle35DemoMutA")]
+public class Cycle35DemoMutationATests : Cycle35DemoMutationBase
+{
+    protected override string Slot => Cycle35DemoSlots.A;
 
     [Fact, TestCase("CY35-15")]
     public async Task Determinism_TwoResetsOnOneDate_GiveTheSameShopsProductsPhonesAndOrderCount()
@@ -449,6 +481,85 @@ public class Cycle35DemoMutationTests : Cycle35DemoScenarioBase, IAsyncLifetime
         var (exit, output) = await OpsAsync("demo", "reset", "--yes");
         exit.Should().Be(0, output);
         (await Fingerprint()).Should().Be(first, "the generator is deterministic: same date, same set (only dates move)");
+    }
+
+    [Fact, TestCase("CY35-60")]
+    public async Task Reset_RemovesVisitorShopsOrdersAccountsFiles_KeepsTokensOfRoles_AndOrdersTariffExactlyOnce()
+    {
+        var ownerBefore = await LoginAsync("shop-owner");
+        var customerBefore = await LoginAsync("shop-customer");
+        var coffee = await CoffeeShopAsync();
+        await OpenAllDayAsync(coffee, ownerBefore.Token);
+        var (productId, price) = await AnyPieceProductAsync(coffee);
+
+        // visitors: a guest order, a registered visitor with a shop of his own
+        var guest = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
+        {
+            idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } }, customerName = "Гость", customerPhone = "79990003344",
+        });
+        var guestToken = (await J(guest, HttpStatusCode.Created)).GetProperty("order").GetProperty("token").GetString()!;
+
+        string visitorToken, visitorId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var legal = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>().Current!;
+            var phone = "79" + Random.Shared.NextInt64(100_000_000, 999_999_999);
+            var reg = await Client().PostAsJsonAsync("/api/auth/register", new RegisterDto("Посетитель", "Магазин", phone, "Password123!", null,
+                new RegisterLegalDto(legal.Get(LegalDocumentType.Privacy)!.Version, legal.Get(LegalDocumentType.TermsClient)!.Version)));
+            reg.StatusCode.Should().Be(HttpStatusCode.OK, await reg.Content.ReadAsStringAsync());
+            var registered = (await reg.Content.ReadFromJsonAsync<AuthResponseDto>(Web))!;
+            visitorToken = registered.Token;
+            visitorId = registered.UserId;
+        }
+
+        var identity = _factory.Identity;
+        var publicFile = Path.Combine(identity.PublicRoot, "visitor-upload", "product.jpg");
+        var privateFile = Path.Combine(identity.PrivateRoot, "visitor-upload", "doc.jpg");
+        foreach (var file in new[] { publicFile, privateFile })
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            await File.WriteAllBytesAsync(file, [1, 2, 3]);
+        }
+
+        var (plannedExit, plan) = await OpsAsync("demo", "reset");
+        plannedExit.Should().Be(0, plan);
+        plan.Should().Contain("(Заказы)").And.Contain("shops=5").And.Contain("только показать");
+        (await Db(db => db.Orders.CountAsync(o => o.PublicToken == guestToken))).Should().Be(1, "a plan changes nothing");
+
+        var (exit, output) = await OpsAsync("demo", "reset", "--yes");
+        exit.Should().Be(0, output);
+        output.Should().Contain("выполнено (Заказы)").And.Contain("shops=5");
+
+        await Db(async db =>
+        {
+            (await db.Orders.CountAsync(o => o.PublicToken == guestToken)).Should().Be(0, "the guest order is gone");
+            (await db.Users.CountAsync(u => u.Id == visitorId)).Should().Be(0, "the visitor is gone");
+            (await db.Companies.CountAsync(c => !c.IsShowcase)).Should().Be(0, "no shop or salon of a visitor remains");
+            (await db.Companies.CountAsync(c => c.IsShowcase && c.Kind == CompanyKind.Orders)).Should().Be(5);
+            (await db.Orders.CountAsync(o => !db.Companies.Any(c => c.Id == o.CompanyId && c.IsShowcase))).Should().Be(0);
+            // D35-2: the service tariff is exactly one after two resets, and stays hidden
+            var tariffs = await db.SubscriptionPlanConfigs.Where(p => p.Id == ShowcaseCatalog.OrdersShowcasePlanId).ToListAsync();
+            tariffs.Should().ContainSingle();
+            tariffs[0].IsPublic.Should().BeFalse();
+            (await db.SubscriptionPlanConfigs.CountAsync(p => p.Name == ShowcaseCatalog.OrdersShowcasePlanName)).Should().Be(1);
+            return 0;
+        });
+        File.Exists(publicFile).Should().BeFalse();
+        File.Exists(privateFile).Should().BeFalse();
+
+        // a token issued before the reset lives on; the same accounts come back
+        (await Client(ownerBefore.Token).GetAsync($"/api/shops/{coffee.Id}")).StatusCode.Should().Be(HttpStatusCode.OK, "stable ids and stamp");
+        (await Client(customerBefore.Token).GetAsync("/api/orders/my")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Client(visitorToken).GetAsync("/api/orders/my")).StatusCode.Should().Be(HttpStatusCode.Unauthorized, "the visitor leaves the account without an error screen: 401");
+        (await LoginAsync("shop-owner")).UserId.Should().Be(ownerBefore.UserId);
+
+        // a link to an erased order: «not found», not an error
+        var gone = await Client().GetAsync($"/api/orders/public/{guestToken}");
+        gone.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await gone.Content.ReadAsStringAsync()).Should().BeEmpty();
+
+        // the board is alive again after the reset
+        BoardCards(await BoardAsync(coffee, (await LoginAsync("shop-owner")).Token)).Count().Should().BeGreaterThan(5);
     }
 
     [Fact, TestCase("CY35-21")]
@@ -473,8 +584,6 @@ public class Cycle35DemoMutationTests : Cycle35DemoScenarioBase, IAsyncLifetime
         put.StatusCode.Should().NotBe(HttpStatusCode.UnavailableForLegalReasons, "the demo owner has current owner terms");
         put.StatusCode.Should().Be(HttpStatusCode.OK, await put.Content.ReadAsStringAsync());
     }
-
-    private static string Pad(string s) => s.PadRight(s.Length + (4 - s.Length % 4) % 4, '=');
 
     [Fact, TestCase("CY35-22")]
     public async Task OwnerCabinet_IsFull_StaffSeesBoardButNotCatalogReportsOrSettings()
@@ -511,6 +620,74 @@ public class Cycle35DemoMutationTests : Cycle35DemoScenarioBase, IAsyncLifetime
         var other = (await ShopsAsync()).First(s => s.Id != coffee.Id);
         (await asStaff.GetAsync($"/api/shops/{other.Id}/order-board")).StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.NotFound);
         (await asOwner.GetAsync($"/api/shops/{other.Id}/order-board")).StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.NotFound);
+    }
+}
+
+[Collection("Cycle35DemoMutB")]
+public class Cycle35DemoMutationBTests : Cycle35DemoMutationBase
+{
+    protected override string Slot => Cycle35DemoSlots.B;
+
+    [Fact, TestCase("CY35-61")]
+    public async Task DuringReset_BothProductsSeeWaitMessage_StatusIsNot503_ThenShopsAreBack()
+    {
+        var first = Task.Run(() => OpsAsync("demo", "reset", "--yes"));
+        HttpResponseMessage? busy = null;
+        var deadline = DateTime.UtcNow.AddMinutes(3);
+        while (!first.IsCompleted && DateTime.UtcNow < deadline)
+        {
+            var probe = await Client().GetAsync("/api/goods/catalog");
+            if (probe.StatusCode == HttpStatusCode.ServiceUnavailable) { busy = probe; break; }
+            await Task.Delay(100);
+        }
+        busy.Should().NotBeNull("the visitor of the goods site sees the maintenance answer while the reset runs");
+        (await busy!.Content.ReadAsStringAsync()).Should().Be("Демо обновляется, зайдите через минуту");
+        busy.Headers.GetValues("X-Demo-Resetting").Should().ContainSingle().Which.Should().Be("1");
+
+        foreach (var product in new[] { "orders", "services" })
+        {
+            var status = await Client().GetAsync("/api/demo/status?product=" + product);
+            if (first.IsCompleted) break;
+            status.StatusCode.Should().Be(HttpStatusCode.OK, "status never answers 503");
+            (await J(status)).GetProperty("resetting").GetBoolean().Should().BeTrue(product);
+        }
+
+        (await first).Exit.Should().Be(0);
+        (await J(await Client().GetAsync("/api/goods/catalog"))).GetProperty("totalCount").GetInt32().Should().Be(5);
+        (await LoginAsync("shop-owner")).Roles.Should().NotBeEmpty();
+    }
+
+    [Fact, TestCase("CY35-70")]
+    public async Task BoardTick_AdvancesGeneratedOrders_WithJournal_AndClosesStaleVisitorOrder_ButNotOnOffDemo()
+    {
+        var coffee = await CoffeeShopAsync();
+        var owner = await LoginAsync("shop-owner");
+        await OpenAllDayAsync(coffee, owner.Token);
+        var (productId, price) = await AnyPieceProductAsync(coffee);
+
+        var r = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
+        {
+            idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } }, customerName = "Гость", customerPhone = "79990005566",
+        });
+        var created = await J(r, HttpStatusCode.Created);
+        var token = created.GetProperty("order").GetProperty("token").GetString()!;
+        var orderId = await Db(db => db.Orders.Where(o => o.PublicToken == token).Select(o => o.Id).SingleAsync());
+
+        // the pickup time of a visitor's order passed more than 50 minutes ago (the clock of the task is explicit, the same way the operator's machine would see it later)
+        var pickup = await Db(db => db.Orders.Where(o => o.Id == orderId).Select(o => o.PickupStartUtc).SingleAsync());
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var ticker = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Demo.DemoBoardTicker>();
+            var afterSixty = pickup.AddMinutes(60);
+            await ticker.TickAsync(afterSixty, CancellationToken.None);
+        }
+        var order = await Db(db => db.Orders.AsNoTracking().Include(o => o.Events).SingleAsync(o => o.Id == orderId));
+        new[] { OrderStatus.Rejected, OrderStatus.CancelledByShop, OrderStatus.NotPickedUp }.Should().Contain(order.Status, "a stale visitor order does not hang on the board");
+        order.Events.Should().Contain(e => e.ActorKind == OrderActorKind.System && e.Reason != null && e.Reason.Contains("Демо"), "the journal says why");
+        (await J(await Client().GetAsync($"/api/orders/public/{token}"))).GetProperty("reason").GetString().Should().Contain("Демо");
+
+        // nothing left: the tick does not write to any outgoing queue
+        await AssertNothingQueuedAsync();
     }
 
     [Fact, TestCase("CY35-24")]
@@ -604,6 +781,12 @@ public class Cycle35DemoMutationTests : Cycle35DemoScenarioBase, IAsyncLifetime
         b.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.OK, HttpStatusCode.Conflict);
         (await Db(db => db.Orders.CountAsync(o => o.IdempotencyKey == key))).Should().Be(1);
     }
+}
+
+[Collection("Cycle35DemoMutC")]
+public class Cycle35DemoMutationCTests : Cycle35DemoMutationBase
+{
+    protected override string Slot => Cycle35DemoSlots.C;
 
     [Fact, TestCase("CY35-26")]
     public async Task ParallelOrders_OfOneShop_GetDistinctNumbers_AndNoErrors()
@@ -767,147 +950,6 @@ public class Cycle35DemoMutationTests : Cycle35DemoScenarioBase, IAsyncLifetime
             var outcome = await task.ExecuteAsync(CancellationToken.None);
             outcome.Affected.Should().Be(0, name + ": " + outcome.Summary);
         }
-        await AssertNothingQueuedAsync();
-    }
-
-    [Fact, TestCase("CY35-60")]
-    public async Task Reset_RemovesVisitorShopsOrdersAccountsFiles_KeepsTokensOfRoles_AndOrdersTariffExactlyOnce()
-    {
-        var ownerBefore = await LoginAsync("shop-owner");
-        var customerBefore = await LoginAsync("shop-customer");
-        var coffee = await CoffeeShopAsync();
-        await OpenAllDayAsync(coffee, ownerBefore.Token);
-        var (productId, price) = await AnyPieceProductAsync(coffee);
-
-        // visitors: a guest order, a registered visitor with a shop of his own
-        var guest = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
-        {
-            idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } }, customerName = "Гость", customerPhone = "79990003344",
-        });
-        var guestToken = (await J(guest, HttpStatusCode.Created)).GetProperty("order").GetProperty("token").GetString()!;
-
-        string visitorToken, visitorId;
-        using (var scope = _factory.Services.CreateScope())
-        {
-            var legal = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>().Current!;
-            var phone = "79" + Random.Shared.NextInt64(100_000_000, 999_999_999);
-            var reg = await Client().PostAsJsonAsync("/api/auth/register", new RegisterDto("Посетитель", "Магазин", phone, "Password123!", null,
-                new RegisterLegalDto(legal.Get(LegalDocumentType.Privacy)!.Version, legal.Get(LegalDocumentType.TermsClient)!.Version)));
-            reg.StatusCode.Should().Be(HttpStatusCode.OK, await reg.Content.ReadAsStringAsync());
-            var registered = (await reg.Content.ReadFromJsonAsync<AuthResponseDto>(Web))!;
-            visitorToken = registered.Token;
-            visitorId = registered.UserId;
-        }
-
-        var identity = _factory.Identity;
-        var publicFile = Path.Combine(identity.PublicRoot, "visitor-upload", "product.jpg");
-        var privateFile = Path.Combine(identity.PrivateRoot, "visitor-upload", "doc.jpg");
-        foreach (var file in new[] { publicFile, privateFile })
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-            await File.WriteAllBytesAsync(file, [1, 2, 3]);
-        }
-
-        var (plannedExit, plan) = await OpsAsync("demo", "reset");
-        plannedExit.Should().Be(0, plan);
-        plan.Should().Contain("(Заказы)").And.Contain("shops=5").And.Contain("только показать");
-        (await Db(db => db.Orders.CountAsync(o => o.PublicToken == guestToken))).Should().Be(1, "a plan changes nothing");
-
-        var (exit, output) = await OpsAsync("demo", "reset", "--yes");
-        exit.Should().Be(0, output);
-        output.Should().Contain("выполнено (Заказы)").And.Contain("shops=5");
-
-        await Db(async db =>
-        {
-            (await db.Orders.CountAsync(o => o.PublicToken == guestToken)).Should().Be(0, "the guest order is gone");
-            (await db.Users.CountAsync(u => u.Id == visitorId)).Should().Be(0, "the visitor is gone");
-            (await db.Companies.CountAsync(c => !c.IsShowcase)).Should().Be(0, "no shop or salon of a visitor remains");
-            (await db.Companies.CountAsync(c => c.IsShowcase && c.Kind == CompanyKind.Orders)).Should().Be(5);
-            (await db.Orders.CountAsync(o => !db.Companies.Any(c => c.Id == o.CompanyId && c.IsShowcase))).Should().Be(0);
-            // D35-2: the service tariff is exactly one after two resets, and stays hidden
-            var tariffs = await db.SubscriptionPlanConfigs.Where(p => p.Id == ShowcaseCatalog.OrdersShowcasePlanId).ToListAsync();
-            tariffs.Should().ContainSingle();
-            tariffs[0].IsPublic.Should().BeFalse();
-            (await db.SubscriptionPlanConfigs.CountAsync(p => p.Name == ShowcaseCatalog.OrdersShowcasePlanName)).Should().Be(1);
-            return 0;
-        });
-        File.Exists(publicFile).Should().BeFalse();
-        File.Exists(privateFile).Should().BeFalse();
-
-        // a token issued before the reset lives on; the same accounts come back
-        (await Client(ownerBefore.Token).GetAsync($"/api/shops/{coffee.Id}")).StatusCode.Should().Be(HttpStatusCode.OK, "stable ids and stamp");
-        (await Client(customerBefore.Token).GetAsync("/api/orders/my")).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await Client(visitorToken).GetAsync("/api/orders/my")).StatusCode.Should().Be(HttpStatusCode.Unauthorized, "the visitor leaves the account without an error screen: 401");
-        (await LoginAsync("shop-owner")).UserId.Should().Be(ownerBefore.UserId);
-
-        // a link to an erased order: «not found», not an error
-        var gone = await Client().GetAsync($"/api/orders/public/{guestToken}");
-        gone.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await gone.Content.ReadAsStringAsync()).Should().BeEmpty();
-
-        // the board is alive again after the reset
-        BoardCards(await BoardAsync(coffee, (await LoginAsync("shop-owner")).Token)).Count().Should().BeGreaterThan(5);
-    }
-
-    [Fact, TestCase("CY35-61")]
-    public async Task DuringReset_BothProductsSeeWaitMessage_StatusIsNot503_ThenShopsAreBack()
-    {
-        var first = Task.Run(() => OpsAsync("demo", "reset", "--yes"));
-        HttpResponseMessage? busy = null;
-        var deadline = DateTime.UtcNow.AddMinutes(3);
-        while (!first.IsCompleted && DateTime.UtcNow < deadline)
-        {
-            var probe = await Client().GetAsync("/api/goods/catalog");
-            if (probe.StatusCode == HttpStatusCode.ServiceUnavailable) { busy = probe; break; }
-            await Task.Delay(100);
-        }
-        busy.Should().NotBeNull("the visitor of the goods site sees the maintenance answer while the reset runs");
-        (await busy!.Content.ReadAsStringAsync()).Should().Be("Демо обновляется, зайдите через минуту");
-        busy.Headers.GetValues("X-Demo-Resetting").Should().ContainSingle().Which.Should().Be("1");
-
-        foreach (var product in new[] { "orders", "services" })
-        {
-            var status = await Client().GetAsync("/api/demo/status?product=" + product);
-            if (first.IsCompleted) break;
-            status.StatusCode.Should().Be(HttpStatusCode.OK, "status never answers 503");
-            (await J(status)).GetProperty("resetting").GetBoolean().Should().BeTrue(product);
-        }
-
-        (await first).Exit.Should().Be(0);
-        (await J(await Client().GetAsync("/api/goods/catalog"))).GetProperty("totalCount").GetInt32().Should().Be(5);
-        (await LoginAsync("shop-owner")).Roles.Should().NotBeEmpty();
-    }
-
-    [Fact, TestCase("CY35-70")]
-    public async Task BoardTick_AdvancesGeneratedOrders_WithJournal_AndClosesStaleVisitorOrder_ButNotOnOffDemo()
-    {
-        var coffee = await CoffeeShopAsync();
-        var owner = await LoginAsync("shop-owner");
-        await OpenAllDayAsync(coffee, owner.Token);
-        var (productId, price) = await AnyPieceProductAsync(coffee);
-
-        var r = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
-        {
-            idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } }, customerName = "Гость", customerPhone = "79990005566",
-        });
-        var created = await J(r, HttpStatusCode.Created);
-        var token = created.GetProperty("order").GetProperty("token").GetString()!;
-        var orderId = await Db(db => db.Orders.Where(o => o.PublicToken == token).Select(o => o.Id).SingleAsync());
-
-        // the pickup time of a visitor's order passed more than 50 minutes ago (the clock of the task is explicit, the same way the operator's machine would see it later)
-        var pickup = await Db(db => db.Orders.Where(o => o.Id == orderId).Select(o => o.PickupStartUtc).SingleAsync());
-        using (var scope = _factory.Services.CreateScope())
-        {
-            var ticker = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Demo.DemoBoardTicker>();
-            var afterSixty = pickup.AddMinutes(60);
-            await ticker.TickAsync(afterSixty, CancellationToken.None);
-        }
-        var order = await Db(db => db.Orders.AsNoTracking().Include(o => o.Events).SingleAsync(o => o.Id == orderId));
-        new[] { OrderStatus.Rejected, OrderStatus.CancelledByShop, OrderStatus.NotPickedUp }.Should().Contain(order.Status, "a stale visitor order does not hang on the board");
-        order.Events.Should().Contain(e => e.ActorKind == OrderActorKind.System && e.Reason != null && e.Reason.Contains("Демо"), "the journal says why");
-        (await J(await Client().GetAsync($"/api/orders/public/{token}"))).GetProperty("reason").GetString().Should().Contain("Демо");
-
-        // nothing left: the tick does not write to any outgoing queue
         await AssertNothingQueuedAsync();
     }
 }

@@ -13,7 +13,7 @@ namespace ServiceBooking.Tests.Infrastructure;
 public sealed class HeavyFirstCollectionOrderer : ITestCollectionOrderer
 {
     /// <summary>Явно названная коллекция (общая база демо-стенда).</summary>
-    private const string DemoCollection = "Cycle28Demo";
+    private static readonly string[] DemoCollections = ["Cycle28Demo", "Cycle28DemoMutations", "Cycle35DemoRead", "Cycle35DemoMutA", "Cycle35DemoMutB", "Cycle35DemoMutC"];
 
     /// <summary>Классы генератора витрины: у каждого своя коллекция по умолчанию, её имя содержит имя класса.</summary>
     private static readonly string[] HeavyClasses = ["Cycle28ShowcaseLifecycleTests", "Cycle28ShowcaseFreshDeleteTests", "Cycle28ShowcaseContentTests"];
@@ -21,7 +21,7 @@ public sealed class HeavyFirstCollectionOrderer : ITestCollectionOrderer
     public IEnumerable<ITestCollection> OrderTestCollections(IEnumerable<ITestCollection> testCollections)
     {
         var all = testCollections.ToList();
-        var heavy = all.Where(c => c.DisplayName == DemoCollection).ToList();
+        var heavy = DemoCollections.SelectMany(name => all.Where(c => c.DisplayName == name)).ToList();
         foreach (var name in HeavyClasses)
             heavy.AddRange(all.Where(c => c.DisplayName.Contains(name, StringComparison.Ordinal)));
         return heavy.Concat(all.Where(c => !heavy.Contains(c)));
