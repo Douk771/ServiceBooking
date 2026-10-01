@@ -15,7 +15,7 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// Предел по умолчанию — <see cref="DefaultFactor"/> × <see cref="TestParallelism.MaxParallelThreads"/>, а не ровно P:
 /// тест почти всё время ждёт ответа Postgres в виртуальной машине, и ровно P классов недогружают процессор (замер
 /// A/B без Cycle28, P=4: без предела 140 с, предел 4 — 138 с, 8 — 119 с, 12 — 115 с, 16 — 110/118 с, 24 — 127 с,
-/// 32 — 136 с). Переопределяется <c>SERVICEBOOKING_TEST_CLASS_CONCURRENCY</c> (целое > 0).
+/// 32 — 136 с; полный набор, P=4: предел 12 — 206 с (3 прогона), 16 — 207 с (3 прогона)). Переопределяется <c>SERVICEBOOKING_TEST_CLASS_CONCURRENCY</c> (целое > 0).
 /// Изоляция «своя база на класс» и порядок тестов внутри класса не затрагиваются.
 /// </summary>
 public static class ClassConcurrencyGate
