@@ -33,15 +33,28 @@ jobs:
       # and always rewrites the Database component to "postgres" itself. Simplified here to say so
       # plainly; the old value (Database=servicebooking_test) would have kept working unchanged.
       SERVICEBOOKING_TEST_CONNECTION: "Host=localhost;Database=postgres;Username=postgres;Password=postgres"
-      # ARCHITECTURE_CYCLE8_PHASE2.md §93.1/§93.4 (T8-P8): CI runs at P=2, not xunit.runner.json's local
-      # default of 4 (2 CI cores vs. 4 on a dev machine, §93.1) -- via `-- xUnit.MaxParallelThreads=2`
-      # below. TestParallelism.cs cannot see that command-line value in-process (no in-process API to
-      # read it back), so this env var is the second, independent place that has to say the same "2" --
-      # it is what the connection-budget fail-fast (§93.4) actually uses. If these two ever disagree,
-      # TestParallelism.cs prints the value it used so the drift is visible in the CI log, not silent.
+      # Цикл 36 (DO-36-03, ARCHITECTURE_CYCLE36.md §36.11 п.1): P задан ОДНИМ числом — здесь. Шаг
+      # функциональных тестов берёт его отсюда же (`-- xUnit.MaxParallelThreads=$SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS`),
+      # а бюджет соединений (ARCHITECTURE_CYCLE8_PHASE2.md §93.4) читает эту же переменную, так что расхождения нет.
       SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS: "2"
+      # ClassConcurrencyGate (цикл 36): одновременно живых классов по умолчанию 3 x P. Задано явно, чтобы пик
+      # соединений в CI (max_connections=100 у postgres:16) не менялся молча при смене множителя по умолчанию:
+      # 6 классов x 2 хоста x пул 8 = 96 в худшем случае при 97 доступных, на деле пулы Npgsql открываются лениво.
+      SERVICEBOOKING_TEST_CLASS_CONCURRENCY: "6"
     steps:
       - uses: actions/checkout@v5
+
+      # Цикл 36 (L9, DO-36-03): база CI одноразовая, долговечность ей не нужна. Все три параметра применяются
+      # перезагрузкой конфигурации, рестарт не нужен. Образ не меняется, check-image-pins.sh это не затрагивает.
+      - name: Postgres without durability (CI only)
+        run: |
+          echo "nproc=$(nproc) P=$SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS class-concurrency=$SERVICEBOOKING_TEST_CLASS_CONCURRENCY"
+          docker exec ${{ job.services.postgres.id }} psql -U postgres \
+            -c "ALTER SYSTEM SET fsync=off" \
+            -c "ALTER SYSTEM SET synchronous_commit=off" \
+            -c "ALTER SYSTEM SET full_page_writes=off" \
+            -c "SELECT pg_reload_conf()"
+          docker exec ${{ job.services.postgres.id }} psql -U postgres -Atc "SHOW fsync" -c "SHOW max_connections"
 
       # Optional correlation (ARCHITECTURE_CYCLE8.md §74.1): sets SERVICEBOOKING_TEST_RUN_KEY so this
       # run's database/container names show up tagged with this CI run's id in logs. Not required for
@@ -86,7 +99,7 @@ jobs:
         run: dotnet test ServiceBooking.UnitTests --no-build -c Release
 
       - name: Functional tests
-        run: dotnet test ServiceBooking.Tests --no-build -c Release -- xUnit.MaxParallelThreads=2
+        run: dotnet test ServiceBooking.Tests --no-build -c Release -- xUnit.MaxParallelThreads="$SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS"
 
       # Fast bash check (ARCHITECTURE_CYCLE8.md §74.1/§74.3): fails if the Postgres image's major
       # version drifts between ServiceBooking.TestKit/TestInfrastructure.cs, docker-compose.yml,
@@ -98,16 +111,17 @@ jobs:
       # AppDbContextModelSnapshot.cs matches the current model by generating a throwaway migration —
       # a non-empty Up() means the two have drifted (this is what caught C15-4). Requires only the
       # design-time model, no live database connection.
+      # Цикл 36 (DO-36-03): --no-build -c Release — сборка решения выше уже лежит в bin/Release, пересобирать Debug не нужно.
       - name: Migrations snapshot drift (US-17-11)
         run: |
           dotnet tool restore
-          dotnet dotnet-ef migrations add __DriftProbe --project ServiceBooking.Infrastructure \
+          dotnet dotnet-ef migrations add __DriftProbe --no-build --configuration Release --project ServiceBooking.Infrastructure \
             --startup-project ServiceBooking.API --output-dir Migrations/__probe
           probe_file=$(ls ServiceBooking.Infrastructure/Migrations/__probe/*__DriftProbe.cs)
           # Скрипт лежит файлом, а не инлайном: встроенный сюда python с первой колонки
           # обрывает блочный скаляр YAML, и GitHub отказывается разбирать весь workflow.
           python3 deploy/ci/check-drift-probe.py "$probe_file"
-          dotnet dotnet-ef migrations remove --project ServiceBooking.Infrastructure --startup-project ServiceBooking.API
+          dotnet dotnet-ef migrations remove --no-build --configuration Release --project ServiceBooking.Infrastructure --startup-project ServiceBooking.API
           rm -rf ServiceBooking.Infrastructure/Migrations/__probe
 
       # ARCHITECTURE_CYCLE17.md §308.2, cheap check: catches ROUGHLY the C15-4 shape of bug (a
