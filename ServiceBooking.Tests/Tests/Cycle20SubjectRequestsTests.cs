@@ -41,7 +41,10 @@ public class Cycle20SubjectRequestsTests(TestDatabaseFixture fixture) : ApiTestB
         // assertion is that dueAt is measured from receivedAt (3 days ago), not from "now" — so it must
         // land noticeably BEFORE "now + the same nominal window" would if it had been computed from now.
         var dueAt = body.GetProperty("dueAt").GetDateTime();
-        var naiveDueFromNow = DateTime.UtcNow.AddDays(10);
+        // Срок Access — 10 РАБОЧИХ дней (Пн–Пт), поэтому «наивный» срок от «сейчас» считаем по той же рабочей
+        // арифметике, а не DateTime.AddDays(10): календарные +10 дней от выходного дня дают дату РАНЬШЕ срока,
+        // посчитанного от поступления (3 дня назад), и тест краснел в зависимости от дня недели запуска.
+        var naiveDueFromNow = ServiceBooking.API.Services.WorkingDays.Add(DateTime.UtcNow, 10);
         dueAt.Should().BeBefore(naiveDueFromNow,
             "the deadline must be anchored to when the letter/e-mail actually arrived, not to today");
     }
