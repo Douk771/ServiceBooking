@@ -33,7 +33,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-004")]
     public async Task SaveAddress_Anonymous_Returns401()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (_, company) = await CreateOwnerWithCompanyAsync();
         var response = await factory.CreateClient().PutJsonAsync($"/api/companies/{company.Id}/address", new { address = "x" });
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -42,7 +42,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-006")]
     public async Task SaveAddress_NonMemberClient_ReturnsForbidden()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (_, company) = await CreateOwnerWithCompanyAsync();
         var stranger = await RegisterAsync();
         var client = AuthedFor(factory, stranger.Token);
@@ -54,7 +54,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-007")]
     public async Task SaveAddress_MasterOfCompany_ReturnsForbidden_OnlyOwnerAndSuperAdminManage()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
         var client = AuthedFor(factory, master.Token);
@@ -66,7 +66,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-009")]
     public async Task SaveAddress_SuperAdmin_CanManageAnyCompany_SameCheckAsOwner()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (_, company) = await CreateOwnerWithCompanyAsync();
         var admin = await LoginAsSuperAdminAsync();
         var client = AuthedFor(factory, admin.Token);
@@ -78,7 +78,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-010")]
     public async Task SaveAddress_UnknownCompany_Returns404()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var owner = await RegisterAsync();
         var client = AuthedFor(factory, owner.Token);
 
@@ -91,7 +91,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-011")]
     public async Task SaveAddress_SavesExactlyAsTyped_ByteForByte()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var client = AuthedFor(factory, owner.Token);
 
@@ -104,7 +104,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-030")]
     public async Task SaveAddress_Verify_ParameterAcceptedAndIgnored_CachedOldFrontendDoesNotBreak()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var client = AuthedFor(factory, owner.Token);
 
@@ -117,7 +117,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-022")]
     public async Task SaveAddress_EmptyString_ClearsAddress_RemovesFromPublicPageAndSearch()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var marker = Unique("ГдеТоУлица");
         var withAddress = AuthedFor(factory, owner.Token);
@@ -143,7 +143,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-023")]
     public async Task PublicSearch_ByAddress_FindsCompany_R7()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var marker = Unique("проездМонтажников");
         var client = AuthedFor(factory, owner.Token);
@@ -193,7 +193,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-025")]
     public async Task ConfirmNotice_NotConfirmed_Returns400()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (owner, _) = await CreateOwnerWithCompanyAsync();
         var client = AuthedFor(factory, owner.Token);
         var version = await CurrentPublicAddressNoticeVersionAsync(factory);
@@ -205,7 +205,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-026")]
     public async Task ConfirmNotice_StaleVersion_Returns409()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (owner, _) = await CreateOwnerWithCompanyAsync();
         var client = AuthedFor(factory, owner.Token);
 
@@ -216,7 +216,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-027")]
     public async Task ConfirmNotice_Confirmed_WritesConsentRecord_VisibleInExport()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (owner, _) = await CreateOwnerWithCompanyAsync();
         var client = AuthedFor(factory, owner.Token);
         var version = await CurrentPublicAddressNoticeVersionAsync(factory);
@@ -233,7 +233,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-028")]
     public async Task ConfirmNotice_RepeatedWithinIdempotencyWindow_DoesNotCreateSecondRecord()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (owner, _) = await CreateOwnerWithCompanyAsync();
         var client = AuthedFor(factory, owner.Token);
         var version = await CurrentPublicAddressNoticeVersionAsync(factory);
@@ -254,7 +254,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-002")]
     public async Task Lookup_Authenticated_Returns404_EndpointNoLongerExists()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (owner, _) = await CreateOwnerWithCompanyAsync();
         var client = AuthedFor(factory, owner.Token);
         var response = await client.PostJsonAsync("/api/companies/address/lookup", new { address = "Ленина 5" });
@@ -264,7 +264,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     [Fact, TestCase("ADDR-001")]
     public async Task Lookup_Anonymous_Returns404_NotEnabledAndBroken()
     {
-        await using var factory = new CompanyAddressTestFactory(ConnectionString);
+        var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var response = await factory.CreateClient().PostJsonAsync("/api/companies/address/lookup", new { address = "Ленина 5" });
         // Route no longer exists at all — unlike a real 401-guarded route, an unauthenticated caller
         // also gets 404 (no route to challenge), same observable outcome §19-09 requires either way.

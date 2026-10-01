@@ -178,24 +178,29 @@ public class NotificationWebhookUnsubscribeTests(TestDatabaseFixture fixture) : 
         // APPENDED after that point, exactly like a `tail -f`/`wc -c` diff — the same fix in spirit as
         // NotificationTestBase's `[Collection("Api")]` (this class's own DB-side version of "never assume
         // a shared resource starts empty").
+        // Цикл 36, L1: у теста СВОЙ хост, как и до перевода класса на общий хост. Проверка читает дописанные в файл лога байты;
+        // файловый приёмник Serilog у долгоживущего хоста сбрасывает буфер с задержкой, и через 500 мс после запросов новых байт
+        // может ещё не быть (флейк). Свежий хост пишет сразу.
+        await using var host = new NotificationTestFactory(ConnectionString);
+        _ = host.Services;
         var phone = "79993334455";
         var unsubscribeToken = UnsubscribeTokens.Build(phone, Encoding.UTF8.GetBytes(NotificationTestFactory.TestUnsubscribeKey));
 
         // ARCHITECTURE_CYCLE8.md §71.4: logs move to a run+factory-scoped temp directory
-        // (Factory.Identity.LogDirectory), so this no longer needs to search upward from
+        // (host.Identity.LogDirectory), so this no longer needs to search upward from
         // AppContext.BaseDirectory for a directory every host in the process used to share.
-        var logsDir = Factory.Identity.LogDirectory;
+        var logsDir = host.Identity.LogDirectory;
         Directory.Exists(logsDir).Should().BeTrue("expected TestHostSettings to have created this host's own log directory");
         var baselineLengths = Directory.GetFiles(logsDir, "app-*.json").ToDictionary(f => f, f => new FileInfo(f).Length);
 
         // Hit BOTH the unsubscribe link (phone+signature — PII) and the provider webhook (shared secret)
         // at least once each, including an error path (wrong webhook token) so a failure log line is
         // produced too — Information-level logs go to GlitchTip on any error per the reviewer's brief.
-        await AnonymousClient().GetAsync($"/api/notifications/unsubscribe/{unsubscribeToken}");
-        await AnonymousClient().PostAsync($"/api/notifications/unsubscribe/{unsubscribeToken}", null);
-        await AnonymousClient().PostAsync($"/api/notifications/provider-webhook/{NotificationTestFactory.TestWebhookToken}",
+        await host.CreateClient().GetAsync($"/api/notifications/unsubscribe/{unsubscribeToken}");
+        await host.CreateClient().PostAsync($"/api/notifications/unsubscribe/{unsubscribeToken}", null);
+        await host.CreateClient().PostAsync($"/api/notifications/provider-webhook/{NotificationTestFactory.TestWebhookToken}",
             new StringContent("{}", Encoding.UTF8, "application/json"));
-        await AnonymousClient().PostAsync("/api/notifications/provider-webhook/some-wrong-token",
+        await host.CreateClient().PostAsync("/api/notifications/provider-webhook/some-wrong-token",
             new StringContent("{}", Encoding.UTF8, "application/json"));
 
         // Force a flush: Serilog's file sink batches writes; give it a moment before grepping.

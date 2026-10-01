@@ -65,6 +65,14 @@ public sealed class RecordingMaxBotClient : IMaxBotClient
     public ConcurrentBag<(string ChatId, string Text, bool RequestContact)> SentMessages { get; } = [];
     public int SubscribeCallCount;
 
+    /// <summary>Цикл 36, L1: хост класса живёт дольше одного теста, поэтому тест, который утверждает про записанные
+    /// сообщения, сначала очищает записи предыдущих тестов.</summary>
+    public void Reset()
+    {
+        SentMessages.Clear();
+        Interlocked.Exchange(ref SubscribeCallCount, 0);
+    }
+
     public Task<bool> SubscribeAsync(CancellationToken ct)
     {
         Interlocked.Increment(ref SubscribeCallCount);

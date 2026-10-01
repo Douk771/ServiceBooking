@@ -78,6 +78,14 @@ public sealed class RecordingMaxMessenger : IMaxBotMessenger
 
     public void SetDefaultOutcome(MaxSendOutcome? outcome) => _defaultOutcome = outcome;
 
+    /// <summary>Цикл 36, L1: хост живёт весь класс, поэтому тест начинает с чистых записей и исходов по умолчанию.</summary>
+    public void Reset()
+    {
+        _calls.Clear();
+        _outcomeByChat.Clear();
+        _defaultOutcome = null;
+    }
+
     public Task<MaxSendOutcome> SendAsync(string chatId, string text, CancellationToken ct)
     {
         _calls.Enqueue((chatId, text));

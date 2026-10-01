@@ -33,7 +33,8 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
         return client;
     }
 
-    private PushDispatchTestFactory NewPush() => new(ConnectionString, disableAutomaticTicking: true);
+    /// <summary>Цикл 36, L1: хост класса (ручные проходы диспетчера; утверждения теста фильтруют записи по своим подпискам и endpoint).</summary>
+    private PushDispatchTestFactory NewPush() => Fixture.ClassHost("pushdispatch", cs => new PushDispatchTestFactory(cs, disableAutomaticTicking: true));
 
     private sealed record Sub(Guid Id, string Site);
 
@@ -108,7 +109,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     public async Task Booking_GoesToDevicesOfBothSites_GoodsDeviceGetsAbsoluteUrl()
     {
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         var c = PushClient(push, s.WorkerToken);
         var ez = await Subscribe(c, null);
         var goods = await Subscribe(c, CompanyKind.Orders);
@@ -129,7 +130,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     public async Task Order_GoesToDevicesOfBothSites_EzbookDeviceGetsAbsoluteUrl()
     {
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         var c = PushClient(push, s.WorkerToken);
         var ez = await Subscribe(c, null);
         var goods = await Subscribe(c, CompanyKind.Orders);
@@ -158,7 +159,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
         var date = NextWeekday();
         await SetWorkingDayAsync(owner.Token, master.UserId, salon.Id, date);
         var product = await CreateProductAsync(shop);
-        await using var push = NewPush();
+        var push = NewPush();
         var shopStaffEz = await Subscribe(PushClient(push, shopStaff.Token), null);
         var masterGoods = await Subscribe(PushClient(push, master.Token), CompanyKind.Orders);
 
@@ -182,7 +183,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     public async Task ShopDisablesStaffPush_OrdersStopEverywhere_BookingsKeepComing_AndAlreadyQueuedAreSkipped()
     {
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         var c = PushClient(push, s.WorkerToken);
         var ez = await Subscribe(c, null);
         var goods = await Subscribe(c, CompanyKind.Orders);
@@ -210,7 +211,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     public async Task WorkerRemovedFromShopAfterQueueing_OrderRowOnEzbookDeviceIsSkipped()
     {
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         var ez = await Subscribe(PushClient(push, s.WorkerToken), null);
         await OrderAsync(push, s);
         var row = Rows(x => x.CompanyId == s.Shop.Id && x.SubscriptionId == ez.Id).Single();
@@ -233,7 +234,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     public async Task SharedComputer_EzbookEndpointTakenByAnotherUser_QueuedOrderRowIsNotLeaked()
     {
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         var endpoint = "https://push.example.test/cy33-shared/" + Guid.NewGuid();
         var ez = await Subscribe(PushClient(push, s.WorkerToken), null, endpoint);
         await OrderAsync(push, s);
@@ -255,7 +256,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     public async Task Subscriptions_AllSites_ReturnsBothWithSite_CurrentOnlyForSameSite_DefaultUnchanged()
     {
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         var c = PushClient(push, s.WorkerToken);
         var endpoint = "https://push.example.test/cy33-same/" + Guid.NewGuid();
         var ez = await Subscribe(c, null, endpoint, "Chrome на Android");
@@ -286,7 +287,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     public async Task Config_AllSites_BothKindsOrderedSalonsFirst_SiteUrls_LegacyFiltersBySite_Bad400()
     {
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         var c = PushClient(push, s.WorkerToken);
 
         var all = await Json(await c.GetAsync("/api/push/config?allSites=true"));
@@ -309,7 +310,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     [Fact, TestCase("CY33-14")]
     public async Task Config_ClientWithoutStaffRole_HasEmptyCompanies_SectionStaysHidden()
     {
-        await using var push = NewPush();
+        var push = NewPush();
         var client = await RegisterAsync();
         var cfg = await Json(await PushClient(push, client.Token).GetAsync("/api/push/config?allSites=true"));
         cfg.GetProperty("companies").GetArrayLength().Should().Be(0, "Q-33-5: клиенту раздел не показывается");
@@ -319,7 +320,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     public async Task DeleteGoodsDeviceFromOtherSite_Works_ForeignId404_CustomerOrderSubscriptionSurvives_NoMoreRows()
     {
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         var c = PushClient(push, s.WorkerToken);
         var endpoint = "https://push.example.test/cy33-browser/" + Guid.NewGuid();
         var goods = await Subscribe(c, CompanyKind.Orders, endpoint);
@@ -348,7 +349,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     public async Task DeviceLimit_IsPerSite_NewGoodsDeviceNeverEvictsEzbook_EleventhEzbookEvictsOldestEzbook()
     {
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         var c = PushClient(push, s.WorkerToken);
         var max = (await Json(await c.GetAsync("/api/push/config?allSites=true"))).GetProperty("maxSubscriptionsPerUser").GetInt32();
 
@@ -370,7 +371,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     public async Task DeleteCurrent_ForGoodsEndpoint_RemovesOnlyStaffRow_CustomerSubscriptionStays()
     {
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         var c = PushClient(push, s.WorkerToken);
         var endpoint = "https://push.example.test/cy33-logout/" + Guid.NewGuid();
         await Subscribe(c, CompanyKind.Orders, endpoint);
@@ -406,7 +407,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
         for (var i = 0; i < 20; i++) svc.Add(await CreateServiceAsync(owner.Token, salon.Id, "Услуга номер " + i + " " + new string('х', 40), 30));
         var date = NextWeekday();
         await SetWorkingDayAsync(owner.Token, master.UserId, salon.Id, date);
-        await using var push = NewPush();
+        var push = NewPush();
         await Subscribe(PushClient(push, master.Token), CompanyKind.Orders);
         var client = await RegisterAsync();
 
@@ -426,7 +427,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     public async Task BookingBody_ContainsSalonName()
     {
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         await Subscribe(PushClient(push, s.WorkerToken), null);
         var booking = await BookAsync(push, s);
         var row = Rows(x => x.BookingId == booking.Id).Single();
@@ -437,7 +438,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     [Fact, TestCase("CY33-18")]
     public async Task UnknownSiteValue_OnSubscribe_Is400()
     {
-        await using var push = NewPush();
+        var push = NewPush();
         var u = await RegisterAsync();
         var r = await PushClient(push, u.Token).PostAsJsonAsync("/api/push/subscriptions",
             new { endpoint = "https://push.example.test/x/" + Guid.NewGuid(), keys = new { p256dh = "p", auth = "a" }, deviceLabel = "d", site = "Nope" });
@@ -450,7 +451,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
         // US-33-07: один браузер включил на обоих сайтах. Сервер видит два разных адреса подписки, а если endpoint один и тот же —
         // строка одна (upsert), и одно событие не должно дать двух отправок на него.
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         var c = PushClient(push, s.WorkerToken);
         var endpoint = "https://push.example.test/cy33-dup/" + Guid.NewGuid();
         await Subscribe(c, null, endpoint);
@@ -466,7 +467,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     public async Task ConcurrentSubscribe_SameEndpoint_ProducesSingleRow()
     {
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         var c = PushClient(push, s.WorkerToken);
         var endpoint = "https://push.example.test/cy33-race/" + Guid.NewGuid();
         var results = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => c.PostAsJsonAsync("/api/push/subscriptions",
@@ -482,7 +483,7 @@ public class Cycle33UnifiedPushTests(TestDatabaseFixture fixture) : Cycle24TestB
     public async Task OrderBody_StillHasNoCustomerData_OnBothDevices()
     {
         var s = await SetUpBothAsync();
-        await using var push = NewPush();
+        var push = NewPush();
         var c = PushClient(push, s.WorkerToken);
         await Subscribe(c, null);
         await Subscribe(c, CompanyKind.Orders);

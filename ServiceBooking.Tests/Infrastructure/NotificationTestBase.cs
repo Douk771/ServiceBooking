@@ -39,19 +39,11 @@ public abstract class NotificationTestBase : IClassFixture<TestDatabaseFixture>,
     {
         Fixture = fixture;
         ConnectionString = fixture.ConnectionString;
-        Factory = Boot(new NotificationTestFactory(fixture.ConnectionString));
+        // Цикл 36, L1: один хост на КЛАСС (ключ "ntf"), а не на каждый тест; владелец хоста — фикстура класса.
+        Factory = fixture.ClassHost("ntf", cs => new NotificationTestFactory(cs));
         // T9 M3: records the slot↔class pairing this fixture's own doc comment promised — see
         // TestDatabaseFixture.RecordTestClass.
         fixture.RecordTestClass(GetType());
-    }
-
-    /// <summary>Boots the host eagerly (rather than lazily on first <see cref="WebApplicationFactory{TEntryPoint}.CreateClient"/>)
-    /// so <see cref="NotificationTestFactory.Identity"/> — populated inside <c>ConfigureWebHost</c> — is
-    /// always available by the time <see cref="LoginAsSuperAdminAsync"/> reads it.</summary>
-    private static NotificationTestFactory Boot(NotificationTestFactory factory)
-    {
-        _ = factory.Services;
-        return factory;
     }
 
     protected HttpClient AnonymousClient() => Factory.CreateClient();
@@ -366,5 +358,6 @@ public abstract class NotificationTestBase : IClassFixture<TestDatabaseFixture>,
         return (owner, company, channel);
     }
 
-    public async ValueTask DisposeAsync() => await Factory.DisposeAsync();
+    /// <summary>Хост класса принадлежит <see cref="TestDatabaseFixture"/> и останавливается ею; здесь освобождать нечего.</summary>
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

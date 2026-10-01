@@ -61,7 +61,7 @@ public class Cycle25CatalogTests(TestDatabaseFixture fixture) : Cycle25TestBase(
     public async Task Visibility_AllFiveConditions_HiddenShopsNeverAppear_NotByCardNotByCountNotBySearch()
     {
         var city = await CityAsync(11);
-        await using var host = new CatalogTestFactory(ConnectionString);
+        var host = Fixture.ClassHost("catalog", cs => new CatalogTestFactory(cs));
         var visible = await VisibleShopAsync(city, "Видимый Магазин");
 
         // 1. нет часов работы
@@ -138,7 +138,7 @@ public class Cycle25CatalogTests(TestDatabaseFixture fixture) : Cycle25TestBase(
     public async Task ListedShop_StateInWords_OrderAcceptingThenPreorderThenNotAccepting_ByName_NoPricesPhotosRatings()
     {
         var city = await CityAsync(12);
-        await using var host = new CatalogTestFactory(ConnectionString);
+        var host = Fixture.ClassHost("catalog", cs => new CatalogTestFactory(cs));
         var yabloko = await VisibleShopAsync(city, "Яблоко");
         var abrikos = await VisibleShopAsync(city, "Абрикос");
         var arbuz = await VisibleShopAsync(city, "Арбуз", async s => await SetPickupAsync(s, asap: false, scheduled: true, step: 30, preorderDays: 1, minPrep: 0));
@@ -193,7 +193,7 @@ public class Cycle25CatalogTests(TestDatabaseFixture fixture) : Cycle25TestBase(
     {
         var city = await CityAsync(13);
         var emptyCity = await CityAsync(14);
-        await using var host = new CatalogTestFactory(ConnectionString);
+        var host = Fixture.ClassHost("catalog", cs => new CatalogTestFactory(cs));
         var a = await VisibleShopAsync(city, "Пекарня Колос");
         var b = await VisibleShopAsync(city, "Столовая Ромашка");
         await WithDbAsync(async db =>
@@ -242,7 +242,7 @@ public class Cycle25CatalogTests(TestDatabaseFixture fixture) : Cycle25TestBase(
     public async Task SalonsAndShops_NeverMeet_SalonListsHaveNoShops_ShopCatalogHasNoSalons()
     {
         var city = await CityAsync(15);
-        await using var host = new CatalogTestFactory(ConnectionString);
+        var host = Fixture.ClassHost("catalog", cs => new CatalogTestFactory(cs));
         var shop = await VisibleShopAsync(city, "Магазин Витрина");
         var (_, salon) = await CreateOwnerWithCompanyAsync();
         await WithDbAsync(async db =>
@@ -271,7 +271,7 @@ public class Cycle25CatalogTests(TestDatabaseFixture fixture) : Cycle25TestBase(
     public async Task CatalogListingSwitch_Defaults_Permissions_Validation_TariffGate_AdminFlagAppliesWithoutDeploy()
     {
         var city = await CityAsync(16);
-        await using var host = new CatalogTestFactory(ConnectionString);
+        var host = Fixture.ClassHost("catalog", cs => new CatalogTestFactory(cs));
         var shop = await VisibleShopAsync(city, "Переключатель");
         var staff = await AddShopStaffAsync(shop);
         var url = $"/api/shops/{shop.Id}/catalog-listing";
@@ -337,7 +337,7 @@ public class Cycle25CatalogTests(TestDatabaseFixture fixture) : Cycle25TestBase(
     public async Task NewShopOnTheFreeOrdersPlan_IsListedByDefault_OnceHoursAndProductExist()
     {
         var city = await CityAsync(17);
-        await using var host = new CatalogTestFactory(ConnectionString);
+        var host = Fixture.ClassHost("catalog", cs => new CatalogTestFactory(cs));
         var shop = await CreateShopAsync(name: "Новичок", paidPlan: false, openAllDay: false);
         await MoveShopToCityAsync(shop, city);
         (await CatalogAsync(host, $"?cityId={city}")).TotalCount.Should().Be(0, "нет часов и товаров");

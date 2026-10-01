@@ -288,7 +288,7 @@ public class Cycle15ClientRescheduleTests(TestDatabaseFixture fixture) : ApiTest
     {
         var (_, master, company, _, date, client, booking) = await SetUpConfirmedClientBookingAsync();
 
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         var subscribe = await PushAuthedClient(push, master.Token).PostAsJsonAsync("/api/push/subscriptions",
             new CreatePushSubscriptionInput("https://push.example.test/cy15-reschedule-device",
                 new CreatePushSubscriptionKeysInput("p256dh", "auth"), null));

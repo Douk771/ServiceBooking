@@ -132,7 +132,7 @@ public class Cycle25WorkingDayTests(TestDatabaseFixture fixture) : Cycle25TestBa
             .Should().Be("Завтра, к 1:30");
 
         // web-push покупателю без аккаунта
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         var guestOrder = await Authed(push, null).PostJsonAsync($"/api/storefront/{shop.Slug}/orders", GuestAt([Line(night.Product, 1)], night.Slot0130));
         var guest = (await guestOrder.Content.ReadJsonAsync<CreateOrderResponse>())!.Order;
         var subscribed = await Authed(push, null).PostJsonAsync($"/api/orders/public/{guest.Token}/push-subscription",

@@ -145,7 +145,7 @@ public class Cycle29QaTests(TestDatabaseFixture fixture) : Cycle25TestBase(fixtu
         string F(DateTime t) => t.AddMinutes(-(t.Minute % 5)).ToString("HH:mm");
         await SetHoursAsync(shop, (F(now.AddMinutes(-180)), F(now.AddMinutes(180))));
 
-        await using var host = new CatalogTestFactory(ConnectionString);
+        var host = Fixture.ClassHost("catalog", cs => new CatalogTestFactory(cs));
         var bare = await CatalogItemAsync(host, city, shop.Slug);
         bare.TryGetProperty("logoUrl", out var v).Should().BeTrue();
         v.ValueKind.Should().Be(JsonValueKind.Null);

@@ -15,6 +15,10 @@ public sealed class TestClassDatabaseLease(string classSlot, string connectionSt
     public string ClassSlot { get; } = classSlot;
     public string ConnectionString { get; } = connectionString;
 
+    /// <summary>Имя базы класса (<c>sbtest_&lt;key&gt;_&lt;slot&gt;</c>) — берётся из строки подключения, хост для этого не нужен.</summary>
+    public string DatabaseName { get; } = new Npgsql.NpgsqlConnectionStringBuilder(connectionString).Database
+        ?? throw new ArgumentException("connectionString has no Database segment", nameof(connectionString));
+
     private int _dropped;
 
     public async Task DropAsync(CancellationToken cancellationToken = default)
