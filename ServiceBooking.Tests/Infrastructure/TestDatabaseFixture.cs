@@ -71,16 +71,27 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        ClassSlot = TestSlot.NextForClass();
-        _lease = await TestRunEnvironment.LeaseClassDatabaseAsync(ClassSlot);
-        Data = new TestData(ClassSlot);
+        await ClassConcurrencyGate.EnterAsync();
+        _gateHeld = true;
+        try
+        {
+            ClassSlot = TestSlot.NextForClass();
+            _lease = await TestRunEnvironment.LeaseClassDatabaseAsync(ClassSlot);
+            Data = new TestData(ClassSlot);
 
-        Factory = new CustomWebApplicationFactory(_lease.ConnectionString);
+            Factory = new CustomWebApplicationFactory(_lease.ConnectionString);
 
-        // Touching Services boots the host, which runs Program.cs's migrate + role/SuperAdmin seed, and
-        // populates Factory.Identity (ConfigureWebHost's return value).
-        _ = Factory.Services;
-        Identity = Factory.Identity;
+            // Touching Services boots the host, which runs Program.cs's migrate + role/SuperAdmin seed, and
+            // populates Factory.Identity (ConfigureWebHost's return value).
+            _ = Factory.Services;
+            Identity = Factory.Identity;
+        }
+        catch
+        {
+            // xUnit не вызывает DisposeAsync у фикстуры, чья InitializeAsync упала: слот вернуть нужно здесь.
+            ReleaseGate();
+            throw;
+        }
     }
 
     public async Task DisposeAsync()
@@ -96,7 +107,25 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
         }
         finally
         {
-            await _lease.DropAsync();
+            try
+            {
+                await _lease.DropAsync();
+            }
+            finally
+            {
+                ReleaseGate();
+            }
+        }
+    }
+
+    private bool _gateHeld;
+
+    private void ReleaseGate()
+    {
+        if (_gateHeld)
+        {
+            _gateHeld = false;
+            ClassConcurrencyGate.Exit();
         }
     }
 }
