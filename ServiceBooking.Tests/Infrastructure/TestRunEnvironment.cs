@@ -253,7 +253,11 @@ public static class TestRunEnvironment
         // T9 review (M4): was `maxParallelThreads * 2 * TestInfrastructure.PoolMaxSize + 4` typed out here
         // a second time, next to an identical literal in EnvStatus.RequiredConnections — despite both
         // copies' comments claiming "no number duplicated". Now the one formula EnvStatus exposes.
-        var required = EnvStatus.RequiredConnections(maxParallelThreads, hostsPerClass, TestInfrastructure.PoolMaxSize);
+        // Cycle 36 review (N4): the number of connections is held by classes that are inside ClassConcurrencyGate, not by P threads
+        // (the gate lets 3 x P classes in by default, or SERVICEBOOKING_TEST_CLASS_CONCURRENCY). The demo database is leased outside the gate
+        // (the one demo collection runs one class at a time) with a single host and one pool.
+        var concurrentClasses = ClassConcurrencyGate.EffectiveLimit;
+        var required = EnvStatus.RequiredConnections(concurrentClasses, hostsPerClass, TestInfrastructure.PoolMaxSize) + TestInfrastructure.PoolMaxSize;
 
         await using var connection = new Npgsql.NpgsqlConnection(_server.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken);
@@ -277,7 +281,7 @@ public static class TestRunEnvironment
 
         throw new TestSafetyException(
             "[sb-test] Отказ: бюджет соединений не сходится.\n" +
-            $"  Параллелизм P={maxParallelThreads}, пул на хост={TestInfrastructure.PoolMaxSize}, хостов на класс=2 " +
+            $"  Параллелизм P={maxParallelThreads}, классов одновременно={concurrentClasses} (+ база demo), пул на хост={TestInfrastructure.PoolMaxSize}, хостов на класс=2 " +
             $"→ нужно {required} соединений.\n" +
             $"  Сервер отдаёт max_connections={maxConnections}, безопасный предел {safeLimit:F0}.\n" +
             "  Что сделать (любое из):\n" +

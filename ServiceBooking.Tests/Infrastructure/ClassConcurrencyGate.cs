@@ -26,6 +26,9 @@ public static class ClassConcurrencyGate
 
     private static readonly SemaphoreSlim Slots = new(Limit(), int.MaxValue);
 
+    /// <summary>The real ceiling of classes that hold their own database (and hosts) at one moment — what the connection budget must be counted from.</summary>
+    public static int EffectiveLimit { get; } = Limit();
+
     private static int Limit() =>
         int.TryParse(Environment.GetEnvironmentVariable(EnvironmentVariable), out var configured) && configured > 0
             ? configured

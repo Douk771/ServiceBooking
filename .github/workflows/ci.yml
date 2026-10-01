@@ -37,11 +37,11 @@ jobs:
       # функциональных тестов берёт его отсюда же (`-- xUnit.MaxParallelThreads=$SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS`),
       # а бюджет соединений (ARCHITECTURE_CYCLE8_PHASE2.md §93.4) читает эту же переменную, так что расхождения нет.
       SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS: "2"
-      # ClassConcurrencyGate (цикл 36): одновременно живых классов по умолчанию 3 x P. Бюджет соединений в тестах
-      # считается по P, а не по этому пределу (N4), поэтому предел задан явно и по худшему случаю:
-      # N классов x 2 хоста x пул 8 + 4 <= 90 (90 % от max_connections=100 у postgres:16) -> N <= 5.
-      # При смене P пересчитайте: N = floor((90 - 4) / 16).
-      SERVICEBOOKING_TEST_CLASS_CONCURRENCY: "5"
+      # ClassConcurrencyGate (цикл 36): одновременно живых классов по умолчанию 3 x P. Бюджет соединений в тестах (N4)
+      # считается по этому пределу плюс база demo (один хост, пул 8, вне гейта):
+      # N классов x 2 хоста x пул 8 + 8 + 4 <= 90 (90 % от max_connections=100 у postgres:16) -> N <= 4.
+      # При смене P пересчитайте: N = floor((90 - 4 - 8) / 16).
+      SERVICEBOOKING_TEST_CLASS_CONCURRENCY: "4"
     steps:
       - uses: actions/checkout@v5
 
