@@ -96,10 +96,30 @@ jobs:
       # Fast, no-DB suite runs first so a broken build/pure-logic regression fails quickly, before
       # spending time on the functional suite against Postgres.
       - name: Unit tests
-        run: dotnet test ServiceBooking.UnitTests --no-build -c Release
+        run: dotnet test ServiceBooking.UnitTests --no-build -c Release --logger "trx;LogFileName=unit.trx" --results-directory TestResults/ci
 
       - name: Functional tests
-        run: dotnet test ServiceBooking.Tests --no-build -c Release -- xUnit.MaxParallelThreads="$SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS"
+        run: dotnet test ServiceBooking.Tests --no-build -c Release --logger "trx;LogFileName=functional.trx" --results-directory TestResults/ci -- xUnit.MaxParallelThreads="$SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS"
+
+      # Цикл 36 (DO-36-04, US-36-07): топ медленных классов и тестов в Summary прогона. Превышение порогов из
+      # tools/test-timing/thresholds.json даёт ::warning::, но НЕ роняет шаг (код выхода 0): порог - сигнал, а не гейт.
+      - name: Slow tests summary
+        if: always()
+        run: |
+          files=$(ls TestResults/ci/unit.trx TestResults/ci/functional.trx 2>/dev/null || true)
+          if [ -n "$files" ]; then
+            python3 tools/test-timing/analyze.py --ci-summary $files --metrics "TestResults/sb-test-metrics-*.jsonl" \
+              --thresholds tools/test-timing/thresholds.json >> "$GITHUB_STEP_SUMMARY" || echo "::warning::slow tests summary failed"
+          fi
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: backend-test-results-${{ github.sha }}
+          path: TestResults/
+          retention-days: 14
+          if-no-files-found: ignore
 
       # Fast bash check (ARCHITECTURE_CYCLE8.md §74.1/§74.3): fails if the Postgres image's major
       # version drifts between ServiceBooking.TestKit/TestInfrastructure.cs, docker-compose.yml,
@@ -260,7 +280,26 @@ jobs:
           done
 
       - name: Unit tests
-        run: npm run test:run
+        run: npm run test:run -- --reporter=default --reporter=json --outputFile.json=../TestResults/ci/vitest.json
+
+      # Цикл 36 (DO-36-04): та же сводка для vitest; предупреждения не роняют шаг.
+      - name: Slow tests summary (vitest)
+        if: always()
+        working-directory: .
+        run: |
+          if [ -f TestResults/ci/vitest.json ]; then
+            python3 tools/test-timing/analyze.py --ci-summary TestResults/ci/vitest.json \
+              --thresholds tools/test-timing/thresholds.json >> "$GITHUB_STEP_SUMMARY" || echo "::warning::slow tests summary failed"
+          fi
+
+      - name: Upload vitest results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-test-results-${{ github.sha }}
+          path: TestResults/
+          retention-days: 14
+          if-no-files-found: ignore
 
       # SmartCaptcha SITE key (not the secret key — site keys are meant to be public, they're baked into
       # every page that shows the widget) is a build-time Vite variable (CURRENT_STATE.md §1), so it has

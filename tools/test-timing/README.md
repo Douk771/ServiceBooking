@@ -51,5 +51,5 @@ python3 tools/test-timing/analyze.py --emit-durations report.json --out ServiceB
 `report.md` содержит: время по фазам функционального набора (сборка, старт контейнера, шаблон БД, базы классов, старты хоста,
 тесты), топ медленных классов, число и суммарное время стартов хоста по фабрикам и по классам, простой потоков и хвост,
 CPU Postgres, фазы и топ файлов vitest. Валидация: `npx ajv-cli validate -s contracts/cycle36/timing-report.schema.json -d report.json`.
-`--ci-summary` — DO-36-04, пока не реализован. `--emit-durations` берёт классы из `topClasses` отчёта (топ-20), для L7 этого
+`--ci-summary <trx|vitest.json>... [--metrics "<glob>"] --thresholds thresholds.json` — DO-36-04: Markdown (топ-10 классов и тестов, старты хоста) в stdout и `::warning title=Slow tests::` при превышении порогов; код выхода 0 (1 только при ошибке разбора). `--emit-durations` берёт классы из `topClasses` отчёта (топ-20), для L7 этого
 может не хватить — тогда доработать вместе с L7.

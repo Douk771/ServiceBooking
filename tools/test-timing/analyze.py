@@ -5,7 +5,7 @@
     analyze.py --compare <a.json> <b.json> [--md]
     analyze.py --emit-durations <report.json> --out ServiceBooking.Tests/test-durations.json
 
-Только стандартная библиотека. --ci-summary появится в DO-36-04.
+Только стандартная библиотека. --ci-summary (DO-36-04) печатает Markdown и ::warning:: для CI.
 """
 import argparse
 import csv
@@ -454,6 +454,107 @@ def render_md(rep, env_all):
     return "\n".join(L)
 
 
+# ---------------------------------------------------------------- CI-сводка (DO-36-04)
+
+def _vitest_results(path):
+    """vitest --reporter=json -> (список «результатов» как у TRX, wall в секундах)."""
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    results = []
+    starts, ends = [], []
+    for f in data.get("testResults", []):
+        st = f.get("startTime")
+        en = f.get("endTime")
+        if st and en:
+            starts.append(st / 1000.0)
+            ends.append(en / 1000.0)
+        for a in f.get("assertionResults", []):
+            d = (a.get("duration") or 0) / 1000.0
+            results.append({"cls": f.get("name", "?"), "name": a.get("fullName") or a.get("title") or "?",
+                            "id": "", "start": (st or 0) / 1000.0, "end": (en or 0) / 1000.0, "dur": d,
+                            "outcome": a.get("status")})
+    wall = (max(ends) - min(starts)) if starts and ends else 0.0
+    return results, wall
+
+
+def ci_summary(files, metrics_glob, thresholds_path):
+    th = {}
+    if thresholds_path:
+        with open(thresholds_path, encoding="utf-8") as fh:
+            th = json.load(fh)
+
+    def limit(key):
+        v = th.get(key, 0) or 0
+        return v if v > 0 else None
+
+    out = ["## Медленные тесты", ""]
+    warnings = []
+    for path in files:
+        label = os.path.basename(path)
+        if path.endswith(".json"):
+            results, wall = _vitest_results(path)
+            kind, wall_key = "vitest", "vitestWallSecondsWarn"
+        else:
+            results, _ = parse_trx(path)
+            wall = (max(r["end"] for r in results) - min(r["start"] for r in results)) if results else 0.0
+            name = label.lower()
+            kind = "unit" if "unit" in name else "functional"
+            wall_key = "unitWallSecondsWarn" if kind == "unit" else "functionalWallSecondsWarn"
+        agg = class_stats(results)
+        out.append("### %s: %d тестов, %d классов, wall %.0f с" % (label, len(results), len(agg), wall))
+        out.append("")
+        out.append("| Класс | Сумма, с | Wall, с | Тестов |")
+        out.append("|---|---|---|---|")
+        for k, v in sorted(agg.items(), key=lambda kv: -kv[1]["seconds"])[:10]:
+            out.append("| %s | %.1f | %.1f | %d |" % (k.rsplit(".", 1)[-1] if kind != "vitest" else k.rsplit("/", 1)[-1],
+                                                      v["seconds"], v["end"] - v["start"], v["tests"]))
+        out.append("")
+        out.append("| Тест | с |")
+        out.append("|---|---|")
+        for r in sorted(results, key=lambda r: -r["dur"])[:10]:
+            out.append("| %s | %.1f |" % ((r["name"] or "?").replace("|", "\\|")[:110], r["dur"]))
+        out.append("")
+        lim = limit(wall_key)
+        if lim and wall > lim:
+            warnings.append("%s: wall %.0f с выше порога %.0f с (%s)" % (label, wall, lim, wall_key))
+        lim = limit("classWallSecondsWarn")
+        for k, v in agg.items():
+            if lim and (v["end"] - v["start"]) > lim and kind == "functional":
+                warnings.append("%s: класс %s шёл %.0f с (порог %.0f с)" % (label, k.rsplit(".", 1)[-1], v["end"] - v["start"], lim))
+        lim = limit("testSecondsWarn")
+        for r in results:
+            if lim and r["dur"] > lim:
+                warnings.append("%s: тест %s шёл %.1f с (порог %.0f с)" % (label, (r["name"] or "?")[:100], r["dur"], lim))
+
+    events = []
+    for f in sorted(glob.glob(metrics_glob)) if metrics_glob else []:
+        events.extend(read_jsonl(f))
+    boots = [e for e in events if e.get("event") == "host-booted"]
+    if boots:
+        ms = [e["ms"] for e in boots]
+        out.append("### Старты хоста")
+        out.append("")
+        out.append("Стартов: %d, суммарно %.0f с, медиана %.0f мс, p95 %.0f мс." % (
+            len(boots), sum(ms) / 1000, statistics.median(ms), percentile(ms, 95)))
+        out.append("")
+        slot_class = {(e["runKey"], e["slot"]): e["testClass"] for e in events if e.get("event") == "class-recorded"}
+        per = {}
+        for e in boots:
+            c = slot_class.get((e["runKey"], e["slot"]), "(unknown)")
+            per[c] = per.get(c, 0) + 1
+        lim = limit("hostBootsPerClassWarn")
+        for c, n in sorted(per.items(), key=lambda kv: -kv[1]):
+            if lim and n > lim:
+                warnings.append("класс %s поднимал хост %d раз (порог %d)" % (c.rsplit(".", 1)[-1], n, lim))
+    else:
+        out.append("Метрик хоста нет (SERVICEBOOKING_TEST_METRICS=0 или файл не найден).")
+        out.append("")
+    print("\n".join(out))
+    for w in warnings[:50]:
+        print("::warning title=Slow tests::%s" % w)
+    return 0
+
+
 def compare(a_path, b_path):
     a = json.load(open(a_path, encoding="utf-8"))
     b = json.load(open(b_path, encoding="utf-8"))
@@ -478,11 +579,16 @@ def main():
     ap.add_argument("--compare", nargs=2, metavar=("A", "B"))
     ap.add_argument("--emit-durations", metavar="REPORT")
     ap.add_argument("--ci-summary", nargs="+")
+    ap.add_argument("--metrics")
+    ap.add_argument("--thresholds")
     args = ap.parse_args()
 
     if args.ci_summary:
-        print("--ci-summary is implemented in DO-36-04", file=sys.stderr)
-        return 1
+        try:
+            return ci_summary(args.ci_summary, args.metrics, args.thresholds)
+        except (OSError, KeyError, ValueError, ET.ParseError) as ex:
+            print("ci-summary failed: %s" % ex, file=sys.stderr)
+            return 1
     if args.compare:
         print(compare(*args.compare))
         return 0

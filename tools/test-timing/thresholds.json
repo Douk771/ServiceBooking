@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "unitWallSecondsWarn": 0,
+  "functionalWallSecondsWarn": 380,
+  "vitestWallSecondsWarn": 120,
+  "classWallSecondsWarn": 60,
+  "testSecondsWarn": 10,
+  "hostBootsPerClassWarn": 3
+}

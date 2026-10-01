@@ -436,8 +436,20 @@ service-контейнером GitHub Actions, а не изнутри тест-�
 там задана `SERVICEBOOKING_TEST_CONNECTION` — строка к этому серверу. Базы прогон всё равно заводит
 свои и сносит за собой, так что два прогона на одном сервере не конфликтуют.
 
-Параллелизм в CI — 2 (два ядра раннера), заданный в двух местах сразу: `-- xUnit.MaxParallelThreads=2`
-у команды и `SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS=2` в окружении джоба.
+Параллелизм в CI задан **одним числом**: `SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS` в окружении джоба; команда
+функциональных тестов берёт его оттуда же (`-- xUnit.MaxParallelThreads="$SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS"`),
+а бюджет соединений читает ту же переменную. Предел одновременно живых классов (`ClassConcurrencyGate`)
+задан там же явно (`SERVICEBOOKING_TEST_CLASS_CONCURRENCY`): у `postgres:16` в CI `max_connections=100`.
+
+Postgres в CI работает без долговечности (L9): первым шагом джоба `ALTER SYSTEM SET fsync=off, synchronous_commit=off,
+full_page_writes=off` и `pg_reload_conf()` (рестарт не нужен). База одноразовая, продуктового смысла у параметров нет.
+
+**Сводка медленных тестов (US-36-07).** Юнит и функциональные тесты пишут TRX в `TestResults/ci`, vitest - JSON.
+Шаг `Slow tests summary` (`if: always()`) вызывает `python3 tools/test-timing/analyze.py --ci-summary …` и дописывает
+в Summary прогона топ-10 классов и тестов и старты хоста. Превышение порога из `tools/test-timing/thresholds.json`
+даёт `::warning::`, шаг при этом не падает. Каталог `TestResults/` уходит артефактом на 14 дней. Пороги -
+1,25 x медианы времени шага в CI; пересматривайте их, когда время заметно меняется.
+
 
 Ключ прогона в CI выводится из идентификатора сборки и имени джоба — чтобы по логу можно было
 понять, чьи это базы, и чтобы два джоба одной сборки не получили одинаковый ключ.
