@@ -7399,6 +7399,7 @@ Vitest разработчиков (не пересобирались QA): раз
 | R36-B903 | unit | — | `ServiceBooking.UnitTests.UploadsWindowTests.ShippedConfigs_DoNotSetTheWindow` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
 | R36-B904 | unit | — | `ServiceBooking.UnitTests.UploadsWindowTests.Window_FromTheSetting_IsTakenButNeverBelowOneMinute` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
 | R36-B905 | unit | — | `ServiceBooking.UnitTests.UploadsWindowTests.Window_WithoutTheSetting_IsOneMinute` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+| R36-B907 | unit | — | `ServiceBooking.UnitTests.EnvStatusParallelConnectionBudgetTests.RequiredConnectionsWithDemo_adds_at_most_P_demo_pools_to_the_class_gate` | Е | добавлен (замена) | новая формула бюджета соединений (классы гейта + демо-базы) | см. «Новые guard-тесты цикла 36» |
 | R36-B950 | functional | CY36-03 | `ServiceBooking.Tests.Tests.DemoSeededTemplateGuardTests.ClonedTemplate_HoldsTheSameRowsAndFiles_AsTheRealProductReset` | Е | добавлен (замена) | страж засеянного шаблона демо-базы: клон сравнивается с настоящим продуктовым сбросом | см. «Новые guard-тесты цикла 36» |
 
 ### Новые guard-тесты цикла 36
