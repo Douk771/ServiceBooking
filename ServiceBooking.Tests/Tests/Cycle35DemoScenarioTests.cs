@@ -103,6 +103,13 @@ public abstract class Cycle35DemoScenarioBase
     protected async Task<JsonElement> BoardAsync(DemoShop shop, string token) =>
         await J(await Client(token).GetAsync($"/api/shops/{shop.Id}/order-board"));
 
+    protected async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, string token, HttpContent? body)
+    {
+        using var request = new HttpRequestMessage(method, url) { Content = body };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return await _factory.CreateClient().SendAsync(request);
+    }
+
     protected static IEnumerable<JsonElement> BoardCards(JsonElement board)
     {
         foreach (var column in new[] { "newOrders", "accepted", "ready", "completedToday" })
@@ -127,7 +134,7 @@ public static class Cycle35DemoSlots
     public const string Read = DemoDatabaseSlots.Read35;
     public const string A = DemoDatabaseSlots.A35;
     public const string B = DemoDatabaseSlots.B35;
-    public const string C = DemoDatabaseSlots.C35;
+    public const string Reset = DemoDatabaseSlots.Reset35;
 }
 
 public sealed class Cycle35DemoScenarioFixture : IAsyncLifetime
@@ -422,11 +429,59 @@ public class Cycle35DemoScenarioTests(Cycle35DemoScenarioFixture fixture) : Cycl
         prodExit.Should().Be(0, prodPlan);
         prodPlan.Should().NotContain("shops=");
     }
+
+    [Fact, TestCase("CY35-30")]
+    public async Task Restrictions_ThreeNewRoutesAndOldOnes_Refused403WithTextAndHeader_ForEveryShopRole_EvenWithBrokenBody()
+    {
+        const string text = "В демо-версии это действие недоступно.";
+        var coffee = await CoffeeShopAsync();
+        var staffMember = await Db(db => db.CompanyMembers.Where(m => m.CompanyId == coffee.Id && m.Role == UserRole.Master).Select(m => new { m.Id, m.UserId }).FirstAsync());
+        var routes = new (HttpMethod Method, string Url)[]
+        {
+            (HttpMethod.Put, $"/api/shops/{coffee.Id}/slug"),
+            (HttpMethod.Delete, $"/api/Companies/{coffee.Id}/members/{staffMember.Id}"),
+            (HttpMethod.Post, "/api/staff-max/link-sessions"),
+            (HttpMethod.Post, "/api/profile/change-password"), (HttpMethod.Post, "/api/profile/change-phone"),
+            (HttpMethod.Post, "/api/profile/delete-account"), (HttpMethod.Post, "/api/billing/subscription/request"),
+            (HttpMethod.Post, "/api/billing/trial"),
+        };
+
+        foreach (var role in ShopRoles)
+        {
+            var auth = await LoginAsync(role);
+            foreach (var (method, url) in routes)
+            {
+                foreach (HttpContent? body in new HttpContent?[]
+                         {
+                             JsonContent.Create(new { slug = "hacked-slug", currentPassword = "x", newPassword = "Password123!2", phone = "79001234567" }),
+                             null,
+                             new StringContent("not json", System.Text.Encoding.UTF8, "application/json"),
+                         })
+                {
+                    var response = await SendAsync(method, url, auth.Token, body);
+                    var answer = await response.Content.ReadAsStringAsync();
+                    response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{role} {method} {url}: {answer}");
+                    answer.Should().Be(text, $"{role} {url}");
+                    response.Headers.GetValues("X-Demo-Restricted").Should().ContainSingle().Which.Should().Be("1");
+                }
+            }
+        }
+
+        // nothing changed: the slug and the demo staff are where they were
+        (await ShopsAsync()).Should().Contain(s => s.Id == coffee.Id && s.Slug == coffee.Slug);
+        (await Db(db => db.CompanyMembers.AnyAsync(m => m.Id == staffMember.Id))).Should().BeTrue();
+
+        // anonymous: the ordinary 401, no demo header
+        var anonymous = await Client().PutAsJsonAsync($"/api/shops/{coffee.Id}/slug", new { slug = "x-y-z" });
+        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        anonymous.Headers.Contains("X-Demo-Restricted").Should().BeFalse();
+    }
 }
 
 /// <summary>
 /// Scenarios that write (orders, settings, visitors, resets): each starts from its own fresh reset. Order of the tests is random. Cycle 36: the 12 scenarios are
-/// spread over three classes, each in its own collection with its own demo database (<see cref="Cycle35DemoSlots"/>), so that their resets run in parallel.
+/// spread over classes, each in its own collection with its own demo database (<see cref="Cycle35DemoSlots"/>), so that they run in parallel. The tests whose subject is the reset
+/// itself (CY35-15, 60, 61) are in <see cref="Cycle35DemoResetTests"/> and call the real product reset; the others get the fresh demo by cloning the seeded template.
 /// </summary>
 public abstract class Cycle35DemoMutationBase : Cycle35DemoScenarioBase, IAsyncLifetime
 {
@@ -434,18 +489,15 @@ public abstract class Cycle35DemoMutationBase : Cycle35DemoScenarioBase, IAsyncL
 
     protected abstract string Slot { get; }
 
+    /// <summary>true: the fresh demo of each test is cloned from the seeded template (arrange only); false: each test runs the real product reset.</summary>
+    protected virtual bool Seeded => true;
+
     protected override DemoScenarioState State => _state;
 
-    public async Task InitializeAsync() => _state = await DemoScenarioState.CreateAsync(Slot);
+    public async Task InitializeAsync() => _state = await DemoScenarioState.CreateAsync(Slot, Seeded);
 
     public async Task DisposeAsync() => await _state.DisposeAsync();
 
-    protected async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, string token, HttpContent? body)
-    {
-        using var request = new HttpRequestMessage(method, url) { Content = body };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        return await _factory.CreateClient().SendAsync(request);
-    }
 
     protected async Task AssertNothingQueuedAsync() => await Db(async db =>
     {
@@ -459,10 +511,328 @@ public abstract class Cycle35DemoMutationBase : Cycle35DemoScenarioBase, IAsyncL
     protected static string Pad(string s) => s.PadRight(s.Length + (4 - s.Length % 4) % 4, '=');
 }
 
+
 [Collection("Cycle35DemoMutA")]
 public class Cycle35DemoMutationATests : Cycle35DemoMutationBase
 {
     protected override string Slot => Cycle35DemoSlots.A;
+
+    [Fact, TestCase("CY35-21")]
+    public async Task ShopRoles_GetRightRoleAndClaim_OwnerTermsWithoutConsentGate_PasswordStaysClosed()
+    {
+        var coffee = await CoffeeShopAsync();
+        foreach (var role in ShopRoles)
+        {
+            var auth = await LoginAsync(role);
+            auth.Roles.Should().NotContain("SuperAdmin", role);
+            var payload = JsonDocument.Parse(Convert.FromBase64String(Pad(auth.Token.Split('.')[1].Replace('-', '+').Replace('_', '/')))).RootElement;
+            payload.TryGetProperty("sb_demo", out _).Should().BeTrue($"{role}: the token carries the demo claim");
+            (await Client().PostAsJsonAsync("/api/auth/login", new LoginDto(auth.Phone, "Password123!"))).StatusCode.Should().Be(HttpStatusCode.Unauthorized, role + " by password");
+        }
+
+        // the owner of a shop must not meet 451 of [RequiresOwnerTerms]
+        var owner = await LoginAsync("shop-owner");
+        var shops = await J(await Client(owner.Token).GetAsync("/api/shops/my"));
+        shops.EnumerateArray().Select(s => s.GetProperty("id").GetGuid()).Should().Contain(coffee.Id);
+        (await Client(owner.Token).GetAsync($"/api/shops/{coffee.Id}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        var put = await Client(owner.Token).PutJsonAsync($"/api/shops/{coffee.Id}/settings", new ShopSettingsInput(ShopCustomerMode.Anyone, OrderAcceptanceMode.Manual, true, false));
+        put.StatusCode.Should().NotBe(HttpStatusCode.UnavailableForLegalReasons, "the demo owner has current owner terms");
+        put.StatusCode.Should().Be(HttpStatusCode.OK, await put.Content.ReadAsStringAsync());
+    }
+
+    [Fact, TestCase("CY35-22")]
+    public async Task OwnerCabinet_IsFull_StaffSeesBoardButNotCatalogReportsOrSettings()
+    {
+        var coffee = await CoffeeShopAsync();
+        var owner = await LoginAsync("shop-owner");
+        var staff = await LoginAsync("shop-staff");
+        var asOwner = Client(owner.Token);
+        var asStaff = Client(staff.Token);
+
+        foreach (var url in new[] { "", "/products", "/categories", "/working-hours", "/daily-menus", "/special-days", "/order-board", "/summary", "/picklist", "/notification-settings" })
+            (await asOwner.GetAsync($"/api/shops/{coffee.Id}{url}")).StatusCode.Should().Be(HttpStatusCode.OK, "owner " + url);
+
+        var products = await J(await asOwner.GetAsync($"/api/shops/{coffee.Id}/products"));
+        products.GetArrayLength().Should().BeGreaterThan(5);
+        // «Ваша подписка»: the hidden service tariff, no bill
+        var subscription = await asOwner.GetAsync("/api/billing/subscription?line=Orders");
+        subscription.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+
+        // staff: the board and the order actions
+        (await asStaff.GetAsync($"/api/shops/{coffee.Id}/order-board")).StatusCode.Should().Be(HttpStatusCode.OK);
+        var first = products[0];
+        (await asStaff.PutJsonAsync($"/api/shops/{coffee.Id}/products/{first.GetProperty("id").GetGuid()}/sold-out", new SoldOutInput(false, null)))
+            .StatusCode.Should().Be(HttpStatusCode.OK, "staff may mark «закончилось»");
+        // …but not prices, settings, hours or the summary
+        (await asStaff.PutJsonAsync($"/api/shops/{coffee.Id}/settings", new ShopSettingsInput(ShopCustomerMode.Anyone, OrderAcceptanceMode.Manual, true, false)))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await asStaff.GetAsync($"/api/shops/{coffee.Id}/summary")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await asStaff.PostJsonAsync($"/api/shops/{coffee.Id}/products", new ProductInput(null, "Лишний", null, ProductUnit.Piece, 10m, null, null, null, true, null)))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await asStaff.PutJsonAsync($"/api/shops/{coffee.Id}/working-hours", new WorkingHoursInput([])))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        // a shop of another owner is closed to both demo roles (no leak between shops)
+        var other = (await ShopsAsync()).First(s => s.Id != coffee.Id);
+        (await asStaff.GetAsync($"/api/shops/{other.Id}/order-board")).StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.NotFound);
+        (await asOwner.GetAsync($"/api/shops/{other.Id}/order-board")).StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.NotFound);
+    }
+
+    [Fact, TestCase("CY35-24")]
+    public async Task EndToEnd_CustomerOrders_StaffSeesItOnBoard_AcceptsReadyIssues_CustomerPageFollows()
+    {
+        var coffee = await CoffeeShopAsync();
+        var owner = await LoginAsync("shop-owner");
+        var staff = await LoginAsync("shop-staff");
+        var customer = await LoginAsync("shop-customer");
+        await OpenAllDayAsync(coffee, owner.Token);
+        var (productId, price) = await AnyPieceProductAsync(coffee);
+
+        var revisionBefore = (await BoardAsync(coffee, staff.Token)).GetProperty("revision").GetInt64();
+        var create = await Client(customer.Token).PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
+        {
+            idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } },
+            customerName = "Демо Покупатель", customerPhone = "79990001122",
+        });
+        var created = await J(create, HttpStatusCode.Created);
+        var token = created.GetProperty("order").GetProperty("token").GetString()!;
+        created.GetProperty("orderUrl").GetString().Should().StartWith("https://demo.zakaz.ezbook.ru/o/");
+
+        var board = await BoardAsync(coffee, staff.Token);
+        board.GetProperty("revision").GetInt64().Should().BeGreaterThan(revisionBefore, "the board notices a new order by its revision");
+        var card = BoardCards(board).Single(c => c.GetProperty("number").GetInt32() == created.GetProperty("order").GetProperty("number").GetInt32());
+        var orderId = card.GetProperty("id").GetGuid();
+        var version = card.GetProperty("version").GetInt32();
+        var asStaff = Client(staff.Token);
+
+        async Task<int> Step(string action, int v, object? extra = null)
+        {
+            var r = await asStaff.PostAsJsonAsync($"/api/shops/{coffee.Id}/orders/{orderId}/{action}", extra ?? new { expectedVersion = v });
+            var body = await J(r);
+            return body.GetProperty("version").GetInt32();
+        }
+        async Task<string> CustomerStatus() => (await J(await Client().GetAsync($"/api/orders/public/{token}"))).GetProperty("status").GetString()!;
+
+        if (card.GetProperty("status").GetString() == "New")
+        {
+            version = await Step("accept", version);
+            (await CustomerStatus()).Should().Be("Accepted", "the customer's page follows the staff's action");
+        }
+        version = await Step("ready", version);
+        (await CustomerStatus()).Should().Be("Ready");
+        version = await Step("issue", version, new { expectedVersion = version, actualQuantities = Array.Empty<object>() });
+        (await CustomerStatus()).Should().Be("Issued");
+
+        // the order is in the customer's own list and in the journal of the order
+        (await J(await Client(customer.Token).GetAsync("/api/orders/my"))).EnumerateArray().Any(o => o.GetProperty("token").GetString() == token).Should().BeTrue();
+        var staffView = await J(await asStaff.GetAsync($"/api/shops/{coffee.Id}/orders/{orderId}"));
+        staffView.GetProperty("events").GetArrayLength().Should().BeGreaterThanOrEqualTo(3);
+
+        // nothing left the stand
+        await AssertNothingQueuedAsync();
+    }
+
+    [Fact, TestCase("CY35-25")]
+    public async Task GuestOrder_ActsLikeProduction_ValidationErrorsAreCleanNot500_AndOrderLinkOfErasedOrderIsNotFound()
+    {
+        var coffee = await CoffeeShopAsync();
+        var owner = await LoginAsync("shop-owner");
+        await OpenAllDayAsync(coffee, owner.Token);
+        var (productId, price) = await AnyPieceProductAsync(coffee);
+
+        // empty cart, a zero quantity, a stale price, garbage body: a 4xx text, never a 500
+        foreach (var body in new object[]
+                 {
+                     new { idempotencyKey = Guid.NewGuid(), items = Array.Empty<object>(), customerName = "Иван", customerPhone = "79990001133" },
+                     new { idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 0, expectedUnitPrice = price } }, customerName = "Иван", customerPhone = "79990001133" },
+                     new { idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price + 1 } }, customerName = "Иван", customerPhone = "79990001133" },
+                     new { idempotencyKey = Guid.NewGuid(), items = new[] { new { productId = Guid.NewGuid(), quantity = 1, expectedUnitPrice = price } }, customerName = "Иван", customerPhone = "79990001133" },
+                 })
+        {
+            var r = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", body);
+            ((int)r.StatusCode).Should().BeInRange(400, 499, await r.Content.ReadAsStringAsync());
+        }
+        (await Client().PostAsync($"/api/storefront/{coffee.Slug}/orders", new StringContent("{not json", System.Text.Encoding.UTF8, "application/json")))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // a link to a token that does not exist: «заказ не найден», empty 404
+        var missing = await Client().GetAsync($"/api/orders/public/{Guid.NewGuid():N}");
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await missing.Content.ReadAsStringAsync()).Should().BeEmpty();
+
+        // the same idempotency key twice never makes two orders (double tap / lost connection)
+        var key = Guid.NewGuid();
+        var payload = new { idempotencyKey = key, items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } }, customerName = "Иван", customerPhone = "79990001144" };
+        var a = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", payload);
+        var b = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", payload);
+        a.StatusCode.Should().Be(HttpStatusCode.Created, await a.Content.ReadAsStringAsync());
+        b.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.OK, HttpStatusCode.Conflict);
+        (await Db(db => db.Orders.CountAsync(o => o.IdempotencyKey == key))).Should().Be(1);
+    }
+}
+
+[Collection("Cycle35DemoMutB")]
+public class Cycle35DemoMutationBTests : Cycle35DemoMutationBase
+{
+    protected override string Slot => Cycle35DemoSlots.B;
+
+    [Fact, TestCase("CY35-26")]
+    public async Task ParallelOrders_OfOneShop_GetDistinctNumbers_AndNoErrors()
+    {
+        var coffee = await CoffeeShopAsync();
+        var owner = await LoginAsync("shop-owner");
+        await OpenAllDayAsync(coffee, owner.Token);
+        var (productId, price) = await AnyPieceProductAsync(coffee);
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(async i =>
+        {
+            var r = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
+            {
+                idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } },
+                customerName = "Параллельный " + i, customerPhone = "7999000" + (2000 + i),
+            });
+            return (r.StatusCode, Body: await r.Content.ReadAsStringAsync());
+        }));
+        results.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.Created, string.Join(" | ", results.Select(r => r.Body).Distinct()));
+        var numbers = results.Select(r => JsonDocument.Parse(r.Body).RootElement.GetProperty("order").GetProperty("number").GetInt32()).ToList();
+        numbers.Distinct().Count().Should().Be(8, "order numbers of a day are not repeated");
+    }
+
+    [Fact, TestCase("CY35-31")]
+    public async Task Restrictions_DoNotCoverRestOfCabinet_AndSelfRegisteredVisitorIsNotRestricted()
+    {
+        var coffee = await CoffeeShopAsync();
+        var owner = await LoginAsync("shop-owner");
+        var asOwner = Client(owner.Token);
+
+        // allowed and healed by the night reset: catalog, prices, pause of acceptance, rejecting orders
+        var products = await J(await asOwner.GetAsync($"/api/shops/{coffee.Id}/products"));
+        var p = products[0];
+        var id = p.GetProperty("id").GetGuid();
+        var price = p.GetProperty("price").GetDecimal();
+        var input = new ProductInput(
+            p.GetProperty("categoryId").ValueKind == JsonValueKind.String ? p.GetProperty("categoryId").GetGuid() : null,
+            p.GetProperty("name").GetString(), p.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
+            p.GetProperty("unit").GetString() == "Piece" ? ProductUnit.Piece : ProductUnit.Weight, price + 1m, null, null, null, true, null);
+        if (input.Unit == ProductUnit.Piece)
+            (await asOwner.PutJsonAsync($"/api/shops/{coffee.Id}/products/{id}", input)).StatusCode.Should().Be(HttpStatusCode.OK, "price changes are allowed in the demo");
+        (await asOwner.PostJsonAsync($"/api/shops/{coffee.Id}/categories", new CategoryInput("Проверочная категория"))).StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // a visitor who registered himself is not a demo role: the same three routes are NOT refused with the demo sentence
+        var phone = "79" + Random.Shared.NextInt64(100_000_000, 999_999_999);
+        using var scope = _factory.Services.CreateScope();
+        var legal = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>().Current!;
+        var register = await Client().PostAsJsonAsync("/api/auth/register", new RegisterDto("Посетитель", "Проверочный", phone, "Password123!", null,
+            new RegisterLegalDto(legal.Get(LegalDocumentType.Privacy)!.Version, legal.Get(LegalDocumentType.TermsClient)!.Version)));
+        register.StatusCode.Should().Be(HttpStatusCode.OK, await register.Content.ReadAsStringAsync());
+        var visitor = (await register.Content.ReadFromJsonAsync<AuthResponseDto>(Web))!;
+        foreach (var (method, url) in new[] { (HttpMethod.Post, "/api/staff-max/link-sessions"), (HttpMethod.Put, $"/api/shops/{coffee.Id}/slug"), (HttpMethod.Delete, $"/api/Companies/{coffee.Id}/members/{Guid.NewGuid()}") })
+        {
+            var r = await SendAsync(method, url, visitor.Token, JsonContent.Create(new { slug = "visitor-slug" }));
+            r.Headers.Contains("X-Demo-Restricted").Should().BeFalse($"{method} {url} for an ordinary visitor");
+        }
+    }
+
+    [Fact, TestCase("CY35-40")]
+    public async Task OrderLifecycleInDemo_CreateAcceptChangeCancel_QueuesNothing_AndMessengerFlagIsIgnored()
+    {
+        var coffee = await CoffeeShopAsync();
+        var owner = await LoginAsync("shop-owner");
+        var staff = await LoginAsync("shop-staff");
+        await OpenAllDayAsync(coffee, owner.Token);
+        var (productId, price) = await AnyPieceProductAsync(coffee);
+
+        async Task<(string Token, int Number)> Place(string name, bool messenger)
+        {
+            var r = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
+            {
+                idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 2, expectedUnitPrice = price } },
+                customerName = name, customerPhone = "7999" + Random.Shared.Next(1_000_000, 9_999_999), notifyByMessenger = messenger,
+            });
+            var j = await J(r, HttpStatusCode.Created);
+            return (j.GetProperty("order").GetProperty("token").GetString()!, j.GetProperty("order").GetProperty("number").GetInt32());
+        }
+
+        var asStaff = Client(staff.Token);
+        var (t1, n1) = await Place("Гость Один", messenger: true);
+        var card = BoardCards(await BoardAsync(coffee, staff.Token)).Single(c => c.GetProperty("number").GetInt32() == n1);
+        var id = card.GetProperty("id").GetGuid();
+        var v = card.GetProperty("version").GetInt32();
+        if (card.GetProperty("status").GetString() == "New")
+            v = (await J(await asStaff.PostAsJsonAsync($"/api/shops/{coffee.Id}/orders/{id}/accept", new { expectedVersion = v }))).GetProperty("version").GetInt32();
+
+        // a change of the order by staff (items) — the path that normally tells the customer «заказ изменён»
+        var items = card.GetProperty("items").EnumerateArray().Select(i => new { itemId = i.GetProperty("id").GetGuid(), productId = (Guid?)null, quantity = 1 }).ToList();
+        var edit = await asStaff.PutAsJsonAsync($"/api/shops/{coffee.Id}/orders/{id}/items", new { expectedVersion = v, items, commentForCustomer = "убрали одну позицию" });
+        edit.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Conflict, HttpStatusCode.BadRequest);
+        var fresh = await J(await asStaff.GetAsync($"/api/shops/{coffee.Id}/orders/{id}"));
+        v = fresh.GetProperty("version").GetInt32();
+        (await asStaff.PostAsJsonAsync($"/api/shops/{coffee.Id}/orders/{id}/cancel", new { expectedVersion = v, reason = "проверка" })).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // the customer cancels his own order; another is rejected
+        var (t2, _) = await Place("Гость Два", messenger: true);
+        (await Client().PostAsync($"/api/orders/public/{t2}/cancel", null)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var (_, n3) = await Place("Гость Три", messenger: false);
+        var c3 = BoardCards(await BoardAsync(coffee, staff.Token)).Single(c => c.GetProperty("number").GetInt32() == n3);
+        (await asStaff.PostAsJsonAsync($"/api/shops/{coffee.Id}/orders/{c3.GetProperty("id").GetGuid()}/reject", new { expectedVersion = c3.GetProperty("version").GetInt32(), reason = "нет" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // an order page tells the customer nothing about a message that will never come: no messenger is requested by the demo
+        var page = await J(await Client().GetAsync($"/api/orders/public/{t1}"));
+        page.GetProperty("status").GetString().Should().NotBeNull();
+
+        await AssertNothingQueuedAsync();
+        // and the dispatchers of the two queues find nothing to send
+        using var scope = _factory.Services.CreateScope();
+        foreach (var name in new[] { "customer-order-push-dispatch", "staff-max-dispatch", "staff-push-dispatch", "notification-dispatch" })
+        {
+            var task = scope.ServiceProvider.GetServices<ServiceBooking.API.Services.Scheduling.IScheduledTask>().SingleOrDefault(t => t.Name == name);
+            if (task is null) continue;
+            var outcome = await task.ExecuteAsync(CancellationToken.None);
+            outcome.Affected.Should().Be(0, name + ": " + outcome.Summary);
+        }
+        await AssertNothingQueuedAsync();
+    }
+
+    [Fact, TestCase("CY35-70")]
+    public async Task BoardTick_AdvancesGeneratedOrders_WithJournal_AndClosesStaleVisitorOrder_ButNotOnOffDemo()
+    {
+        var coffee = await CoffeeShopAsync();
+        var owner = await LoginAsync("shop-owner");
+        await OpenAllDayAsync(coffee, owner.Token);
+        var (productId, price) = await AnyPieceProductAsync(coffee);
+
+        var r = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
+        {
+            idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } }, customerName = "Гость", customerPhone = "79990005566",
+        });
+        var created = await J(r, HttpStatusCode.Created);
+        var token = created.GetProperty("order").GetProperty("token").GetString()!;
+        var orderId = await Db(db => db.Orders.Where(o => o.PublicToken == token).Select(o => o.Id).SingleAsync());
+
+        // the pickup time of a visitor's order passed more than 50 minutes ago (the clock of the task is explicit, the same way the operator's machine would see it later)
+        var pickup = await Db(db => db.Orders.Where(o => o.Id == orderId).Select(o => o.PickupStartUtc).SingleAsync());
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var ticker = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Demo.DemoBoardTicker>();
+            var afterSixty = pickup.AddMinutes(60);
+            await ticker.TickAsync(afterSixty, CancellationToken.None);
+        }
+        var order = await Db(db => db.Orders.AsNoTracking().Include(o => o.Events).SingleAsync(o => o.Id == orderId));
+        new[] { OrderStatus.Rejected, OrderStatus.CancelledByShop, OrderStatus.NotPickedUp }.Should().Contain(order.Status, "a stale visitor order does not hang on the board");
+        order.Events.Should().Contain(e => e.ActorKind == OrderActorKind.System && e.Reason != null && e.Reason.Contains("Демо"), "the journal says why");
+        (await J(await Client().GetAsync($"/api/orders/public/{token}"))).GetProperty("reason").GetString().Should().Contain("Демо");
+
+        // nothing left: the tick does not write to any outgoing queue
+        await AssertNothingQueuedAsync();
+    }
+}
+
+[Collection("Cycle35DemoReset")]
+public class Cycle35DemoResetTests : Cycle35DemoMutationBase
+{
+    protected override string Slot => Cycle35DemoSlots.Reset;
+
+    protected override bool Seeded => false;
 
     [Fact, TestCase("CY35-15")]
     public async Task Determinism_TwoResetsOnOneDate_GiveTheSameShopsProductsPhonesAndOrderCount()
@@ -562,72 +932,6 @@ public class Cycle35DemoMutationATests : Cycle35DemoMutationBase
         BoardCards(await BoardAsync(coffee, (await LoginAsync("shop-owner")).Token)).Count().Should().BeGreaterThan(5);
     }
 
-    [Fact, TestCase("CY35-21")]
-    public async Task ShopRoles_GetRightRoleAndClaim_OwnerTermsWithoutConsentGate_PasswordStaysClosed()
-    {
-        var coffee = await CoffeeShopAsync();
-        foreach (var role in ShopRoles)
-        {
-            var auth = await LoginAsync(role);
-            auth.Roles.Should().NotContain("SuperAdmin", role);
-            var payload = JsonDocument.Parse(Convert.FromBase64String(Pad(auth.Token.Split('.')[1].Replace('-', '+').Replace('_', '/')))).RootElement;
-            payload.TryGetProperty("sb_demo", out _).Should().BeTrue($"{role}: the token carries the demo claim");
-            (await Client().PostAsJsonAsync("/api/auth/login", new LoginDto(auth.Phone, "Password123!"))).StatusCode.Should().Be(HttpStatusCode.Unauthorized, role + " by password");
-        }
-
-        // the owner of a shop must not meet 451 of [RequiresOwnerTerms]
-        var owner = await LoginAsync("shop-owner");
-        var shops = await J(await Client(owner.Token).GetAsync("/api/shops/my"));
-        shops.EnumerateArray().Select(s => s.GetProperty("id").GetGuid()).Should().Contain(coffee.Id);
-        (await Client(owner.Token).GetAsync($"/api/shops/{coffee.Id}")).StatusCode.Should().Be(HttpStatusCode.OK);
-        var put = await Client(owner.Token).PutJsonAsync($"/api/shops/{coffee.Id}/settings", new ShopSettingsInput(ShopCustomerMode.Anyone, OrderAcceptanceMode.Manual, true, false));
-        put.StatusCode.Should().NotBe(HttpStatusCode.UnavailableForLegalReasons, "the demo owner has current owner terms");
-        put.StatusCode.Should().Be(HttpStatusCode.OK, await put.Content.ReadAsStringAsync());
-    }
-
-    [Fact, TestCase("CY35-22")]
-    public async Task OwnerCabinet_IsFull_StaffSeesBoardButNotCatalogReportsOrSettings()
-    {
-        var coffee = await CoffeeShopAsync();
-        var owner = await LoginAsync("shop-owner");
-        var staff = await LoginAsync("shop-staff");
-        var asOwner = Client(owner.Token);
-        var asStaff = Client(staff.Token);
-
-        foreach (var url in new[] { "", "/products", "/categories", "/working-hours", "/daily-menus", "/special-days", "/order-board", "/summary", "/picklist", "/notification-settings" })
-            (await asOwner.GetAsync($"/api/shops/{coffee.Id}{url}")).StatusCode.Should().Be(HttpStatusCode.OK, "owner " + url);
-
-        var products = await J(await asOwner.GetAsync($"/api/shops/{coffee.Id}/products"));
-        products.GetArrayLength().Should().BeGreaterThan(5);
-        // «Ваша подписка»: the hidden service tariff, no bill
-        var subscription = await asOwner.GetAsync("/api/billing/subscription?line=Orders");
-        subscription.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
-
-        // staff: the board and the order actions
-        (await asStaff.GetAsync($"/api/shops/{coffee.Id}/order-board")).StatusCode.Should().Be(HttpStatusCode.OK);
-        var first = products[0];
-        (await asStaff.PutJsonAsync($"/api/shops/{coffee.Id}/products/{first.GetProperty("id").GetGuid()}/sold-out", new SoldOutInput(false, null)))
-            .StatusCode.Should().Be(HttpStatusCode.OK, "staff may mark «закончилось»");
-        // …but not prices, settings, hours or the summary
-        (await asStaff.PutJsonAsync($"/api/shops/{coffee.Id}/settings", new ShopSettingsInput(ShopCustomerMode.Anyone, OrderAcceptanceMode.Manual, true, false)))
-            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await asStaff.GetAsync($"/api/shops/{coffee.Id}/summary")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await asStaff.PostJsonAsync($"/api/shops/{coffee.Id}/products", new ProductInput(null, "Лишний", null, ProductUnit.Piece, 10m, null, null, null, true, null)))
-            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await asStaff.PutJsonAsync($"/api/shops/{coffee.Id}/working-hours", new WorkingHoursInput([])))
-            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        // a shop of another owner is closed to both demo roles (no leak between shops)
-        var other = (await ShopsAsync()).First(s => s.Id != coffee.Id);
-        (await asStaff.GetAsync($"/api/shops/{other.Id}/order-board")).StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.NotFound);
-        (await asOwner.GetAsync($"/api/shops/{other.Id}/order-board")).StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.NotFound);
-    }
-}
-
-[Collection("Cycle35DemoMutB")]
-public class Cycle35DemoMutationBTests : Cycle35DemoMutationBase
-{
-    protected override string Slot => Cycle35DemoSlots.B;
-
     [Fact, TestCase("CY35-61")]
     public async Task DuringReset_BothProductsSeeWaitMessage_StatusIsNot503_ThenShopsAreBack()
     {
@@ -655,301 +959,5 @@ public class Cycle35DemoMutationBTests : Cycle35DemoMutationBase
         (await first).Exit.Should().Be(0);
         (await J(await Client().GetAsync("/api/goods/catalog"))).GetProperty("totalCount").GetInt32().Should().Be(5);
         (await LoginAsync("shop-owner")).Roles.Should().NotBeEmpty();
-    }
-
-    [Fact, TestCase("CY35-70")]
-    public async Task BoardTick_AdvancesGeneratedOrders_WithJournal_AndClosesStaleVisitorOrder_ButNotOnOffDemo()
-    {
-        var coffee = await CoffeeShopAsync();
-        var owner = await LoginAsync("shop-owner");
-        await OpenAllDayAsync(coffee, owner.Token);
-        var (productId, price) = await AnyPieceProductAsync(coffee);
-
-        var r = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
-        {
-            idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } }, customerName = "Гость", customerPhone = "79990005566",
-        });
-        var created = await J(r, HttpStatusCode.Created);
-        var token = created.GetProperty("order").GetProperty("token").GetString()!;
-        var orderId = await Db(db => db.Orders.Where(o => o.PublicToken == token).Select(o => o.Id).SingleAsync());
-
-        // the pickup time of a visitor's order passed more than 50 minutes ago (the clock of the task is explicit, the same way the operator's machine would see it later)
-        var pickup = await Db(db => db.Orders.Where(o => o.Id == orderId).Select(o => o.PickupStartUtc).SingleAsync());
-        using (var scope = _factory.Services.CreateScope())
-        {
-            var ticker = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Demo.DemoBoardTicker>();
-            var afterSixty = pickup.AddMinutes(60);
-            await ticker.TickAsync(afterSixty, CancellationToken.None);
-        }
-        var order = await Db(db => db.Orders.AsNoTracking().Include(o => o.Events).SingleAsync(o => o.Id == orderId));
-        new[] { OrderStatus.Rejected, OrderStatus.CancelledByShop, OrderStatus.NotPickedUp }.Should().Contain(order.Status, "a stale visitor order does not hang on the board");
-        order.Events.Should().Contain(e => e.ActorKind == OrderActorKind.System && e.Reason != null && e.Reason.Contains("Демо"), "the journal says why");
-        (await J(await Client().GetAsync($"/api/orders/public/{token}"))).GetProperty("reason").GetString().Should().Contain("Демо");
-
-        // nothing left: the tick does not write to any outgoing queue
-        await AssertNothingQueuedAsync();
-    }
-
-    [Fact, TestCase("CY35-24")]
-    public async Task EndToEnd_CustomerOrders_StaffSeesItOnBoard_AcceptsReadyIssues_CustomerPageFollows()
-    {
-        var coffee = await CoffeeShopAsync();
-        var owner = await LoginAsync("shop-owner");
-        var staff = await LoginAsync("shop-staff");
-        var customer = await LoginAsync("shop-customer");
-        await OpenAllDayAsync(coffee, owner.Token);
-        var (productId, price) = await AnyPieceProductAsync(coffee);
-
-        var revisionBefore = (await BoardAsync(coffee, staff.Token)).GetProperty("revision").GetInt64();
-        var create = await Client(customer.Token).PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
-        {
-            idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } },
-            customerName = "Демо Покупатель", customerPhone = "79990001122",
-        });
-        var created = await J(create, HttpStatusCode.Created);
-        var token = created.GetProperty("order").GetProperty("token").GetString()!;
-        created.GetProperty("orderUrl").GetString().Should().StartWith("https://demo.zakaz.ezbook.ru/o/");
-
-        var board = await BoardAsync(coffee, staff.Token);
-        board.GetProperty("revision").GetInt64().Should().BeGreaterThan(revisionBefore, "the board notices a new order by its revision");
-        var card = BoardCards(board).Single(c => c.GetProperty("number").GetInt32() == created.GetProperty("order").GetProperty("number").GetInt32());
-        var orderId = card.GetProperty("id").GetGuid();
-        var version = card.GetProperty("version").GetInt32();
-        var asStaff = Client(staff.Token);
-
-        async Task<int> Step(string action, int v, object? extra = null)
-        {
-            var r = await asStaff.PostAsJsonAsync($"/api/shops/{coffee.Id}/orders/{orderId}/{action}", extra ?? new { expectedVersion = v });
-            var body = await J(r);
-            return body.GetProperty("version").GetInt32();
-        }
-        async Task<string> CustomerStatus() => (await J(await Client().GetAsync($"/api/orders/public/{token}"))).GetProperty("status").GetString()!;
-
-        if (card.GetProperty("status").GetString() == "New")
-        {
-            version = await Step("accept", version);
-            (await CustomerStatus()).Should().Be("Accepted", "the customer's page follows the staff's action");
-        }
-        version = await Step("ready", version);
-        (await CustomerStatus()).Should().Be("Ready");
-        version = await Step("issue", version, new { expectedVersion = version, actualQuantities = Array.Empty<object>() });
-        (await CustomerStatus()).Should().Be("Issued");
-
-        // the order is in the customer's own list and in the journal of the order
-        (await J(await Client(customer.Token).GetAsync("/api/orders/my"))).EnumerateArray().Any(o => o.GetProperty("token").GetString() == token).Should().BeTrue();
-        var staffView = await J(await asStaff.GetAsync($"/api/shops/{coffee.Id}/orders/{orderId}"));
-        staffView.GetProperty("events").GetArrayLength().Should().BeGreaterThanOrEqualTo(3);
-
-        // nothing left the stand
-        await AssertNothingQueuedAsync();
-    }
-
-    [Fact, TestCase("CY35-25")]
-    public async Task GuestOrder_ActsLikeProduction_ValidationErrorsAreCleanNot500_AndOrderLinkOfErasedOrderIsNotFound()
-    {
-        var coffee = await CoffeeShopAsync();
-        var owner = await LoginAsync("shop-owner");
-        await OpenAllDayAsync(coffee, owner.Token);
-        var (productId, price) = await AnyPieceProductAsync(coffee);
-
-        // empty cart, a zero quantity, a stale price, garbage body: a 4xx text, never a 500
-        foreach (var body in new object[]
-                 {
-                     new { idempotencyKey = Guid.NewGuid(), items = Array.Empty<object>(), customerName = "Иван", customerPhone = "79990001133" },
-                     new { idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 0, expectedUnitPrice = price } }, customerName = "Иван", customerPhone = "79990001133" },
-                     new { idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price + 1 } }, customerName = "Иван", customerPhone = "79990001133" },
-                     new { idempotencyKey = Guid.NewGuid(), items = new[] { new { productId = Guid.NewGuid(), quantity = 1, expectedUnitPrice = price } }, customerName = "Иван", customerPhone = "79990001133" },
-                 })
-        {
-            var r = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", body);
-            ((int)r.StatusCode).Should().BeInRange(400, 499, await r.Content.ReadAsStringAsync());
-        }
-        (await Client().PostAsync($"/api/storefront/{coffee.Slug}/orders", new StringContent("{not json", System.Text.Encoding.UTF8, "application/json")))
-            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        // a link to a token that does not exist: «заказ не найден», empty 404
-        var missing = await Client().GetAsync($"/api/orders/public/{Guid.NewGuid():N}");
-        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await missing.Content.ReadAsStringAsync()).Should().BeEmpty();
-
-        // the same idempotency key twice never makes two orders (double tap / lost connection)
-        var key = Guid.NewGuid();
-        var payload = new { idempotencyKey = key, items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } }, customerName = "Иван", customerPhone = "79990001144" };
-        var a = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", payload);
-        var b = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", payload);
-        a.StatusCode.Should().Be(HttpStatusCode.Created, await a.Content.ReadAsStringAsync());
-        b.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.OK, HttpStatusCode.Conflict);
-        (await Db(db => db.Orders.CountAsync(o => o.IdempotencyKey == key))).Should().Be(1);
-    }
-}
-
-[Collection("Cycle35DemoMutC")]
-public class Cycle35DemoMutationCTests : Cycle35DemoMutationBase
-{
-    protected override string Slot => Cycle35DemoSlots.C;
-
-    [Fact, TestCase("CY35-26")]
-    public async Task ParallelOrders_OfOneShop_GetDistinctNumbers_AndNoErrors()
-    {
-        var coffee = await CoffeeShopAsync();
-        var owner = await LoginAsync("shop-owner");
-        await OpenAllDayAsync(coffee, owner.Token);
-        var (productId, price) = await AnyPieceProductAsync(coffee);
-
-        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(async i =>
-        {
-            var r = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
-            {
-                idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } },
-                customerName = "Параллельный " + i, customerPhone = "7999000" + (2000 + i),
-            });
-            return (r.StatusCode, Body: await r.Content.ReadAsStringAsync());
-        }));
-        results.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.Created, string.Join(" | ", results.Select(r => r.Body).Distinct()));
-        var numbers = results.Select(r => JsonDocument.Parse(r.Body).RootElement.GetProperty("order").GetProperty("number").GetInt32()).ToList();
-        numbers.Distinct().Count().Should().Be(8, "order numbers of a day are not repeated");
-    }
-
-    [Fact, TestCase("CY35-30")]
-    public async Task Restrictions_ThreeNewRoutesAndOldOnes_Refused403WithTextAndHeader_ForEveryShopRole_EvenWithBrokenBody()
-    {
-        const string text = "В демо-версии это действие недоступно.";
-        var coffee = await CoffeeShopAsync();
-        var staffMember = await Db(db => db.CompanyMembers.Where(m => m.CompanyId == coffee.Id && m.Role == UserRole.Master).Select(m => new { m.Id, m.UserId }).FirstAsync());
-        var routes = new (HttpMethod Method, string Url)[]
-        {
-            (HttpMethod.Put, $"/api/shops/{coffee.Id}/slug"),
-            (HttpMethod.Delete, $"/api/Companies/{coffee.Id}/members/{staffMember.Id}"),
-            (HttpMethod.Post, "/api/staff-max/link-sessions"),
-            (HttpMethod.Post, "/api/profile/change-password"), (HttpMethod.Post, "/api/profile/change-phone"),
-            (HttpMethod.Post, "/api/profile/delete-account"), (HttpMethod.Post, "/api/billing/subscription/request"),
-            (HttpMethod.Post, "/api/billing/trial"),
-        };
-
-        foreach (var role in ShopRoles)
-        {
-            var auth = await LoginAsync(role);
-            foreach (var (method, url) in routes)
-            {
-                foreach (HttpContent? body in new HttpContent?[]
-                         {
-                             JsonContent.Create(new { slug = "hacked-slug", currentPassword = "x", newPassword = "Password123!2", phone = "79001234567" }),
-                             null,
-                             new StringContent("not json", System.Text.Encoding.UTF8, "application/json"),
-                         })
-                {
-                    var response = await SendAsync(method, url, auth.Token, body);
-                    var answer = await response.Content.ReadAsStringAsync();
-                    response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{role} {method} {url}: {answer}");
-                    answer.Should().Be(text, $"{role} {url}");
-                    response.Headers.GetValues("X-Demo-Restricted").Should().ContainSingle().Which.Should().Be("1");
-                }
-            }
-        }
-
-        // nothing changed: the slug and the demo staff are where they were
-        (await ShopsAsync()).Should().Contain(s => s.Id == coffee.Id && s.Slug == coffee.Slug);
-        (await Db(db => db.CompanyMembers.AnyAsync(m => m.Id == staffMember.Id))).Should().BeTrue();
-
-        // anonymous: the ordinary 401, no demo header
-        var anonymous = await Client().PutAsJsonAsync($"/api/shops/{coffee.Id}/slug", new { slug = "x-y-z" });
-        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        anonymous.Headers.Contains("X-Demo-Restricted").Should().BeFalse();
-    }
-
-    [Fact, TestCase("CY35-31")]
-    public async Task Restrictions_DoNotCoverRestOfCabinet_AndSelfRegisteredVisitorIsNotRestricted()
-    {
-        var coffee = await CoffeeShopAsync();
-        var owner = await LoginAsync("shop-owner");
-        var asOwner = Client(owner.Token);
-
-        // allowed and healed by the night reset: catalog, prices, pause of acceptance, rejecting orders
-        var products = await J(await asOwner.GetAsync($"/api/shops/{coffee.Id}/products"));
-        var p = products[0];
-        var id = p.GetProperty("id").GetGuid();
-        var price = p.GetProperty("price").GetDecimal();
-        var input = new ProductInput(
-            p.GetProperty("categoryId").ValueKind == JsonValueKind.String ? p.GetProperty("categoryId").GetGuid() : null,
-            p.GetProperty("name").GetString(), p.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
-            p.GetProperty("unit").GetString() == "Piece" ? ProductUnit.Piece : ProductUnit.Weight, price + 1m, null, null, null, true, null);
-        if (input.Unit == ProductUnit.Piece)
-            (await asOwner.PutJsonAsync($"/api/shops/{coffee.Id}/products/{id}", input)).StatusCode.Should().Be(HttpStatusCode.OK, "price changes are allowed in the demo");
-        (await asOwner.PostJsonAsync($"/api/shops/{coffee.Id}/categories", new CategoryInput("Проверочная категория"))).StatusCode.Should().Be(HttpStatusCode.Created);
-
-        // a visitor who registered himself is not a demo role: the same three routes are NOT refused with the demo sentence
-        var phone = "79" + Random.Shared.NextInt64(100_000_000, 999_999_999);
-        using var scope = _factory.Services.CreateScope();
-        var legal = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>().Current!;
-        var register = await Client().PostAsJsonAsync("/api/auth/register", new RegisterDto("Посетитель", "Проверочный", phone, "Password123!", null,
-            new RegisterLegalDto(legal.Get(LegalDocumentType.Privacy)!.Version, legal.Get(LegalDocumentType.TermsClient)!.Version)));
-        register.StatusCode.Should().Be(HttpStatusCode.OK, await register.Content.ReadAsStringAsync());
-        var visitor = (await register.Content.ReadFromJsonAsync<AuthResponseDto>(Web))!;
-        foreach (var (method, url) in new[] { (HttpMethod.Post, "/api/staff-max/link-sessions"), (HttpMethod.Put, $"/api/shops/{coffee.Id}/slug"), (HttpMethod.Delete, $"/api/Companies/{coffee.Id}/members/{Guid.NewGuid()}") })
-        {
-            var r = await SendAsync(method, url, visitor.Token, JsonContent.Create(new { slug = "visitor-slug" }));
-            r.Headers.Contains("X-Demo-Restricted").Should().BeFalse($"{method} {url} for an ordinary visitor");
-        }
-    }
-
-    [Fact, TestCase("CY35-40")]
-    public async Task OrderLifecycleInDemo_CreateAcceptChangeCancel_QueuesNothing_AndMessengerFlagIsIgnored()
-    {
-        var coffee = await CoffeeShopAsync();
-        var owner = await LoginAsync("shop-owner");
-        var staff = await LoginAsync("shop-staff");
-        await OpenAllDayAsync(coffee, owner.Token);
-        var (productId, price) = await AnyPieceProductAsync(coffee);
-
-        async Task<(string Token, int Number)> Place(string name, bool messenger)
-        {
-            var r = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
-            {
-                idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 2, expectedUnitPrice = price } },
-                customerName = name, customerPhone = "7999" + Random.Shared.Next(1_000_000, 9_999_999), notifyByMessenger = messenger,
-            });
-            var j = await J(r, HttpStatusCode.Created);
-            return (j.GetProperty("order").GetProperty("token").GetString()!, j.GetProperty("order").GetProperty("number").GetInt32());
-        }
-
-        var asStaff = Client(staff.Token);
-        var (t1, n1) = await Place("Гость Один", messenger: true);
-        var card = BoardCards(await BoardAsync(coffee, staff.Token)).Single(c => c.GetProperty("number").GetInt32() == n1);
-        var id = card.GetProperty("id").GetGuid();
-        var v = card.GetProperty("version").GetInt32();
-        if (card.GetProperty("status").GetString() == "New")
-            v = (await J(await asStaff.PostAsJsonAsync($"/api/shops/{coffee.Id}/orders/{id}/accept", new { expectedVersion = v }))).GetProperty("version").GetInt32();
-
-        // a change of the order by staff (items) — the path that normally tells the customer «заказ изменён»
-        var items = card.GetProperty("items").EnumerateArray().Select(i => new { itemId = i.GetProperty("id").GetGuid(), productId = (Guid?)null, quantity = 1 }).ToList();
-        var edit = await asStaff.PutAsJsonAsync($"/api/shops/{coffee.Id}/orders/{id}/items", new { expectedVersion = v, items, commentForCustomer = "убрали одну позицию" });
-        edit.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Conflict, HttpStatusCode.BadRequest);
-        var fresh = await J(await asStaff.GetAsync($"/api/shops/{coffee.Id}/orders/{id}"));
-        v = fresh.GetProperty("version").GetInt32();
-        (await asStaff.PostAsJsonAsync($"/api/shops/{coffee.Id}/orders/{id}/cancel", new { expectedVersion = v, reason = "проверка" })).StatusCode.Should().Be(HttpStatusCode.OK);
-
-        // the customer cancels his own order; another is rejected
-        var (t2, _) = await Place("Гость Два", messenger: true);
-        (await Client().PostAsync($"/api/orders/public/{t2}/cancel", null)).StatusCode.Should().Be(HttpStatusCode.OK);
-        var (_, n3) = await Place("Гость Три", messenger: false);
-        var c3 = BoardCards(await BoardAsync(coffee, staff.Token)).Single(c => c.GetProperty("number").GetInt32() == n3);
-        (await asStaff.PostAsJsonAsync($"/api/shops/{coffee.Id}/orders/{c3.GetProperty("id").GetGuid()}/reject", new { expectedVersion = c3.GetProperty("version").GetInt32(), reason = "нет" }))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
-
-        // an order page tells the customer nothing about a message that will never come: no messenger is requested by the demo
-        var page = await J(await Client().GetAsync($"/api/orders/public/{t1}"));
-        page.GetProperty("status").GetString().Should().NotBeNull();
-
-        await AssertNothingQueuedAsync();
-        // and the dispatchers of the two queues find nothing to send
-        using var scope = _factory.Services.CreateScope();
-        foreach (var name in new[] { "customer-order-push-dispatch", "staff-max-dispatch", "staff-push-dispatch", "notification-dispatch" })
-        {
-            var task = scope.ServiceProvider.GetServices<ServiceBooking.API.Services.Scheduling.IScheduledTask>().SingleOrDefault(t => t.Name == name);
-            if (task is null) continue;
-            var outcome = await task.ExecuteAsync(CancellationToken.None);
-            outcome.Affected.Should().Be(0, name + ": " + outcome.Summary);
-        }
-        await AssertNothingQueuedAsync();
     }
 }

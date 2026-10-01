@@ -13,7 +13,7 @@ namespace ServiceBooking.Tests.Infrastructure;
 public sealed class HeavyFirstCollectionOrderer : ITestCollectionOrderer
 {
     /// <summary>Явно названная коллекция (общая база демо-стенда).</summary>
-    private static readonly string[] DemoCollections = ["Cycle28Demo", "Cycle28DemoMutations", "Cycle35DemoRead", "Cycle35DemoMutA", "Cycle35DemoMutB", "Cycle35DemoMutC"];
+    private static readonly string[] DemoCollections = ["Cycle28Demo", "Cycle28DemoMutations", "Cycle35DemoRead", "Cycle35DemoMutA", "Cycle35DemoMutB", "Cycle35DemoReset", "DemoSeededGuard"];
 
     /// <summary>Классы генератора витрины: у каждого своя коллекция по умолчанию, её имя содержит имя класса.</summary>
     private static readonly string[] HeavyClasses = ["Cycle28ShowcaseLifecycleTests", "Cycle28ShowcaseFreshDeleteTests", "Cycle28ShowcaseContentTests"];
