@@ -6970,11 +6970,305 @@ Vitest разработчиков (не пересобирались QA): раз
 | vitest | `frontend/src/utils/trialError.test.ts` | Е |  |
 | vitest | `frontend/src/utils/uploadError.test.ts` | Е |  |
 | vitest | `frontend/src/utils/webPushEncoding.test.ts` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/AdminBillingAccountsTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/AdminTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/AuthTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/BillingTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/BookingHistoryTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/BookingsFlowSmokeTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/ClientNotePhotosTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36; защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/CompaniesTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/CompanyAddressTests.cs` | Е | ревизия А выполнена: геокодер удалён в цикле 19, оставшиеся тесты — права, сохранение, согласие, лимит и «надгробия» (ADDR-001/002/029/030); удалять нечего |
+| functional | `ServiceBooking.Tests/Tests/CompanyPhotosTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/CompanyTransferTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle15ClientRescheduleTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle15MapLinksTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle15PlansTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle17ClientCancelTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle18TrialLifecycleTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle18TrialPlanTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36; защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle19RetiredLimitGateParityTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle19TariffLimitsTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle20CompanyTransferLg6Tests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle20DateFilterTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle20HealthWrittenConsentTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle20ManualPlanReasonTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle20PlatformNoticesTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle20SubjectRequestsTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle22ChannelFundingTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36; защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle22RefactorEquivalenceTests.cs` | Е | точное равенство JSON до/после переписывания SQL (CY22-06…11); замены в доменных тестах не доказаны, Б не присвоена |
+| functional | `ServiceBooking.Tests/Tests/Cycle22RouteTableTests.cs` | Е | страж контракта маршрутов, не кандидат |
+| functional | `ServiceBooking.Tests/Tests/Cycle23OrdersTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle23ShopsCatalogTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle23StaffOrdersTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle23StrictModeAndDataTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle24AvailabilityTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle24HoursAcceptanceTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle24NotificationsTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle24PersonalDataTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle24PickupTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle24TariffTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36; защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle25CatalogTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle25CustomerTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle25PickListTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle25RateLimitTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle25ReportsTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle25StaffMaxTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle25WorkingDayTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle26CompanyCardTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle28DemoContractTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle28DemoScenarioTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle28OutboundSuppressionTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle28ShowcaseGeneratorTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle28ShowcaseGuardsTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36; защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle28TariffsTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle29ContractTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle29QaTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle31CatalogListingTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle31GalleryRateLimitTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle33UnifiedPushTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/DataRightsTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/GuestDataGateCycle16Tests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/HealthTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/IdentityRoleSyncTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/LegalConsentTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/LegalConsentVersionChangeTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/LegalPricingGateTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/LegalPriorityTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/MailingTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/ManualBookingFreedomTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/MastersTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/MultiServiceBookingTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/NotificationChannelsTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/NotificationCitiesTimeZoneTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/NotificationDispatchExtraTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/NotificationDispatchTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/NotificationMaxTransportTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/NotificationQueueingTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/NotificationTransportStartupTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/NotificationWebhookUnsubscribeTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/OpenApiContractValidatorTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/PaginationTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/PhoneVerificationTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/PricingTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/ProfileTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/PushAddressGuardTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/RateLimitingTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/ReportsTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/ReviewsTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/ScheduleTemplateTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/SchedulerTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/ServicesTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/StaffPushTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/UploadsStaticFilesTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/WorkingHoursTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/AccountLimitFormulaTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/AdminLegalControllerReadinessHelpersTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/AdminPlanDtoMappingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/AppLogAgeRuleTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BillingCalculatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BillingCatalogSeedKeysTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BillingTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BookingEventTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BookingFiltersTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BookingHorizonTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BookingServiceSelectionTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CatalogAvailabilityDateTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CatalogListingRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ChannelFundingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ChannelIdleCalculatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ChannelKeyFingerprintTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ChannelPaymentStateTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ChannelPresentationTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ChannelStateMapperTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CityDirectoryDataTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CitySearchTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ClientKeyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ClientRescheduleWindowTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CompanyKindTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CompanyPhotoOrderingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CompanyPhotoTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CompanyTimeZoneResolverTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CompanyTransferCalculatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ConsentOperatorDetailsValidatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CustomerSearchTermTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/DemoInstanceAndStorageTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/DemoMaintenanceTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/DemoModeValidationTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/DemoResetTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/DeploymentSafetyChecksTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/EnvStatusClassifyContainerLivenessTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/EnvStatusDoctorPortsAndProjectNameTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/EnvStatusParallelConnectionBudgetTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ExternalAccountKeyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/FileStorageTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GlitchTipSignalServiceTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GoodsCatalogOrderingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiMaxResultClassifierTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiMaxStateInstanceParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiMaxUrlsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiMaxWebhookParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiResultClassifierTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiStateInstanceParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiUrlsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiWebhookParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GuestBookingGateDecisionTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/HealthConsentFormIdTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/HealthNoteProtectorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ImageProcessorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ImageSignatureTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/InnValidatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalConsentFilterTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalControllerGetDocumentTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalDocumentProviderTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/CliArgsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/CommittedLegalArtifactTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/LegalBuildDeterminismTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/LegalPublishTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/PlaceholderScannerTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/PlaceholderValuesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/RuntimeValueFormsCorpusTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/StrayArtifactFileTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalOptionGuardsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalRoutesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalSectionTextTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalTextKeyManifestSyncTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LikePatternTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LogMaskingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LoginOutcomeTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MalformedKeyGuardValueProviderFactoryTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ManualPlanAssignmentPolicyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ManualSubjectRequestReceivedAtTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MapLinkValidationTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MaxBotClientSubscribeTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MaxContactSignatureTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MaxSendResponseClassifierTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MaxUpdateParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MaxVCardParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ModelValidationErrorFormatterTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NoticeAudienceTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NotificationGateTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NotificationRoutingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NotificationTemplateTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NotificationTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NotificationTimingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NotificationTypeCatalogTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OpsCommandLineTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OptionalTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderDomainTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderLimitRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderMoneyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderNotificationPlanTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderNotificationTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderPhoneMaskTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderQuantityRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderReportExpressionsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderStateMachineTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrdersPlanResolverTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OwnerSubscriptionOverLimitTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OwnerSubscriptionServiceBuildPendingRequestDtoTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OwnerSubscriptionServiceStatusTextTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OwnerSubscriptionStatusTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PaginationTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PauseGeneratorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PhoneDisplayMaskTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PhoneNormalizerTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PhoneVerificationPayloadTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PhoneVerificationSessionAcceptanceTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PhoneVerificationStateMachineTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PhotoQuotaTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PickListBuilderTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PickupScheduleTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PickupScheduleVectorsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PlatformNoticeQueryFiltersTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PlatformNoticeRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PlatformNoticeTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PreferIPv4Tests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PricingCatalogBuilderTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PricingCatalogCacheBlockReasonTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PricingValidationTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PublicSiteLinksTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PushAddressGuardTests.cs` | Е | защищённая зона |
+| unit | `ServiceBooking.UnitTests/PushEndpointValidatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/QrImageTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ReportPeriodDateRangeTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ReportPeriodTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ReportTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ReportTruncationTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ResourceLabelsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/RetentionPlanTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/RetiredLimitOptionsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SalonListingRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ScheduleFallbackPolicyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ScheduledTaskLaneTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ScheduledTaskOptionsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ScheduledTaskScheduleTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SecretProtectorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopAcceptanceRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopAccessCycle25Tests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopOrderingGateV2Tests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopScheduleRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopSummaryMathTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopTimeTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopTimeZoneChangePolicyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseAssetStoreTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseBookingRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseDatasetTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseDemoProfileTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseFilterParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseMixingGuardTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseOutboundGuardTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseOwnershipCoverageTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcasePrimitivesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseReseedScheduleTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SlotCalculatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SlugPolicyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SlugTransliteratorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/StableHashTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/StaffMaxPayloadTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/StaffMaxTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/StaffPushLinksTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/StaffPushSchedulerTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubjectPhoneGateInvariantTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubjectRequestDeadlineTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubscriptionAssignmentValidatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubscriptionDiagnosticsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubscriptionResolverOptionGatingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubscriptionResolverRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubscriptionUsabilityTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SweeperClassifyDatabaseRowTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SweeperParseAgeTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TemplateAdHeuristicsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TestDataTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TestDatabaseNamingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TestRunKeyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TestSlotTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TokenServiceTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TrialActivationTermsVersionTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TrialEligibilityTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TrialLegacyTermsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TrialMailingRulePolicyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TrialPhoneKeyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TrialWindowTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/UnsubscribeTokensTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/VapidKeyValidatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/WebPushHandlerFactoryTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/WebPushResponseClassifierTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/WeekdayMaskTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/WorkingDaysTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ZapisTariffCatalogTests.cs` | Е |  |
 
 ### Реестр — бэкенд (unit, functional)
 
 | № | Набор | ID | Тест | Кат. | Действие | Причина | Замена / ссылка |
 |---|---|---|---|---|---|---|---|
+
+Строк нет: бэкенд-ревизия цикла 36 **не удалила ни одного теста** и не добавила ни одного. Доказанных дублей и мёртвых тестов
+не найдено: `CompanyAddressTests` (геокодер убран в цикле 19, остались права, сохранение, согласие, лимит и «надгробия»),
+`Cycle22RefactorEquivalenceTests` (точное равенство JSON до/после переписывания SQL, замены в доменных тестах не доказаны),
+одноимённые методы в `CompaniesTests`/`ServicesTests`/`WorkingHoursTests`/`ScheduleTemplateTests` относятся к разным маршрутам.
+`Skip` в наборе нет. Число функциональных запусков не менялось: 1267; юнит: 2732.
 
 ### Реестр — фронтенд (vitest)
 
@@ -6994,11 +7288,22 @@ Vitest разработчиков (не пересобирались QA): раз
 
 | Было | Стало | Задача |
 |---|---|---|
+| `Cycle28DemoScenarioTests` (12 тестов) | `Cycle28DemoScenarioTests` (CY28-40…45, 47, 48: читающие сценарии, один сброс на класс) и `Cycle28DemoMutationTests` (CY28-46, 49, 50, 51: каждый со своим сбросом) | BE-36-03 |
 
 ### Долг цикла 36
 
 | ID | Вид | Описание | Причина |
 |---|---|---|---|
+| C36-1 | ускорение | `LegalPricingGateTests`: 7 × `Task.Delay(2500)` не заменены на `ReloadLegalNow()` (рычаг L5 пробован и откачен) | с `ReloadLegalNow()` и приёмом новой версии `TermsOwner` в `AcceptCurrentLegalAsync` класс падает в случайном порядке с 451: записи согласий SuperAdmin лежат в базе класса и не перезаписываются версией старше уже принятой (токен несёт `v2-published`, манифест снова `v1-draft`). Лечить нужно посев/сброс согласий между тестами класса, а не ожидание |
+| C36-2 | флейк (Д) | `NotificationDispatchExtraTests.Budget_InterruptedPass_…`: тест с реальным бюджетом 1 с упал один раз при P=8 (строка, отрезанная бюджетом, уже `Sent` к моменту проверки) | гонка между проверкой и вторым проходом диспетчера; при P=4 и P=6 не воспроизводилась. Оставлен как есть, P выше 6 не включён |
+
+### Починено в ходе ревизии (Д, без изменения числа тестов)
+
+| ID теста | Что было | Что сделано |
+|---|---|---|
+| `CY20-SR-01` | красный по четвергам: срок Access — 10 рабочих дней, а наивный срок от «сейчас» считался как `AddDays(10)` (календарные); продукт (`WorkingDays.Add`) верен, ошибка в ожидании теста | наивный срок считается через ту же `WorkingDays.Add` |
+| `CY31-23` | флейк под нагрузкой: 62 запроса не укладывались в минутное окно лимита, 61-я правка проходила | лимит 60 остался продовым, окно `RateLimits:company-photos-edit:WindowMinutes` у хоста теста — 60 минут |
+| `NTF-L001` | при переводе класса на общий хост падал (файловый приёмник Serilog сбрасывает буфер позже) | у теста свой хост, как раньше |
 
 ### Новые guard-тесты цикла 36
 
