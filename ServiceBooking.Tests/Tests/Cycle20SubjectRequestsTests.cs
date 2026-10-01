@@ -21,7 +21,7 @@ public class Cycle20SubjectRequestsTests(TestDatabaseFixture fixture) : ApiTestB
     public async Task RegisterManually_DueDateComputedFromReceivedAt_NotFromNow()
     {
         var admin = await LoginAsSuperAdminAsync();
-        var receivedAt = DateTime.UtcNow.AddDays(-3);
+        var receivedAt = DateTime.UtcNow.AddDays(-15);
 
         var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/admin/subject-requests", new
         {
@@ -35,18 +35,27 @@ public class Cycle20SubjectRequestsTests(TestDatabaseFixture fixture) : ApiTestB
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         body.GetProperty("channel").GetString().Should().Be("Email");
-        body.GetProperty("receivedAt").GetDateTime().Should().BeCloseTo(receivedAt, TimeSpan.FromSeconds(5));
+        body.GetProperty("receivedAt").GetDateTime().ToUniversalTime().Should().BeCloseTo(receivedAt, TimeSpan.FromSeconds(5));
 
-        // Access requests get a 10-working-day-ish absolute deadline in this test config; the essential
-        // assertion is that dueAt is measured from receivedAt (3 days ago), not from "now" — so it must
-        // land noticeably BEFORE "now + the same nominal window" would if it had been computed from now.
-        var dueAt = body.GetProperty("dueAt").GetDateTime();
-        // Срок Access — 10 РАБОЧИХ дней (Пн–Пт), поэтому «наивный» срок от «сейчас» считаем по той же рабочей
-        // арифметике, а не DateTime.AddDays(10): календарные +10 дней от выходного дня дают дату РАНЬШЕ срока,
-        // посчитанного от поступления (3 дня назад), и тест краснел в зависимости от дня недели запуска.
-        var naiveDueFromNow = ServiceBooking.API.Services.WorkingDays.Add(DateTime.UtcNow, 10);
-        dueAt.Should().BeBefore(naiveDueFromNow,
-            "the deadline must be anchored to when the letter/e-mail actually arrived, not to today");
+        // Срок Access — 10 РАБОЧИХ дней (Пн–Пт) от даты поступления. Эталон считаем здесь же простым циклом по будням, независимо
+        // от продуктового WorkingDays: тест не должен повторять ту реализацию, которую проверяет. Дата поступления — 15 суток назад,
+        // чтобы срок «от поступления» и срок «от сейчас» различались не меньше чем на 10 суток и не совпали при любом дне недели.
+        var dueAt = body.GetProperty("dueAt").GetDateTime().ToUniversalTime();
+        var expected = AddWeekdays(receivedAt, 10);
+        dueAt.Should().BeCloseTo(expected, TimeSpan.FromSeconds(2),
+            "the deadline is 10 working days from when the letter/e-mail actually arrived, not from today");
+    }
+
+    /// <summary>Независимый эталон: сдвиг на N будних дней (Пн–Пт), день отсчёта не считается, время суток сохраняется.</summary>
+    private static DateTime AddWeekdays(DateTime from, int weekdays)
+    {
+        var current = from;
+        for (var counted = 0; counted < weekdays;)
+        {
+            current = current.AddDays(1);
+            if ((int)current.DayOfWeek is >= 1 and <= 5) counted++;
+        }
+        return current;
     }
 
     // ── CY20-SR-02: Channel must be Email or PostalMail — WebForm is rejected here ────────────────
