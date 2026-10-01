@@ -14,3 +14,6 @@
 // not explain, uncomment the line below to force the whole assembly back to sequential execution while
 // it is diagnosed. That is the entire rollback — no other file needs to change.
 // [assembly: CollectionBehavior(DisableTestParallelization = true)]
+
+// Цикл 36 (BE-36-03): самые долгие коллекции стартуют первыми, чтобы не оказаться одиночным хвостом прогона.
+[assembly: TestCollectionOrderer("ServiceBooking.Tests.Infrastructure.HeavyFirstCollectionOrderer", "ServiceBooking.Tests")]
