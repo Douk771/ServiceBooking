@@ -102,7 +102,7 @@ public static class TestRunEnvironment
     /// <summary>Ensures the server/template exist (creating them on the very first call across the whole
     /// process), then clones and returns this class' own database. Call exactly once per
     /// <see cref="TestDatabaseFixture"/>, from <see cref="IAsyncLifetime.InitializeAsync"/>.</summary>
-    public static async Task<TestClassDatabaseLease> LeaseClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default)
+    public static async Task<TestClassDatabaseLease> LeaseClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default, string? sourceSlot = null)
     {
         var databases = await EnsureEnvironmentAsync(cancellationToken);
 
@@ -112,7 +112,7 @@ public static class TestRunEnvironment
         await EnsureConnectionBudgetCheckedOnceAsync(cancellationToken);
 
         var createWatch = System.Diagnostics.Stopwatch.StartNew();
-        var databaseName = await databases.CreateClassDatabaseAsync(classSlot, cancellationToken);
+        var databaseName = await databases.CreateClassDatabaseAsync(classSlot, cancellationToken, sourceSlot);
         TestRunMetrics.ClassDb("class-db-created", classSlot, createWatch.Elapsed.TotalMilliseconds);
         var connectionString = databases.ConnectionStringFor(classSlot);
         Console.WriteLine($"[sb-test] class-db slot={classSlot} db={databaseName}");

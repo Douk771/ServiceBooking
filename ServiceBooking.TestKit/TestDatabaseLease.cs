@@ -74,16 +74,16 @@ public sealed class TestDatabaseLease
 
         // §91.5 п.1: CREATE DATABASE ... TEMPLATE requires zero live connections to the template —
         // the migration connection above must be fully released first.
-        await ReleaseTemplateConnectionsAsync(connection, templateName, cancellationToken);
+        await ReleaseTemplateConnectionsAsync(connection, templateName, TemplateSlot, cancellationToken);
     }
 
     /// <summary>ARCHITECTURE_CYCLE8_PHASE2.md §91.5 п.1: clears this process' Npgsql pool for the
     /// template's connection string, then terminates any OTHER still-open backend connected to it (e.g. a
     /// stray tool or a previous failed attempt's half-closed session) — `CREATE DATABASE ... TEMPLATE`
     /// refuses to run while anything is connected to the source database.</summary>
-    private async Task ReleaseTemplateConnectionsAsync(NpgsqlConnection maintenanceConnection, string templateName, CancellationToken cancellationToken)
+    private async Task ReleaseTemplateConnectionsAsync(NpgsqlConnection maintenanceConnection, string templateName, string templateSlot, CancellationToken cancellationToken)
     {
-        await using (var templatePoolProbe = new NpgsqlConnection(ConnectionStringFor(TemplateSlot)))
+        await using (var templatePoolProbe = new NpgsqlConnection(ConnectionStringFor(templateSlot)))
         {
             NpgsqlConnection.ClearPool(templatePoolProbe);
         }
@@ -102,7 +102,7 @@ public sealed class TestDatabaseLease
     /// (§91.5 п.2) — concurrent classes cloning from the same template at once is exactly the scenario
     /// that trips it, and it is otherwise fatal to the whole run.
     /// </summary>
-    public async Task<string> CreateClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default)
+    public async Task<string> CreateClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default, string? sourceSlot = null)
     {
         var name = DatabaseNameFor(classSlot);
 
@@ -112,7 +112,7 @@ public sealed class TestDatabaseLease
         // template (§91.5 п.2); taking it here would instead serialize every class' FULL migration behind
         // one process-wide lock, turning the escape-hatch mode into a many-minutes-long single-threaded
         // run instead of the ~46s parallel one it's meant to fall back from.
-        if (_noTemplate)
+        if (_noTemplate && sourceSlot is null)
         {
             await using var noTemplateConnection = new NpgsqlConnection(_server.MaintenanceConnectionString);
             await noTemplateConnection.OpenAsync(cancellationToken);
@@ -128,13 +128,14 @@ public sealed class TestDatabaseLease
             await using var connection = new NpgsqlConnection(_server.MaintenanceConnectionString);
             await connection.OpenAsync(cancellationToken);
 
-            var templateName = DatabaseNameFor(TemplateSlot);
+            // Cycle 36: sourceSlot clones another prepared database (the seeded demo template) instead of the run's migrated template.
+            var templateName = DatabaseNameFor(sourceSlot ?? TemplateSlot);
             const int maxAttempts = 3;
             for (var attempt = 1; ; attempt++)
             {
                 try
                 {
-                    await ReleaseTemplateConnectionsAsync(connection, templateName, cancellationToken);
+                    await ReleaseTemplateConnectionsAsync(connection, templateName, sourceSlot ?? TemplateSlot, cancellationToken);
                     await CreateDatabaseAsync(connection, name, template: templateName, cancellationToken);
                     break;
                 }
