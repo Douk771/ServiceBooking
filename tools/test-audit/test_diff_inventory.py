@@ -93,6 +93,26 @@ class DiffInventoryTests(unittest.TestCase):
         rows = [row("R36-B001", "unit", "—", "C.gone", "Б", "удалён", "N.newer")]
         self.assertEqual(run_diff("unit", before, [test("N", "new")], rows)[0], 4)
 
+    def test_merged_from_develop_row_covers_new_and_changed_tests_of_class_by_prefix(self):
+        rows = [row("R36-M001", "unit", "—", "N", "Е", "пришло мерджем develop")]
+        before = [test("N", "old", cases=1)]
+        after = [test("N", "old", cases=2), test("N", "new")]
+        self.assertEqual(run_diff("unit", before, after, rows)[0], 0)
+
+    def test_merged_from_develop_row_does_not_cover_other_class_with_same_prefix(self):
+        rows = [row("R36-M001", "unit", "—", "N", "Е", "пришло мерджем develop")]
+        self.assertEqual(run_diff("unit", [], [test("NN", "new")], rows)[0], 4)
+
+    def test_merged_from_develop_row_does_not_hide_a_removed_test(self):
+        rows = [row("R36-M001", "unit", "—", "N", "Е", "пришло мерджем develop")]
+        self.assertEqual(run_diff("unit", [test("N", "gone")], [], rows)[0], 4)
+
+    def test_merged_from_develop_row_covers_vitest_file(self):
+        rows = [row("R36-M001", "vitest", "—", "src/a.test.ts", "Е", "пришло мерджем develop")]
+        new = {"key": "src/a.test.ts::suite > it", "id": None, "className": "src/a.test.ts", "method": "it", "cases": 1,
+               "protectedZone": False}
+        self.assertEqual(run_diff("vitest", [], [new], rows)[0], 0)
+
 
 class TestCaseIdTests(unittest.TestCase):
     def test_id_is_taken_from_own_class(self):

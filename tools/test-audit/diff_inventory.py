@@ -10,11 +10,14 @@ import json
 import re
 import sys
 
-ROW_ID_RE = re.compile(r"^R36-[BF]\d{3}$")
+# Тесты, пришедшие в ветку мерджем develop (чужой цикл): строка реестра с этим действием закрывает ВСЕ новые и изменившиеся
+# по числу запусков тесты класса/файла из колонки «Тест» (сравнение по префиксу ключа до метода/описания), а не один тест.
+MERGED_ACTION = "пришло мерджем develop"
+ROW_ID_RE = re.compile(r"^R36-[BFM]\d{3}$")
 SUITES = {"unit", "functional", "vitest"}
 CATEGORIES = set("АБВГДЕ")
 ACTIONS = {"удалён", "перенесён в юнит", "объединён", "ускорен", "разделён", "переименован", "флейк-долг",
-           "добавлен (замена)", "изменение продуктового кода"}
+           "добавлен (замена)", "изменение продуктового кода", MERGED_ACTION}
 GONE_ACTIONS = {"удалён", "перенесён в юнит", "объединён", "переименован", "разделён"}
 NEW_ACTIONS = {"добавлен (замена)", "переименован", "разделён"}
 REGISTRY_HEADING = "## Цикл 36 — ревизия"
@@ -69,6 +72,13 @@ def matches_key(row, test):
     if key == suffix:
         return True
     return key.endswith(suffix) and key[-len(suffix) - 1] in ".:>+ "
+
+
+def merged_covers(row, test):
+    if row["action"] != MERGED_ACTION or not row["test"] or row["test"] in ("—", "-"):
+        return False
+    key, prefix = test["key"], row["test"]
+    return key.startswith(prefix) and key[len(prefix):len(prefix) + 1] in (".", "::", ":") or key.startswith(prefix + "::")
 
 
 def referenced_in_replacements(test, rows):
@@ -128,7 +138,7 @@ def main():
     vanished, appeared, changed, protected_removed = [], [], [], []
     for key, t in sorted(b.items()):
         if key in a:
-            if a[key]["cases"] != t["cases"] and not any(matches_key(r, t) for r in suite_rows):
+            if a[key]["cases"] != t["cases"] and not any(matches_key(r, t) or merged_covers(r, t) for r in suite_rows):
                 changed.append("%s (cases %d -> %d)" % (key, t["cases"], a[key]["cases"]))
             continue
         if dotnet and moved_by_id(t, before_pairs, after_pairs):
@@ -143,7 +153,7 @@ def main():
             continue
         if dotnet and moved_by_id(t, after_pairs, before_pairs):
             continue
-        ok = any(r["action"] in NEW_ACTIONS and matches_key(r, t) for r in suite_rows) \
+        ok = any(r["action"] in NEW_ACTIONS and matches_key(r, t) or merged_covers(r, t) for r in suite_rows) \
             or (args.suite == "unit" and referenced_in_replacements(t, suite_rows))
         if not ok:
             appeared.append(key)

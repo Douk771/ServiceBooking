@@ -7353,6 +7353,40 @@ Vitest разработчиков (не пересобирались QA): раз
 | `CY31-23` | флейк под нагрузкой: 62 запроса не укладывались в минутное окно лимита, 61-я правка проходила | лимит 60 остался продовым, окно `RateLimits:company-photos-edit:WindowMinutes` у хоста теста — 60 минут |
 | `NTF-L001` | при переводе класса на общий хост падал (файловый приёмник Serilog сбрасывает буфер позже) | у теста свой хост, как раньше |
 
+### Пришло мерджем develop (цикл 35)
+
+Тесты и переименования, которые попали в ветку цикла 36 слиянием `origin/develop` (цикл 35), а не появились в ревизии. «Тест» — класс (для .NET) или файл (для vitest): строка закрывает все новые и изменившиеся по числу запусков тесты этого класса/файла, но не закрывает исчезнувший тест. Снимки `before-*.json` не пересняты намеренно: они остаются точкой отсчёта ревизии на коммите инструментирования.
+
+| № | Набор | ID | Тест | Кат. | Действие | Причина | Замена |
+|---|---|---|---|---|---|---|---|
+| R36-M001 | unit | — | `ServiceBooking.UnitTests.DemoBoardTickRulesTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M002 | unit | — | `ServiceBooking.UnitTests.DemoModeValidationTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M003 | unit | — | `ServiceBooking.UnitTests.OpsCommandLineTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M004 | unit | — | `ServiceBooking.UnitTests.ShowcaseDatasetTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M005 | unit | — | `ServiceBooking.UnitTests.ShowcaseDemoProfileTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M006 | unit | — | `ServiceBooking.UnitTests.ShowcaseDemoRolesTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M007 | unit | — | `ServiceBooking.UnitTests.ShowcaseMixingGuardTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M008 | unit | — | `ServiceBooking.UnitTests.ShowcaseOrderTimelineTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M009 | unit | — | `ServiceBooking.UnitTests.ShowcaseOwnershipCoverageTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M010 | unit | — | `ServiceBooking.UnitTests.ShowcaseShopAssetsTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M011 | unit | — | `ServiceBooking.UnitTests.ShowcaseShopsDatasetTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M012 | functional | — | `ServiceBooking.Tests.Tests.Cycle28DemoContractTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M013 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoContractTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M014 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoLocksTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M015 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoMutationTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop; в цикле 36 класс сценариев разбит на читающие (общий сброс) и меняющие (`Cycle35DemoMutationTests`), тесты те же | — |
+| R36-M016 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoScenarioTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop; в цикле 36 класс сценариев разбит на читающие (общий сброс) и меняющие (`Cycle35DemoMutationTests`), тесты те же | — |
+| R36-M017 | functional | — | `ServiceBooking.Tests.Tests.Cycle35OffDemoTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M018 | functional | — | `ServiceBooking.Tests.Tests.OpenApiContractValidatorTests.Bundled_contracts_load_and_unknown_path_is_reported` | Е | пришло мерджем develop | develop добавил в тест контракт cycle35 (запусков 2 -> 3) | — |
+| R36-M019 | vitest | — | `goods/src/demo.test.tsx` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M020 | vitest | — | `src/api/demo.test.ts` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M021 | vitest | — | `src/components/demo/DemoBanner.test.tsx` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M022 | vitest | — | `src/components/demo/DemoRoleButtons.test.tsx` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M023 | vitest | — | `src/hooks/useDemoStatus.test.tsx` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M024 | vitest | — | `src/utils/demoRoles.test.ts` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M025 | unit | — | `ServiceBooking.UnitTests.ShowcaseDemoProfileTests.Roles_AreKnown_AndOnlyTheseThree` | Е | переименован | переименован в цикле 35 (develop) | `ServiceBooking.UnitTests.ShowcaseDemoProfileTests (см. строку класса)` |
+| R36-M026 | functional | — | `ServiceBooking.Tests.Tests.Cycle28DemoContractTests.DemoStatusLoginRestrictedAndResetting_MatchTheCycle28Contract` | Е | переименован | переименован в цикле 35 (develop) | `ServiceBooking.Tests.Tests.Cycle28DemoContractTests.DemoStatusLoginRestrictedAndResetting_MatchTheCycle35Contract` |
+| R36-M027 | vitest | — | `src/utils/demoRoles.test.ts::demoRoleHome (API_CONTRACT_CYCLE28.md §598) > sends each demo role to its own start screen` | Е | переименован | переименован в цикле 35 (develop) | `src/utils/demoRoles.test.ts (см. строку файла)` |
+
 ### Новые guard-тесты цикла 36
 
 | ID | Где | Что проверяет |
