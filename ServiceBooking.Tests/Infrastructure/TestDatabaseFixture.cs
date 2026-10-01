@@ -49,6 +49,7 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
 
     private readonly List<(string Key, IAsyncDisposable Host)> _classHosts = [];
     private readonly object _classHostsLock = new();
+    private readonly Dictionary<string, Exception> _classHostFailures = new();
 
     /// <summary>
     /// One host per CLASS for the given key (cycle 36, L1, ARCHITECTURE_CYCLE36.md §36.7.1): created and started on the first
@@ -68,8 +69,25 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
                     return (TFactory)host;
             }
 
-            var created = create(ConnectionString);
-            _ = created.Services; // start now: a failed start surfaces in the test that asked for the host
+            // A host whose start failed once is not started again by every following test of the class (each retry would cost the same
+            // seconds and leak a half-started factory): the first failure is cached and rethrown as the cause of the following ones.
+            if (_classHostFailures.TryGetValue(key, out var earlier))
+                throw new InvalidOperationException($"The class host '{key}' failed to start earlier in this class: {earlier.Message}", earlier);
+
+            TFactory? created = null;
+            try
+            {
+                created = create(ConnectionString);
+                _ = created.Services; // start now: a failed start surfaces in the test that asked for the host
+            }
+            catch (Exception ex)
+            {
+                try { created?.Dispose(); }
+                catch (Exception disposeFailure) { Console.WriteLine($"[sb-test] WARNING: не удалось освободить хост класса '{key}' после неудачного старта (slot={ClassSlot}): {disposeFailure.Message}"); }
+                _classHostFailures[key] = ex;
+                throw;
+            }
+
             _classHosts.Add((key, created));
             return created;
         }
@@ -145,7 +163,8 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
         {
             try
             {
-                await _lease.DropAsync();
+                // InitializeAsync may have failed before the lease was taken: nothing to drop then.
+                if (_lease is not null) await _lease.DropAsync();
             }
             finally
             {
