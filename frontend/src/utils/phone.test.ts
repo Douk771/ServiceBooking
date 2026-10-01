@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { formatPhone, maskPhoneInput, toCanonicalPhone, isRussianPhone, looksRussian, telHref } from './phone'
 

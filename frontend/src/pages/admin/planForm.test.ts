@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { defaultForm, ordersPlanPayload, ordersPlanLimitsError } from './planForm'
 import { buildAssignInput } from './billingAccountsHelpers'

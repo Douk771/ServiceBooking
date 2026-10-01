@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error mjs без типов
 import { checkApiUrl, isSwaggerUiHtml, isWithinShootingWindow, makePassword, normalizeHost } from '../../../../scripts/screenshots/seed-goods-demo.mjs'

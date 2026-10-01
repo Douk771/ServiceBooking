@@ -20,80 +20,66 @@ namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
 /// QA cycle 35, "Вызов 2" — the demo stand of "Заказы" as a visitor and an operator see it (US-35-02 … US-35-07). Written from SPEC_CYCLE35_GOODS_DEMO_STAND.md and
-/// API_CONTRACT_CYCLE35.md, not from the implementation. One host in demo mode on its own database "sbtest_&lt;key&gt;_demo", one operator reset in
-/// <see cref="InitializeAsync"/>, then scenarios against the generated demo. Order of the tests is random; every scenario that writes visitor data tolerates other
-/// scenarios' leftovers (the reset wipes everything anyway).
+/// API_CONTRACT_CYCLE35.md, not from the implementation. One host in demo mode per database "sbtest_&lt;key&gt;_&lt;variant&gt;_demo".
+/// Cycle 36: the scenarios that only READ the generated demo (<see cref="Cycle35DemoScenarioTests"/>) share one real reset per class; the scenarios that write
+/// (<see cref="Cycle35DemoMutationBase"/>) get a fresh demo per test by cloning the seeded template (<see cref="DemoSeededTemplate"/>), except the ones whose subject is the reset
+/// itself (<see cref="Cycle35DemoResetTests"/>), which run the real reset. Every group has its own collection and its own demo database (<see cref="Cycle35DemoSlots"/>).
 /// </summary>
-[Collection("Cycle28Generator")]
-public class Cycle35DemoScenarioTests : IAsyncLifetime
+public abstract class Cycle35DemoScenarioBase
 {
-    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
-    private static readonly string[] ShopRoles = ["shop-owner", "shop-staff", "shop-customer"];
+    protected static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
+    protected static readonly string[] ShopRoles = ["shop-owner", "shop-staff", "shop-customer"];
 
-    private TestClassDatabaseLease _lease = null!;
-    private DemoHostFactory _factory = null!;
+    protected abstract DemoScenarioState State { get; }
 
-    public async Task InitializeAsync()
-    {
-        _lease = await TestRunEnvironment.LeaseClassDatabaseAsync("demo");
-        _factory = new DemoHostFactory(_lease.ConnectionString, new Dictionary<string, string?> { ["DemoMode:ResetLocalTime"] = "00:00" });
-        _ = _factory.Services;
-        var (exit, output) = await OpsAsync("demo", "reset", "--yes");
-        exit.Should().Be(0, output);
-    }
-
-    public async Task DisposeAsync()
-    {
-        try { await _factory.DisposeAsync(); }
-        finally { await _lease.DropAsync(); }
-    }
+    protected DemoHostFactory _factory => State.Factory;
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
-    private async Task<(int Exit, string Output)> OpsAsync(params string[] words)
+    protected async Task<(int Exit, string Output)> OpsAsync(params string[] words)
     {
         var writer = new StringWriter();
         var exit = await OpsCommandRunner.RunAsync(_factory.Services, OpsCommandLine.Parse(["ops", .. words])!, writer);
         return (exit, writer.ToString());
     }
 
-    private async Task<T> Db<T>(Func<AppDbContext, Task<T>> query)
+    protected async Task<T> Db<T>(Func<AppDbContext, Task<T>> query)
     {
         using var scope = _factory.Services.CreateScope();
         return await query(scope.ServiceProvider.GetRequiredService<AppDbContext>());
     }
 
-    private HttpClient Client(string? token = null)
+    protected HttpClient Client(string? token = null)
     {
         var http = _factory.CreateClient();
         if (token is not null) http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return http;
     }
 
-    private async Task<AuthResponseDto> LoginAsync(string role)
+    protected async Task<AuthResponseDto> LoginAsync(string role)
     {
         var response = await Client().PostAsJsonAsync("/api/demo/login", new { role });
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>(Web))!;
     }
 
-    private static async Task<JsonElement> J(HttpResponseMessage response, HttpStatusCode expected = HttpStatusCode.OK)
+    protected static async Task<JsonElement> J(HttpResponseMessage response, HttpStatusCode expected = HttpStatusCode.OK)
     {
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(expected, text);
         return JsonDocument.Parse(text).RootElement.Clone();
     }
 
-    private sealed record DemoShop(Guid Id, string Slug, string Name);
+    protected sealed record DemoShop(Guid Id, string Slug, string Name);
 
-    private async Task<List<DemoShop>> ShopsAsync() => await Db(async db => (await db.Companies.AsNoTracking()
+    protected async Task<List<DemoShop>> ShopsAsync() => await Db(async db => (await db.Companies.AsNoTracking()
         .Where(c => c.IsShowcase && c.Kind == CompanyKind.Orders).OrderBy(c => c.Name).Select(c => new { c.Id, c.Slug, c.Name }).ToListAsync())
         .Select(c => new DemoShop(c.Id, c.Slug, c.Name)).ToList());
 
-    private async Task<DemoShop> CoffeeShopAsync() => (await ShopsAsync()).Single(s => s.Slug.Contains("kofeinya"));
+    protected async Task<DemoShop> CoffeeShopAsync() => (await ShopsAsync()).Single(s => s.Slug.Contains("kofeinya"));
 
     /// <summary>Round-the-clock hours through the demo owner's own cabinet (a change the demo allows) so that the scenario does not depend on the time of the run.</summary>
-    private async Task OpenAllDayAsync(DemoShop shop, string ownerToken)
+    protected async Task OpenAllDayAsync(DemoShop shop, string ownerToken)
     {
         var owner = Client(ownerToken);
         var days = Enum.GetValues<DayOfWeek>().Select(d => new WorkingDayInput(d, [new TimeIntervalInput("04:05", "04:00")])).ToList();
@@ -104,7 +90,7 @@ public class Cycle35DemoScenarioTests : IAsyncLifetime
         await owner.PutJsonAsync($"/api/shops/{shop.Id}/acceptance", new { mode = "Open" }); // best effort: a paused/stopped state is not what this scenario looks at
     }
 
-    private async Task<(Guid ProductId, decimal Price)> AnyPieceProductAsync(DemoShop shop)
+    protected async Task<(Guid ProductId, decimal Price)> AnyPieceProductAsync(DemoShop shop)
     {
         var storefront = await J(await Client().GetAsync($"/api/storefront/{shop.Slug}"));
         foreach (var category in storefront.GetProperty("categories").EnumerateArray())
@@ -114,10 +100,17 @@ public class Cycle35DemoScenarioTests : IAsyncLifetime
         throw new InvalidOperationException("no available piece product in " + shop.Slug);
     }
 
-    private async Task<JsonElement> BoardAsync(DemoShop shop, string token) =>
+    protected async Task<JsonElement> BoardAsync(DemoShop shop, string token) =>
         await J(await Client(token).GetAsync($"/api/shops/{shop.Id}/order-board"));
 
-    private static IEnumerable<JsonElement> BoardCards(JsonElement board)
+    protected async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, string token, HttpContent? body)
+    {
+        using var request = new HttpRequestMessage(method, url) { Content = body };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return await _factory.CreateClient().SendAsync(request);
+    }
+
+    protected static IEnumerable<JsonElement> BoardCards(JsonElement board)
     {
         foreach (var column in new[] { "newOrders", "accepted", "ready", "completedToday" })
             if (board.TryGetProperty(column, out var list) && list.ValueKind == JsonValueKind.Array)
@@ -127,10 +120,40 @@ public class Cycle35DemoScenarioTests : IAsyncLifetime
                 foreach (var card in g.GetProperty("orders").EnumerateArray()) yield return card;
     }
 
-    private static int Count(JsonElement board, string column) =>
+    protected static int Count(JsonElement board, string column) =>
         board.TryGetProperty(column, out var list) && list.ValueKind == JsonValueKind.Array ? list.GetArrayLength() : 0;
 
     // ── US-35-02: the generated shops ────────────────────────────────────────────────────────────
+}
+
+/// <summary>Collections and database slots of the cycle-35 demo classes. Every slot is a separate demo database whose name still ends with "_demo" (lock 1 of the demo
+/// mode); the classes of one collection share it one after another, the collections run in parallel.</summary>
+public static class Cycle35DemoSlots
+{
+    public const string ReadCollection = "Cycle35DemoRead";
+    public const string Read = DemoDatabaseSlots.Read35;
+    public const string A = DemoDatabaseSlots.A35;
+    public const string B = DemoDatabaseSlots.B35;
+    public const string Reset = DemoDatabaseSlots.Reset35;
+}
+
+public sealed class Cycle35DemoScenarioFixture : IAsyncLifetime
+{
+    public DemoScenarioState State { get; private set; } = null!;
+
+    public async Task InitializeAsync() => State = await DemoScenarioState.CreateAsync(Cycle35DemoSlots.Read);
+
+    public async Task DisposeAsync()
+    {
+        if (State is not null) await State.DisposeAsync(); // InitializeAsync may have failed before the state existed
+    }
+}
+
+/// <summary>Scenarios that only read the generated demo (no write through the API, no reset): one shared reset per class.</summary>
+[Collection(Cycle35DemoSlots.ReadCollection)]
+public class Cycle35DemoScenarioTests(Cycle35DemoScenarioFixture fixture) : Cycle35DemoScenarioBase, IClassFixture<Cycle35DemoScenarioFixture>
+{
+    protected override DemoScenarioState State => fixture.State;
 
     [Fact, TestCase("CY35-10")]
     public async Task FiveShops_AreInCatalog_WithLogoPhotosPhoneHours_AndAllCitiesShowsAllFive()
@@ -279,27 +302,6 @@ public class Cycle35DemoScenarioTests : IAsyncLifetime
         });
     }
 
-    [Fact, TestCase("CY35-15")]
-    public async Task Determinism_TwoResetsOnOneDate_GiveTheSameShopsProductsPhonesAndOrderCount()
-    {
-        async Task<string> Fingerprint() => await Db(async db =>
-        {
-            var shops = await db.Companies.Where(c => c.IsShowcase && c.Kind == CompanyKind.Orders).OrderBy(c => c.Id)
-                .Select(c => c.Id + "|" + c.Name + "|" + c.Phone + "|" + c.Slug).ToListAsync();
-            var products = await db.Products.Where(p => db.Companies.Any(c => c.Id == p.CompanyId && c.IsShowcase)).OrderBy(p => p.Id).Select(p => p.Id + "|" + p.Name + "|" + p.Price).ToListAsync();
-            var orders = await db.Orders.CountAsync();
-            var items = await db.OrderItems.CountAsync();
-            return string.Join(";", shops) + "#" + string.Join(";", products) + "#" + orders + "/" + items;
-        });
-
-        var first = await Fingerprint();
-        var (exit, output) = await OpsAsync("demo", "reset", "--yes");
-        exit.Should().Be(0, output);
-        (await Fingerprint()).Should().Be(first, "the generator is deterministic: same date, same set (only dates move)");
-    }
-
-    // ── US-35-03: entering under a ready role ────────────────────────────────────────────────────
-
     [Fact, TestCase("CY35-20")]
     public async Task StatusAndRoles_SalonByDefault_ShopsByProduct_BadProductIs400()
     {
@@ -320,6 +322,206 @@ public class Cycle35DemoScenarioTests : IAsyncLifetime
         (await http.PostAsJsonAsync("/api/demo/login", new { role = "shop-master" })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await http.PostAsJsonAsync("/api/demo/login", new { role = "SHOP-OWNER" })).StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.OK);
     }
+
+    [Fact, TestCase("CY35-23")]
+    public async Task Customer_MyOrders_ActiveToday_PreorderTomorrow_History_OneCancelled_EveryOrderPageOpens()
+    {
+        var customer = await LoginAsync("shop-customer");
+        var mine = await J(await Client(customer.Token).GetAsync("/api/orders/my"));
+        var list = mine.EnumerateArray().ToList();
+        list.Count.Should().BeInRange(7, 14, "«Мои заказы»: активный, предзаказ и 5–10 завершённых");
+
+        list.Count(o => o.GetProperty("isActive").GetBoolean()).Should().BeGreaterThanOrEqualTo(1, "an active order");
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Europe/Moscow")));
+        list.Any(o => o.GetProperty("isActive").GetBoolean() && DateOnly.Parse(o.GetProperty("pickup").GetProperty("date").GetString()!) > today).Should().BeTrue(
+            "a pre-order for tomorrow; today is " + today + ", orders: " + string.Join("; ", list.Select(o => o.GetProperty("businessDate").GetString() + "/" + o.GetProperty("status").GetString() + "/" + o.GetProperty("pickup").GetRawText())));
+        list.Count(o => !o.GetProperty("isActive").GetBoolean()).Should().BeInRange(5, 12);
+        list.Any(o => o.GetProperty("status").GetString() is "CancelledByCustomer" or "CancelledByShop" or "Rejected").Should().BeTrue("one order is cancelled");
+        list.Select(o => o.GetProperty("shopName").GetString()).Distinct().Count().Should().BeInRange(2, 3, "orders in 2–3 shops");
+
+        foreach (var o in list)
+        {
+            var token = o.GetProperty("token").GetString()!;
+            o.GetProperty("orderUrl").GetString().Should().StartWith("https://demo.zakaz.ezbook.ru/o/");
+            var page = await Client().GetAsync($"/api/orders/public/{token}");
+            page.StatusCode.Should().Be(HttpStatusCode.OK, "every order page opens: " + token);
+        }
+    }
+
+    [Fact, TestCase("CY35-50")]
+    public async Task EveryAbsoluteAddressOfTheDemoApi_IsADemoAddress_NoProductionHostAnywhere()
+    {
+        var coffee = await CoffeeShopAsync();
+        var owner = await LoginAsync("shop-owner");
+        var customer = await LoginAsync("shop-customer");
+        var asOwner = Client(owner.Token);
+
+        var bodies = new List<(string Name, string Text)>();
+        async Task Collect(string name, HttpClient client, string url)
+        {
+            var r = await client.GetAsync(url);
+            r.StatusCode.Should().Be(HttpStatusCode.OK, name);
+            bodies.Add((name, await r.Content.ReadAsStringAsync()));
+        }
+        await Collect("status", Client(), "/api/demo/status?product=orders");
+        await Collect("shop", asOwner, $"/api/shops/{coffee.Id}");
+        await Collect("my shops", asOwner, "/api/shops/my");
+        await Collect("storefront", Client(), $"/api/storefront/{coffee.Slug}");
+        await Collect("catalog", Client(), "/api/goods/catalog");
+        await Collect("kinds-summary", asOwner, "/api/Companies/kinds-summary");
+        await Collect("push config", Client(owner.Token), "/api/push/config?site=Orders");
+        await Collect("my orders", Client(customer.Token), "/api/orders/my");
+        await Collect("listing", asOwner, $"/api/shops/{coffee.Id}/catalog-listing");
+        await Collect("notification settings", asOwner, $"/api/shops/{coffee.Id}/notification-settings");
+        var qr = await asOwner.GetAsync($"/api/shops/{coffee.Id}/qr");
+        qr.StatusCode.Should().Be(HttpStatusCode.OK);
+        bodies.Add(("qr headers", string.Join(";", qr.Headers.Select(h => string.Join(",", h.Value))) + System.Text.Encoding.UTF8.GetString(await qr.Content.ReadAsByteArrayAsync())));
+
+        var mine = JsonDocument.Parse(bodies.Single(b => b.Name == "my orders").Text).RootElement;
+        await Collect("order page", Client(), $"/api/orders/public/{mine[0].GetProperty("token").GetString()}");
+
+        foreach (var (name, text) in bodies)
+        {
+            // known debt C35-1 (API_CONTRACT_CYCLE35 §35.25): the status TEXT of the catalog listing names the production domain; no link may
+            if (name == "listing") text.Should().NotContain("https://goods.ezbook.ru", name); else text.Should().NotContain("goods.ezbook.ru", name);
+            text.Should().NotContain("https://ezbook.ru", name);
+            System.Text.RegularExpressions.Regex.IsMatch(text, @"https://visit\.ezbook\.ru").Should().BeFalse(name + ": only demo.visit is allowed");
+        }
+    }
+
+    [Fact, TestCase("CY35-51")]
+    public async Task KindsSummaryAndPushConfig_CarryTheTwoDemoAddresses_ShopUrlsPointToDemoZakaz()
+    {
+        var coffee = await CoffeeShopAsync();
+        var owner = await LoginAsync("shop-owner");
+
+        var kinds = await J(await Client(owner.Token).GetAsync("/api/Companies/kinds-summary"));
+        kinds.GetProperty("services").GetProperty("siteUrl").GetString().Should().Be("https://demo.visit.ezbook.ru");
+        kinds.GetProperty("orders").GetProperty("siteUrl").GetString().Should().Be("https://demo.zakaz.ezbook.ru");
+
+        var push = await J(await Client(owner.Token).GetAsync("/api/push/config?site=Orders"));
+        push.GetProperty("siteUrls").GetProperty("orders").GetString().Should().Be("https://demo.zakaz.ezbook.ru");
+        push.GetProperty("siteUrls").GetProperty("services").GetString().Should().Be("https://demo.visit.ezbook.ru");
+
+        var shop = await J(await Client(owner.Token).GetAsync($"/api/shops/{coffee.Id}"));
+        shop.GetProperty("publicUrl").GetString().Should().Be($"https://demo.zakaz.ezbook.ru/{coffee.Slug}");
+        var storefront = await J(await Client().GetAsync($"/api/storefront/{coffee.Slug}"));
+        storefront.GetProperty("publicUrl").GetString().Should().Be($"https://demo.zakaz.ezbook.ru/{coffee.Slug}");
+    }
+
+    [Fact, TestCase("CY35-62")]
+    public async Task ResetPlan_ShowsShopsLine_AndShowcasePlanForDemoProfile_ChangingCommandsAreRefused()
+    {
+        var (exit, plan) = await OpsAsync("demo", "reset");
+        exit.Should().Be(0, plan);
+        plan.Should().Contain("будет создано (Заказы): shops=5");
+
+        var (planExit, planText) = await OpsAsync("showcase", "plan", "--profile", "demo");
+        planExit.Should().Be(0, planText);
+        planText.Should().Contain("shops=5");
+
+        foreach (var command in new[] { "create", "recreate", "delete" })
+        {
+            var (code, text) = await OpsAsync("showcase", command, "--profile", "demo", "--yes");
+            code.Should().Be(2, command + ": " + text);
+            text.Should().Contain("ops demo reset");
+        }
+
+        // plan for prod (the default) is the output of cycle 28: no shops at all
+        var (prodExit, prodPlan) = await OpsAsync("showcase", "plan");
+        prodExit.Should().Be(0, prodPlan);
+        prodPlan.Should().NotContain("shops=");
+    }
+
+    [Fact, TestCase("CY35-30")]
+    public async Task Restrictions_ThreeNewRoutesAndOldOnes_Refused403WithTextAndHeader_ForEveryShopRole_EvenWithBrokenBody()
+    {
+        const string text = "В демо-версии это действие недоступно.";
+        var coffee = await CoffeeShopAsync();
+        var staffMember = await Db(db => db.CompanyMembers.Where(m => m.CompanyId == coffee.Id && m.Role == UserRole.Master).Select(m => new { m.Id, m.UserId }).FirstAsync());
+        var routes = new (HttpMethod Method, string Url)[]
+        {
+            (HttpMethod.Put, $"/api/shops/{coffee.Id}/slug"),
+            (HttpMethod.Delete, $"/api/Companies/{coffee.Id}/members/{staffMember.Id}"),
+            (HttpMethod.Post, "/api/staff-max/link-sessions"),
+            (HttpMethod.Post, "/api/profile/change-password"), (HttpMethod.Post, "/api/profile/change-phone"),
+            (HttpMethod.Post, "/api/profile/delete-account"), (HttpMethod.Post, "/api/billing/subscription/request"),
+            (HttpMethod.Post, "/api/billing/trial"),
+        };
+
+        foreach (var role in ShopRoles)
+        {
+            var auth = await LoginAsync(role);
+            foreach (var (method, url) in routes)
+            {
+                foreach (HttpContent? body in new HttpContent?[]
+                         {
+                             JsonContent.Create(new { slug = "hacked-slug", currentPassword = "x", newPassword = "Password123!2", phone = "79001234567" }),
+                             null,
+                             new StringContent("not json", System.Text.Encoding.UTF8, "application/json"),
+                         })
+                {
+                    var response = await SendAsync(method, url, auth.Token, body);
+                    var answer = await response.Content.ReadAsStringAsync();
+                    response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{role} {method} {url}: {answer}");
+                    answer.Should().Be(text, $"{role} {url}");
+                    response.Headers.GetValues("X-Demo-Restricted").Should().ContainSingle().Which.Should().Be("1");
+                }
+            }
+        }
+
+        // nothing changed: the slug and the demo staff are where they were
+        (await ShopsAsync()).Should().Contain(s => s.Id == coffee.Id && s.Slug == coffee.Slug);
+        (await Db(db => db.CompanyMembers.AnyAsync(m => m.Id == staffMember.Id))).Should().BeTrue();
+
+        // anonymous: the ordinary 401, no demo header
+        var anonymous = await Client().PutAsJsonAsync($"/api/shops/{coffee.Id}/slug", new { slug = "x-y-z" });
+        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        anonymous.Headers.Contains("X-Demo-Restricted").Should().BeFalse();
+    }
+}
+
+/// <summary>
+/// Scenarios that write (orders, settings, visitors, resets): each starts from its own fresh reset. Order of the tests is random. Cycle 36: the 12 scenarios are
+/// spread over classes, each in its own collection with its own demo database (<see cref="Cycle35DemoSlots"/>), so that they run in parallel. The tests whose subject is the reset
+/// itself (CY35-15, 60, 61) are in <see cref="Cycle35DemoResetTests"/> and call the real product reset; the others get the fresh demo by cloning the seeded template.
+/// </summary>
+public abstract class Cycle35DemoMutationBase : Cycle35DemoScenarioBase, IAsyncLifetime
+{
+    private DemoScenarioState _state = null!;
+
+    protected abstract string Slot { get; }
+
+    /// <summary>true: the fresh demo of each test is cloned from the seeded template (arrange only); false: each test runs the real product reset.</summary>
+    protected virtual bool Seeded => true;
+
+    protected override DemoScenarioState State => _state;
+
+    public async Task InitializeAsync() => _state = await DemoScenarioState.CreateAsync(Slot, Seeded);
+
+    public async Task DisposeAsync()
+    {
+        if (_state is not null) await _state.DisposeAsync(); // InitializeAsync may have failed before the state existed
+    }
+
+
+    protected async Task AssertNothingQueuedAsync() => await Db(async db =>
+    {
+        (await db.OutboundNotifications.CountAsync()).Should().Be(0, "no WhatsApp/MAX message about an order");
+        (await db.StaffPushNotifications.CountAsync()).Should().Be(0, "no push to staff");
+        (await db.CustomerOrderPushNotifications.CountAsync(n => n.Status == NotificationStatus.Pending)).Should().Be(0, "no push to a customer waits in the queue");
+        (await db.StaffMaxMessages.CountAsync(m => m.Status == NotificationStatus.Pending)).Should().Be(0, "no message to staff in MAX waits in the queue");
+        return 0;
+    });
+
+    protected static string Pad(string s) => s.PadRight(s.Length + (4 - s.Length % 4) % 4, '=');
+}
+
+
+[Collection("Cycle35DemoMutA")]
+public class Cycle35DemoMutationATests : Cycle35DemoMutationBase
+{
+    protected override string Slot => Cycle35DemoSlots.A;
 
     [Fact, TestCase("CY35-21")]
     public async Task ShopRoles_GetRightRoleAndClaim_OwnerTermsWithoutConsentGate_PasswordStaysClosed()
@@ -343,8 +545,6 @@ public class Cycle35DemoScenarioTests : IAsyncLifetime
         put.StatusCode.Should().NotBe(HttpStatusCode.UnavailableForLegalReasons, "the demo owner has current owner terms");
         put.StatusCode.Should().Be(HttpStatusCode.OK, await put.Content.ReadAsStringAsync());
     }
-
-    private static string Pad(string s) => s.PadRight(s.Length + (4 - s.Length % 4) % 4, '=');
 
     [Fact, TestCase("CY35-22")]
     public async Task OwnerCabinet_IsFull_StaffSeesBoardButNotCatalogReportsOrSettings()
@@ -381,31 +581,6 @@ public class Cycle35DemoScenarioTests : IAsyncLifetime
         var other = (await ShopsAsync()).First(s => s.Id != coffee.Id);
         (await asStaff.GetAsync($"/api/shops/{other.Id}/order-board")).StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.NotFound);
         (await asOwner.GetAsync($"/api/shops/{other.Id}/order-board")).StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.NotFound);
-    }
-
-    [Fact, TestCase("CY35-23")]
-    public async Task Customer_MyOrders_ActiveToday_PreorderTomorrow_History_OneCancelled_EveryOrderPageOpens()
-    {
-        var customer = await LoginAsync("shop-customer");
-        var mine = await J(await Client(customer.Token).GetAsync("/api/orders/my"));
-        var list = mine.EnumerateArray().ToList();
-        list.Count.Should().BeInRange(7, 14, "«Мои заказы»: активный, предзаказ и 5–10 завершённых");
-
-        list.Count(o => o.GetProperty("isActive").GetBoolean()).Should().BeGreaterThanOrEqualTo(1, "an active order");
-        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Europe/Moscow")));
-        list.Any(o => o.GetProperty("isActive").GetBoolean() && DateOnly.Parse(o.GetProperty("pickup").GetProperty("date").GetString()!) > today).Should().BeTrue(
-            "a pre-order for tomorrow; today is " + today + ", orders: " + string.Join("; ", list.Select(o => o.GetProperty("businessDate").GetString() + "/" + o.GetProperty("status").GetString() + "/" + o.GetProperty("pickup").GetRawText())));
-        list.Count(o => !o.GetProperty("isActive").GetBoolean()).Should().BeInRange(5, 12);
-        list.Any(o => o.GetProperty("status").GetString() is "CancelledByCustomer" or "CancelledByShop" or "Rejected").Should().BeTrue("one order is cancelled");
-        list.Select(o => o.GetProperty("shopName").GetString()).Distinct().Count().Should().BeInRange(2, 3, "orders in 2–3 shops");
-
-        foreach (var o in list)
-        {
-            var token = o.GetProperty("token").GetString()!;
-            o.GetProperty("orderUrl").GetString().Should().StartWith("https://demo.zakaz.ezbook.ru/o/");
-            var page = await Client().GetAsync($"/api/orders/public/{token}");
-            page.StatusCode.Should().Be(HttpStatusCode.OK, "every order page opens: " + token);
-        }
     }
 
     [Fact, TestCase("CY35-24")]
@@ -499,6 +674,12 @@ public class Cycle35DemoScenarioTests : IAsyncLifetime
         b.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.OK, HttpStatusCode.Conflict);
         (await Db(db => db.Orders.CountAsync(o => o.IdempotencyKey == key))).Should().Be(1);
     }
+}
+
+[Collection("Cycle35DemoMutB")]
+public class Cycle35DemoMutationBTests : Cycle35DemoMutationBase
+{
+    protected override string Slot => Cycle35DemoSlots.B;
 
     [Fact, TestCase("CY35-26")]
     public async Task ParallelOrders_OfOneShop_GetDistinctNumbers_AndNoErrors()
@@ -520,62 +701,6 @@ public class Cycle35DemoScenarioTests : IAsyncLifetime
         results.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.Created, string.Join(" | ", results.Select(r => r.Body).Distinct()));
         var numbers = results.Select(r => JsonDocument.Parse(r.Body).RootElement.GetProperty("order").GetProperty("number").GetInt32()).ToList();
         numbers.Distinct().Count().Should().Be(8, "order numbers of a day are not repeated");
-    }
-
-    // ── US-35-04: restrictions ───────────────────────────────────────────────────────────────────
-
-    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, string token, HttpContent? body)
-    {
-        using var request = new HttpRequestMessage(method, url) { Content = body };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        return await _factory.CreateClient().SendAsync(request);
-    }
-
-    [Fact, TestCase("CY35-30")]
-    public async Task Restrictions_ThreeNewRoutesAndOldOnes_Refused403WithTextAndHeader_ForEveryShopRole_EvenWithBrokenBody()
-    {
-        const string text = "В демо-версии это действие недоступно.";
-        var coffee = await CoffeeShopAsync();
-        var staffMember = await Db(db => db.CompanyMembers.Where(m => m.CompanyId == coffee.Id && m.Role == UserRole.Master).Select(m => new { m.Id, m.UserId }).FirstAsync());
-        var routes = new (HttpMethod Method, string Url)[]
-        {
-            (HttpMethod.Put, $"/api/shops/{coffee.Id}/slug"),
-            (HttpMethod.Delete, $"/api/Companies/{coffee.Id}/members/{staffMember.Id}"),
-            (HttpMethod.Post, "/api/staff-max/link-sessions"),
-            (HttpMethod.Post, "/api/profile/change-password"), (HttpMethod.Post, "/api/profile/change-phone"),
-            (HttpMethod.Post, "/api/profile/delete-account"), (HttpMethod.Post, "/api/billing/subscription/request"),
-            (HttpMethod.Post, "/api/billing/trial"),
-        };
-
-        foreach (var role in ShopRoles)
-        {
-            var auth = await LoginAsync(role);
-            foreach (var (method, url) in routes)
-            {
-                foreach (HttpContent? body in new HttpContent?[]
-                         {
-                             JsonContent.Create(new { slug = "hacked-slug", currentPassword = "x", newPassword = "Password123!2", phone = "79001234567" }),
-                             null,
-                             new StringContent("not json", System.Text.Encoding.UTF8, "application/json"),
-                         })
-                {
-                    var response = await SendAsync(method, url, auth.Token, body);
-                    var answer = await response.Content.ReadAsStringAsync();
-                    response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{role} {method} {url}: {answer}");
-                    answer.Should().Be(text, $"{role} {url}");
-                    response.Headers.GetValues("X-Demo-Restricted").Should().ContainSingle().Which.Should().Be("1");
-                }
-            }
-        }
-
-        // nothing changed: the slug and the demo staff are where they were
-        (await ShopsAsync()).Should().Contain(s => s.Id == coffee.Id && s.Slug == coffee.Slug);
-        (await Db(db => db.CompanyMembers.AnyAsync(m => m.Id == staffMember.Id))).Should().BeTrue();
-
-        // anonymous: the ordinary 401, no demo header
-        var anonymous = await Client().PutAsJsonAsync($"/api/shops/{coffee.Id}/slug", new { slug = "x-y-z" });
-        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        anonymous.Headers.Contains("X-Demo-Restricted").Should().BeFalse();
     }
 
     [Fact, TestCase("CY35-31")]
@@ -612,17 +737,6 @@ public class Cycle35DemoScenarioTests : IAsyncLifetime
             r.Headers.Contains("X-Demo-Restricted").Should().BeFalse($"{method} {url} for an ordinary visitor");
         }
     }
-
-    // ── US-35-05: nothing goes out ───────────────────────────────────────────────────────────────
-
-    private async Task AssertNothingQueuedAsync() => await Db(async db =>
-    {
-        (await db.OutboundNotifications.CountAsync()).Should().Be(0, "no WhatsApp/MAX message about an order");
-        (await db.StaffPushNotifications.CountAsync()).Should().Be(0, "no push to staff");
-        (await db.CustomerOrderPushNotifications.CountAsync(n => n.Status == NotificationStatus.Pending)).Should().Be(0, "no push to a customer waits in the queue");
-        (await db.StaffMaxMessages.CountAsync(m => m.Status == NotificationStatus.Pending)).Should().Be(0, "no message to staff in MAX waits in the queue");
-        return 0;
-    });
 
     [Fact, TestCase("CY35-40")]
     public async Task OrderLifecycleInDemo_CreateAcceptChangeCancel_QueuesNothing_AndMessengerFlagIsIgnored()
@@ -685,70 +799,69 @@ public class Cycle35DemoScenarioTests : IAsyncLifetime
         await AssertNothingQueuedAsync();
     }
 
-    // ── US-35-08 / links: nothing points to production ───────────────────────────────────────────
-
-    [Fact, TestCase("CY35-50")]
-    public async Task EveryAbsoluteAddressOfTheDemoApi_IsADemoAddress_NoProductionHostAnywhere()
+    [Fact, TestCase("CY35-70")]
+    public async Task BoardTick_AdvancesGeneratedOrders_WithJournal_AndClosesStaleVisitorOrder_ButNotOnOffDemo()
     {
         var coffee = await CoffeeShopAsync();
         var owner = await LoginAsync("shop-owner");
-        var customer = await LoginAsync("shop-customer");
-        var asOwner = Client(owner.Token);
+        await OpenAllDayAsync(coffee, owner.Token);
+        var (productId, price) = await AnyPieceProductAsync(coffee);
 
-        var bodies = new List<(string Name, string Text)>();
-        async Task Collect(string name, HttpClient client, string url)
+        var r = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
         {
-            var r = await client.GetAsync(url);
-            r.StatusCode.Should().Be(HttpStatusCode.OK, name);
-            bodies.Add((name, await r.Content.ReadAsStringAsync()));
-        }
-        await Collect("status", Client(), "/api/demo/status?product=orders");
-        await Collect("shop", asOwner, $"/api/shops/{coffee.Id}");
-        await Collect("my shops", asOwner, "/api/shops/my");
-        await Collect("storefront", Client(), $"/api/storefront/{coffee.Slug}");
-        await Collect("catalog", Client(), "/api/goods/catalog");
-        await Collect("kinds-summary", asOwner, "/api/Companies/kinds-summary");
-        await Collect("push config", Client(owner.Token), "/api/push/config?site=Orders");
-        await Collect("my orders", Client(customer.Token), "/api/orders/my");
-        await Collect("listing", asOwner, $"/api/shops/{coffee.Id}/catalog-listing");
-        await Collect("notification settings", asOwner, $"/api/shops/{coffee.Id}/notification-settings");
-        var qr = await asOwner.GetAsync($"/api/shops/{coffee.Id}/qr");
-        qr.StatusCode.Should().Be(HttpStatusCode.OK);
-        bodies.Add(("qr headers", string.Join(";", qr.Headers.Select(h => string.Join(",", h.Value))) + System.Text.Encoding.UTF8.GetString(await qr.Content.ReadAsByteArrayAsync())));
+            idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } }, customerName = "Гость", customerPhone = "79990005566",
+        });
+        var created = await J(r, HttpStatusCode.Created);
+        var token = created.GetProperty("order").GetProperty("token").GetString()!;
+        var orderId = await Db(db => db.Orders.Where(o => o.PublicToken == token).Select(o => o.Id).SingleAsync());
 
-        var mine = JsonDocument.Parse(bodies.Single(b => b.Name == "my orders").Text).RootElement;
-        await Collect("order page", Client(), $"/api/orders/public/{mine[0].GetProperty("token").GetString()}");
-
-        foreach (var (name, text) in bodies)
+        // the pickup time of a visitor's order passed more than 50 minutes ago (the clock of the task is explicit, the same way the operator's machine would see it later)
+        var pickup = await Db(db => db.Orders.Where(o => o.Id == orderId).Select(o => o.PickupStartUtc).SingleAsync());
+        using (var scope = _factory.Services.CreateScope())
         {
-            // known debt C35-1 (API_CONTRACT_CYCLE35 §35.25): the status TEXT of the catalog listing names the production domain; no link may
-            if (name == "listing") text.Should().NotContain("https://goods.ezbook.ru", name); else text.Should().NotContain("goods.ezbook.ru", name);
-            text.Should().NotContain("https://ezbook.ru", name);
-            System.Text.RegularExpressions.Regex.IsMatch(text, @"https://visit\.ezbook\.ru").Should().BeFalse(name + ": only demo.visit is allowed");
+            var ticker = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Demo.DemoBoardTicker>();
+            var afterSixty = pickup.AddMinutes(60);
+            await ticker.TickAsync(afterSixty, CancellationToken.None);
         }
+        var order = await Db(db => db.Orders.AsNoTracking().Include(o => o.Events).SingleAsync(o => o.Id == orderId));
+        new[] { OrderStatus.Rejected, OrderStatus.CancelledByShop, OrderStatus.NotPickedUp }.Should().Contain(order.Status, "a stale visitor order does not hang on the board");
+        order.Events.Should().Contain(e => e.ActorKind == OrderActorKind.System && e.Reason != null && e.Reason.Contains("Демо"), "the journal says why");
+        (await J(await Client().GetAsync($"/api/orders/public/{token}"))).GetProperty("reason").GetString().Should().Contain("Демо");
+
+        // nothing left: the tick does not write to any outgoing queue
+        await AssertNothingQueuedAsync();
     }
+}
 
-    [Fact, TestCase("CY35-51")]
-    public async Task KindsSummaryAndPushConfig_CarryTheTwoDemoAddresses_ShopUrlsPointToDemoZakaz()
+[Collection("Cycle35DemoReset")]
+public class Cycle35DemoResetTests : Cycle35DemoMutationBase
+{
+    protected override string Slot => Cycle35DemoSlots.Reset;
+
+    protected override bool Seeded => false;
+
+    [Fact, TestCase("CY35-15")]
+    public async Task Determinism_TwoResetsOnOneDate_GiveTheSameShopsProductsPhonesAndOrderCount()
     {
-        var coffee = await CoffeeShopAsync();
-        var owner = await LoginAsync("shop-owner");
+        async Task<string> Fingerprint() => await Db(async db =>
+        {
+            var shops = await db.Companies.Where(c => c.IsShowcase && c.Kind == CompanyKind.Orders).OrderBy(c => c.Id)
+                .Select(c => c.Id + "|" + c.Name + "|" + c.Phone + "|" + c.Slug).ToListAsync();
+            var products = await db.Products.Where(p => db.Companies.Any(c => c.Id == p.CompanyId && c.IsShowcase)).OrderBy(p => p.Id).Select(p => p.Id + "|" + p.Name + "|" + p.Price).ToListAsync();
+            var orders = await db.Orders.CountAsync();
+            var items = await db.OrderItems.CountAsync();
+            return string.Join(";", shops) + "#" + string.Join(";", products) + "#" + orders + "/" + items;
+        });
 
-        var kinds = await J(await Client(owner.Token).GetAsync("/api/Companies/kinds-summary"));
-        kinds.GetProperty("services").GetProperty("siteUrl").GetString().Should().Be("https://demo.visit.ezbook.ru");
-        kinds.GetProperty("orders").GetProperty("siteUrl").GetString().Should().Be("https://demo.zakaz.ezbook.ru");
-
-        var push = await J(await Client(owner.Token).GetAsync("/api/push/config?site=Orders"));
-        push.GetProperty("siteUrls").GetProperty("orders").GetString().Should().Be("https://demo.zakaz.ezbook.ru");
-        push.GetProperty("siteUrls").GetProperty("services").GetString().Should().Be("https://demo.visit.ezbook.ru");
-
-        var shop = await J(await Client(owner.Token).GetAsync($"/api/shops/{coffee.Id}"));
-        shop.GetProperty("publicUrl").GetString().Should().Be($"https://demo.zakaz.ezbook.ru/{coffee.Slug}");
-        var storefront = await J(await Client().GetAsync($"/api/storefront/{coffee.Slug}"));
-        storefront.GetProperty("publicUrl").GetString().Should().Be($"https://demo.zakaz.ezbook.ru/{coffee.Slug}");
+        // What is claimed: the generator is deterministic for ONE moment. The second reset is the product service (DemoResetService, the code behind
+        // «ops demo reset --yes») called with the moment the first reset recorded in demo.last-reset-utc, so the two generations differ in nothing but the run.
+        // The route through the «ops» command line (and its argument parsing) is covered by CY35-60/61, which call it. Resets at different moments of the day
+        // legitimately differ (orders «as soon as possible» and the journal are cut at «now»), so a reset at «now» is not compared here.
+        var first = await Fingerprint();
+        var firstMoment = await DemoSeededTemplate.ReadLastResetUtcAsync(_factory);
+        await DemoSeededTemplate.ResetAtAsync(_factory, firstMoment);
+        (await Fingerprint()).Should().Be(first, "the generator is deterministic: same moment, same set");
     }
-
-    // ── US-35-06: the reset ──────────────────────────────────────────────────────────────────────
 
     [Fact, TestCase("CY35-60")]
     public async Task Reset_RemovesVisitorShopsOrdersAccountsFiles_KeepsTokensOfRoles_AndOrdersTariffExactlyOnce()
@@ -856,64 +969,5 @@ public class Cycle35DemoScenarioTests : IAsyncLifetime
         (await first).Exit.Should().Be(0);
         (await J(await Client().GetAsync("/api/goods/catalog"))).GetProperty("totalCount").GetInt32().Should().Be(5);
         (await LoginAsync("shop-owner")).Roles.Should().NotBeEmpty();
-    }
-
-    [Fact, TestCase("CY35-62")]
-    public async Task ResetPlan_ShowsShopsLine_AndShowcasePlanForDemoProfile_ChangingCommandsAreRefused()
-    {
-        var (exit, plan) = await OpsAsync("demo", "reset");
-        exit.Should().Be(0, plan);
-        plan.Should().Contain("будет создано (Заказы): shops=5");
-
-        var (planExit, planText) = await OpsAsync("showcase", "plan", "--profile", "demo");
-        planExit.Should().Be(0, planText);
-        planText.Should().Contain("shops=5");
-
-        foreach (var command in new[] { "create", "recreate", "delete" })
-        {
-            var (code, text) = await OpsAsync("showcase", command, "--profile", "demo", "--yes");
-            code.Should().Be(2, command + ": " + text);
-            text.Should().Contain("ops demo reset");
-        }
-
-        // plan for prod (the default) is the output of cycle 28: no shops at all
-        var (prodExit, prodPlan) = await OpsAsync("showcase", "plan");
-        prodExit.Should().Be(0, prodPlan);
-        prodPlan.Should().NotContain("shops=");
-    }
-
-    // ── US-35-09 (P1): the live board ────────────────────────────────────────────────────────────
-
-    [Fact, TestCase("CY35-70")]
-    public async Task BoardTick_AdvancesGeneratedOrders_WithJournal_AndClosesStaleVisitorOrder_ButNotOnOffDemo()
-    {
-        var coffee = await CoffeeShopAsync();
-        var owner = await LoginAsync("shop-owner");
-        await OpenAllDayAsync(coffee, owner.Token);
-        var (productId, price) = await AnyPieceProductAsync(coffee);
-
-        var r = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
-        {
-            idempotencyKey = Guid.NewGuid(), items = new[] { new { productId, quantity = 1, expectedUnitPrice = price } }, customerName = "Гость", customerPhone = "79990005566",
-        });
-        var created = await J(r, HttpStatusCode.Created);
-        var token = created.GetProperty("order").GetProperty("token").GetString()!;
-        var orderId = await Db(db => db.Orders.Where(o => o.PublicToken == token).Select(o => o.Id).SingleAsync());
-
-        // the pickup time of a visitor's order passed more than 50 minutes ago (the clock of the task is explicit, the same way the operator's machine would see it later)
-        var pickup = await Db(db => db.Orders.Where(o => o.Id == orderId).Select(o => o.PickupStartUtc).SingleAsync());
-        using (var scope = _factory.Services.CreateScope())
-        {
-            var ticker = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Demo.DemoBoardTicker>();
-            var afterSixty = pickup.AddMinutes(60);
-            await ticker.TickAsync(afterSixty, CancellationToken.None);
-        }
-        var order = await Db(db => db.Orders.AsNoTracking().Include(o => o.Events).SingleAsync(o => o.Id == orderId));
-        new[] { OrderStatus.Rejected, OrderStatus.CancelledByShop, OrderStatus.NotPickedUp }.Should().Contain(order.Status, "a stale visitor order does not hang on the board");
-        order.Events.Should().Contain(e => e.ActorKind == OrderActorKind.System && e.Reason != null && e.Reason.Contains("Демо"), "the journal says why");
-        (await J(await Client().GetAsync($"/api/orders/public/{token}"))).GetProperty("reason").GetString().Should().Contain("Демо");
-
-        // nothing left: the tick does not write to any outgoing queue
-        await AssertNothingQueuedAsync();
     }
 }

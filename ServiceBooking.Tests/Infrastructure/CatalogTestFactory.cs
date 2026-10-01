@@ -12,7 +12,7 @@ public sealed class CatalogTestFactory(string connectionString) : WebApplication
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        TestHostSettings.Apply(builder, "api", connectionString);
+        TestHostSettings.Apply(builder, "api", connectionString, factoryType: GetType().Name);
         builder.UseSetting("Orders:CatalogCacheSeconds", "0");
     }
 }

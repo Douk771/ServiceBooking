@@ -6802,3 +6802,610 @@ Vitest разработчиков (не пересобирались QA): раз
 | M35-04 | Ссылки «Посмотреть демо» `demo.visit` <-> `demo.zakaz` | Ведут на соседнее демо, только в демо-режиме | US-35-10 | не выполнен |
 | M35-05 | Замер времени сброса и памяти на машине | Сброс до 3 минут, контейнеры в лимитах из `DEPLOY.md` | US-35-06, US-35-08 | не выполнен |
 | M35-06 | Гостевой заказ на демо без хоста в консоли SmartCaptcha | Понятная ошибка капчи; заказ под ролью покупателя проходит | US-35-03 | не выполнен |
+
+## Цикл 36 — ревизия (реестр удалений и изменений)
+
+Формат и правила разбора — `API_CONTRACT_CYCLE36.md` §36.29. Таблицы реестра читает
+`tools/test-audit/diff_inventory.py`: строка реестра — строка таблицы, у которой первая ячейка `R36-B001`/`R36-F001`.
+Категории: А — проверяет удалённую функцию; Б — дубль; В — матрица чистого правила, переносится в юнит; Г — медленный, но
+нужный; Д — флейк; Е — актуальный, в том числе «надгробие». Удаляются только А и Б.
+
+### Категории по файлам
+
+| Набор | Файл | Кат. | Примечание |
+|---|---|---|---|
+| vitest | `frontend/goods/src/assets/screenshots/seed-goods-demo.test.ts` | Е |  |
+| vitest | `frontend/goods/src/assets/screenshots/shots.test.ts` | Е |  |
+| vitest | `frontend/goods/src/cabinetDevicesRedirect.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/BusinessBlock.qa.test.tsx` | Е | Б для QA27-09 (R36-F004) |
+| vitest | `frontend/goods/src/components/BusinessBlock.screenshot.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/BusinessBlock.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/BuyersBlock.qa.test.tsx` | Е | Б для QA30-01, QA30-03, QA30-04 (R36-F005…F007) |
+| vitest | `frontend/goods/src/components/BuyersBlock.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/CatalogListingSection.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/GoodsNavbar.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/UpdateBanner.acceptance.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/UpdateBanner.test.tsx` | Б | удалён целиком: R36-F001…F003 |
+| vitest | `frontend/goods/src/components/catalog/ProductModal.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/order/OrderPushCard.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/orders/IssueModal.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/orders/OrderCard.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/profile/ShopProfileSection.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/staffMax/StaffMaxCard.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/storefront/CartPanel.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/goods/src/goodsRoutes.test.ts` | Е |  |
+| vitest | `frontend/goods/src/pages/CatalogHomePage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/GoodsProfilePage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/OrderPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/StorefrontPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/CabinetHomePage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/CatalogPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/CreateShopPage.test.tsx` | Г | 3.4 с на файл — сборка jsdom-экрана, ускорять нечем |
+| vitest | `frontend/goods/src/pages/cabinet/HoursPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/LinkPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/MenuPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/OrdersScreenPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/SettingsPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/ShopNotificationsPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/sharedSources.guard.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/acceptance.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/board.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/cart.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/catalog.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/checkout.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/goodsPush.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/goodsPushStorage.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/homeCity.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/hours.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/idempotency.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/menu.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/orderEdit.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/orderError.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/orderMoney.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/orderStatus.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/pickup.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/quantityFormat.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/reports.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/serviceWorkerRouting.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/weekdays.test.ts` | Е |  |
+| vitest | `frontend/src/api/adminBilling.test.ts` | Е |  |
+| vitest | `frontend/src/api/billing.test.ts` | Е |  |
+| vitest | `frontend/src/api/client.demo.test.ts` | Е |  |
+| vitest | `frontend/src/api/demo.test.ts` | Е |  |
+| vitest | `frontend/src/api/plans.test.ts` | Е |  |
+| vitest | `frontend/src/api/pricing.test.ts` | Е |  |
+| vitest | `frontend/src/api/push.test.ts` | Е |  |
+| vitest | `frontend/src/components/billing/BillingNoticesSummary.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/billing/OperatorDetailsSection.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/booking/BookingCalendar.test.tsx` | Е |  |
+| vitest | `frontend/src/components/booking/BookingHistoryPanel.test.tsx` | Е |  |
+| vitest | `frontend/src/components/booking/BookingModal.captcha.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/booking/BookingModal.showcase.test.tsx` | Е |  |
+| vitest | `frontend/src/components/booking/BookingModal.test.tsx` | Г | 2.6 с на файл — сборка jsdom-экрана, ускорять нечем |
+| vitest | `frontend/src/components/booking/RescheduleModal.test.tsx` | Е |  |
+| vitest | `frontend/src/components/clientNotes/HealthNoteCard.test.tsx` | Е |  |
+| vitest | `frontend/src/components/clientNotes/NotePhotoUploader.test.tsx` | Е |  |
+| vitest | `frontend/src/components/clientNotes/PhotoConsentBadge.test.tsx` | Е |  |
+| vitest | `frontend/src/components/clientNotes/PhotoGallery.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CatalogListingCard.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CompanyCard.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CompanyLogoMark.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CompanyMapLinks.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CompanyPhotoGallery.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CompanyPhotosSection.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CompanyProfileCard.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/GoodsShopsNotice.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/PublicAddressNotice.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/profileZone.test.ts` | Е |  |
+| vitest | `frontend/src/components/demo/DemoBanner.test.tsx` | Е |  |
+| vitest | `frontend/src/components/demo/DemoMaintenanceGate.test.tsx` | Е |  |
+| vitest | `frontend/src/components/demo/DemoRoleButtons.test.tsx` | Е |  |
+| vitest | `frontend/src/components/layout/Navbar.test.tsx` | Е |  |
+| vitest | `frontend/src/components/legal/ConsentGate.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/legal/LegalGuard.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/legal/LegalUpdateBanner.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/legal/NoticeLink.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/legal/OwnerTermsGateModal.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/legal/PlatformNoticeBanner.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/notifications/ChannelRequestModal.test.tsx` | Е |  |
+| vitest | `frontend/src/components/pricing/OptionRow.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/profile/GuestDataGateNotice.test.tsx` | Е |  |
+| vitest | `frontend/src/components/push/DevicesAndNotificationsSection.test.tsx` | Е |  |
+| vitest | `frontend/src/components/push/PushUnavailableNotice.test.tsx` | Е |  |
+| vitest | `frontend/src/components/review/ReviewModal.test.tsx` | Е |  |
+| vitest | `frontend/src/components/ui/CityCombobox.test.tsx` | Е |  |
+| vitest | `frontend/src/components/ui/Pagination.test.tsx` | Е |  |
+| vitest | `frontend/src/components/ui/PhoneInput.test.tsx` | Е |  |
+| vitest | `frontend/src/hooks/useCarousel.test.ts` | Е |  |
+| vitest | `frontend/src/hooks/useDebouncedValue.test.ts` | Е |  |
+| vitest | `frontend/src/hooks/useExportData.test.tsx` | Е |  |
+| vitest | `frontend/src/hooks/useNoindexMeta.test.tsx` | Е |  |
+| vitest | `frontend/src/hooks/usePhoneVerification.test.tsx` | Е |  |
+| vitest | `frontend/src/hooks/usePhotoUploadWithConsent.test.tsx` | Е |  |
+| vitest | `frontend/src/legalRoutes.test.ts` | Е |  |
+| vitest | `frontend/src/pages/AdminPage.showcase.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/BillingPage.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/pages/BillingPage.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/pages/CabinetPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/ClientBookingsPage.showcase.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/ClientBookingsPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/CompanyPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/ConsentsPage.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/pages/EmbedPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/HomePage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/LegalDocumentPage.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/pages/LoginPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/MasterClientsPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/MyBookingsPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/NoticesPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/PricingPage.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/pages/ProfilePage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/RegisterPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/SubjectRequestPage.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/pages/admin/BillingAccountsAdminTab.showcase.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/BillingAccountsAdminTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/LegalReadinessTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/NoticesAdminTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/NotificationsAdminTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/PlansTab.test.ts` | Е |  |
+| vitest | `frontend/src/pages/admin/PlansTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/PlansTabLine.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/SubjectRequestsTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/billingAccountsHelpers.test.ts` | Е |  |
+| vitest | `frontend/src/pages/admin/planForm.test.ts` | Е |  |
+| vitest | `frontend/src/pages/admin/planState.test.ts` | Е |  |
+| vitest | `frontend/src/pages/owner/BookingRulesSection.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/CompanyManagePage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/NotificationLogTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/NotificationSettingsTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/NotificationTemplatesTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/SalonCatalogListingSection.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/SalonProfileSection.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/SettingsTab.qa32.test.tsx` | Г | 3.4 с на файл — сборка jsdom-экрана, ускорять нечем |
+| vitest | `frontend/src/pages/owner/TemplateAcknowledgementModal.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/showcasePublicPages.test.tsx` | Е |  |
+| vitest | `frontend/src/test/testAreas.guard.test.ts` | Е | новый guard CY36-02, окружение node |
+| vitest | `frontend/src/utils/adminBillingError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/authError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/billingError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/bookingError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/bookingHorizon.test.ts` | Е |  |
+| vitest | `frontend/src/utils/bookingServices.test.ts` | Е |  |
+| vitest | `frontend/src/utils/bookingStatus.test.ts` | Е |  |
+| vitest | `frontend/src/utils/cancelError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/catalogListingError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/channelBanner.test.ts` | Е |  |
+| vitest | `frontend/src/utils/clearUserCache.test.ts` | Е |  |
+| vitest | `frontend/src/utils/clientKey.test.ts` | Е |  |
+| vitest | `frontend/src/utils/clientRescheduleError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/companyInitial.test.ts` | Е |  |
+| vitest | `frontend/src/utils/companyKind.test.ts` | Е |  |
+| vitest | `frontend/src/utils/companyManageError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/companyOwnerError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/companyPhotos.test.ts` | Е |  |
+| vitest | `frontend/src/utils/dateFormat.test.ts` | Е |  |
+| vitest | `frontend/src/utils/demoHeaders.test.ts` | Е |  |
+| vitest | `frontend/src/utils/demoReload.test.ts` | Е |  |
+| vitest | `frontend/src/utils/demoRoles.test.ts` | Е |  |
+| vitest | `frontend/src/utils/healthConsentError.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/utils/healthConsentForm.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/utils/inn.test.ts` | Е |  |
+| vitest | `frontend/src/utils/legalError.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/utils/legalRuntimeValues.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/utils/legalSection.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/utils/legalSections.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/utils/mapLinksFieldError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/money.test.ts` | Е |  |
+| vitest | `frontend/src/utils/notificationError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/phone.test.ts` | Е |  |
+| vitest | `frontend/src/utils/phoneVerificationError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/photoBatch.test.ts` | Е |  |
+| vitest | `frontend/src/utils/pricingFormat.test.ts` | Е |  |
+| vitest | `frontend/src/utils/providesServicesError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/publicAddress.test.ts` | Е |  |
+| vitest | `frontend/src/utils/pushAvailability.test.ts` | Е |  |
+| vitest | `frontend/src/utils/pushError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/pushWorker.test.ts` | Е |  |
+| vitest | `frontend/src/utils/returnTo.test.ts` | Е |  |
+| vitest | `frontend/src/utils/serviceWorkerRouting.test.ts` | Е |  |
+| vitest | `frontend/src/utils/showcaseFilter.test.ts` | Е |  |
+| vitest | `frontend/src/utils/showcaseRefusal.test.ts` | Е |  |
+| vitest | `frontend/src/utils/showcaseTexts.test.ts` | Е |  |
+| vitest | `frontend/src/utils/staffPushTexts.test.ts` | Е |  |
+| vitest | `frontend/src/utils/subjectRequestError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/templateMarkers.test.ts` | Е |  |
+| vitest | `frontend/src/utils/timezone.test.ts` | Е |  |
+| vitest | `frontend/src/utils/trialError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/uploadError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/webPushEncoding.test.ts` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/AdminBillingAccountsTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/AdminTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/AuthTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/BillingTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/BookingHistoryTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/BookingsFlowSmokeTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/ClientNotePhotosTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36; защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/CompaniesTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/CompanyAddressTests.cs` | Е | ревизия А выполнена: геокодер удалён в цикле 19, оставшиеся тесты — права, сохранение, согласие, лимит и «надгробия» (ADDR-001/002/029/030); удалять нечего |
+| functional | `ServiceBooking.Tests/Tests/CompanyPhotosTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/CompanyTransferTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle15ClientRescheduleTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle15MapLinksTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle15PlansTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle17ClientCancelTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle18TrialLifecycleTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle18TrialPlanTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36; защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle19RetiredLimitGateParityTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle19TariffLimitsTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle20CompanyTransferLg6Tests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle20DateFilterTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle20HealthWrittenConsentTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle20ManualPlanReasonTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle20PlatformNoticesTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle20SubjectRequestsTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle22ChannelFundingTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36; защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle22RefactorEquivalenceTests.cs` | Е | точное равенство JSON до/после переписывания SQL (CY22-06…11); замены в доменных тестах не доказаны, Б не присвоена |
+| functional | `ServiceBooking.Tests/Tests/Cycle22RouteTableTests.cs` | Е | страж контракта маршрутов, не кандидат |
+| functional | `ServiceBooking.Tests/Tests/Cycle23OrdersTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle23ShopsCatalogTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle23StaffOrdersTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle23StrictModeAndDataTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle24AvailabilityTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle24HoursAcceptanceTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle24NotificationsTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle24PersonalDataTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle24PickupTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle24TariffTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36; защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle25CatalogTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle25CustomerTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle25PickListTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle25RateLimitTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle25ReportsTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle25StaffMaxTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle25WorkingDayTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle26CompanyCardTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle28DemoContractTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle28DemoScenarioTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle28OutboundSuppressionTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle28ShowcaseGeneratorTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/Cycle28ShowcaseGuardsTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36; защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle28TariffsTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle29ContractTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle29QaTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle31CatalogListingTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/Cycle31GalleryRateLimitTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/Cycle33UnifiedPushTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/DataRightsTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/GuestDataGateCycle16Tests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/HealthTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/IdentityRoleSyncTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/LegalConsentTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/LegalConsentVersionChangeTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/LegalPricingGateTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/LegalPriorityTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/MailingTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/ManualBookingFreedomTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/MastersTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/MultiServiceBookingTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/NotificationChannelsTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/NotificationCitiesTimeZoneTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/NotificationDispatchExtraTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/NotificationDispatchTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/NotificationMaxTransportTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/NotificationQueueingTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/NotificationTransportStartupTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/NotificationWebhookUnsubscribeTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/OpenApiContractValidatorTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/PaginationTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/PhoneVerificationTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/PricingTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/ProfileTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/PushAddressGuardTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/RateLimitingTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/ReportsTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/ReviewsTests.cs` | Г | долгий класс по замеру b1 (много запросов или генерация витрины); тесты нужны, ускорение — рычагами цикла 36 |
+| functional | `ServiceBooking.Tests/Tests/ScheduleTemplateTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/SchedulerTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/ServicesTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/StaffPushTests.cs` | Е |  |
+| functional | `ServiceBooking.Tests/Tests/UploadsStaticFilesTests.cs` | Е | защищённая зона |
+| functional | `ServiceBooking.Tests/Tests/WorkingHoursTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/AccountLimitFormulaTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/AdminLegalControllerReadinessHelpersTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/AdminPlanDtoMappingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/AppLogAgeRuleTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BillingCalculatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BillingCatalogSeedKeysTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BillingTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BookingEventTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BookingFiltersTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BookingHorizonTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/BookingServiceSelectionTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CatalogAvailabilityDateTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CatalogListingRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ChannelFundingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ChannelIdleCalculatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ChannelKeyFingerprintTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ChannelPaymentStateTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ChannelPresentationTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ChannelStateMapperTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CityDirectoryDataTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CitySearchTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ClientKeyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ClientRescheduleWindowTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CompanyKindTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CompanyPhotoOrderingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CompanyPhotoTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CompanyTimeZoneResolverTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CompanyTransferCalculatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ConsentOperatorDetailsValidatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/CustomerSearchTermTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/DemoInstanceAndStorageTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/DemoMaintenanceTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/DemoModeValidationTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/DemoResetTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/DeploymentSafetyChecksTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/EnvStatusClassifyContainerLivenessTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/EnvStatusDoctorPortsAndProjectNameTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/EnvStatusParallelConnectionBudgetTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ExternalAccountKeyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/FileStorageTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GlitchTipSignalServiceTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GoodsCatalogOrderingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiMaxResultClassifierTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiMaxStateInstanceParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiMaxUrlsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiMaxWebhookParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiResultClassifierTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiStateInstanceParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiUrlsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GreenApiWebhookParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/GuestBookingGateDecisionTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/HealthConsentFormIdTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/HealthNoteProtectorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ImageProcessorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ImageSignatureTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/InnValidatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalConsentFilterTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalControllerGetDocumentTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalDocumentProviderTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/CliArgsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/CommittedLegalArtifactTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/LegalBuildDeterminismTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/LegalPublishTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/PlaceholderScannerTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/PlaceholderValuesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/RuntimeValueFormsCorpusTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalKit/StrayArtifactFileTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalOptionGuardsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalRoutesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalSectionTextTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LegalTextKeyManifestSyncTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LikePatternTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LogMaskingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/LoginOutcomeTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MalformedKeyGuardValueProviderFactoryTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ManualPlanAssignmentPolicyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ManualSubjectRequestReceivedAtTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MapLinkValidationTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MaxBotClientSubscribeTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MaxContactSignatureTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MaxSendResponseClassifierTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MaxUpdateParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/MaxVCardParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ModelValidationErrorFormatterTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NoticeAudienceTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NotificationGateTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NotificationRoutingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NotificationTemplateTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NotificationTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NotificationTimingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/NotificationTypeCatalogTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OpsCommandLineTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OptionalTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderDomainTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderLimitRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderMoneyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderNotificationPlanTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderNotificationTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderPhoneMaskTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderQuantityRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderReportExpressionsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrderStateMachineTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OrdersPlanResolverTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OwnerSubscriptionOverLimitTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OwnerSubscriptionServiceBuildPendingRequestDtoTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OwnerSubscriptionServiceStatusTextTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/OwnerSubscriptionStatusTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PaginationTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PauseGeneratorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PhoneDisplayMaskTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PhoneNormalizerTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PhoneVerificationPayloadTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PhoneVerificationSessionAcceptanceTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PhoneVerificationStateMachineTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PhotoQuotaTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PickListBuilderTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PickupScheduleTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PickupScheduleVectorsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PlatformNoticeQueryFiltersTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PlatformNoticeRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PlatformNoticeTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PreferIPv4Tests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PricingCatalogBuilderTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PricingCatalogCacheBlockReasonTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PricingValidationTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PublicSiteLinksTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/PushAddressGuardTests.cs` | Е | защищённая зона |
+| unit | `ServiceBooking.UnitTests/PushEndpointValidatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/QrImageTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ReportPeriodDateRangeTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ReportPeriodTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ReportTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ReportTruncationTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ResourceLabelsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/RetentionPlanTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/RetiredLimitOptionsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SalonListingRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ScheduleFallbackPolicyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ScheduledTaskLaneTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ScheduledTaskOptionsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ScheduledTaskScheduleTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SecretProtectorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopAcceptanceRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopAccessCycle25Tests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopOrderingGateV2Tests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopScheduleRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopSummaryMathTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopTimeTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShopTimeZoneChangePolicyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseAssetStoreTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseBookingRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseDatasetTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseDemoProfileTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseFilterParserTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseMixingGuardTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseOutboundGuardTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseOwnershipCoverageTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcasePrimitivesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ShowcaseReseedScheduleTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SlotCalculatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SlugPolicyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SlugTransliteratorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/StableHashTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/StaffMaxPayloadTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/StaffMaxTextsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/StaffPushLinksTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/StaffPushSchedulerTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubjectPhoneGateInvariantTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubjectRequestDeadlineTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubscriptionAssignmentValidatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubscriptionDiagnosticsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubscriptionResolverOptionGatingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubscriptionResolverRulesTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SubscriptionUsabilityTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SweeperClassifyDatabaseRowTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/SweeperParseAgeTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TemplateAdHeuristicsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TestDataTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TestDatabaseNamingTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TestRunKeyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TestSlotTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TokenServiceTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TrialActivationTermsVersionTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TrialEligibilityTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TrialLegacyTermsTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TrialMailingRulePolicyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TrialPhoneKeyTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/TrialWindowTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/UnsubscribeTokensTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/VapidKeyValidatorTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/WebPushHandlerFactoryTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/WebPushResponseClassifierTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/WeekdayMaskTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/WorkingDaysTests.cs` | Е |  |
+| unit | `ServiceBooking.UnitTests/ZapisTariffCatalogTests.cs` | Е |  |
+
+### Реестр — бэкенд (unit, functional)
+
+| № | Набор | ID | Тест | Кат. | Действие | Причина | Замена / ссылка |
+|---|---|---|---|---|---|---|---|
+
+Строк нет: бэкенд-ревизия цикла 36 **не удалила ни одного теста** и не добавила ни одного. Доказанных дублей и мёртвых тестов
+не найдено: `CompanyAddressTests` (геокодер убран в цикле 19, остались права, сохранение, согласие, лимит и «надгробия»),
+`Cycle22RefactorEquivalenceTests` (точное равенство JSON до/после переписывания SQL, замены в доменных тестах не доказаны),
+одноимённые методы в `CompaniesTests`/`ServicesTests`/`WorkingHoursTests`/`ScheduleTemplateTests` относятся к разным маршрутам.
+`Skip` в наборе нет. Число функциональных запусков ревизией не менялось: 1267 на момент ревизии (после вливания цикла 35 и добавления стража CY36-03 — 1300); юнит: 2732 (после вливания — 2885).
+
+### Реестр — фронтенд (vitest)
+
+| № | Набор | ID | Тест | Кат. | Действие | Причина | Замена / ссылка |
+|---|---|---|---|---|---|---|---|
+| R36-F001 | vitest | — | `goods/src/components/UpdateBanner.test.tsx::UpdateBanner > stays hidden while the deployed bundle is the loaded one` | Б | удалён | тот же компонент, тот же мок index.html и то же утверждение; приёмочный тест строже (проверяет и отсутствие ошибок в консоли) | `goods/src/components/UpdateBanner.acceptance.test.tsx::CY34 UpdateBanner acceptance > CY34-07 same build: no banner, no console errors` |
+| R36-F002 | vitest | — | `goods/src/components/UpdateBanner.test.tsx::UpdateBanner > appears when index.html points to a newer bundle` | Б | удалён | тот же компонент, тот же мок index.html и то же утверждение; приёмочный тест строже (проверяет и отсутствие ошибок в консоли) | `goods/src/components/UpdateBanner.acceptance.test.tsx::CY34 UpdateBanner acceptance > CY34-01 return to app with newer build shows banner and button` |
+| R36-F003 | vitest | — | `goods/src/components/UpdateBanner.test.tsx::UpdateBanner > ignores network errors` | Б | удалён | тот же компонент, тот же мок index.html и то же утверждение; приёмочный тест строже (проверяет и отсутствие ошибок в консоли) | `goods/src/components/UpdateBanner.acceptance.test.tsx::CY34 UpdateBanner acceptance > CY34-08 network error and non-OK response: no banner, no console errors, next check works` |
+| R36-F004 | vitest | QA27-09 | `goods/src/components/BusinessBlock.qa.test.tsx::BusinessBlock QA (cycle 27) > QA27-09 mentions chats/one place` | Б | удалён | обе фразы («по чатам», «в одном месте») входят в абзац, который T27-05 сверяет дословно | `goods/src/components/BusinessBlock.test.tsx::BusinessBlock > T27-05 paragraph and 4 benefits verbatim` |
+| R36-F005 | vitest | QA30-01 | `goods/src/components/BuyersBlock.qa.test.tsx::BuyersBlock QA (cycle 30) > QA30-01 section is labelled by h2 with variant A text; id differs from biz-title` | Б | удалён | точный текст h2, единственность h2, id и связь region-h2 проверяют T30-02 и T30-03; «не больше 60 знаков» — следствие дословного совпадения | `goods/src/components/BuyersBlock.test.tsx::BuyersBlock > T30-02 h2 has id buyers-title, exact text and tabIndex -1`; `goods/src/components/BuyersBlock.test.tsx::BuyersBlock > T30-03 section is a region labelled by h2` |
+| R36-F006 | vitest | QA30-03 | `goods/src/components/BuyersBlock.qa.test.tsx::BuyersBlock QA (cycle 30) > QA30-03 heading levels h2 > h3 > h4 without gaps` | Б | удалён | те же порядок и тексты заголовков h2/h3/h4, что в T30-05 | `goods/src/components/BuyersBlock.test.tsx::BuyersBlock > T30-05 heading order` |
+| R36-F007 | vitest | QA30-04 | `goods/src/components/BuyersBlock.qa.test.tsx::BuyersBlock QA (cycle 30) > QA30-04 five tracking items verbatim and within 140 chars` | Б | удалён | те же пять пунктов дословно; T30-07 строже: лимит 140 знаков и иконки | `goods/src/components/BuyersBlock.test.tsx::BuyersBlock > T30-07 track: ul with 5 li verbatim, short, hidden icons` |
+| R36-F008 | vitest | CY36-02 | `src/test/testAreas.guard.test.ts::CY36-02 test areas cover every vitest file > CY36-02 every *.test.ts(x) matches a frontendPathPrefixes entry of some area` | Е | добавлен (замена) | новый guard: каждый vitest-файл входит в область быстрого контура | см. «Новые guard-тесты цикла 36» |
+| R36-F009 | vitest | CY36-02 | `src/test/testAreas.guard.test.ts::CY36-02 test areas cover every vitest file > CY36-02 area ids are unique and the list is non-empty` | Е | добавлен (замена) | новый guard: каждый vitest-файл входит в область быстрого контура | см. «Новые guard-тесты цикла 36» |
+
+### Переименования классов
+
+| Было | Стало | Задача |
+|---|---|---|
+| `Cycle28DemoScenarioTests` (12 тестов) | `Cycle28DemoScenarioTests` (CY28-40…45, 47, 48: читающие сценарии, один сброс на класс) и `Cycle28DemoMutationTests` (CY28-46, 49, 50, 51: каждый со своим сбросом) | BE-36-03 |
+
+### Долг цикла 36
+
+| ID | Вид | Описание | Причина |
+|---|---|---|---|
+| C36-1 | ускорение | `LegalPricingGateTests`: 7 × `Task.Delay(2500)` не заменены на `ReloadLegalNow()` (рычаг L5 пробован и откачен) | с `ReloadLegalNow()` и приёмом новой версии `TermsOwner` в `AcceptCurrentLegalAsync` класс падает в случайном порядке с 451: записи согласий SuperAdmin лежат в базе класса и не перезаписываются версией старше уже принятой (токен несёт `v2-published`, манифест снова `v1-draft`). Лечить нужно посев/сброс согласий между тестами класса, а не ожидание |
+| C36-2 | флейк (Д) | `NotificationDispatchExtraTests.Budget_InterruptedPass_…`: тест с реальным бюджетом 1 с упал при P=8 и при P=4 (семя 360005, `tools/test-timing/results/final-stability.md`; строка, отрезанная бюджетом, уже `Sent` к моменту проверки) | гонка между проверкой и вторым проходом диспетчера; при P=6 не воспроизводилась, повтор семени зелёный. Оставлен как есть, P выше 4 не включён |
+| C36-3 | не сделано | области и быстрый контур бэкенда не реализованы (US-36-06 частично): нет трейтов `Area` на функциональных классах, `TestAreas.cs` и guard CY36-01 (BE-36-09); `--filter "Area=…"` не работает. Быстрый контур есть только у фронта (`npm run test:area`, guard CY36-02) | не доделано в цикле 36 |
+
+### Починено в ходе ревизии (Д, без изменения числа тестов)
+
+| ID теста | Что было | Что сделано |
+|---|---|---|
+| `CY20-SR-01` | красный по четвергам: срок Access — 10 рабочих дней, а наивный срок от «сейчас» считался как `AddDays(10)` (календарные); продукт (`WorkingDays.Add`) верен, ошибка в ожидании теста | наивный срок считается через ту же `WorkingDays.Add` |
+| `CY31-23` | флейк под нагрузкой: 62 запроса не укладывались в минутное окно лимита, 61-я правка проходила | лимит 60 остался продовым, окно `RateLimits:company-photos-edit:WindowMinutes` у хоста теста — 60 минут |
+| `NTF-L001` | при переводе класса на общий хост падал (причина не установлена; версия про буфер файлового приёмника Serilog не подтверждена) | у теста свой хост, как раньше |
+
+### Пришло мерджем develop (цикл 35)
+
+Тесты и переименования, которые попали в ветку цикла 36 слиянием `origin/develop` (цикл 35), а не появились в ревизии. «Тест» — класс (для .NET) или файл (для vitest): строка закрывает все новые и изменившиеся по числу запусков тесты этого класса/файла, но не закрывает исчезнувший тест. Снимки `before-*.json` не пересняты намеренно: они остаются точкой отсчёта ревизии на коммите инструментирования.
+
+| № | Набор | ID | Тест | Кат. | Действие | Причина | Замена |
+|---|---|---|---|---|---|---|---|
+| R36-M001 | unit | — | `ServiceBooking.UnitTests.DemoBoardTickRulesTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M002 | unit | — | `ServiceBooking.UnitTests.DemoModeValidationTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M003 | unit | — | `ServiceBooking.UnitTests.OpsCommandLineTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M004 | unit | — | `ServiceBooking.UnitTests.ShowcaseDatasetTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M005 | unit | — | `ServiceBooking.UnitTests.ShowcaseDemoProfileTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M006 | unit | — | `ServiceBooking.UnitTests.ShowcaseDemoRolesTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M007 | unit | — | `ServiceBooking.UnitTests.ShowcaseMixingGuardTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M008 | unit | — | `ServiceBooking.UnitTests.ShowcaseOrderTimelineTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M009 | unit | — | `ServiceBooking.UnitTests.ShowcaseOwnershipCoverageTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M010 | unit | — | `ServiceBooking.UnitTests.ShowcaseShopAssetsTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M011 | unit | — | `ServiceBooking.UnitTests.ShowcaseShopsDatasetTests` | Е | пришло мерджем develop | тесты цикла 35 (демо-стенд «Заказы»), влиты `git merge origin/develop`; число запусков класса не уменьшено | — |
+| R36-M012 | functional | — | `ServiceBooking.Tests.Tests.Cycle28DemoContractTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M013 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoContractTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M014 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoLocksTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M015 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoMutationATests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop; в цикле 36 класс сценариев разбит на читающие (общий сброс) и меняющие (`Cycle35DemoMutationATests`), тесты те же | — |
+| R36-M016 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoMutationBTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop; в цикле 36 класс сценариев разбит на читающие (общий сброс) и меняющие (`Cycle35DemoMutationBTests`), тесты те же | — |
+| R36-M017 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoResetTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop; в цикле 36 класс сценариев разбит на читающие (общий сброс) и меняющие (`Cycle35DemoResetTests`), тесты те же | — |
+| R36-M018 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoScenarioTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop; в цикле 36 класс сценариев разбит на читающие (общий сброс) и меняющие (классы `Cycle35DemoMutation{A,B}Tests` (демо из засеянного шаблона) и `Cycle35DemoResetTests` (CY35-15/60/61, настоящий сброс), у каждого коллекция и своя демо-база), тесты те же | — |
+| R36-M019 | functional | — | `ServiceBooking.Tests.Tests.Cycle35OffDemoTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M020 | functional | — | `ServiceBooking.Tests.Tests.OpenApiContractValidatorTests.Bundled_contracts_load_and_unknown_path_is_reported` | Е | пришло мерджем develop | develop добавил в тест контракт cycle35 (запусков 2 -> 3) | — |
+| R36-M021 | vitest | — | `goods/src/demo.test.tsx` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M022 | vitest | — | `src/api/demo.test.ts` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M023 | vitest | — | `src/components/demo/DemoBanner.test.tsx` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M024 | vitest | — | `src/components/demo/DemoRoleButtons.test.tsx` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M025 | vitest | — | `src/hooks/useDemoStatus.test.tsx` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M026 | vitest | — | `src/utils/demoRoles.test.ts` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
+| R36-M027 | unit | — | `ServiceBooking.UnitTests.ShowcaseDemoProfileTests.Roles_AreKnown_AndOnlyTheseThree` | Е | переименован | переименован в цикле 35 (develop) | `ServiceBooking.UnitTests.ShowcaseDemoProfileTests (см. строку класса)` |
+| R36-M028 | functional | — | `ServiceBooking.Tests.Tests.Cycle28DemoContractTests.DemoStatusLoginRestrictedAndResetting_MatchTheCycle28Contract` | Е | переименован | переименован в цикле 35 (develop) | `ServiceBooking.Tests.Tests.Cycle28DemoContractTests.DemoStatusLoginRestrictedAndResetting_MatchTheCycle35Contract` |
+| R36-M029 | vitest | — | `src/utils/demoRoles.test.ts::demoRoleHome (API_CONTRACT_CYCLE28.md §598) > sends each demo role to its own start screen` | Е | переименован | переименован в цикле 35 (develop) | `src/utils/demoRoles.test.ts (см. строку файла)` |
+
+### Новые unit-тесты цикла 36 (после влития develop)
+
+| № | Набор | ID | Тест | Кат. | Действие | Причина | Замена |
+|---|---|---|---|---|---|---|---|
+| R36-B900 | unit | — | `ServiceBooking.UnitTests.TestDatabaseNamingTests.EnsureOwnedByThisRun_reads_the_run_key_of_a_variant_demo_name` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+| R36-B901 | unit | — | `ServiceBooking.UnitTests.TestDatabaseNamingTests.IsDisposable_accepts_the_demo_slot_and_a_variant_demo_slot` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+| R36-B902 | unit | — | `ServiceBooking.UnitTests.TestDatabaseNamingTests.IsDisposable_rejects_malformed_demo_names` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+| R36-B903 | unit | — | `ServiceBooking.UnitTests.UploadsWindowTests.ShippedConfigs_DoNotSetTheWindow` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+| R36-B904 | unit | — | `ServiceBooking.UnitTests.UploadsWindowTests.Window_FromTheSetting_IsTakenButNeverBelowOneMinute` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+| R36-B905 | unit | — | `ServiceBooking.UnitTests.UploadsWindowTests.Window_WithoutTheSetting_IsOneMinute` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+| R36-B907 | unit | — | `ServiceBooking.UnitTests.EnvStatusParallelConnectionBudgetTests.RequiredConnectionsWithDemo_adds_at_most_P_demo_pools_to_the_class_gate` | Е | добавлен (замена) | новая формула бюджета соединений (классы гейта + демо-базы) | см. «Новые guard-тесты цикла 36» |
+| R36-B950 | functional | CY36-03 | `ServiceBooking.Tests.Tests.DemoSeededTemplateGuardTests.ClonedTemplate_HoldsTheSameRowsAndFiles_AsTheRealProductReset` | Е | добавлен (замена) | страж засеянного шаблона демо-базы: клон сравнивается с настоящим продуктовым сбросом | см. «Новые guard-тесты цикла 36» |
+
+### Новые guard-тесты цикла 36
+
+| ID | Где | Что проверяет |
+|---|---|---|
+| CY36-02 | `frontend/src/test/testAreas.guard.test.ts` (FE-36-03) | каждый `*.test.ts(x)` входит хотя бы в одну область |
+| CY36-03 | `ServiceBooking.Tests/Tests/DemoSeededTemplateGuardTests.cs` | клон засеянного шаблона демо-базы = настоящий сброс (строки каждой таблицы, личность магазинов и демо-людей, файлы) |

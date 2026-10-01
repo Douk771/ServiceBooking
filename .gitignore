@@ -82,3 +82,7 @@ frontend/dist-goods/
 # Демо-стенд (цикл 28, DEPLOY.md §25): локальные секреты и данные машины
 .env.demo
 /state-demo/
+
+# Python bytecode (tools/*)
+__pycache__/
+*.pyc

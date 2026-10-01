@@ -17,7 +17,7 @@ public class Cycle25RateLimitTests(TestDatabaseFixture fixture) : Cycle25TestBas
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            TestHostSettings.Apply(builder, "api", connectionString);
+            TestHostSettings.Apply(builder, "api", connectionString, factoryType: GetType().Name);
             builder.UseSetting("RateLimits:shop-reports:PermitLimit", "3");
             builder.UseSetting("RateLimits:goods-catalog:PermitLimit", "3");
             builder.UseSetting("RateLimits:staff-max-link:PermitLimit", "2");

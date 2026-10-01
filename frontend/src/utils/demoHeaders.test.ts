@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { AxiosHeaders } from 'axios'
 import { DEMO_RESTRICTED_FALLBACK, getDemoRestrictedMessage, isDemoResetting } from './demoHeaders'

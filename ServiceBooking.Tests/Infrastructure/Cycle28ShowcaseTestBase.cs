@@ -89,9 +89,28 @@ public abstract class Cycle28ShowcaseTestBase(TestDatabaseFixture fixture) : Api
 }
 
 /// <summary>
-/// The showcase generator writes ~10 thousand bookings per run and the tests create and delete it a dozen times. On the shared, small test database
-/// server this starves every other class running at the same moment (30 s command timeouts in unrelated tests), so the collection runs ALONE:
-/// xUnit does not start it in parallel with any other collection.
+/// Database slots of the demo classes. The name of a demo database must end with "_demo" (lock 1 of the demo mode), and <see cref="ServiceBooking.TestKit.TestDatabaseNaming"/>
+/// accepts the slot "demo" and a variant slot "&lt;variant&gt;_demo". A slot is leased by one collection at a time; collections with different slots run in parallel
+/// (cycle 36: the resets of the demo, 13-25 s each, were the tail of the whole run while they all stood in one queue behind one database).
 /// </summary>
-[CollectionDefinition("Cycle28Generator", DisableParallelization = true)]
-public sealed class Cycle28GeneratorCollection;
+public static class DemoDatabaseSlots
+{
+    public const string Salon = "demo";
+    public const string SalonMutations = "m28_demo";
+    public const string Read35 = "r35_demo";
+    public const string A35 = "a35_demo";
+    public const string B35 = "b35_demo";
+    public const string Reset35 = "x35_demo";
+    public const string Template = "tpl_demo";
+    public const string GuardReal = "g36_demo";
+    public const string GuardClone = "k36_demo";
+
+    public static readonly string[] All = [Salon, SalonMutations, Read35, A35, B35, Reset35, Template, GuardReal, GuardClone];
+}
+
+/// <summary>
+/// The classes of the collection "Cycle28Demo" share the one database slot "demo" (lock 1 demands a name ending in _demo), so they run one after another inside this collection;
+/// with other collections they run in parallel.
+/// </summary>
+[CollectionDefinition("Cycle28Demo")]
+public sealed class Cycle28DemoCollection;

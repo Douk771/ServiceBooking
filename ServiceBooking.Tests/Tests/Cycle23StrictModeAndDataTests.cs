@@ -40,7 +40,7 @@ public class Cycle23StrictModeAndDataTests(TestDatabaseFixture fixture) : Cycle2
     [Fact, TestCase("CY23-70")]
     public async Task Strict_Anonymous_GetsLoginRequired_UnverifiedAccountGetsVerificationRequired_VerifiedOrders()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var shop = await StrictShopAsync(enabled);
         var p = await CreateProductAsync(shop);
         var dto = await (await Authed(enabled.CreateClient(), shop.OwnerToken).GetAsync($"/api/shops/{shop.Id}")).Content.ReadJsonAsync<ShopManageDto>();
@@ -77,7 +77,7 @@ public class Cycle23StrictModeAndDataTests(TestDatabaseFixture fixture) : Cycle2
     [Fact, TestCase("CY23-71")]
     public async Task Strict_SubsystemGoesDown_UnverifiedGets409Unavailable_VerifiedStillOrders_AnonymousStillLoginRequired()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var shop = await StrictShopAsync(enabled);
         var p = await CreateProductAsync(shop);
 
@@ -96,7 +96,7 @@ public class Cycle23StrictModeAndDataTests(TestDatabaseFixture fixture) : Cycle2
     [Fact, TestCase("CY23-72")]
     public async Task Strict_SwitchBackToAnyone_AppliesToNewOrders_GuestsAllowedAgain()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var shop = await StrictShopAsync(enabled);
         var p = await CreateProductAsync(shop);
         (await PostOrderAsync(shop.Slug, Guest([Line(p, 1)]))).StatusCode.Should().Be(HttpStatusCode.Conflict);

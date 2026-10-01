@@ -85,7 +85,7 @@ public class Cycle29ContractTests(TestDatabaseFixture fixture) : Cycle25TestBase
         string F(DateTime t) => t.AddMinutes(-(t.Minute % 5)).ToString("HH:mm");
         await SetHoursAsync(noLogo, (F(now.AddMinutes(-180)), F(now.AddMinutes(180))));
 
-        await using var host = new CatalogTestFactory(ConnectionString);
+        var host = Fixture.ClassHost("catalog", cs => new CatalogTestFactory(cs));
         var body = await JsonAsync(await host.CreateClient().GetAsync($"/api/goods/catalog?cityId={city}"));
         C29.AssertResponse("GET", "/api/goods/catalog", 200, body);
 

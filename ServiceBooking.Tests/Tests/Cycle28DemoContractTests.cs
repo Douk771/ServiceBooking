@@ -23,7 +23,7 @@ public sealed class DemoHostFactory(string connectionString, IReadOnlyDictionary
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        Identity = TestHostSettings.Apply(builder, "demo", connectionString);
+        Identity = TestHostSettings.Apply(builder, "demo", connectionString, factoryType: GetType().Name);
         builder.UseSetting("Notifications:EncryptionKey", NotificationDispatchTestFactory.TestEncryptionKeyBase64);
         builder.UseSetting("Trial:PhoneKeyHmac", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=");
         builder.UseSetting("Trial:PhoneKeyId", "qa-test-key");
@@ -43,8 +43,8 @@ public sealed class DemoHostFactory(string connectionString, IReadOnlyDictionary
     }
 }
 
-// One database slot "demo" exists per run (lock 1 demands a name ending in _demo, the slot grammar has no underscores): every demo class runs in this collection, one at a time.
-[Collection("Cycle28Generator")]
+// The classes of this collection share the database slot "demo" one at a time (lock 1 demands a name ending in _demo). Other demo collections have their own slots, see DemoDatabaseSlots.
+[Collection("Cycle28Demo")]
 public class Cycle28DemoContractTests : IAsyncLifetime
 {
     // ARCHITECTURE_CYCLE35.md §35.15: GET /api/demo/status gained "siteUrls" and POST /api/demo/login six roles, so the form of both is checked against
@@ -63,8 +63,8 @@ public class Cycle28DemoContractTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        try { await _factory.DisposeAsync(); }
-        finally { await _lease.DropAsync(); }
+        try { if (_factory is not null) await _factory.DisposeAsync(); }
+        finally { if (_lease is not null) await _lease.DropAsync(); }
     }
 
     private static async Task<JsonElement> JsonAsync(HttpResponseMessage r, HttpStatusCode expected)

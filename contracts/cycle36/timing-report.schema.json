@@ -1,0 +1,202 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ezbook.ru/contracts/cycle36/timing-report.schema.json",
+  "title": "Отчёт замера времени регресса (цикл 36)",
+  "description": "Пишет tools/test-timing/analyze.py (DO-36-01) в TestResults/timing/<label>/report.json; итоговые отчёты baseline и final коммитятся в tools/test-timing/results/<label>.json. Читают QA (сравнение до/после), docs/testing-isolation.md (числа), шаг CI (DO-36-04). Все времена — секунды, кроме полей *Ms. ARCHITECTURE_CYCLE36.md §36.4; API_CONTRACT_CYCLE36.md §36.25. Без 'format', чтобы проверялось голым ajv-cli.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "label", "commit", "createdAtUtc", "environment", "suites", "totalMedianSeconds"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "label": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$", "description": "baseline, b1-instrumented, l1-class-hosts, final, ci-develop, ..." },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+    "dirty": { "type": "boolean", "description": "true, если в рабочей копии были незакоммиченные изменения." },
+    "createdAtUtc": { "$ref": "#/definitions/utc" },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "os", "cpuCores", "memoryGb", "dockerRuntime", "mode", "parallelism", "build"],
+      "properties": {
+        "host": { "type": "string", "description": "Имя машины или 'github-actions'." },
+        "os": { "type": "string" },
+        "cpuCores": { "type": "integer", "minimum": 1 },
+        "memoryGb": { "type": "number", "minimum": 0 },
+        "dockerRuntime": { "enum": ["colima", "docker-desktop", "docker-engine", "github-service", "none"] },
+        "colima": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["cpu", "memoryGb"],
+          "properties": {
+            "cpu": { "type": "integer", "minimum": 1 },
+            "memoryGb": { "type": "number", "minimum": 0 },
+            "profile": { "type": "string" }
+          }
+        },
+        "mode": { "enum": ["container", "external"] },
+        "parallelism": { "type": "integer", "minimum": 1, "description": "Фактический P функционального набора (= -- xUnit.MaxParallelThreads)." },
+        "build": { "enum": ["no-build", "with-build"], "description": "Как запускался dotnet test. Время сборки в totalMedianSeconds не входит." },
+        "dotnetSdk": { "type": "string" },
+        "node": { "type": "string" },
+        "concurrentSuites": { "type": "boolean", "description": "true, если наборы шли одновременно (эксперимент перекрытия, §36.6 L11)." },
+        "foreignRunsDetected": { "type": "boolean", "description": "Видел ли measure.sh чужие живые тестовые ресурсы (TestKit status). Отчёт с true для сравнения до/после непригоден." },
+        "notes": { "type": "string" }
+      }
+    },
+    "suites": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/suite" }
+    },
+    "totalMedianSeconds": { "type": "number", "minimum": 0, "description": "Сумма medianWallSeconds всех наборов отчёта (при concurrentSuites — медиана общего времени)." }
+  },
+  "definitions": {
+    "utc": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$" },
+    "seconds": { "type": "number", "minimum": 0 },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "wallSeconds", "passed", "failed", "skipped"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 1 },
+        "wallSeconds": { "$ref": "#/definitions/seconds" },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "orderSeed": { "type": "integer" },
+        "runKey": { "type": "string", "pattern": "^[0-9a-f]{8}$" }
+      }
+    },
+    "namedDuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "seconds"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "seconds": { "$ref": "#/definitions/seconds" },
+        "tests": { "type": "integer", "minimum": 0 },
+        "wallSeconds": { "$ref": "#/definitions/seconds", "description": "Для класса: от старта первого до конца последнего теста." },
+        "className": { "type": "string" },
+        "testCaseId": { "type": "string" }
+      }
+    },
+    "suite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["suite", "runs", "medianWallSeconds"],
+      "properties": {
+        "suite": { "enum": ["unit", "functional", "vitest"] },
+        "runs": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/run" } },
+        "medianWallSeconds": { "$ref": "#/definitions/seconds" },
+        "topClasses": { "type": "array", "maxItems": 50, "items": { "$ref": "#/definitions/namedDuration" }, "description": "unit/functional: по суммарному времени класса, медианный прогон." },
+        "topTests": { "type": "array", "maxItems": 50, "items": { "$ref": "#/definitions/namedDuration" } },
+        "functional": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["classes", "hostBoots", "databases", "scheduling"],
+          "properties": {
+            "classes": { "type": "integer", "minimum": 0, "description": "Сколько тест-классов реально выполнилось (по TRX)." },
+            "hostBoots": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["count", "totalSeconds", "medianMs", "p95Ms", "byFactory"],
+              "properties": {
+                "count": { "type": "integer", "minimum": 0 },
+                "totalSeconds": { "$ref": "#/definitions/seconds" },
+                "medianMs": { "type": "number", "minimum": 0 },
+                "p95Ms": { "type": "number", "minimum": 0 },
+                "byFactory": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["factoryType", "count", "totalSeconds"],
+                    "properties": {
+                      "factoryType": { "type": "string" },
+                      "factoryTag": { "type": "string" },
+                      "count": { "type": "integer", "minimum": 0 },
+                      "totalSeconds": { "$ref": "#/definitions/seconds" }
+                    }
+                  }
+                },
+                "byClass": { "type": "array", "maxItems": 50, "items": { "$ref": "#/definitions/namedDuration" }, "description": "Классы с наибольшим числом стартов хоста: name = класс, tests = число стартов, seconds = их сумма." }
+              }
+            },
+            "databases": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["serverSeconds", "templateSeconds", "cloneCount", "cloneTotalSeconds", "dropTotalSeconds"],
+              "properties": {
+                "serverSeconds": { "$ref": "#/definitions/seconds" },
+                "templateSeconds": { "$ref": "#/definitions/seconds" },
+                "cloneCount": { "type": "integer", "minimum": 0 },
+                "cloneTotalSeconds": { "$ref": "#/definitions/seconds" },
+                "dropTotalSeconds": { "$ref": "#/definitions/seconds" }
+              }
+            },
+            "scheduling": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["threadIdleFraction", "longestClassSeconds", "longestClass", "tailSeconds"],
+              "properties": {
+                "threadIdleFraction": { "type": "number", "minimum": 0, "maximum": 1, "description": "1 − Σ(wall классов) / (P × wall прогона)." },
+                "longestClassSeconds": { "$ref": "#/definitions/seconds" },
+                "longestClass": { "type": "string" },
+                "tailSeconds": { "$ref": "#/definitions/seconds", "description": "Сколько секунд в конце прогона активных классов было меньше P." }
+              }
+            },
+            "postgresCpu": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "required": ["maxPercent", "meanPercent"],
+              "properties": {
+                "maxPercent": { "type": "number", "minimum": 0 },
+                "meanPercent": { "type": "number", "minimum": 0 },
+                "cpuLimit": { "type": "integer", "minimum": 1, "description": "Сколько ядер доступно контейнеру (для colima — CPU виртуальной машины)." }
+              }
+            },
+            "efManyServiceProvidersWarning": { "type": "boolean", "description": "Встретилось ли в выводе предупреждение EF Core ManyServiceProvidersCreatedWarning (гипотеза H6)." }
+          }
+        },
+        "vitest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["files", "phases", "topFiles"],
+          "properties": {
+            "files": { "type": "integer", "minimum": 0 },
+            "pool": { "enum": ["forks", "threads", "vmThreads", "vmForks"] },
+            "phases": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["transformSeconds", "setupSeconds", "collectSeconds", "testsSeconds", "environmentSeconds", "prepareSeconds"],
+              "description": "Строка Duration(...) штатного репортёра vitest, медианный прогон. Это суммы по воркерам, а не доли wall.",
+              "properties": {
+                "transformSeconds": { "$ref": "#/definitions/seconds" },
+                "setupSeconds": { "$ref": "#/definitions/seconds" },
+                "collectSeconds": { "$ref": "#/definitions/seconds" },
+                "testsSeconds": { "$ref": "#/definitions/seconds" },
+                "environmentSeconds": { "$ref": "#/definitions/seconds" },
+                "prepareSeconds": { "$ref": "#/definitions/seconds" }
+              }
+            },
+            "topFiles": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["file", "seconds", "testsSeconds", "overheadSeconds", "environment"],
+                "properties": {
+                  "file": { "type": "string", "description": "Путь от frontend/." },
+                  "seconds": { "$ref": "#/definitions/seconds" },
+                  "testsSeconds": { "$ref": "#/definitions/seconds", "description": "Сумма duration тестов файла." },
+                  "overheadSeconds": { "$ref": "#/definitions/seconds", "description": "seconds − testsSeconds: окружение, импорт, setup." },
+                  "environment": { "enum": ["jsdom", "node"] }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,825 @@
+{
+  "schemaVersion": 1,
+  "label": "b0-baseline",
+  "commit": "a1e225942098",
+  "dirty": false,
+  "createdAtUtc": "2026-10-01T06:46:45Z",
+  "environment": {
+    "host": "MacBook-Pro-Ila.local",
+    "os": "macOS 26.6.2 (arm64)",
+    "cpuCores": 8,
+    "memoryGb": 8.0,
+    "dockerRuntime": "colima",
+    "mode": "container",
+    "parallelism": 4,
+    "build": "no-build",
+    "dotnetSdk": "8.0.203",
+    "node": "v24.16.0",
+    "concurrentSuites": false,
+    "foreignRunsDetected": true,
+    "colima": {
+      "cpu": 2,
+      "memoryGb": 4.0,
+      "profile": "default"
+    }
+  },
+  "suites": [
+    {
+      "suite": "unit",
+      "runs": [
+        {
+          "index": 1,
+          "wallSeconds": 4.056,
+          "passed": 2732,
+          "failed": 0,
+          "skipped": 0
+        },
+        {
+          "index": 2,
+          "wallSeconds": 4.804,
+          "passed": 2732,
+          "failed": 0,
+          "skipped": 0
+        },
+        {
+          "index": 3,
+          "wallSeconds": 4.34,
+          "passed": 2732,
+          "failed": 0,
+          "skipped": 0
+        }
+      ],
+      "medianWallSeconds": 4.34,
+      "topClasses": [
+        {
+          "name": "ShowcaseOwnershipCoverageTests",
+          "seconds": 1.877,
+          "tests": 5,
+          "wallSeconds": 1.876,
+          "className": "ServiceBooking.UnitTests.ShowcaseOwnershipCoverageTests"
+        },
+        {
+          "name": "ShowcaseDatasetTests",
+          "seconds": 1.863,
+          "tests": 17,
+          "wallSeconds": 1.132,
+          "className": "ServiceBooking.UnitTests.ShowcaseDatasetTests"
+        },
+        {
+          "name": "DemoResetTests",
+          "seconds": 1.753,
+          "tests": 14,
+          "wallSeconds": 1.753,
+          "className": "ServiceBooking.UnitTests.DemoResetTests"
+        },
+        {
+          "name": "ShowcaseDemoProfileTests",
+          "seconds": 1.56,
+          "tests": 19,
+          "wallSeconds": 1.203,
+          "className": "ServiceBooking.UnitTests.ShowcaseDemoProfileTests"
+        },
+        {
+          "name": "OrderMoneyTests",
+          "seconds": 1.037,
+          "tests": 17,
+          "wallSeconds": 1.037,
+          "className": "ServiceBooking.UnitTests.OrderMoneyTests"
+        },
+        {
+          "name": "ImageProcessorTests",
+          "seconds": 0.807,
+          "tests": 15,
+          "wallSeconds": 0.53,
+          "className": "ServiceBooking.UnitTests.ImageProcessorTests"
+        },
+        {
+          "name": "LegalPublishTests",
+          "seconds": 0.76,
+          "tests": 14,
+          "wallSeconds": 0.669,
+          "className": "ServiceBooking.UnitTests.LegalKit.LegalPublishTests"
+        },
+        {
+          "name": "StrayArtifactFileTests",
+          "seconds": 0.489,
+          "tests": 9,
+          "wallSeconds": 0.333,
+          "className": "ServiceBooking.UnitTests.LegalKit.StrayArtifactFileTests"
+        },
+        {
+          "name": "SubjectPhoneGateInvariantTests",
+          "seconds": 0.394,
+          "tests": 1,
+          "wallSeconds": 0.0,
+          "className": "ServiceBooking.UnitTests.SubjectPhoneGateInvariantTests"
+        },
+        {
+          "name": "LegalDocumentProviderTests",
+          "seconds": 0.369,
+          "tests": 31,
+          "wallSeconds": 0.347,
+          "className": "ServiceBooking.UnitTests.LegalDocumentProviderTests"
+        },
+        {
+          "name": "OrderDomainTests",
+          "seconds": 0.366,
+          "tests": 35,
+          "wallSeconds": 0.373,
+          "className": "ServiceBooking.UnitTests.OrderDomainTests"
+        },
+        {
+          "name": "LegalBuildDeterminismTests",
+          "seconds": 0.276,
+          "tests": 7,
+          "wallSeconds": 0.205,
+          "className": "ServiceBooking.UnitTests.LegalKit.LegalBuildDeterminismTests"
+        },
+        {
+          "name": "AdminLegalControllerReadinessHelpersTests",
+          "seconds": 0.26,
+          "tests": 26,
+          "wallSeconds": 0.254,
+          "className": "ServiceBooking.UnitTests.AdminLegalControllerReadinessHelpersTests"
+        },
+        {
+          "name": "LegalControllerGetDocumentTests",
+          "seconds": 0.192,
+          "tests": 8,
+          "wallSeconds": 0.139,
+          "className": "ServiceBooking.UnitTests.LegalControllerGetDocumentTests"
+        },
+        {
+          "name": "AppLogAgeRuleTests",
+          "seconds": 0.176,
+          "tests": 4,
+          "wallSeconds": 0.182,
+          "className": "ServiceBooking.UnitTests.AppLogAgeRuleTests"
+        },
+        {
+          "name": "DeploymentSafetyChecksTests",
+          "seconds": 0.162,
+          "tests": 145,
+          "wallSeconds": 0.171,
+          "className": "ServiceBooking.UnitTests.DeploymentSafetyChecksTests"
+        },
+        {
+          "name": "VapidKeyValidatorTests",
+          "seconds": 0.155,
+          "tests": 10,
+          "wallSeconds": 0.156,
+          "className": "ServiceBooking.UnitTests.VapidKeyValidatorTests"
+        },
+        {
+          "name": "ShowcasePrimitivesTests",
+          "seconds": 0.138,
+          "tests": 18,
+          "wallSeconds": 0.136,
+          "className": "ServiceBooking.UnitTests.ShowcasePrimitivesTests"
+        },
+        {
+          "name": "ShowcaseAssetStoreTests",
+          "seconds": 0.128,
+          "tests": 13,
+          "wallSeconds": 0.126,
+          "className": "ServiceBooking.UnitTests.ShowcaseAssetStoreTests"
+        },
+        {
+          "name": "DemoMaintenanceTests",
+          "seconds": 0.123,
+          "tests": 47,
+          "wallSeconds": 0.097,
+          "className": "ServiceBooking.UnitTests.DemoMaintenanceTests"
+        }
+      ],
+      "topTests": [
+        {
+          "name": "ServiceBooking.UnitTests.ShowcaseOwnershipCoverageTests.EveryTableReferencingARoot_IsErasedOrDeclaredNeverWritten",
+          "seconds": 1.846,
+          "className": "ServiceBooking.UnitTests.ShowcaseOwnershipCoverageTests",
+          "testCaseId": "ac5f84b3-0452-dedc-6231-fdf1ab36e22c"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.DemoResetTests.TheWipeListIsEveryTableOfTheModel_ExceptTheAllowList",
+          "seconds": 1.727,
+          "className": "ServiceBooking.UnitTests.DemoResetTests",
+          "testCaseId": "024ec81f-facb-dbb8-8511-862e043b6923"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.OrderMoneyTests.WeightRule_IsRoundHalfUpToKopeck_LikeMathRoundAwayFromZero",
+          "seconds": 1.019,
+          "className": "ServiceBooking.UnitTests.OrderMoneyTests",
+          "testCaseId": "57253163-e672-e7bf-1b3b-e9d05217fe08"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.ShowcaseDatasetTests.Build_TwoRunsWithTheSameArguments_GiveTheSameGraph",
+          "seconds": 0.791,
+          "className": "ServiceBooking.UnitTests.ShowcaseDatasetTests",
+          "testCaseId": "b1f53349-e035-4ce2-24b6-cea67e5c728d"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.ShowcaseDatasetTests.Build_OnAnotherDate_KeepsNamesSlugsIdsAndPhones_ChangesOnlyTheDates",
+          "seconds": 0.733,
+          "className": "ServiceBooking.UnitTests.ShowcaseDatasetTests",
+          "testCaseId": "f519a5f8-3cf7-8edd-6ec6-8c7f64251062"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.ShowcaseDemoProfileTests.Demo_TwoRunsWithTheSameArguments_GiveTheSameGraph",
+          "seconds": 0.465,
+          "className": "ServiceBooking.UnitTests.ShowcaseDemoProfileTests",
+          "testCaseId": "06bf96fe-8100-eb22-8bf9-854bf8718ace"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.ImageProcessorTests.Process_PngDeclaringDimensionsExactlyAtThePixelBudget_IsNotRejectedByTheGuard",
+          "seconds": 0.404,
+          "className": "ServiceBooking.UnitTests.ImageProcessorTests",
+          "testCaseId": "28dda329-80ac-14e8-9cd0-2f5035880ee0"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.SubjectPhoneGateInvariantTests.EveryPhoneStringComparison_InApiControllersAndServices_CarriesAGateMarker",
+          "seconds": 0.394,
+          "className": "ServiceBooking.UnitTests.SubjectPhoneGateInvariantTests",
+          "testCaseId": "77ba80df-f22b-c65d-d995-142c1e4428a6"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.ShowcaseDemoProfileTests.DemoClient_HasPastAndFutureVisitsInSeveralCompanies_TakenFromExistingSlots",
+          "seconds": 0.357,
+          "className": "ServiceBooking.UnitTests.ShowcaseDemoProfileTests",
+          "testCaseId": "f0e0675d-3d34-08fd-7ba2-621f57490893"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.ImageProcessorTests.Process_ImageSmallerThanProfileMaximum_IsNotUpscaled",
+          "seconds": 0.282,
+          "className": "ServiceBooking.UnitTests.ImageProcessorTests",
+          "testCaseId": "15bf9e62-1b02-78b9-16da-7bdb605f720e"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.ShowcaseDemoProfileTests.Prod_IsUntouchedByTheDemoAdditions_NoReviewsNoNotesNoDemoClient",
+          "seconds": 0.269,
+          "className": "ServiceBooking.UnitTests.ShowcaseDemoProfileTests",
+          "testCaseId": "afea00f1-f049-8de3-6637-15f2c76af787"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.AdminLegalControllerReadinessHelpersTests.BuildPlaceholderSummary_AggregatesAcrossDocumentsAndUiTexts",
+          "seconds": 0.205,
+          "className": "ServiceBooking.UnitTests.AdminLegalControllerReadinessHelpersTests",
+          "testCaseId": "ad30c43b-6aab-2949-62a3-787944e3aef4"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.OrderDomainTests.PublicOrder_MasksPhone_HidesStaffNames_AndShowsShopChangesOnly",
+          "seconds": 0.182,
+          "className": "ServiceBooking.UnitTests.OrderDomainTests",
+          "testCaseId": "367e4541-597b-3291-6b45-16aa227cf23c"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.AppLogAgeRuleTests.ApplyAsync_OldFile_CountedAsStale_ButNeverDeleted",
+          "seconds": 0.17,
+          "className": "ServiceBooking.UnitTests.AppLogAgeRuleTests",
+          "testCaseId": "a3c89797-f4a9-08ea-07c6-2627a9d5a128"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.ShowcaseDemoProfileTests.Roles_KeepTheirIdsAndSecurityStamps_AcrossDatesAndBuilds_SoAnOldTokenSurvivesTheNightlyReset",
+          "seconds": 0.169,
+          "className": "ServiceBooking.UnitTests.ShowcaseDemoProfileTests",
+          "testCaseId": "9be7f375-e11f-a835-7532-8d023fdc3c36"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.LegalKit.StrayArtifactFileTests.Build_OutDirHasOrphanedHtmlFromAPriorManifest_RemovesIt",
+          "seconds": 0.152,
+          "className": "ServiceBooking.UnitTests.LegalKit.StrayArtifactFileTests",
+          "testCaseId": "f6f874f8-fde5-9001-4984-3c6d4d256153"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.ShowcaseDatasetTests.Build_Schedules_CoverThePastAndAtLeastFourteenDaysAhead_WithOneVacation",
+          "seconds": 0.137,
+          "className": "ServiceBooking.UnitTests.ShowcaseDatasetTests",
+          "testCaseId": "d1f11228-ad52-9071-2c6a-634d3939fa19"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.VapidKeyValidatorTests.IsValidP256Pair_MismatchedKeysFromTwoUnrelatedPairs_StillReturnsTrue",
+          "seconds": 0.131,
+          "className": "ServiceBooking.UnitTests.VapidKeyValidatorTests",
+          "testCaseId": "e15855ad-3111-b5a0-9ae9-f24e62e990a7"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.LegalKit.LegalPublishTests.Rollback_RecordsItsOwnJournalEntry_RatherThanErasingThePublishEntry",
+          "seconds": 0.126,
+          "className": "ServiceBooking.UnitTests.LegalKit.LegalPublishTests",
+          "testCaseId": "bf07f8f1-8977-c6d8-27c9-6805d778e4c8"
+        },
+        {
+          "name": "ServiceBooking.UnitTests.LegalKit.StrayArtifactFileTests.Check_RootHasOrphanedFileNotProducedBySource_FailsWithArtifactDriftCode",
+          "seconds": 0.125,
+          "className": "ServiceBooking.UnitTests.LegalKit.StrayArtifactFileTests",
+          "testCaseId": "0e0da394-0e61-49f6-af52-a6189328a938"
+        }
+      ]
+    },
+    {
+      "suite": "functional",
+      "runs": [
+        {
+          "index": 1,
+          "wallSeconds": 647.585,
+          "passed": 1266,
+          "failed": 1,
+          "skipped": 0,
+          "orderSeed": 934855195
+        },
+        {
+          "index": 2,
+          "wallSeconds": 624.938,
+          "passed": 1266,
+          "failed": 1,
+          "skipped": 0,
+          "orderSeed": 934855195
+        },
+        {
+          "index": 3,
+          "wallSeconds": 984.854,
+          "passed": 1266,
+          "failed": 1,
+          "skipped": 0,
+          "orderSeed": 934855195
+        }
+      ],
+      "medianWallSeconds": 647.585,
+      "topClasses": [
+        {
+          "name": "Cycle18TrialLifecycleTaskTests",
+          "seconds": 208.067,
+          "tests": 14,
+          "wallSeconds": 204.602,
+          "className": "ServiceBooking.Tests.Tests.Cycle18TrialLifecycleTaskTests"
+        },
+        {
+          "name": "Cycle33UnifiedPushTests",
+          "seconds": 196.502,
+          "tests": 18,
+          "wallSeconds": 175.56,
+          "className": "ServiceBooking.Tests.Tests.Cycle33UnifiedPushTests"
+        },
+        {
+          "name": "CompaniesTests",
+          "seconds": 196.014,
+          "tests": 85,
+          "wallSeconds": 191.73,
+          "className": "ServiceBooking.Tests.Tests.CompaniesTests"
+        },
+        {
+          "name": "ClientNotePhotosTests",
+          "seconds": 189.571,
+          "tests": 21,
+          "wallSeconds": 190.893,
+          "className": "ServiceBooking.Tests.Tests.ClientNotePhotosTests"
+        },
+        {
+          "name": "Cycle23ShopsCatalogTests",
+          "seconds": 188.843,
+          "tests": 28,
+          "wallSeconds": 186.221,
+          "className": "ServiceBooking.Tests.Tests.Cycle23ShopsCatalogTests"
+        },
+        {
+          "name": "MastersTests",
+          "seconds": 181.122,
+          "tests": 19,
+          "wallSeconds": 174.425,
+          "className": "ServiceBooking.Tests.Tests.MastersTests"
+        },
+        {
+          "name": "Cycle25StaffMaxTests",
+          "seconds": 172.342,
+          "tests": 19,
+          "wallSeconds": 153.705,
+          "className": "ServiceBooking.Tests.Tests.Cycle25StaffMaxTests"
+        },
+        {
+          "name": "BookingsFlowSmokeTests",
+          "seconds": 170.829,
+          "tests": 63,
+          "wallSeconds": 151.672,
+          "className": "ServiceBooking.Tests.Tests.BookingsFlowSmokeTests"
+        },
+        {
+          "name": "NotificationChannelsTests",
+          "seconds": 169.431,
+          "tests": 22,
+          "wallSeconds": 168.057,
+          "className": "ServiceBooking.Tests.Tests.NotificationChannelsTests"
+        },
+        {
+          "name": "Cycle28ShowcaseGuardsTests",
+          "seconds": 169.292,
+          "tests": 11,
+          "wallSeconds": 168.279,
+          "className": "ServiceBooking.Tests.Tests.Cycle28ShowcaseGuardsTests"
+        },
+        {
+          "name": "Cycle25CustomerTests",
+          "seconds": 166.008,
+          "tests": 8,
+          "wallSeconds": 138.37,
+          "className": "ServiceBooking.Tests.Tests.Cycle25CustomerTests"
+        },
+        {
+          "name": "ReviewsTests",
+          "seconds": 165.355,
+          "tests": 17,
+          "wallSeconds": 158.38,
+          "className": "ServiceBooking.Tests.Tests.ReviewsTests"
+        },
+        {
+          "name": "Cycle18TrialPlanTests",
+          "seconds": 162.808,
+          "tests": 36,
+          "wallSeconds": 157.918,
+          "className": "ServiceBooking.Tests.Tests.Cycle18TrialPlanTests"
+        },
+        {
+          "name": "Cycle26CompanyCardTests",
+          "seconds": 162.558,
+          "tests": 27,
+          "wallSeconds": 153.348,
+          "className": "ServiceBooking.Tests.Tests.Cycle26CompanyCardTests"
+        },
+        {
+          "name": "Cycle17ClientCancelTests",
+          "seconds": 161.672,
+          "tests": 15,
+          "wallSeconds": 153.87,
+          "className": "ServiceBooking.Tests.Tests.Cycle17ClientCancelTests"
+        },
+        {
+          "name": "Cycle24HoursAcceptanceTests",
+          "seconds": 157.679,
+          "tests": 28,
+          "wallSeconds": 150.597,
+          "className": "ServiceBooking.Tests.Tests.Cycle24HoursAcceptanceTests"
+        },
+        {
+          "name": "Cycle24PickupTests",
+          "seconds": 156.825,
+          "tests": 16,
+          "wallSeconds": 149.394,
+          "className": "ServiceBooking.Tests.Tests.Cycle24PickupTests"
+        },
+        {
+          "name": "Cycle15ClientRescheduleTests",
+          "seconds": 151.426,
+          "tests": 12,
+          "wallSeconds": 139.891,
+          "className": "ServiceBooking.Tests.Tests.Cycle15ClientRescheduleTests"
+        },
+        {
+          "name": "Cycle25PickListTests",
+          "seconds": 149.264,
+          "tests": 5,
+          "wallSeconds": 142.904,
+          "className": "ServiceBooking.Tests.Tests.Cycle25PickListTests"
+        },
+        {
+          "name": "Cycle24TariffTests",
+          "seconds": 148.853,
+          "tests": 12,
+          "wallSeconds": 138.056,
+          "className": "ServiceBooking.Tests.Tests.Cycle24TariffTests"
+        }
+      ],
+      "topTests": [
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle25ReportsTests.Summary_Today_AgreesWithHistory_OrdersTotalAndIssuedAmount_AndAllFigures",
+          "seconds": 64.334,
+          "className": "ServiceBooking.Tests.Tests.Cycle25ReportsTests",
+          "testCaseId": "9f7be848-34a7-f411-d45e-ad7b5389f357"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle31GalleryRateLimitTests.Edits_61stInWindow_429_LogoUploadsWindowStillLive_ItsOwn11thIs429",
+          "seconds": 57.316,
+          "className": "ServiceBooking.Tests.Tests.Cycle31GalleryRateLimitTests",
+          "testCaseId": "dd6e454a-38b8-ae2d-36fd-1cadf409305d"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle18TrialLifecycleTaskTests.ExpirePhase_OneHundredAndFiveAccountsFailDeterministically_PassStillCompletes_AndErrorIsVisible",
+          "seconds": 56.436,
+          "className": "ServiceBooking.Tests.Tests.Cycle18TrialLifecycleTaskTests",
+          "testCaseId": "e743a492-1574-2df7-92fd-81ef756b94fb"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle25PickListTests.List_TakesTheCurrentContent_StaffEditsAreVisible_ChangingStatusMovesOrderOut",
+          "seconds": 49.576,
+          "className": "ServiceBooking.Tests.Tests.Cycle25PickListTests",
+          "testCaseId": "d90b68fd-d6b1-63ec-4b47-44ef3a611cef"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle25CustomerTests.Note_CreateEditDelete_TrimAndLimit_LastAuthorShown_NotVisibleToCustomerNorOtherShop",
+          "seconds": 49.563,
+          "className": "ServiceBooking.Tests.Tests.Cycle25CustomerTests",
+          "testCaseId": "f0005c94-b81c-830e-a9ef-084857b08111"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle25CatalogTests.Visibility_AllFiveConditions_HiddenShopsNeverAppear_NotByCardNotByCountNotBySearch",
+          "seconds": 47.605,
+          "className": "ServiceBooking.Tests.Tests.Cycle25CatalogTests",
+          "testCaseId": "388512b7-c34c-773b-be03-51d9cb2e04b4"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle31CatalogListingTests.Matrix_ActiveXPlanXShow_VisibleFlagMatchesBothCatalogs",
+          "seconds": 45.759,
+          "className": "ServiceBooking.Tests.Tests.Cycle31CatalogListingTests",
+          "testCaseId": "a4fd547c-797a-8a77-9b3f-b53d43831083"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle25PickListTests.Interval_FromTo_SelectsByPickupTime_EmptyIntervalExplained_ThroughMidnightAndValidation",
+          "seconds": 45.714,
+          "className": "ServiceBooking.Tests.Tests.Cycle25PickListTests",
+          "testCaseId": "7eeebcfc-9ea8-95b5-a130-435c3e9f7ce6"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle24TariffTests.MonthlyLimit_Warning80_Reached_StopsNewOrders_OldOnesKeepWorking_TariffChangeResumes",
+          "seconds": 45.671,
+          "className": "ServiceBooking.Tests.Tests.Cycle24TariffTests",
+          "testCaseId": "57e651d9-2b9c-6664-cfb7-abb8b9bff57e"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle25WorkingDayTests.MyOrdersAndCustomerMessages_CountTodayFromTheWorkingDay_NextWorkingDayStillSaysTomorrow",
+          "seconds": 41.67,
+          "className": "ServiceBooking.Tests.Tests.Cycle25WorkingDayTests",
+          "testCaseId": "f5662490-181b-e2e1-9015-517147767f84"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle25ReportsTests.History_Filters_Statuses_Customer_Amount_Number_Sort_MaskedPhone",
+          "seconds": 39.607,
+          "className": "ServiceBooking.Tests.Tests.Cycle25ReportsTests",
+          "testCaseId": "7aeb1726-7135-1431-ba26-42eda86288a4"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.PaginationTests.MasterClients_SecondPage_DoesNotOverlapFirst",
+          "seconds": 39.594,
+          "className": "ServiceBooking.Tests.Tests.PaginationTests",
+          "testCaseId": "e5333987-2a8a-be29-1795-5f3aba7bee1c"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle18TrialMailingDeliveryTests.Regrant_AfterFirstTrialWindowClosedAndExpired_ReAuthorizingTheChannel_OpensAFreshWindow_AndMessageActuallyReachesSendAsync",
+          "seconds": 39.491,
+          "className": "ServiceBooking.Tests.Tests.Cycle18TrialMailingDeliveryTests",
+          "testCaseId": "61e14484-0b59-f8e0-1180-62254a3dcc73"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle28ShowcaseGuardsTests.PublicCatalog_ShowsShowcaseWithFlags_RealCompanyHasBothFalse_NoContactsLeaked",
+          "seconds": 37.784,
+          "className": "ServiceBooking.Tests.Tests.Cycle28ShowcaseGuardsTests",
+          "testCaseId": "3f0f084b-28fc-68e3-0e95-e73c4f95509d"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle22RefactorEquivalenceTests.MasterClients_Search_SameMatchesAndOrder",
+          "seconds": 33.861,
+          "className": "ServiceBooking.Tests.Tests.Cycle22RefactorEquivalenceTests",
+          "testCaseId": "5f3c768b-e8e0-1c18-bb2a-6dfc2d71ce55"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle25CustomerTests.Card_MergesAccountAndGuestOrdersOfOneShopOnly_StatsNameVerifiedMark_PagedNewestFirst",
+          "seconds": 32.69,
+          "className": "ServiceBooking.Tests.Tests.Cycle25CustomerTests",
+          "testCaseId": "7e138241-39d7-7b1c-dfc0-bc70d6ecd521"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle20HealthWrittenConsentTests.WrittenConsent_IsScopedPerCompany_DoesNotCrossOver",
+          "seconds": 31.897,
+          "className": "ServiceBooking.Tests.Tests.Cycle20HealthWrittenConsentTests",
+          "testCaseId": "97592746-ccaf-8b73-0753-ceab3643d555"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.AdminBillingAccountsTests.GetBillingAccounts_ListStatus_MatchesCardStatus_ForAllFiveSubscriptionShapes",
+          "seconds": 30.987,
+          "className": "ServiceBooking.Tests.Tests.AdminBillingAccountsTests",
+          "testCaseId": "d78f755b-7f0d-3a6d-65de-d4a1f694e87a"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.LegalPriorityTests.RevokeConsent_DeletesPhotosAndHealthNote_CancelsQueuedNotifications_PreviewMatchesActual",
+          "seconds": 30.882,
+          "className": "ServiceBooking.Tests.Tests.LegalPriorityTests",
+          "testCaseId": "d36d3f23-455d-1398-7667-df26ca1fc40d"
+        },
+        {
+          "name": "ServiceBooking.Tests.Tests.Cycle33UnifiedPushTests.WorkerRemovedFromShopAfterQueueing_OrderRowOnEzbookDeviceIsSkipped",
+          "seconds": 28.584,
+          "className": "ServiceBooking.Tests.Tests.Cycle33UnifiedPushTests",
+          "testCaseId": "79ec837d-b68d-9b3e-5ecf-fa4a51b76a15"
+        }
+      ],
+      "functional": {
+        "classes": 104,
+        "hostBoots": {
+          "count": 0,
+          "totalSeconds": 0.0,
+          "medianMs": 0,
+          "p95Ms": 0.0,
+          "byFactory": [],
+          "byClass": []
+        },
+        "databases": {
+          "serverSeconds": 0.0,
+          "templateSeconds": 0.0,
+          "cloneCount": 0,
+          "cloneTotalSeconds": 0.0,
+          "dropTotalSeconds": 0.0
+        },
+        "scheduling": {
+          "threadIdleFraction": 0.0,
+          "longestClassSeconds": 242.283,
+          "longestClass": "ServiceBooking.Tests.Tests.Cycle28DemoScenarioTests",
+          "tailSeconds": 422.587
+        },
+        "postgresCpu": {
+          "maxPercent": 124.4,
+          "meanPercent": 31.9,
+          "cpuLimit": 2
+        },
+        "efManyServiceProvidersWarning": false
+      }
+    },
+    {
+      "suite": "vitest",
+      "runs": [
+        {
+          "index": 1,
+          "wallSeconds": 32.091,
+          "passed": 1541,
+          "failed": 0,
+          "skipped": 0
+        },
+        {
+          "index": 2,
+          "wallSeconds": 35.768,
+          "passed": 1541,
+          "failed": 0,
+          "skipped": 0
+        },
+        {
+          "index": 3,
+          "wallSeconds": 31.853,
+          "passed": 1541,
+          "failed": 0,
+          "skipped": 0
+        }
+      ],
+      "medianWallSeconds": 32.091,
+      "vitest": {
+        "files": 203,
+        "pool": "forks",
+        "phases": {
+          "transformSeconds": 8.16,
+          "setupSeconds": 20.77,
+          "collectSeconds": 33.64,
+          "testsSeconds": 53.89,
+          "environmentSeconds": 68.31,
+          "prepareSeconds": 8.87
+        },
+        "topFiles": [
+          {
+            "file": "goods/src/pages/cabinet/CreateShopPage.test.tsx",
+            "seconds": 3.096,
+            "testsSeconds": 3.095,
+            "overheadSeconds": 0.0,
+            "environment": "jsdom"
+          },
+          {
+            "file": "src/pages/owner/SettingsTab.qa32.test.tsx",
+            "seconds": 1.975,
+            "testsSeconds": 1.972,
+            "overheadSeconds": 0.003,
+            "environment": "jsdom"
+          },
+          {
+            "file": "goods/src/pages/cabinet/LinkPage.test.tsx",
+            "seconds": 1.774,
+            "testsSeconds": 1.774,
+            "overheadSeconds": 0.001,
+            "environment": "jsdom"
+          },
+          {
+            "file": "src/components/booking/BookingModal.test.tsx",
+            "seconds": 1.436,
+            "testsSeconds": 1.435,
+            "overheadSeconds": 0.001,
+            "environment": "jsdom"
+          },
+          {
+            "file": "src/pages/admin/BillingAccountsAdminTab.test.tsx",
+            "seconds": 1.247,
+            "testsSeconds": 1.247,
+            "overheadSeconds": 0.0,
+            "environment": "jsdom"
+          },
+          {
+            "file": "goods/src/components/storefront/CartPanel.test.tsx",
+            "seconds": 1.124,
+            "testsSeconds": 1.123,
+            "overheadSeconds": 0.001,
+            "environment": "jsdom"
+          },
+          {
+            "file": "src/components/booking/BookingModal.showcase.test.tsx",
+            "seconds": 1.021,
+            "testsSeconds": 1.02,
+            "overheadSeconds": 0.001,
+            "environment": "jsdom"
+          },
+          {
+            "file": "src/pages/admin/PlansTab.test.tsx",
+            "seconds": 0.94,
+            "testsSeconds": 0.94,
+            "overheadSeconds": 0.0,
+            "environment": "jsdom"
+          },
+          {
+            "file": "goods/src/pages/cabinet/CatalogPage.test.tsx",
+            "seconds": 0.918,
+            "testsSeconds": 0.918,
+            "overheadSeconds": 0.001,
+            "environment": "jsdom"
+          },
+          {
+            "file": "src/pages/RegisterPage.test.tsx",
+            "seconds": 0.916,
+            "testsSeconds": 0.916,
+            "overheadSeconds": 0.0,
+            "environment": "jsdom"
+          },
+          {
+            "file": "src/pages/owner/SalonProfileSection.test.tsx",
+            "seconds": 0.888,
+            "testsSeconds": 0.887,
+            "overheadSeconds": 0.0,
+            "environment": "jsdom"
+          },
+          {
+            "file": "goods/src/components/catalog/ProductModal.test.tsx",
+            "seconds": 0.862,
+            "testsSeconds": 0.861,
+            "overheadSeconds": 0.001,
+            "environment": "jsdom"
+          },
+          {
+            "file": "goods/src/pages/StorefrontPage.test.tsx",
+            "seconds": 0.807,
+            "testsSeconds": 0.799,
+            "overheadSeconds": 0.008,
+            "environment": "jsdom"
+          },
+          {
+            "file": "goods/src/components/profile/ShopProfileSection.test.tsx",
+            "seconds": 0.804,
+            "testsSeconds": 0.804,
+            "overheadSeconds": 0.0,
+            "environment": "jsdom"
+          },
+          {
+            "file": "src/pages/MasterClientsPage.test.tsx",
+            "seconds": 0.803,
+            "testsSeconds": 0.803,
+            "overheadSeconds": 0.0,
+            "environment": "jsdom"
+          },
+          {
+            "file": "src/pages/SubjectRequestPage.test.tsx",
+            "seconds": 0.802,
+            "testsSeconds": 0.802,
+            "overheadSeconds": 0.0,
+            "environment": "jsdom"
+          },
+          {
+            "file": "src/pages/admin/NoticesAdminTab.test.tsx",
+            "seconds": 0.764,
+            "testsSeconds": 0.764,
+            "overheadSeconds": 0.001,
+            "environment": "jsdom"
+          },
+          {
+            "file": "src/pages/owner/CompanyManagePage.test.tsx",
+            "seconds": 0.743,
+            "testsSeconds": 0.743,
+            "overheadSeconds": 0.0,
+            "environment": "jsdom"
+          },
+          {
+            "file": "src/components/notifications/ChannelRequestModal.test.tsx",
+            "seconds": 0.718,
+            "testsSeconds": 0.717,
+            "overheadSeconds": 0.0,
+            "environment": "jsdom"
+          },
+          {
+            "file": "goods/src/pages/cabinet/HoursPage.test.tsx",
+            "seconds": 0.71,
+            "testsSeconds": 0.709,
+            "overheadSeconds": 0.0,
+            "environment": "jsdom"
+          }
+        ]
+      }
+    }
+  ],
+  "totalMedianSeconds": 684.016
+}

@@ -53,8 +53,11 @@ public class ShowcaseDemoProfileTests
     }
 
     [Fact]
-    public void Demo_SalonPart_IsFrozenSinceCycle34_TheShopsGeneratorDoesNotMoveAByte() =>
-        SalonFingerprint(Demo.Value).Should().Be(FrozenDemoSalonFingerprint);
+    public void Demo_SalonPart_IsFrozenSinceCycle34_TheShopsGeneratorDoesNotMoveAByte()
+    {
+        var graph = Demo.Value; // built (lazily) under the current culture: only the formatting of the hash is culture-bound
+        FrozenFingerprintCulture.Run(() => SalonFingerprint(graph)).Should().Be(FrozenDemoSalonFingerprint);
+    }
 
     // ── profile and determinism ─────────────────────────────────────────────────────────────────────
 

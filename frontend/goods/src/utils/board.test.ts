@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { activeHighlights, applyBoardResponse, boardTitle, byPickupThenCreated, detectNewOrders, freshness, HIGHLIGHT_MS, isOverdueNow, patchOrder, serverNow, type BoardState } from './board'
 import type { OrderBoardDto, StaffOrderCardDto } from '../types'

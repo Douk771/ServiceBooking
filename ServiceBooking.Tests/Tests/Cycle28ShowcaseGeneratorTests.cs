@@ -27,7 +27,6 @@ namespace ServiceBooking.Tests.Tests;
 /// Scenarios that change the showcase (delete, recreate, locks, snapshots) are in <see cref="Cycle28ShowcaseLifecycleTests"/>.
 /// </summary>
 [Trait("Category", "Heavy")]
-[Collection("Cycle28Generator")] // heavy (~10k bookings per create): never two of these at once, or the rest of the suite starves
 public class Cycle28ShowcaseContentTests(TestDatabaseFixture fixture) : Cycle28ShowcaseTestBase(fixture)
 {
     private static readonly ConcurrentDictionary<string, Lazy<Task<(int Exit, string Output, TimeSpan Took)>>> Created = new();
@@ -474,7 +473,6 @@ public abstract class Cycle28GeneratorTestBase(TestDatabaseFixture fixture) : Cy
 /// 300 s only for the insert) it fails with exit code 1 as soon as the machine is busy. Defect recorded in the QA report, see CY28-30 notes.
 /// </summary>
 [Trait("Category", "Heavy")]
-[Collection("Cycle28Generator")]
 public class Cycle28ShowcaseFreshDeleteTests(TestDatabaseFixture fixture) : Cycle28GeneratorTestBase(fixture)
 {
     [Fact, TestCase("CY28-30")]
@@ -513,7 +511,6 @@ public class Cycle28ShowcaseFreshDeleteTests(TestDatabaseFixture fixture) : Cycl
 /// Own database; every test starts from a normalised state (<c>ops showcase delete --yes</c>).
 /// </summary>
 [Trait("Category", "Heavy")]
-[Collection("Cycle28Generator")]
 public class Cycle28ShowcaseLifecycleTests(TestDatabaseFixture fixture) : Cycle28GeneratorTestBase(fixture)
 {
     private static readonly Regex CountsAfter = new(@"создано: (?<c>companies=.*?)( за |$)", RegexOptions.Multiline);

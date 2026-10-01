@@ -21,9 +21,9 @@ namespace ServiceBooking.Tests.Tests;
 public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>, IAsyncLifetime
 {
     // T9 review (M3): records the slot↔class pairing (see TestDatabaseFixture.RecordTestClass) — this class declares IClassFixture<TestDatabaseFixture> directly (not via ApiTestBase/NotificationTestBase), so it must call this itself.
-    private readonly int _testClassRecorded = RecordTestClassOnConstruction(fixture, nameof(LegalConsentVersionChangeTests));
+    private readonly int _testClassRecorded = RecordTestClassOnConstruction(fixture, typeof(LegalConsentVersionChangeTests));
 
-    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, string className)
+    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, Type className)
     {
         fixture.RecordTestClass(className);
         return 0;
@@ -60,16 +60,27 @@ public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClas
     // so a version bump from ResetToDefault()/WriteManifest() never desyncs this helper.
     private async Task<AuthResponseDto> RegisterAsync()
     {
-        using var scope = _factory.Services.CreateScope();
-        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
-        var snapshot = provider.Current!;
-        var legal = new RegisterLegalDto(
-            snapshot.Get(LegalDocumentType.Privacy)!.Version, snapshot.Get(LegalDocumentType.TermsClient)!.Version);
-
-        var response = await Anon().PostAsJsonAsync("/api/auth/register", new
+        // Flake guard (QA-36-03): the host reloads the manifest in the background every second
+        // (Legal:ReloadSeconds=1). A reload that lands between reading `provider.Current` here and the server
+        // comparing versions (right after ResetToDefault()/WriteManifest()) makes the server answer 409
+        // "documents were updated" for a perfectly valid registration — a setup race, not the behavior under
+        // test. Re-reading the snapshot and retrying is exactly what a real client does on that 409.
+        HttpResponseMessage response = null!;
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            firstName = "Т", lastName = "Т", phone = UniquePhone(), password = "Password123!", legal
-        });
+            using var scope = _factory.Services.CreateScope();
+            var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+            var snapshot = provider.Current!;
+            var legal = new RegisterLegalDto(
+                snapshot.Get(LegalDocumentType.Privacy)!.Version, snapshot.Get(LegalDocumentType.TermsClient)!.Version);
+
+            response = await Anon().PostAsJsonAsync("/api/auth/register", new
+            {
+                firstName = "Т", lastName = "Т", phone = UniquePhone(), password = "Password123!", legal
+            });
+            if (response.StatusCode != HttpStatusCode.Conflict) break;
+            await Task.Delay(150);
+        }
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
     }

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import routesJson from '../../contracts/cycle11/legal-routes.json'
 // `?raw` (vite/client.d.ts) reads the file as a plain string at build/test time — no Node `fs`

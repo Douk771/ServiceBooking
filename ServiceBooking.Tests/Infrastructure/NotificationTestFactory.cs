@@ -18,8 +18,8 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// Deliberately does NOT enable <c>ScheduledTasks</c> (leaves Testing's own default, off) — tests that
 /// need the real background runner ticking (priority/budget/idle) use
 /// <see cref="NotificationDispatchTestFactory"/> instead; this one is for endpoints exercised directly
-/// over HTTP. One instance per test (not shared), matching <see cref="RateLimitTestFactory"/>'s own
-/// per-test-state reasoning — each test gets its own in-memory rate limiter / QR cache state.
+/// over HTTP. Cycle 36 (L1): one instance per CLASS (<see cref="TestDatabaseFixture.ClassHost{TFactory}"/>, key "ntf") instead
+/// of per test; the rate-limit scenarios keep their own <see cref="RateLimitTestFactory"/> and NTF-L001 its own host.
 /// </summary>
 public sealed class NotificationTestFactory(string connectionString) : WebApplicationFactory<Program>
 {
@@ -36,7 +36,7 @@ public sealed class NotificationTestFactory(string connectionString) : WebApplic
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        Identity = TestHostSettings.Apply(builder, "ntf", connectionString);
+        Identity = TestHostSettings.Apply(builder, "ntf", connectionString, factoryType: GetType().Name);
 
         builder.UseSetting("Notifications:Provider", "logging"); // US-35 — never a real network call
         builder.UseSetting("Notifications:EncryptionKey", TestEncryptionKeyBase64);

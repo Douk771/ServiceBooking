@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ezbook.ru/contracts/cycle36/route-hits.schema.json",
+  "title": "Одна строка файла TestResults/sb-test-routes-<runKey>.jsonl (цикл 36)",
+  "description": "JSON Lines: какие маршруты API реально вызвали функциональные тесты. Пишет тестовый хост только при SERVICEBOOKING_TEST_ROUTE_LOG=1 (BE-36-01), читает tools/test-audit/route_coverage.py (BE-36-02, QA-36-02). Ключ маршрута совпадает с началом строки эталона ServiceBooking.Tests/Tests/Cycle22RouteTable.golden.txt: '<METHOD|ANY> <RoutePattern.RawText>'. Одна строка на уникальную четвёрку (slot, method, route, status) в пределах процесса. ARCHITECTURE_CYCLE36.md §36.5, §36.9.5; API_CONTRACT_CYCLE36.md §36.24.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "runKey", "slot", "method", "route", "status"],
+  "properties": {
+    "v": { "const": 1 },
+    "runKey": { "type": "string", "pattern": "^[0-9a-f]{8}$" },
+    "slot": { "type": "string", "pattern": "^[a-z0-9]{1,16}$", "description": "Слот базы класса; класс берётся из события class-recorded в sb-test-metrics." },
+    "method": { "type": "string", "pattern": "^[A-Z]+$", "description": "HTTP-метод запроса (GET, POST, ...)." },
+    "route": { "type": "string", "minLength": 1, "description": "RoutePattern.RawText сработавшей RouteEndpoint, байт в байт как в эталоне (например 'api/Companies/{id:guid}/members/{memberId:guid}' или '/api/health/live')." },
+    "status": { "type": "integer", "minimum": 100, "maximum": 599 }
+  }
+}

@@ -16,14 +16,24 @@ namespace ServiceBooking.Tests.Tests;
 /// </summary>
 public class Cycle31GalleryRateLimitTests(TestDatabaseFixture fixture) : Cycle25TestBase(fixture)
 {
-    private sealed class ProdLimitsHost(string connectionString) : WebApplicationFactory<Program>
+    private sealed class ProdLimitsHost(string connectionString, int? editWindowMinutes = null, int? galleryWindowMinutes = null, int? uploadsWindowMinutes = null) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            TestHostSettings.Apply(builder, "api", connectionString);
+            TestHostSettings.Apply(builder, "api", connectionString, factoryType: GetType().Name);
             builder.UseSetting("Uploads:PerUserPerMinute", "10");
             builder.UseSetting("RateLimits:company-photos:PermitLimit", "20");
             builder.UseSetting("RateLimits:company-photos-edit:PermitLimit", "60");
+            // Лимит 60 остаётся продовым; окно растягивается только там, где тест делает 62 запроса подряд:
+            // под нагрузкой они не укладываются в минуту, фиксированное окно успевало смениться, и 61-я правка
+            // проходила (флейк). Утверждение — «после 60 правок в окне 61-я получает 429» — не меняется.
+            if (editWindowMinutes is { } window)
+                builder.UseSetting("RateLimits:company-photos-edit:WindowMinutes", window.ToString());
+            // Тот же приём для окна галереи (CY31-22: 21 запрос) и общего окна «uploads» (CY31-23: 11 загрузок логотипа): лимиты продовые, растягивается только окно.
+            if (galleryWindowMinutes is { } galleryWindow)
+                builder.UseSetting("RateLimits:company-photos:WindowMinutes", galleryWindow.ToString());
+            if (uploadsWindowMinutes is { } uploadsWindow)
+                builder.UseSetting("Uploads:WindowMinutes", uploadsWindow.ToString());
         }
     }
 
@@ -81,7 +91,7 @@ public class Cycle31GalleryRateLimitTests(TestDatabaseFixture fixture) : Cycle25
     public async Task Gallery_21stUploadInWindow_429_WithContractText()
     {
         var (owner, company) = await CreateOwnerWithCompanyAsync();
-        await using var host = new ProdLimitsHost(ConnectionString);
+        await using var host = new ProdLimitsHost(ConnectionString, galleryWindowMinutes: 60);
         var c = ClientOn(host, owner.Token);
         // 10 разных + 10 повторов (200 по дедупликации) = 20 запросов, все проходят лимит
         await FillAsync(c, company.Id, 10);
@@ -95,7 +105,7 @@ public class Cycle31GalleryRateLimitTests(TestDatabaseFixture fixture) : Cycle25
     public async Task Edits_61stInWindow_429_LogoUploadsWindowStillLive_ItsOwn11thIs429()
     {
         var (owner, company) = await CreateOwnerWithCompanyAsync();
-        await using var host = new ProdLimitsHost(ConnectionString);
+        await using var host = new ProdLimitsHost(ConnectionString, editWindowMinutes: 60, uploadsWindowMinutes: 60);
         var c = ClientOn(host, owner.Token);
         var photos = await FillAsync(c, company.Id, 2);
         var ids = photos.Select(p => p.Id).ToArray();

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { applyLegalRuntimeValues } from './legalRuntimeValues'
 import runtimeValueForms from '../../../contracts/legal/runtime-value-forms.json'

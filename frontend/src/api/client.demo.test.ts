@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, beforeEach } from 'vitest'
 import { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import { api } from './client'

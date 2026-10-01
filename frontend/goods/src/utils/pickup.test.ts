@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { assortmentDate, defaultChoice, parsePickupState, requestedDate, isChoiceStillOffered, nextRadioIndex, parsePickup, sameSlot, toPickupInput } from './pickup'
 import type { PickupOptionsDto } from '../types'

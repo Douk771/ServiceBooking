@@ -19,5 +19,7 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}', 'goods/src/**/*.test.{ts,tsx}'],
     css: false,
+    // Cycle 36 (ARCHITECTURE_CYCLE36.md §36.8, L11): threads measured ≥ 10 % faster than forks, 3 green runs.
+    pool: 'threads',
   },
 })

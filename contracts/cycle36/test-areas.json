@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "traitName": "Area",
+  "areas": [
+    {
+      "id": "account",
+      "title": "Аккаунт и вход",
+      "description": "Регистрация, вход, профиль, подтверждение телефона, роли Identity.",
+      "frontendPathPrefixes": [
+        "src/pages/LoginPage",
+        "src/pages/RegisterPage",
+        "src/pages/ProfilePage",
+        "src/pages/CabinetPage",
+        "src/hooks/usePhoneVerification",
+        "src/components/ui/PhoneInput",
+        "src/utils/authError",
+        "src/utils/phone",
+        "src/utils/returnTo",
+        "src/utils/clearUserCache",
+        "goods/src/pages/GoodsProfilePage"
+      ]
+    },
+    {
+      "id": "bookings",
+      "title": "Записи (ezbook)",
+      "description": "Записи, календарь, мастера, услуги, рабочие часы, шаблоны расписания, отзывы, заметки о клиентах, отчёты салона.",
+      "frontendPathPrefixes": [
+        "src/components/booking/",
+        "src/components/clientNotes/",
+        "src/components/review/",
+        "src/pages/ClientBookingsPage",
+        "src/pages/MyBookingsPage",
+        "src/pages/MasterClientsPage",
+        "src/utils/booking",
+        "src/utils/cancelError",
+        "src/utils/clientRescheduleError",
+        "src/utils/clientKey",
+        "src/utils/dateFormat",
+        "src/utils/timezone",
+        "src/pages/owner/BookingRulesSection"
+      ]
+    },
+    {
+      "id": "companies",
+      "title": "Компании и карточка",
+      "description": "Компании, сотрудники, фото, адрес и ссылки на карты, карточка компании, каталог салонов, передача компании.",
+      "frontendPathPrefixes": [
+        "src/components/company/",
+        "src/pages/CompanyPage",
+        "src/pages/HomePage",
+        "src/pages/EmbedPage",
+        "src/utils/company",
+        "src/utils/publicAddress",
+        "src/utils/mapLinksFieldError",
+        "src/utils/catalogListingError",
+        "src/utils/inn",
+        "src/utils/providesServicesError",
+        "src/utils/photoBatch",
+        "goods/src/components/CatalogListingSection",
+        "src/pages/owner/CompanyManagePage",
+        "src/pages/owner/SalonCatalogListingSection",
+        "src/pages/owner/SalonProfileSection",
+        "src/pages/owner/SettingsTab"
+      ]
+    },
+    {
+      "id": "orders",
+      "title": "Заказы (goods)",
+      "description": "Магазины, каталог, корзина и заказы, самовывоз, часы и приём, отчёты магазина, всё приложение goods.",
+      "frontendPathPrefixes": [
+        "goods/src/"
+      ]
+    },
+    {
+      "id": "notifications",
+      "title": "Уведомления",
+      "description": "Каналы WhatsApp/MAX, очередь и диспетчер, рассылки, web-push сотрудникам и покупателям, service worker, MAX для персонала.",
+      "frontendPathPrefixes": [
+        "src/components/push/",
+        "src/components/notifications/",
+        "src/utils/push",
+        "src/utils/staffPushTexts",
+        "src/utils/serviceWorkerRouting",
+        "src/utils/webPushEncoding",
+        "src/utils/notificationError",
+        "src/utils/channelBanner",
+        "src/api/push",
+        "src/pages/admin/NotificationsAdminTab",
+        "goods/src/utils/goodsPush",
+        "goods/src/utils/serviceWorkerRouting",
+        "goods/src/components/order/OrderPushCard",
+        "goods/src/components/staffMax/",
+        "goods/src/pages/cabinet/ShopNotificationsPage",
+        "goods/src/cabinetDevicesRedirect",
+        "src/pages/owner/NotificationLogTab",
+        "src/pages/owner/NotificationSettingsTab",
+        "src/pages/owner/NotificationTemplatesTab"
+      ]
+    },
+    {
+      "id": "billing",
+      "title": "Тарифы и оплата",
+      "description": "Тарифы и опции, подписки, пробный период, лимиты тарифа, счета, финансирование канала.",
+      "frontendPathPrefixes": [
+        "src/components/billing/",
+        "src/components/pricing/",
+        "src/pages/BillingPage",
+        "src/pages/PricingPage",
+        "src/pages/billingPageHelpers",
+        "src/pages/admin/Plans",
+        "src/pages/admin/plan",
+        "src/pages/admin/billingAccounts",
+        "src/pages/admin/BillingAccounts",
+        "src/api/billing",
+        "src/api/adminBilling",
+        "src/api/plans",
+        "src/api/pricing",
+        "src/utils/billingError",
+        "src/utils/adminBillingError",
+        "src/utils/money",
+        "src/utils/pricingFormat",
+        "src/utils/trialError"
+      ]
+    },
+    {
+      "id": "legal",
+      "title": "Правовой контур и ПДн",
+      "description": "Согласия и редакции документов, права субъекта ПДн, гейт гостевых данных, согласие на здоровье и фото, уведомления платформы, retention.",
+      "frontendPathPrefixes": [
+        "src/components/legal/",
+        "src/components/profile/GuestDataGateNotice",
+        "src/pages/ConsentsPage",
+        "src/pages/LegalDocumentPage",
+        "src/pages/SubjectRequestPage",
+        "src/pages/NoticesPage",
+        "src/pages/admin/LegalReadinessTab",
+        "src/pages/admin/SubjectRequestsTab",
+        "src/pages/admin/NoticesAdminTab",
+        "src/hooks/useExportData",
+        "src/hooks/usePhotoUploadWithConsent",
+        "src/utils/legal",
+        "src/utils/healthConsent",
+        "src/utils/subjectRequestError",
+        "src/utils/templateMarkers",
+        "src/legalRoutes",
+        "src/pages/owner/TemplateAcknowledgementModal"
+      ]
+    },
+    {
+      "id": "admin",
+      "title": "Суперадмин",
+      "description": "Кабинет суперадмина: пользователи, компании, тарифы, счета, уведомления платформы.",
+      "frontendPathPrefixes": [
+        "src/pages/admin/",
+        "src/pages/AdminPage"
+      ]
+    },
+    {
+      "id": "security",
+      "title": "Безопасность",
+      "description": "Rate limit, капча, раздача загрузок, адреса push, строгий режим, подавление исходящих на демо-стенде.",
+      "frontendPathPrefixes": [
+        "src/components/booking/BookingModal.captcha",
+        "goods/src/components/storefront/CartPanel"
+      ]
+    },
+    {
+      "id": "platform",
+      "title": "Платформа и инфраструктура",
+      "description": "Здоровье, пагинация, эталон маршрутов и контракты, демо-стенд и витрина, общие UI-компоненты, маршрутизация приложений, плашка обновления.",
+      "frontendPathPrefixes": [
+        "src/components/layout/",
+        "src/components/ui/",
+        "src/components/demo/",
+        "src/utils/demo",
+        "src/hooks/useDemoStatus",
+        "src/utils/showcase",
+        "src/utils/uploadError",
+        "src/api/client",
+        "src/api/demo",
+        "src/pages/showcasePublicPages",
+        "src/hooks/useCarousel",
+        "src/hooks/useDebouncedValue",
+        "src/hooks/useNoindexMeta",
+        "src/test/",
+        "goods/src/goodsRoutes",
+        "goods/src/sharedSources",
+        "goods/src/assets/",
+        "goods/src/components/UpdateBanner"
+      ]
+    }
+  ]
+}

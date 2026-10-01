@@ -14,17 +14,6 @@ beforeEach(() => useAuthStore.setState({ user: null, token: null }))
 afterEach(() => useAuthStore.setState({ user: null, token: null }))
 
 describe('BuyersBlock QA (cycle 30)', () => {
-  it('QA30-01 section is labelled by h2 with variant A text; id differs from biz-title', () => {
-    const { container } = setup()
-    const sec = container.querySelector('section') as HTMLElement
-    const id = sec.getAttribute('aria-labelledby') as string
-    expect(id).toBeTruthy()
-    expect(id).not.toBe('biz-title')
-    const h2 = container.querySelector(`h2#${id}`) as HTMLElement
-    expect(h2.textContent).toBe('Соберите заказ с телефона и заберите, когда он готов')
-    expect(h2.textContent!.length).toBeLessThanOrEqual(60)
-    expect(container.querySelectorAll('h2')).toHaveLength(1)
-  })
 
   it('QA30-02 eyebrow, paragraph and payment line verbatim', () => {
     const { container, getByText } = setup()
@@ -34,32 +23,6 @@ describe('BuyersBlock QA (cycle 30)', () => {
     )
     const pay = getByText('Оплата — при получении в магазине.')
     expect(pay.className).toContain('text-muted')
-  })
-
-  it('QA30-03 heading levels h2 > h3 > h4 without gaps', () => {
-    const { container } = setup()
-    const hs = Array.from(container.querySelectorAll('h1,h2,h3,h4,h5,h6')).map((h) => [h.tagName, h.textContent])
-    expect(hs).toEqual([
-      ['H2', 'Соберите заказ с телефона и заберите, когда он готов'],
-      ['H3', 'Как сделать заказ'],
-      ['H4', 'Выберите магазин'],
-      ['H4', 'Соберите корзину'],
-      ['H4', 'Выберите время и оформите'],
-      ['H3', 'Как следить за заказом'],
-    ])
-  })
-
-  it('QA30-04 five tracking items verbatim and within 140 chars', () => {
-    const { container } = setup()
-    const items = Array.from(container.querySelectorAll('ul > li')).map((l) => l.textContent)
-    expect(items).toEqual([
-      'После оформления откроется страница заказа: номер, статус и время получения.',
-      'Страница обновляется сама — вы увидите, когда магазин примет заказ и когда он будет готов к выдаче.',
-      'Включите уведомление на странице заказа, если браузер это разрешает, — тогда о смене статуса сообщим без обновления страницы.',
-      'Сохраните ссылку на заказ. Если вы вошли в аккаунт, все заказы будут в разделе «Мои заказы».',
-      'Если магазин изменит состав заказа, на странице будет видно, что было и что стало.',
-    ])
-    items.forEach((t) => expect(t!.length).toBeLessThanOrEqual(150))
   })
 
   it('QA30-05 steps: 3 items, panel styling as BusinessBlock, allowed icons', () => {

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc.Testing;
 using ServiceBooking.TestKit;
 
 namespace ServiceBooking.Tests.Infrastructure;
@@ -32,14 +33,65 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
     /// <c>TestHostSettings.Apply</c> again with its own factoryTag but the SAME <see cref="ClassSlot"/>/
     /// <see cref="ConnectionString"/>, so every host in the class still shares one database and one set
     /// of file roots.</summary>
-    public TestHostIdentity Identity { get; private set; } = null!;
+    public TestHostIdentity Identity => Factory.Identity;
 
-    /// <summary>This class' database connection string — shorthand for <c>Identity.ConnectionString</c>,
-    /// kept so the many call sites written against phase 1's <c>fixture.ConnectionString</c> compile
-    /// unchanged.</summary>
-    public string ConnectionString => Identity.ConnectionString;
+    /// <summary>This class' database connection string — taken from the lease, so reading it does not boot
+    /// <see cref="Factory"/> (cycle 36, L2: classes that only need the connection string no longer pay for a host
+    /// they never use). Kept so the many call sites written against phase 1's <c>fixture.ConnectionString</c>
+    /// compile unchanged.</summary>
+    public string ConnectionString => _lease.ConnectionString;
 
-    public CustomWebApplicationFactory Factory { get; private set; } = null!;
+    /// <summary>The shared <see cref="CustomWebApplicationFactory"/> of the class — created and started on first access
+    /// (cycle 36, L2), by <see cref="ApiTestBase"/>'s constructor or by a test that reads <see cref="Identity"/>.</summary>
+    public CustomWebApplicationFactory Factory => _factory.Value;
+
+    private Lazy<CustomWebApplicationFactory> _factory = null!;
+
+    private readonly List<(string Key, IAsyncDisposable Host)> _classHosts = [];
+    private readonly object _classHostsLock = new();
+    private readonly Dictionary<string, Exception> _classHostFailures = new();
+
+    /// <summary>
+    /// One host per CLASS for the given key (cycle 36, L1, ARCHITECTURE_CYCLE36.md §36.7.1): created and started on the first
+    /// call, lives until this fixture is disposed (before the class database is dropped). <paramref name="key"/> is unique inside
+    /// the class per host type and configuration ("push", "phv", "addr", "addr:permit=3"). Only for tests that satisfy the
+    /// admission rule of §36.7.1 (the host's configuration is not changed by the test; recording fakes are filtered by the test's
+    /// own data; no rate-limit thresholds; no TTL-cache dependence; no substituted clock left over).
+    /// </summary>
+    public TFactory ClassHost<TFactory>(string key, Func<string, TFactory> create)
+        where TFactory : WebApplicationFactory<Program>
+    {
+        lock (_classHostsLock)
+        {
+            foreach (var (existingKey, host) in _classHosts)
+            {
+                if (existingKey == key)
+                    return (TFactory)host;
+            }
+
+            // A host whose start failed once is not started again by every following test of the class (each retry would cost the same
+            // seconds and leak a half-started factory): the first failure is cached and rethrown as the cause of the following ones.
+            if (_classHostFailures.TryGetValue(key, out var earlier))
+                throw new InvalidOperationException($"The class host '{key}' failed to start earlier in this class: {earlier.Message}", earlier);
+
+            TFactory? created = null;
+            try
+            {
+                created = create(ConnectionString);
+                _ = created.Services; // start now: a failed start surfaces in the test that asked for the host
+            }
+            catch (Exception ex)
+            {
+                try { created?.Dispose(); }
+                catch (Exception disposeFailure) { Console.WriteLine($"[sb-test] WARNING: не удалось освободить хост класса '{key}' после неудачного старта (slot={ClassSlot}): {disposeFailure.Message}"); }
+                _classHostFailures[key] = ex;
+                throw;
+            }
+
+            _classHosts.Add((key, created));
+            return created;
+        }
+    }
 
     /// <summary>This class' single source of collision-free unique values (§94, Q12).</summary>
     public TestData Data { get; private set; } = null!;
@@ -54,12 +106,15 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
     /// still be traced back) only once per fixture, guarded here rather than relying on every call site
     /// to dedupe — xUnit constructs a fresh test-class instance per <c>[Fact]</c>, so this runs once per
     /// TEST, not once per CLASS, without this guard.</summary>
-    public void RecordTestClass(string testClassName)
+    public void RecordTestClass(Type testClass)
     {
-        Console.WriteLine($"[sb-test] class={testClassName} slot={ClassSlot} db={Identity.DatabaseName}");
+        var testClassName = testClass.Name;
+        Console.WriteLine($"[sb-test] class={testClassName} slot={ClassSlot} db={_lease.DatabaseName}");
 
         if (Interlocked.Exchange(ref _testClassRecorded, 1) == 1)
             return;
+
+        TestRunMetrics.ClassRecorded(ClassSlot, testClass.FullName ?? testClassName);
 
         // Fire-and-forget: this is diagnostics, not part of the test's own behaviour, and every test
         // constructor is synchronous — nothing here may block or fail the test.
@@ -68,16 +123,29 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        ClassSlot = TestSlot.NextForClass();
-        _lease = await TestRunEnvironment.LeaseClassDatabaseAsync(ClassSlot);
-        Data = new TestData(ClassSlot);
+        await ClassConcurrencyGate.EnterAsync();
+        _gateHeld = true;
+        try
+        {
+            ClassSlot = TestSlot.NextForClass();
+            _lease = await TestRunEnvironment.LeaseClassDatabaseAsync(ClassSlot);
+            Data = new TestData(ClassSlot);
 
-        Factory = new CustomWebApplicationFactory(_lease.ConnectionString);
-
-        // Touching Services boots the host, which runs Program.cs's migrate + role/SuperAdmin seed, and
-        // populates Factory.Identity (ConfigureWebHost's return value).
-        _ = Factory.Services;
-        Identity = Factory.Identity;
+            _factory = new Lazy<CustomWebApplicationFactory>(() =>
+            {
+                var factory = new CustomWebApplicationFactory(_lease.ConnectionString);
+                // Touching Services boots the host, which runs Program.cs's migrate + role/SuperAdmin seed, and
+                // populates Factory.Identity (ConfigureWebHost's return value).
+                _ = factory.Services;
+                return factory;
+            });
+        }
+        catch
+        {
+            // xUnit не вызывает DisposeAsync у фикстуры, чья InitializeAsync упала: слот вернуть нужно здесь.
+            ReleaseGate();
+            throw;
+        }
     }
 
     public async Task DisposeAsync()
@@ -89,11 +157,48 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
         // rest of the process.
         try
         {
-            await Factory.DisposeAsync();
+            await DisposeHostsAsync();
         }
         finally
         {
-            await _lease.DropAsync();
+            try
+            {
+                // InitializeAsync may have failed before the lease was taken: nothing to drop then.
+                if (_lease is not null) await _lease.DropAsync();
+            }
+            finally
+            {
+                ReleaseGate();
+            }
+        }
+    }
+
+    private bool _gateHeld;
+
+    /// <summary>Stops the class hosts in reverse order of creation, then the shared factory (only if it was ever created).
+    /// A host that fails to stop is reported and does not prevent the others, nor the database drop.</summary>
+    private async Task DisposeHostsAsync()
+    {
+        List<(string Key, IAsyncDisposable Host)> hosts;
+        lock (_classHostsLock) hosts = [.. _classHosts];
+        hosts.Reverse();
+
+        foreach (var (key, host) in hosts)
+        {
+            try { await host.DisposeAsync(); }
+            catch (Exception ex) { Console.WriteLine($"[sb-test] WARNING: не удалось остановить хост класса '{key}' (slot={ClassSlot}): {ex.Message}"); }
+        }
+
+        if (_factory is { IsValueCreated: true })
+            await _factory.Value.DisposeAsync();
+    }
+
+    private void ReleaseGate()
+    {
+        if (_gateHeld)
+        {
+            _gateHeld = false;
+            ClassConcurrencyGate.Exit();
         }
     }
 }

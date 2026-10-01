@@ -33,7 +33,7 @@ public class Cycle24PersonalDataTests(TestDatabaseFixture fixture) : Cycle24Test
         var tomorrow = ShopToday(shop).AddDays(1);
         var placed = await PlaceOrderAsync(shop.Slug, GuestAt([Line(p, 1)], await SlotAsync(shop.Slug, tomorrow)), buyer.Token);
 
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         var endpoint = "https://push.example.test/cy24-export/" + Guid.NewGuid();
         var sub = await push.CreateClient().PostJsonAsync($"/api/orders/public/{placed.Order.Token}/push-subscription",
             new OrderPushSubscribeInput(endpoint, new PushKeysInput("p256dh-key", "auth-key"), null));
@@ -61,7 +61,7 @@ public class Cycle24PersonalDataTests(TestDatabaseFixture fixture) : Cycle24Test
         var slot = await SlotAsync(shop.Slug, ShopToday(shop).AddDays(1));
         var placed = await PlaceOrderAsync(shop.Slug, GuestAt([Line(p, 1)], slot), buyer.Token);
 
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         (await push.CreateClient().PostJsonAsync($"/api/orders/public/{placed.Order.Token}/push-subscription",
             new OrderPushSubscribeInput("https://push.example.test/cy24-del/" + Guid.NewGuid(), new PushKeysInput("k1", "k2"), null)))
             .StatusCode.Should().Be(HttpStatusCode.Created);

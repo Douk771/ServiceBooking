@@ -22,36 +22,73 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
-/// QA cycle 28, pass B, "Вызов 2" — the demo stand (US-28-09…US-28-11, US-28-13) as a visitor and an operator see it. Written from SPEC.md and
-/// API_CONTRACT_CYCLE28.md (§596–§600a, §602), not from the implementation. One host in demo mode on its own database "sbtest_&lt;key&gt;_demo", one
-/// operator reset in <see cref="InitializeAsync"/> (exactly the operator's <c>ops demo reset --yes</c>), then scenarios against the generated demo.
-/// Order of the tests is random, so every scenario that creates visitor data cleans up by itself or tolerates it (a reset wipes everything anyway).
+/// One demo host on its own database "sbtest_&lt;key&gt;_demo" after one operator reset (exactly <c>ops demo reset --yes</c>). Cycle 36 (BE-36-03): the reset
+/// generates ~10 thousand bookings and takes 13-25 s, so it is no longer done before each of the 12 scenarios — <see cref="Cycle28DemoScenarioTests"/> (read-only
+/// scenarios) shares one state per class, <see cref="Cycle28DemoMutationTests"/> (scenarios that book, register visitors or reset) still gets a fresh state per test.
 /// </summary>
-[Collection("Cycle28Generator")]
-public class Cycle28DemoScenarioTests : IAsyncLifetime
+public sealed class DemoScenarioState
 {
-    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
-
     private TestClassDatabaseLease _lease = null!;
-    private DemoHostFactory _factory = null!;
-    private TimeSpan _firstResetTook;
+    private string _slot = DemoDatabaseSlots.Salon;
+    private bool _seeded;
+    private DateTime? _resetAtUtc;
+
+    public DemoHostFactory Factory { get; private set; } = null!;
+    public TimeSpan FirstResetTook { get; private set; }
 
     /// <summary>Row counts of the tables that the generator must never write — taken right after the first reset, before any visitor acted.</summary>
-    private Dictionary<string, int> _neverWritten = null!;
+    public Dictionary<string, int> NeverWritten { get; private set; } = null!;
 
-    public async Task InitializeAsync()
+    /// <param name="seeded">true: the demo is not reset here but cloned from the seeded template (<see cref="DemoSeededTemplate"/>) — only for scenarios that need a
+    /// fresh demo as their ARRANGE step; false: the real product reset is run (the reset itself is a subject, or the budget of the first fill is checked).</param>
+    /// <param name="resetAtUtc">only with <paramref name="seeded"/> = false: the moment ("now") the real reset is generated at (default: the current time).</param>
+    public static async Task<DemoScenarioState> CreateAsync(string slot = DemoDatabaseSlots.Salon, bool seeded = false, DateTime? resetAtUtc = null)
     {
-        _lease = await TestRunEnvironment.LeaseClassDatabaseAsync("demo");
+        var state = new DemoScenarioState { _slot = slot, _seeded = seeded, _resetAtUtc = resetAtUtc };
+        try
+        {
+            await state.InitializeAsync();
+        }
+        catch
+        {
+            await state.DisposeAsync();
+            throw;
+        }
+        return state;
+    }
+
+    private async Task InitializeAsync()
+    {
+        if (_seeded) await DemoSeededTemplate.EnsureAsync();
+        _lease = await TestRunEnvironment.LeaseClassDatabaseAsync(_slot, sourceSlot: _seeded ? DemoSeededTemplate.Slot : null);
+        if (_seeded) DemoSeededTemplate.CopyFilesTo(_slot);
         // 00:00 local: "the nightly slot" is always already behind us, so the nightly task is due exactly when the last reset is older than today.
-        _factory = new DemoHostFactory(_lease.ConnectionString, new Dictionary<string, string?> { ["DemoMode:ResetLocalTime"] = "00:00" });
-        _ = _factory.Services;
+        Factory = new DemoHostFactory(_lease.ConnectionString, new Dictionary<string, string?> { ["DemoMode:ResetLocalTime"] = "00:00" });
+        _ = Factory.Services;
 
-        var sw = Stopwatch.StartNew();
-        var (exit, output) = await OpsAsync("demo", "reset", "--yes");
-        _firstResetTook = sw.Elapsed;
-        exit.Should().Be(0, output);
+        if (_seeded)
+        {
+            FirstResetTook = DemoSeededTemplate.ResetTook;
+        }
+        else
+        {
+            var sw = Stopwatch.StartNew();
+            if (_resetAtUtc is { } at)
+            {
+                await DemoSeededTemplate.ResetAtAsync(Factory, at);
+            }
+            else
+            {
+                var writer = new StringWriter();
+                var exit = await OpsCommandRunner.RunAsync(Factory.Services, OpsCommandLine.Parse(["ops", "demo", "reset", "--yes"])!, writer);
+                exit.Should().Be(0, writer.ToString());
+            }
+            FirstResetTook = sw.Elapsed;
+        }
 
-        _neverWritten = await Db(async db => new Dictionary<string, int>
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        NeverWritten = new Dictionary<string, int>
         {
             ["ClientHealthNotes"] = await db.ClientHealthNotes.CountAsync(),
             ["ClientNotePhotos"] = await db.ClientNotePhotos.CountAsync(),
@@ -61,68 +98,80 @@ public class Cycle28DemoScenarioTests : IAsyncLifetime
             ["OutboundNotifications"] = await db.OutboundNotifications.CountAsync(),
             ["StaffPushNotifications"] = await db.StaffPushNotifications.CountAsync(),
             ["MailLogs"] = await db.MailLogs.CountAsync(),
-        });
+        };
     }
 
     public async Task DisposeAsync()
     {
-        try { await _factory.DisposeAsync(); }
-        finally { await _lease.DropAsync(); }
+        try { if (Factory is not null) await Factory.DisposeAsync(); }
+        finally { if (_lease is not null) await _lease.DropAsync(); }
     }
+}
+
+/// <summary>Shared helpers of the demo scenarios (they differ only in how often the demo is reset).</summary>
+public abstract class Cycle28DemoScenarioBase
+{
+    protected static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
+
+    protected abstract DemoScenarioState State { get; }
+
+    protected DemoHostFactory _factory => State.Factory;
+    protected TimeSpan _firstResetTook => State.FirstResetTook;
+    protected Dictionary<string, int> _neverWritten => State.NeverWritten;
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
-    private async Task<(int Exit, string Output)> OpsAsync(params string[] words)
+    protected async Task<(int Exit, string Output)> OpsAsync(params string[] words)
     {
         var writer = new StringWriter();
         var exit = await OpsCommandRunner.RunAsync(_factory.Services, OpsCommandLine.Parse(["ops", .. words])!, writer);
         return (exit, writer.ToString());
     }
 
-    private async Task<T> Db<T>(Func<AppDbContext, Task<T>> query)
+    protected async Task<T> Db<T>(Func<AppDbContext, Task<T>> query)
     {
         using var scope = _factory.Services.CreateScope();
         return await query(scope.ServiceProvider.GetRequiredService<AppDbContext>());
     }
 
-    private async Task Db(Func<AppDbContext, Task> action)
+    protected async Task Db(Func<AppDbContext, Task> action)
     {
         using var scope = _factory.Services.CreateScope();
         await action(scope.ServiceProvider.GetRequiredService<AppDbContext>());
     }
 
-    private HttpClient Client(string? token = null)
+    protected HttpClient Client(string? token = null)
     {
         var http = _factory.CreateClient();
         if (token is not null) http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return http;
     }
 
-    private async Task<AuthResponseDto> DemoLoginAsync(string role)
+    protected async Task<AuthResponseDto> DemoLoginAsync(string role)
     {
         var response = await Client().PostAsJsonAsync("/api/demo/login", new { role });
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>(Web))!;
     }
 
-    private static async Task<JsonElement> JsonAsync(HttpResponseMessage response)
+    protected static async Task<JsonElement> JsonAsync(HttpResponseMessage response)
     {
         var text = await response.Content.ReadAsStringAsync();
         response.IsSuccessStatusCode.Should().BeTrue(text);
         return JsonDocument.Parse(text).RootElement.Clone();
     }
 
-    private static JsonElement TokenPayload(string jwt)
+    protected static JsonElement TokenPayload(string jwt)
     {
         var payload = jwt.Split('.')[1].Replace('-', '+').Replace('_', '/');
         payload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
         return JsonDocument.Parse(Convert.FromBase64String(payload)).RootElement.Clone();
     }
 
-    private string VisitorPhone() => "79" + Random.Shared.NextInt64(100_000_000, 999_999_999);
+    protected string VisitorPhone() => "79" + Random.Shared.NextInt64(100_000_000, 999_999_999);
 
     /// <summary>A self-registered visitor (an ordinary client, no demo claim).</summary>
-    private async Task<AuthResponseDto> RegisterVisitorAsync()
+    protected async Task<AuthResponseDto> RegisterVisitorAsync()
     {
         using var scope = _factory.Services.CreateScope();
         var snapshot = scope.ServiceProvider.GetRequiredService<LegalDocumentProvider>().Current!;
@@ -132,10 +181,10 @@ public class Cycle28DemoScenarioTests : IAsyncLifetime
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>(Web))!;
     }
 
-    private record Slot(Guid CompanyId, string MasterId, Guid ServiceId, DateOnly Date, string Start, string NextStart);
+    protected record Slot(Guid CompanyId, string MasterId, Guid ServiceId, DateOnly Date, string Start, string NextStart);
 
     /// <summary>Two free slots of an open demo company on one day, found through the public slots API (like a visitor's browser does).</summary>
-    private async Task<Slot> FindFreeSlotsAsync(int fromDay)
+    protected async Task<Slot> FindFreeSlotsAsync(int fromDay)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var pick = await Db(db => db.CompanyMembers.AsNoTracking()
@@ -160,7 +209,18 @@ public class Cycle28DemoScenarioTests : IAsyncLifetime
         throw new InvalidOperationException("no day with two free slots in the generated demo schedule");
     }
 
-    private static int RoleCount(JsonElement roles, string role) => roles.EnumerateArray().Count(r => r.GetString() == role);
+    protected static int RoleCount(JsonElement roles, string role) => roles.EnumerateArray().Count(r => r.GetString() == role);
+
+}
+
+/// <summary>
+/// QA cycle 28, pass B, "Вызов 2" — the demo stand (US-28-09…US-28-11, US-28-13) as a visitor and an operator see it. Written from SPEC.md and
+/// API_CONTRACT_CYCLE28.md (§596–§600a, §602), not from the implementation. Scenarios that only READ the generated demo share the one reset of their class.
+/// </summary>
+[Collection("Cycle28Demo")]
+public class Cycle28DemoScenarioTests(DemoScenarioFixture fixture) : Cycle28DemoScenarioBase, IClassFixture<DemoScenarioFixture>
+{
+    protected override DemoScenarioState State => fixture.State;
 
     // ── US-28-10: entering under a ready role ────────────────────────────────────────────────────
 
@@ -252,6 +312,117 @@ public class Cycle28DemoScenarioTests : IAsyncLifetime
 
     // ── US-28-10: what demo roles cannot do ──────────────────────────────────────────────────────
 
+    // ── US-28-09: nothing leaves, nothing is indexed ─────────────────────────────────────────────
+
+    [Fact, TestCase("CY28-45")]
+    public async Task EveryApiAnswer_CarriesNoIndexHeader()
+    {
+        var owner = await DemoLoginAsync("owner");
+        var answers = new[]
+        {
+            await Client().GetAsync("/api/demo/status"),                       // 200
+            await Client().GetAsync("/api/companies/public?pageSize=5"),       // 200
+            await Client().GetAsync("/api/companies/my"),                      // 401
+            await Client().GetAsync("/api/no-such-route"),                     // 404
+            await Client(owner.Token).PostAsJsonAsync("/api/profile/change-password", new { }), // 403
+            await Client().GetAsync("/api/health/ready"),
+        };
+        foreach (var response in answers)
+        {
+            response.Headers.TryGetValues("X-Robots-Tag", out var values).Should().BeTrue($"{response.RequestMessage!.RequestUri!.AbsolutePath} ({(int)response.StatusCode})");
+            values!.Single().Should().Contain("noindex").And.Contain("nofollow");
+        }
+    }
+
+    [Fact, TestCase("CY28-47")]
+    public async Task PhoneVerificationViaMaxBot_IsOff_AndPricingIsPublic()
+    {
+        var config = await JsonAsync(await Client().GetAsync("/api/phone-verification/config"));
+        config.GetProperty("enabled").GetBoolean().Should().BeFalse("the production bot is not connected to the demo");
+
+        var session = await Client().PostAsJsonAsync("/api/phone-verification/sessions", new { phone = VisitorPhone() });
+        session.IsSuccessStatusCode.Should().BeFalse("no verification session can be started");
+        (await session.Content.ReadAsStringAsync()).Should().NotBeNullOrWhiteSpace("the refusal is explained to the visitor");
+
+        // the webhook of the bot is not reachable either
+        (await Client().PostAsync("/api/phone-verification/max/webhook/any-token", new StringContent("{}", Encoding.UTF8, "application/json"))).IsSuccessStatusCode.Should().BeFalse();
+
+        // the price list page is public on the demo (pricing.public-enabled = true)
+        var pricing = await JsonAsync(await Client().GetAsync("/api/pricing"));
+        pricing.GetProperty("plans").GetArrayLength().Should().BeGreaterThanOrEqualTo(5);
+    }
+
+    // ── US-28-13: richer demo data ───────────────────────────────────────────────────────────────
+
+    [Fact, TestCase("CY28-48")]
+    public async Task DemoData_HasReviewsRatingsNotesAndHistory_ButNothingHealthNothingPhotoNothingConsent()
+    {
+        var reviews = await Db(db => db.Reviews.CountAsync());
+        reviews.Should().BeInRange(400, 900, "about 650 reviews");
+        (await Db(db => db.ClientNotes.CountAsync())).Should().BeInRange(150, 450, "about 290 notes");
+        (await Db(db => db.BookingEvents.CountAsync(e => e.Kind == BookingEventKind.Rescheduled))).Should().BeGreaterThan(0, "change history contains reschedules");
+
+        // every company of the catalog shows a rating, and a believable one
+        var catalog = await JsonAsync(await Client().GetAsync("/api/companies/public?pageSize=100"));
+        var items = catalog.GetProperty("items").EnumerateArray().ToList();
+        items.Should().NotBeEmpty();
+        foreach (var company in items)
+        {
+            company.GetProperty("reviewCount").GetInt32().Should().BeGreaterThan(0, company.GetProperty("name").GetString());
+            company.GetProperty("averageRating").GetDouble().Should().BeInRange(3.8, 4.5, company.GetProperty("name").GetString());
+        }
+
+        // SPEC US-28-13: health data and client photos are not generated even in the demo; nor consents, channels, outgoing queues
+        foreach (var (table, count) in _neverWritten)
+            count.Should().Be(0, $"{table} must stay empty after a reset");
+
+        // reviews belong to completed visits of registered clients only (the generator does not invent reviewers)
+        (await Db(db => db.Reviews.CountAsync(r => r.Booking.Status != BookingStatus.Completed))).Should().Be(0);
+    }
+
+    // ── US-28-11: the reset ──────────────────────────────────────────────────────────────────────
+
+}
+
+public sealed class DemoScenarioFixture : IAsyncLifetime
+{
+    public DemoScenarioState State { get; private set; } = null!;
+
+    public async Task InitializeAsync() => State = await DemoScenarioState.CreateAsync();
+
+    public async Task DisposeAsync()
+    {
+        if (State is not null) await State.DisposeAsync(); // InitializeAsync may have failed before the state existed
+    }
+}
+
+/// <summary>
+/// The scenarios of <see cref="Cycle28DemoScenarioTests"/> that change the demo (guest and visitor bookings, registered visitors, resets): each starts from its own
+/// fresh reset, exactly as before the cycle-36 split. Order of the tests is random, so every scenario that creates visitor data cleans up by itself or tolerates it.
+/// </summary>
+[Collection("Cycle28DemoMutations")]
+public abstract class Cycle28DemoMutationBase : Cycle28DemoScenarioBase, IAsyncLifetime
+{
+    private DemoScenarioState _state = null!;
+
+    protected override DemoScenarioState State => _state;
+
+    /// <summary>true: the fresh demo of each test is cloned from the seeded template (arrange only); false: each test runs the real product reset.</summary>
+    protected virtual bool Seeded => true;
+
+    public async Task InitializeAsync() => _state = await DemoScenarioState.CreateAsync(DemoDatabaseSlots.SalonMutations, Seeded);
+
+    public async Task DisposeAsync()
+    {
+        if (_state is not null) await _state.DisposeAsync(); // InitializeAsync may have failed before the state existed
+    }
+
+    // Moved from the read-only class (cycle 36 review N2): RegisterVisitorAsync writes a user, which a read-only scenario must not do.
+}
+
+[Collection("Cycle28DemoMutations")]
+public class Cycle28DemoMutationTests : Cycle28DemoMutationBase
+{
     [Fact, TestCase("CY28-44")]
     public async Task RestrictedActions_AreRefusedForEveryDemoRole_NotForSelfRegisteredVisitors_NotForAnonymous()
     {
@@ -297,28 +468,6 @@ public class Cycle28DemoScenarioTests : IAsyncLifetime
         own.Headers.Contains("X-Demo-Restricted").Should().BeFalse();
         own.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
         (await own.Content.ReadAsStringAsync()).Should().NotBe(text);
-    }
-
-    // ── US-28-09: nothing leaves, nothing is indexed ─────────────────────────────────────────────
-
-    [Fact, TestCase("CY28-45")]
-    public async Task EveryApiAnswer_CarriesNoIndexHeader()
-    {
-        var owner = await DemoLoginAsync("owner");
-        var answers = new[]
-        {
-            await Client().GetAsync("/api/demo/status"),                       // 200
-            await Client().GetAsync("/api/companies/public?pageSize=5"),       // 200
-            await Client().GetAsync("/api/companies/my"),                      // 401
-            await Client().GetAsync("/api/no-such-route"),                     // 404
-            await Client(owner.Token).PostAsJsonAsync("/api/profile/change-password", new { }), // 403
-            await Client().GetAsync("/api/health/ready"),
-        };
-        foreach (var response in answers)
-        {
-            response.Headers.TryGetValues("X-Robots-Tag", out var values).Should().BeTrue($"{response.RequestMessage!.RequestUri!.AbsolutePath} ({(int)response.StatusCode})");
-            values!.Single().Should().Contain("noindex").And.Contain("nofollow");
-        }
     }
 
     [Fact, TestCase("CY28-46")]
@@ -370,54 +519,13 @@ public class Cycle28DemoScenarioTests : IAsyncLifetime
         (await mail.Content.ReadAsStringAsync()).Should().Be("В демо-версии рассылка не отправляется.");
         (await Db(db => db.MailLogs.CountAsync())).Should().Be(_neverWritten["MailLogs"]);
     }
+}
 
-    [Fact, TestCase("CY28-47")]
-    public async Task PhoneVerificationViaMaxBot_IsOff_AndPricingIsPublic()
-    {
-        var config = await JsonAsync(await Client().GetAsync("/api/phone-verification/config"));
-        config.GetProperty("enabled").GetBoolean().Should().BeFalse("the production bot is not connected to the demo");
-
-        var session = await Client().PostAsJsonAsync("/api/phone-verification/sessions", new { phone = VisitorPhone() });
-        session.IsSuccessStatusCode.Should().BeFalse("no verification session can be started");
-        (await session.Content.ReadAsStringAsync()).Should().NotBeNullOrWhiteSpace("the refusal is explained to the visitor");
-
-        // the webhook of the bot is not reachable either
-        (await Client().PostAsync("/api/phone-verification/max/webhook/any-token", new StringContent("{}", Encoding.UTF8, "application/json"))).IsSuccessStatusCode.Should().BeFalse();
-
-        // the price list page is public on the demo (pricing.public-enabled = true)
-        var pricing = await JsonAsync(await Client().GetAsync("/api/pricing"));
-        pricing.GetProperty("plans").GetArrayLength().Should().BeGreaterThanOrEqualTo(5);
-    }
-
-    // ── US-28-13: richer demo data ───────────────────────────────────────────────────────────────
-
-    [Fact, TestCase("CY28-48")]
-    public async Task DemoData_HasReviewsRatingsNotesAndHistory_ButNothingHealthNothingPhotoNothingConsent()
-    {
-        var reviews = await Db(db => db.Reviews.CountAsync());
-        reviews.Should().BeInRange(400, 900, "about 650 reviews");
-        (await Db(db => db.ClientNotes.CountAsync())).Should().BeInRange(150, 450, "about 290 notes");
-        (await Db(db => db.BookingEvents.CountAsync(e => e.Kind == BookingEventKind.Rescheduled))).Should().BeGreaterThan(0, "change history contains reschedules");
-
-        // every company of the catalog shows a rating, and a believable one
-        var catalog = await JsonAsync(await Client().GetAsync("/api/companies/public?pageSize=100"));
-        var items = catalog.GetProperty("items").EnumerateArray().ToList();
-        items.Should().NotBeEmpty();
-        foreach (var company in items)
-        {
-            company.GetProperty("reviewCount").GetInt32().Should().BeGreaterThan(0, company.GetProperty("name").GetString());
-            company.GetProperty("averageRating").GetDouble().Should().BeInRange(3.8, 4.5, company.GetProperty("name").GetString());
-        }
-
-        // SPEC US-28-13: health data and client photos are not generated even in the demo; nor consents, channels, outgoing queues
-        foreach (var (table, count) in _neverWritten)
-            count.Should().Be(0, $"{table} must stay empty after a reset");
-
-        // reviews belong to completed visits of registered clients only (the generator does not invent reviewers)
-        (await Db(db => db.Reviews.CountAsync(r => r.Booking.Status != BookingStatus.Completed))).Should().Be(0);
-    }
-
-    // ── US-28-11: the reset ──────────────────────────────────────────────────────────────────────
+/// <summary>CY28-49/50/51: the reset (or the nightly task that resets, whose "due" depends on the age of the last reset) is the subject, so these run the real product reset (the others get the demo from the seeded template).</summary>
+[Collection("Cycle28DemoMutations")]
+public class Cycle28DemoResetTests : Cycle28DemoMutationBase
+{
+    protected override bool Seeded => false;
 
     [Fact, TestCase("CY28-49")]
     public async Task Reset_RemovesEverythingVisitorsDid_KeepsDirectoriesAndSettings_KeepsRoleTokensAlive()
@@ -569,14 +677,17 @@ public class Cycle28DemoScenarioTests : IAsyncLifetime
 /// QA cycle 28, pass B — the two locks that keep the demo away from production (US-28-09, NFR «Безопасность»). Every production-looking setting, one at a time, stops
 /// the start with a message naming it; a database with real data or another mark is refused; an empty database gets the mark and a restart on it is fine.
 /// </summary>
-[Collection("Cycle28Generator")]
+[Collection("Cycle28Demo")]
 public class Cycle28DemoLocksTests : IAsyncLifetime
 {
     private TestClassDatabaseLease _lease = null!;
 
     public async Task InitializeAsync() => _lease = await TestRunEnvironment.LeaseClassDatabaseAsync("demo");
 
-    public async Task DisposeAsync() => await _lease.DropAsync();
+    public async Task DisposeAsync()
+    {
+        if (_lease is not null) await _lease.DropAsync(); // InitializeAsync may have failed before the lease was taken
+    }
 
     private static string Everything(Exception exception)
     {

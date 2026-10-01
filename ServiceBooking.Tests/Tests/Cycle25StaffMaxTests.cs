@@ -35,8 +35,11 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
     /// </summary>
     private async Task<StaffMaxTestFactory> MxAsync(bool platformEnabled = true, bool purgeQueue = true)
     {
-        var host = new StaffMaxTestFactory(ConnectionString, platformEnabled);
+        // Цикл 36, L1: хост на класс (по одному на значение platformEnabled); его двойники очищаются перед каждым тестом.
+        var host = Fixture.ClassHost($"mx:{platformEnabled}", cs => new StaffMaxTestFactory(cs, platformEnabled));
         host.EnsureWebhookSubscribed();
+        host.Messenger.Reset();
+        host.BotClient.Reset();
         if (purgeQueue) await WithDbAsync(db => db.StaffMaxMessages.ExecuteDeleteAsync());
         return host;
     }
@@ -163,7 +166,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
         var shop = await CreateRoundClockShopAsync();
         await GiveOrdersPlanAsync(shop.Owner.UserId, maxShops: 3);
         var second = await CreateShopForAsync(shop.OwnerToken, name: "Пекарня " + Unique("x"));
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var client = ClientOn(mx, shop.OwnerToken);
         var chat = NewChat("own");
 
@@ -226,7 +229,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
     public async Task Link_UnknownExpiredAndSupersededPayloads_AreRefused_NothingLinked()
     {
         var shop = await CreateRoundClockShopAsync();
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var client = ClientOn(mx, shop.OwnerToken);
 
         // неизвестная ссылка
@@ -266,7 +269,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
     {
         var shop = await CreateRoundClockShopAsync();
         var p = await CreateProductAsync(shop);
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var chatOld = NewChat("old");
         var chatNew = NewChat("new");
         await LinkAsync(mx, shop.OwnerToken, chatOld);
@@ -289,7 +292,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
         var shop = await CreateRoundClockShopAsync();
         var staff = await AddShopStaffAsync(shop);
         var p = await CreateProductAsync(shop, "Шаурма", 250m);
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var chatOwner = NewChat("own");
         var chatStaff = NewChat("stf");
         await LinkAsync(mx, shop.OwnerToken, chatOwner);
@@ -339,7 +342,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
         var shop = await CreateRoundClockShopAsync();
         var staff = await AddShopStaffAsync(shop);
         var p = await CreateProductAsync(shop);
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var shared = NewChat("shared");
         await LinkAsync(mx, shop.OwnerToken, shared, sender: "same-max-user");
         await LinkAsync(mx, staff.Token, shared, sender: "same-max-user");
@@ -369,7 +372,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
         var shop = await CreateRoundClockShopAsync();
         var staff = await AddShopStaffAsync(shop);
         var p = await CreateProductAsync(shop);
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var chatOwner = NewChat("own");
         var chatStaff = NewChat("stf");
         await LinkAsync(mx, shop.OwnerToken, chatOwner);
@@ -396,7 +399,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
     {
         var shop = await CreateRoundClockShopAsync();
         var p = await CreateProductAsync(shop);
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var chat = NewChat("own");
         await LinkAsync(mx, shop.OwnerToken, chat);
         var url = $"/api/shops/{shop.Id}/notification-settings";
@@ -430,7 +433,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
     {
         var shop = await CreateRoundClockShopAsync();
         var p = await CreateProductAsync(shop);
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var chat = NewChat("own");
         await LinkAsync(mx, shop.OwnerToken, chat);
         var client = ClientOn(mx, shop.OwnerToken);
@@ -456,7 +459,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
         var shop = await CreateRoundClockShopAsync();
         var staff = await AddShopStaffAsync(shop);
         var p = await CreateProductAsync(shop);
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var chatOwner = NewChat("own");
         var chatShared = NewChat("shr");
         await LinkAsync(mx, shop.OwnerToken, chatOwner);
@@ -489,7 +492,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
     {
         var shop = await CreateRoundClockShopAsync();
         var p = await CreateProductAsync(shop);
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var chat = NewChat("blk");
         await LinkAsync(mx, shop.OwnerToken, chat);
         mx.Messenger.SetOutcomeForChat(chat, new MaxSendOutcome.ChatUnavailable(403));
@@ -509,7 +512,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
     {
         var shop = await CreateRoundClockShopAsync();
         var p = await CreateProductAsync(shop);
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var chat = NewChat("flaky");
         await LinkAsync(mx, shop.OwnerToken, chat);
         mx.Messenger.SetDefaultOutcome(new MaxSendOutcome.Transient("HTTP 503 (test)"));
@@ -554,14 +557,14 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
         var p = await CreateProductAsync(shop);
         var chat = NewChat("own");
         StaffMaxLinkSessionDto stale;
-        await using (var enabledHost = await MxAsync())
         {
+            var enabledHost = await MxAsync();
             await LinkAsync(enabledHost, shop.OwnerToken, chat);
             stale = await NewSessionAsync(ClientOn(enabledHost, shop.OwnerToken));
             await PlaceViaAsync(enabledHost, shop, p);
         }
 
-        await using var off = await MxAsync(platformEnabled: false, purgeQueue: false);
+        var off = await MxAsync(platformEnabled: false, purgeQueue: false);
         await off.RunDispatchPassAsync();
         off.Messenger.Calls.Should().BeEmpty("рубильник платформы проверяется при отправке");
         (await RowsAsync(shop)).Single().Reason.Should().Be(NotificationReason.StaffMaxPlatformDisabled);
@@ -580,7 +583,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
     {
         var shop = await CreateRoundClockShopAsync();
         var staff = await AddShopStaffAsync(shop);
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var client = ClientOn(mx, staff.Token);
         (await StatusOfAsync(client)).Eligible.Should().BeTrue("сотрудник видит блок");
         var session = await NewSessionAsync(client);
@@ -603,7 +606,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
         var shop = await CreateRoundClockShopAsync();
         var staff = await AddShopStaffAsync(shop);
         var p = await CreateProductAsync(shop);
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var chat = NewChat("forge");
         await LinkAsync(mx, shop.OwnerToken, chat, sender: "sender-A");
         await LinkAsync(mx, staff.Token, chat, sender: "sender-B");
@@ -639,7 +642,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
             options = Array.Empty<object>(), line = "Orders",
         })).StatusCode.Should().Be(HttpStatusCode.OK);
         var p = await CreateProductAsync(shop);
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var chatOwner = NewChat("own");
         var chatStaff = NewChat("stf");
         await LinkAsync(mx, shop.OwnerToken, chatOwner);
@@ -687,7 +690,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
     public async Task PhoneVerificationStillWorks_WithStaffMaxEnabled_PrefixesNeverCrossOver()
     {
         var shop = await CreateRoundClockShopAsync();
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var client = ClientOn(mx, shop.OwnerToken);
 
         // (1) «sm1.» никогда не касается сессий подтверждения телефона
@@ -744,7 +747,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
     {
         var shop = await CreateRoundClockShopAsync();
         var p = await CreateProductAsync(shop);
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         await LinkAsync(mx, shop.OwnerToken, NewChat("own"));
         var phone = UniquePhone();
         await PlaceViaAsync(mx, shop, p, name: "Тайное Имя", phone: phone);
@@ -763,7 +766,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
     public async Task SalonOwnerIsNotEligibleForShopMaxBlock()
     {
         var (owner, _) = await CreateOwnerWithCompanyAsync();
-        await using var mx = await MxAsync();
+        var mx = await MxAsync();
         var client = ClientOn(mx, owner.Token);
         (await StatusOfAsync(client)).Eligible.Should().BeFalse("блок «Заказы в MAX» — только для магазинов goods");
         (await client.PostAsync("/api/staff-max/link-sessions", null)).StatusCode.Should().Be(HttpStatusCode.Conflict);

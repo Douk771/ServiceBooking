@@ -27,7 +27,8 @@ internal static class RateLimitingExtensions
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = ctx.RequestServices.GetRequiredService<IConfiguration>().GetValue("Uploads:PerUserPerMinute", 10),
-                Window = TimeSpan.FromMinutes(1),
+                // Uploads:WindowMinutes exists for tests only (a long window keeps a burst of requests inside ONE window under load); production keeps 1.
+                Window = UploadsWindow(ctx.RequestServices.GetRequiredService<IConfiguration>()),
                 QueueLimit = 0 // reject immediately rather than queue — no benefit to making the caller wait
             }));
 
@@ -261,6 +262,10 @@ internal static class RateLimitingExtensions
             QueueLimit = 0
         });
     }
+
+    /// <summary>Window of the "uploads" policy: 1 minute unless <c>Uploads:WindowMinutes</c> says otherwise (a test-only substitution point, no production config sets it).</summary>
+    internal static TimeSpan UploadsWindow(IConfiguration configuration) =>
+        TimeSpan.FromMinutes(Math.Max(1, configuration.GetValue("Uploads:WindowMinutes", 1)));
 
     // Cycle 22 D9 — the user-keyed twin of IpWindowPolicy, shared by data-export, push-subscribe,
     // address-verify, phone-change and booking-reschedule: partition by the caller's user id ("anonymous"

@@ -54,6 +54,21 @@ public static class TestInfrastructure
         "-c", "max_locks_per_transaction=128",
     ];
 
+    /// <summary>Cycle 36: how many classes may hold their own database (and hosts) at once = <c>factor x P</c> unless <see cref="ClassConcurrencyVariable"/> says otherwise.
+    /// ONE definition, used by the gate in the test project and by the connection budget (the run's own check and <c>doctor</c>).</summary>
+    public const int ClassConcurrencyFactor = 3;
+
+    public const string ClassConcurrencyVariable = "SERVICEBOOKING_TEST_CLASS_CONCURRENCY";
+
+    public static int ClassConcurrencyFor(int maxParallelThreads) =>
+        int.TryParse(Environment.GetEnvironmentVariable(ClassConcurrencyVariable), out var configured) && configured > 0
+            ? configured
+            : maxParallelThreads * ClassConcurrencyFactor;
+
+    /// <summary>Number of demo database slots (<c>DemoDatabaseSlots.All</c> of the test project, checked against it at the start of a run). Demo databases are leased outside the
+    /// class gate, at most P at a time (a semaphore in <c>TestRunEnvironment</c>), one host and one pool each.</summary>
+    public const int DemoDatabaseSlotCount = 9;
+
     /// <summary>Pool limit applied by <see cref="TestDatabaseLease"/>, via
     /// <see cref="Npgsql.NpgsqlConnectionStringBuilder"/> properties (not string concatenation — a
     /// concatenated tail can silently duplicate keys already present in an operator-supplied

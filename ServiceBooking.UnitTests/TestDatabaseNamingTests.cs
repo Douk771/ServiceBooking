@@ -26,6 +26,41 @@ public class TestDatabaseNamingTests
         TestDatabaseNaming.IsDisposable(databaseName).Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("sbtest_a3f19c7b_demo")]
+    [InlineData("sbtest_a3f19c7b_a35_demo")]
+    [InlineData("sbtest_a3f19c7b_abcdefghijkl_demo")]
+    public void IsDisposable_accepts_the_demo_slot_and_a_variant_demo_slot(string databaseName)
+    {
+        TestDatabaseNaming.IsDisposable(databaseName).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("servicebooking_demo")]                      // продовое имя: нет тестового префикса и ключа
+    [InlineData("ezbook_demo")]
+    [InlineData("sbtest_a3f19c7b__demo")]                    // пустой вариант
+    [InlineData("sbtest_a3f19c7b_1a_demo")]                  // вариант начинается с цифры
+    [InlineData("sbtest_a3f19c7b_a_b_demo")]                 // подчёркивание внутри варианта
+    [InlineData("sbtest_a3f19c7b_abcdefghijklm_demo")]       // вариант длиннее 12
+    [InlineData("sbtest_a3f19c7b_a35_demo_x")]               // не оканчивается на _demo
+    [InlineData("sbtest_a3f19c7b_a35_demo\n")]
+    [InlineData("sbtest_a3f19c7b_a35_DEMO")]
+    [InlineData("xsbtest_a3f19c7b_a35_demo")]
+    public void IsDisposable_rejects_malformed_demo_names(string databaseName)
+    {
+        TestDatabaseNaming.IsDisposable(databaseName).Should().BeFalse();
+    }
+
+    [Fact]
+    public void EnsureOwnedByThisRun_reads_the_run_key_of_a_variant_demo_name()
+    {
+        var name = $"sbtest_{TestRunKey.Current}_a35_demo";
+        TestDatabaseNaming.EnsureOwnedByThisRun(name);
+        var other = TestRunKey.Current == "00000000" ? "11111111" : "00000000";
+        Action foreign = () => TestDatabaseNaming.EnsureOwnedByThisRun($"sbtest_{other}_a35_demo");
+        foreign.Should().Throw<TestSafetyException>();
+    }
+
     [Fact]
     public void IsDisposable_returns_true_for_a_class_slot_at_TestDatabaseNamings_own_length_ceiling()
     {

@@ -27,7 +27,7 @@ public sealed class StaffMaxTestFactory(string connectionString, bool platformEn
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        TestHostSettings.Apply(builder, "api", connectionString);
+        TestHostSettings.Apply(builder, "api", connectionString, factoryType: GetType().Name);
         builder.UseSetting("PhoneVerification:Provider", "max-bot");
         builder.UseSetting("PhoneVerification:SessionTtlMinutes", "10");
         builder.UseSetting("PhoneVerification:VerifiedSessionUsableMinutes", "30");
@@ -77,6 +77,14 @@ public sealed class RecordingMaxMessenger : IMaxBotMessenger
     public void SetOutcomeForChat(string chatId, MaxSendOutcome outcome) => _outcomeByChat[chatId] = outcome;
 
     public void SetDefaultOutcome(MaxSendOutcome? outcome) => _defaultOutcome = outcome;
+
+    /// <summary>Цикл 36, L1: хост живёт весь класс, поэтому тест начинает с чистых записей и исходов по умолчанию.</summary>
+    public void Reset()
+    {
+        _calls.Clear();
+        _outcomeByChat.Clear();
+        _defaultOutcome = null;
+    }
 
     public Task<MaxSendOutcome> SendAsync(string chatId, string text, CancellationToken ct)
     {

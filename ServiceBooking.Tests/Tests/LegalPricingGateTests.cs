@@ -41,7 +41,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
     public LegalPricingGateTests(TestDatabaseFixture fixture)
     {
         _fixture = fixture;
-        fixture.RecordTestClass(nameof(LegalPricingGateTests));
+        fixture.RecordTestClass(typeof(LegalPricingGateTests));
     }
 
     private LegalDocumentsTestFactory _factory = null!;

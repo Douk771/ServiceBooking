@@ -35,7 +35,7 @@ public class StaffPushSubscriptionAndQueueingTests(TestDatabaseFixture fixture) 
         var masterA = await AddMasterAsync(owner.Token, company.Id);
         var masterB = await AddMasterAsync(owner.Token, company.Id);
 
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         const string sharedEndpoint = "https://push.example.test/shared-computer-endpoint";
         var subscribeA = await PushAuthedClient(push, masterA.Token).PostAsJsonAsync("/api/push/subscriptions",
             new CreatePushSubscriptionInput(sharedEndpoint, new CreatePushSubscriptionKeysInput("p256dh-a", "auth-a"), "Chrome"));
@@ -62,7 +62,7 @@ public class StaffPushSubscriptionAndQueueingTests(TestDatabaseFixture fixture) 
     {
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         const string endpoint = "https://push.example.test/logout-endpoint";
         await PushAuthedClient(push, master.Token).PostAsJsonAsync("/api/push/subscriptions",
             new CreatePushSubscriptionInput(endpoint, new CreatePushSubscriptionKeysInput("p256dh", "auth"), null));
@@ -86,7 +86,7 @@ public class StaffPushSubscriptionAndQueueingTests(TestDatabaseFixture fixture) 
         var date = NextWeekday();
         await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
 
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         // Three devices — "три устройства — три уведомления" (§105.6), by design.
         string[] endpoints =
         [
@@ -127,7 +127,7 @@ public class StaffPushSubscriptionAndQueueingTests(TestDatabaseFixture fixture) 
         var date = NextWeekday();
         await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
 
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         await PushAuthedClient(push, master.Token).PostAsJsonAsync("/api/push/subscriptions",
             new CreatePushSubscriptionInput("https://push.example.test/self-device", new CreatePushSubscriptionKeysInput("p256dh", "auth"), null));
 
@@ -160,7 +160,7 @@ public class StaffPushSubscriptionAndQueueingTests(TestDatabaseFixture fixture) 
         var date = NextWeekday();
         await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
 
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         await PushAuthedClient(push, master.Token).PostAsJsonAsync("/api/push/subscriptions",
             new CreatePushSubscriptionInput("https://push.example.test/other-master-device", new CreatePushSubscriptionKeysInput("p256dh", "auth"), null));
 
@@ -188,7 +188,7 @@ public class StaffPushSubscriptionAndQueueingTests(TestDatabaseFixture fixture) 
         var date = NextWeekday();
         await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
 
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         const string endpoint = "https://push.example.test/disabled-company-device";
         await PushAuthedClient(push, master.Token).PostAsJsonAsync("/api/push/subscriptions",
             new CreatePushSubscriptionInput(endpoint, new CreatePushSubscriptionKeysInput("p256dh", "auth"), null));
@@ -239,9 +239,9 @@ public class StaffPushSubscriptionAndQueueingTests(TestDatabaseFixture fixture) 
 /// </summary>
 public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
 {
-    private readonly int _recorded = RecordTestClassOnConstruction(fixture, nameof(StaffPushDispatchTests));
+    private readonly int _recorded = RecordTestClassOnConstruction(fixture, typeof(StaffPushDispatchTests));
 
-    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, string className)
+    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, Type className)
     {
         fixture.RecordTestClass(className);
         return 0;
@@ -256,7 +256,8 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         // Раньше «1 вызов» означало лишь «столько тиков успело случиться за окно ожидания» — на медленной
         // машине это давало TimeoutException вместо неверного статуса (PUSH-006 упал так на develop,
         // а поднятие бюджета с 20s до 60s в a5d831c проблему не сняло).
-        await using var factory = new PushDispatchTestFactory(fixture.ConnectionString, disableAutomaticTicking: true);
+        var factory = fixture.ClassHost("pushdispatch", cs => new PushDispatchTestFactory(cs, disableAutomaticTicking: true));
+        factory.Clock.Set(DateTime.UtcNow); // the host is shared by the class: every test starts at the real "now", not at the moment the host was built
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -282,7 +283,8 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         // Cycle 14 (flaky-CI fix, второй заход): один явный проход вместо «дождаться тика и подождать
         // ещё 500 мс, пока попытка запишется». Ожидание завершения прохода и есть та гарантия, которую
         // Task.Delay изображал на глазок.
-        await using var factory = new PushDispatchTestFactory(fixture.ConnectionString, disableAutomaticTicking: true);
+        var factory = fixture.ClassHost("pushdispatch", cs => new PushDispatchTestFactory(cs, disableAutomaticTicking: true));
+        factory.Clock.Set(DateTime.UtcNow); // the host is shared by the class: every test starts at the real "now", not at the moment the host was built
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -308,7 +310,8 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         // PeriodicTimer tick under CI load (see PushDispatchTestFactory's own doc comment). This test
         // only asserts a terminal decision ProcessRowAsync reaches by RE-READING rights from the DB, so
         // the runner's own scheduling machinery (advisory lock, due-time bookkeeping) is immaterial here.
-        await using var factory = new PushDispatchTestFactory(fixture.ConnectionString, disableAutomaticTicking: true);
+        var factory = fixture.ClassHost("pushdispatch", cs => new PushDispatchTestFactory(cs, disableAutomaticTicking: true));
+        factory.Clock.Set(DateTime.UtcNow); // the host is shared by the class: every test starts at the real "now", not at the moment the host was built
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -341,7 +344,8 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         // B with A's queued client-name payload): it must Skip with PushSubscriptionReassigned.
         // Cycle 14 (flaky-CI fix): same deterministic single-pass trigger as the sibling test above —
         // see PushDispatchTestFactory's doc comment on RunStaffPushDispatchPassAsync.
-        await using var factory = new PushDispatchTestFactory(fixture.ConnectionString, disableAutomaticTicking: true);
+        var factory = fixture.ClassHost("pushdispatch", cs => new PushDispatchTestFactory(cs, disableAutomaticTicking: true));
+        factory.Clock.Set(DateTime.UtcNow); // the host is shared by the class: every test starts at the real "now", not at the moment the host was built
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 

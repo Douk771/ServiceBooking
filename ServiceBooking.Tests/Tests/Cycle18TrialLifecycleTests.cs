@@ -63,7 +63,7 @@ public class Cycle18TrialMailingWindowHookTests : IClassFixture<TestDatabaseFixt
         _fixture = fixture;
         _factory = new ChannelHookFactory(fixture.ConnectionString);
         _ = _factory.Services; // boot eagerly so Identity is populated before LoginAsSuperAdminAsync
-        fixture.RecordTestClass(GetType().Name);
+        fixture.RecordTestClass(GetType());
     }
 
     public async ValueTask DisposeAsync() => await _factory.DisposeAsync();
@@ -81,7 +81,7 @@ public class Cycle18TrialMailingWindowHookTests : IClassFixture<TestDatabaseFixt
             // temp-directory slot derived from THIS class's own connection string/database name — never
             // shared with an actual NotificationTestFactory instance, which always lives in a different
             // test class with a different database.
-            Identity = TestHostSettings.Apply(builder, "ntf", connectionString);
+            Identity = TestHostSettings.Apply(builder, "ntf", connectionString, factoryType: GetType().Name);
 
             builder.UseSetting("Notifications:Provider", "logging");
             builder.UseSetting("Notifications:EncryptionKey", NotificationDispatchTestFactory.TestEncryptionKeyBase64);
@@ -1589,7 +1589,7 @@ public class Cycle18TrialMailingDeliveryTests(TestDatabaseFixture fixture) : Cyc
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            TestHostSettings.Apply(builder, "dispatch", connectionString);
+            TestHostSettings.Apply(builder, "dispatch", connectionString, factoryType: GetType().Name);
 
             // Same test key CustomWebApplicationFactory/Cycle18LifecycleTestBase's own Factory uses —
             // Trial activation itself already happened through THAT factory; this host only needs to

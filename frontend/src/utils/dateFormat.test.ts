@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'

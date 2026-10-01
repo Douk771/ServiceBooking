@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ezbook.ru/contracts/cycle36/test-inventory.schema.json",
+  "title": "Инвентарь тестов одного набора (цикл 36)",
+  "description": "Пишет tools/test-audit/inventory.py (BE-36-02) из 'dotnet test --list-tests' + разбора исходников (TestCase, Trait Area) или из 'vitest list --json'. Читает tools/test-audit/diff_inventory.py: 'после' обязано равняться 'до' минус реестр TEST_CATALOG.md «Цикл 36 — ревизия». Снимки before/after коммитятся в tools/test-audit/results/. ARCHITECTURE_CYCLE36.md §36.9; API_CONTRACT_CYCLE36.md §36.26. Без 'format', чтобы проверялось голым ajv-cli.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "suite", "commit", "generatedAtUtc", "totalCases", "tests"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "suite": { "enum": ["unit", "functional", "vitest"] },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+    "dirty": { "type": "boolean" },
+    "generatedAtUtc": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$" },
+    "totalCases": { "type": "integer", "minimum": 0, "description": "Сумма cases по всем тестам = число запусков набора (с развёрнутыми [Theory]/it.each)." },
+    "tests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "id", "file", "cases", "areas"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "description": ".NET: '<Namespace.Class[+Nested]>.<Method>' (строки [Theory] свёрнуты в cases). vitest: '<путь от frontend/>::<describe > … > it>'."
+          },
+          "id": {
+            "type": ["string", "null"],
+            "pattern": "^[A-Z][A-Z0-9]*(-[A-Za-z0-9]+)+$",
+            "description": "ID из [TestCase(\"…\")] (.NET) или ID в начале имени it (vitest, например 'CY34-05'); null, если ID нет."
+          },
+          "file": { "type": "string", "minLength": 1, "description": "Путь от корня репозитория." },
+          "className": { "type": "string", "description": ".NET: полное имя класса." },
+          "method": { "type": "string", "description": ".NET: имя метода." },
+          "cases": { "type": "integer", "minimum": 1, "description": "Сколько запусков даёт тест ([Theory] × InlineData/MemberData, it.each)." },
+          "areas": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "pattern": "^[a-z]+$" },
+            "description": "Области быстрого контура: functional — из [Trait(\"Area\", …)] класса; vitest — по frontendPathPrefixes из contracts/cycle36/test-areas.json; unit — пусто."
+          },
+          "protectedZone": { "type": "boolean", "description": "true — тест в неприкосновенной зоне (§36.9.3): удалять нельзя, только ускорять или объединять." }
+        }
+      }
+    }
+  }
+}

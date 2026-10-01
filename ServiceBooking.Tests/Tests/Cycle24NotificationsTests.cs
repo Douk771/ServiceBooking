@@ -159,7 +159,7 @@ public class Cycle24NotificationsTests(TestDatabaseFixture fixture) : Cycle24Tes
         var p = await CreateProductAsync(shop);
         var placed = await PlaceOrderAsync(shop.Slug, Guest([Line(p, 1)]));
         var token = placed.Order.Token;
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         var c = PushClient(push);
         var url = $"/api/orders/public/{token}/push-subscription";
 
@@ -207,7 +207,7 @@ public class Cycle24NotificationsTests(TestDatabaseFixture fixture) : Cycle24Tes
         var p = await CreateProductAsync(shop);
         var placed = await PlaceOrderAsync(shop.Slug, Guest([Line(p, 1)]));
         var token = placed.Order.Token;
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         var c = PushClient(push);
         var url = $"/api/orders/public/{token}/push-subscription";
         var good = Sub("https://push.example.test/cy24/" + Guid.NewGuid());
@@ -273,7 +273,7 @@ public class Cycle24NotificationsTests(TestDatabaseFixture fixture) : Cycle24Tes
         var company = await CreateCompanyAsync(owner.Token);
         var (token, shopDto) = await CreateShopForAsync(owner.Token);
         await GiveActivePaidPlanAsync(owner.UserId);
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         var c = PushClient(push, token);
 
         var services = await J(await c.GetAsync("/api/push/config"));
@@ -304,7 +304,7 @@ public class Cycle24NotificationsTests(TestDatabaseFixture fixture) : Cycle24Tes
         var shop = await CreateShopAsync();
         var staff = await AddShopStaffAsync(shop);
         var p = await CreateProductAsync(shop, "Шаурма", 250m);
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
 
         async Task Subscribe(string token, string endpoint, CompanyKind? site) =>
             (await PushClient(push, token).PostJsonAsync("/api/push/subscriptions",
@@ -441,7 +441,7 @@ public class Cycle24NotificationsTests(TestDatabaseFixture fixture) : Cycle24Tes
         var shop = await CreateShopAsync();
         var staff = await AddShopStaffAsync(shop);
         var p = await CreateProductAsync(shop);
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         foreach (var t in new[] { shop.OwnerToken, staff.Token })
             (await PushClient(push, t).PostJsonAsync("/api/push/subscriptions", new CreatePushSubscriptionInput(
                 "https://push.example.test/cy24-rm/" + Guid.NewGuid(), new CreatePushSubscriptionKeysInput("p", "a"), "d", CompanyKind.Orders)))
@@ -524,7 +524,7 @@ public class Cycle24NotificationsTests(TestDatabaseFixture fixture) : Cycle24Tes
             options = Array.Empty<object>(), line = "Orders",
         })).StatusCode.Should().Be(HttpStatusCode.OK);
 
-        await using var push = new PushEnabledFactory(ConnectionString);
+        var push = Fixture.ClassHost("push", cs => new PushEnabledFactory(cs));
         (await PushClient(push, shop.OwnerToken).PostJsonAsync("/api/push/subscriptions", new CreatePushSubscriptionInput(
             "https://push.example.test/cy24-lim/" + Guid.NewGuid(), new CreatePushSubscriptionKeysInput("p", "a"), "d", CompanyKind.Orders)))
             .IsSuccessStatusCode.Should().BeTrue();

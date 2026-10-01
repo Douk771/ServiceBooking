@@ -2,8 +2,25 @@
 
 > **Цикл 32 влит в `develop` после этого снимка** (общий `CompanyProfileCard`, `SalonProfileSection`, `BookingRulesSection`, новая раскладка `SettingsTab`, удалён `CompanyAddressField`; сервер не менялся). Описания настроек компании ниже — до цикла 32; полная синхронизация — при следующем обновлении файла.
 
-**Актуально по состоянию на коммит: `c28ccbb` (`develop` = `origin/develop`, цикл 35 влит fast-forward; дата коммита — 2026-10-01), дата обновления: 2026-10-01.**
-**Режим: обновление поверх полного сканирования на `1837373`** (прежние точечные обновления — на `b9c2a79`, `aeed251`, `364cc2b`, `050816f`, `2834e00`, `a1e2259`).
+**Актуально по состоянию на коммит: `f60da0d` (ветка `cycle/036-test-suite-audit` = `origin/cycle/036-test-suite-audit`, цикл 36, влита в `develop` merge-коммитом «Merge cycle/036-test-suite-audit into develop» после этой правки (хеш — `git log develop --merges -1`); дата коммита — 2026-10-02), дата обновления: 2026-10-02.**
+**Режим: обновление поверх полного сканирования на `1837373`** (прежние точечные обновления — на `b9c2a79`, `aeed251`, `364cc2b`, `050816f`, `2834e00`, `a1e2259`, `c28ccbb`).
+**Обновление на `f60da0d`** (✔ `git log origin/develop..HEAD`: 55 коммитов `36cfe77`…`f60da0d`, включая мердж `bb4e03e`
+«origin/develop → cycle/036» (цикл 35); `git diff origin/develop..HEAD`: 233 файла, из них ~50 — отчёты и снимки в
+`tools/*/results/`; после `git fetch`; **codebase-analyst ничего не запускал** — ни тесты, ни сборку, ни `measure.sh`, ни
+скрипты `tools/test-audit`; все времена и числа прогонов ниже ↪ взяты из закоммиченных отчётов `tools/test-timing/results/`,
+таблиц `docs/testing-isolation.md` и `gh run view` (только чтение)). Это **цикл 36 «Ревизия регрессионных тестов и ускорение
+полного прогона»**. ⚠️ Правка сделана **в ветке цикла до вливания в `develop`** (так поставлена задача): `origin/develop` =
+`0099efc` целиком содержится в ветке (`git log HEAD..origin/develop` пуст), между `c28ccbb` и `0099efc` — два коммита только
+документов (`c19abbc` — прежняя правка этого файла, `0099efc` — CHANGELOG цикла 35). После мерджа в `develop` хеш в шапке
+нужно сверить с фактическим HEAD `develop`. API, БД, миграции, контракты OpenAPI, пакеты NuGet/npm и переменные боя цикл не
+менял; **продуктовая правка одна** — `Uploads:WindowMinutes` (§5.5). Обновлены: шапка, §0 (ветки), §2, §5.5 (блок «Цикл 36»),
+§6.4, §7.1, §7.2, §7.3, §7.5 (новый — тестовая инфраструктура и времена прогона), §9.5 (C35-7 закрыт), §9.6 (новый — долг
+цикла 36), §10.2, §10.4, §10.5. Источник намерения — `SPEC.md` (цикл 36), `ARCHITECTURE_CYCLE36.md`, `API_CONTRACT_CYCLE36.md`;
+где документы расходятся с кодом, записано по коду (§9.6). `CHANGELOG.md` и `README.md` в этом обновлении не читались и не
+правились (их параллельно правит другой агент). **Следующий diff отсчитывайте от HEAD `develop` после вливания цикла 36
+(до вливания — от `f60da0d`).**
+
+*Ниже — шапка прежнего обновления на `c28ccbb`, сохранена для истории.*
 **Обновление на `c28ccbb`** (✔ `git diff a1e2259..c28ccbb`: 262 файла, из них ~165 картинок `ShowcaseAssets/`; 24 коммита
 `31814d7`…`c28ccbb`; после `git fetch`; **ничего не запускалось** — ни тесты, ни сборка, ни смоук). Это **цикл 35 «Демо-стенд
 „EZBOOK Заказы“ (`demo.zakaz.ezbook.ru`)»**, влит fast-forward, мерджа нет. Миграций, новых пакетов NuGet/npm и переменных боя
@@ -68,6 +85,12 @@
 - ↪ — перенесено из прежней редакции, в этом сканировании **не перепроверялось**;
 - 🖥 — факт о боевой машине. В репозитории его нет, в этом сканировании он не проверялся (SSH не использовался).
   Источник — прежняя редакция, блок «🚀20», проверено по SSH 30.09.2026.
+
+**Ветки на `f60da0d`** (✔ после `git fetch`, 2026-10-02): `origin/develop` = `0099efc` (после `c28ccbb` — только два
+коммита документов цикла 35). `cycle/036-test-suite-audit` = `origin/cycle/036-test-suite-audit` = `f60da0d`: 55 коммитов
+поверх `origin/develop`, `develop` влит в неё мерджем `bb4e03e`, сама ветка в `develop` **ещё не влита**. Рабочая копия цикла —
+отдельный worktree `ServiceBooking-cycle036`. Ориентиры: 1 306 коммитов, 2 365 отслеживаемых файлов (✔ `git rev-list --count`,
+`git ls-files`). Остальные ветки — как ниже.
 
 **Ветки на `c28ccbb`** (✔ после `git fetch`, 2026-10-01): `develop` = `origin/develop` = `c28ccbb` (цикл 35 влит
 fast-forward, мерджа нет). Локальная `cycle/035-goods-showcase-demo-stand` = `c28ccbb` (влита целиком);
@@ -196,6 +219,11 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | `legal-internal/` | Внутренние правовые документы (markdown), в сборку не входят |
 | `deploy/` | `deploy.sh`, `deploy-remote.sh`, `rollback.sh`, `ssh-deploy-wrapper.sh`, `nginx/` (3 vhost), `backup/` (systemd-таймер `pg_dump`), `monitor/` (health-alert), `checks/` (SQL-гейты выката), `ci/` (смоуки, сверка пинов образов, дрейф снапшота миграций) |
 | `tools/bench/cycle22`, `cycle25` | Скрипты и результаты нагрузочных замеров |
+| `tools/test-timing/` | Цикл 36: замер времени регресса — `measure.sh` (bash), `analyze.py` (python3), `thresholds.json` (пороги предупреждений CI), `README.md`, `results/` (закоммиченные отчёты `*.json` + `*.md`: `b0-baseline`, `b1-*`, `final`, `final-stability`, `post-merge*`, `pre-merge-s1/s2`, `contended/`). §7.5 |
+| `tools/test-audit/` | Цикл 36: ревизия тестов — `inventory.py`, `diff_inventory.py`, `route_coverage.py`, `test_diff_inventory.py` (python3, только стандартная библиотека), `README.md`, `results/` (снимки инвентаря `before-*`/`after-*` по трём наборам и `before-routes.jsonl`). §7.5 |
+| `contracts/cycle36/` | Цикл 36: не API. `test-areas.json` (10 областей быстрого контура фронта) и JSON-схемы `test-areas`, `test-inventory`, `test-metrics`, `timing-report`, `route-hits` |
+| `ServiceBooking.Tests/Infrastructure/` (добавлено циклом 36) | `ClassConcurrencyGate.cs`, `HeavyFirstCollectionOrderer.cs`, `DemoSeededTemplate.cs`, `TestRunMetrics.cs`; `ClassHost` и ленивый хост — в `TestDatabaseFixture.cs`; `DemoDatabaseSlots` — в `Cycle28ShowcaseTestBase.cs`; `DemoGate` — в `TestRunEnvironment.cs`. На `f60da0d` в `Tests/` 96 файлов `.cs` (+`DemoSeededTemplateGuardTests.cs`) |
+| `frontend/scripts/test-area.mjs` | Цикл 36: `npm run test:area -- <область…>` — vitest только по файлам названных областей из `contracts/cycle36/test-areas.json` |
 | `docs/` | Руководство пользователя по ролям (ezbook) и два документа команды (§10.2) |
 | Корень | `README.md`, `CHANGELOG.md`, `API_DOCUMENTATION.md`, `TEST_CATALOG.md`, `DEPLOY.md`, `DEPLOY-windows.md`, документы циклов `SPEC_*`/`ARCHITECTURE_*`/`API_CONTRACT_*`/`LEGAL_*` (§10.5), `docker-compose{,.prod,.glitchtip}.yml`, `.env.*.example`, `.editorconfig` |
 
@@ -582,6 +610,27 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 - ↪ C22-1: восемь навигационных свойств EF без ссылок в коде.
 
 ### 5.5 Что сделали последние циклы
+
+**Цикл 36 — ревизия регрессионных тестов и ускорение полного прогона** (✔ `git diff origin/develop..f60da0d`; ветка
+`cycle/036-test-suite-audit`, в `develop` на `f60da0d` ещё не влита). Цикл про тесты и CI, не про продукт: API, модель данных,
+миграции, контракты OpenAPI и фронтовый прикладной код не менялись. Устройство тестовой инфраструктуры, времена и инструменты —
+§7.5, CI — §7.3, долг — §9.6.
+- **Единственная продуктовая правка** (✔ `ServiceBooking.API/Startup/RateLimitingExtensions.cs`): окно политики лимита `uploads`
+  было зашито как 1 минута, теперь это `RateLimitingExtensions.UploadsWindow(configuration)` =
+  `TimeSpan.FromMinutes(Math.Max(1, configuration.GetValue("Uploads:WindowMinutes", 1)))`. Параметр — точка подмены **для
+  тестов** (длинное окно удерживает пачку запросов в одном окне под нагрузкой; им пользуются CY31-22 и логотипная половина
+  CY31-23 через `ProdLimitsHost(…, uploadsWindowMinutes)`). Умолчание 1, значение меньше 1 невозможно; поставляемые конфиги
+  параметр не задают — это держит юнит `UploadsWindowTests` (3 теста: умолчание, нижняя граница, `ShippedConfigs_DoNotSetTheWindow`).
+  Лимит `Uploads:PerUserPerMinute` (10) не менялся.
+- **Тесты**: с фронта удалено 7 vitest-дублей (реестр R36-F001…F007: `UpdateBanner.test.tsx` целиком — 3 теста, QA27-09,
+  QA30-01/03/04) и добавлено 2 теста guard CY36-02; **на бэкенде не удалён ни один тест** (реестр бэкенда пуст). Добавлены
+  функциональный страж CY36-03 и юнит-тесты `UploadsWindowTests`, `TestDatabaseNamingTests` (+3), `EnvStatusParallelConnectionBudgetTests`
+  (+1). Починены тесты (без изменения их числа): CY20-SR-01 (красный по четвергам — ошибка в ожидании теста, продукт верен),
+  CY31-23 (окно лимита у хоста теста 60 минут), `LegalConsentVersionChangeTests.RegisterAsync` (повтор при 409), `NTF-L001`
+  оставлен на своём хосте. Классы демо-сценариев разбиты (`Cycle28DemoScenarioTests` → + `Cycle28DemoMutationTests`;
+  `Cycle35DemoScenarioTests` → + `Cycle35DemoMutationATests`, `Cycle35DemoMutationBTests`, `Cycle35DemoResetTests`), ID тестов те же.
+- **Запланировано архитектурой, но в коде нет** (✔ `ls`, grep): трейты `Area` и guard CY36-01 на бэкенде (BE-36-09), быстрый хеш
+  паролей L3 (`SERVICEBOOKING_TEST_FAST_HASH`), `test-durations.json` — подробности в §9.6.
 
 **Цикл 35 — демо-стенд «EZBOOK Заказы» (`demo.zakaz`)** (✔ `git diff a1e2259..c28ccbb`, влит fast-forward). Блок стоит ниже,
 **рядом с блоками цикла 28**, механику которого он расширяет («Цикл 35 — демо „Заказов“…»); итог для goods — §5.11.
@@ -1493,6 +1542,21 @@ goods нет (✔ grep по `frontend/goods/src`); гостевой заказ �
   `SERVICEBOOKING_TEST_ORDER_SEED`).
 - Кейсы помечаются атрибутом `TestCase` с ID (`CY26-01`…) и описываются в `TEST_CATALOG.md`.
 - Подсистеме с fail-closed по секрету нужен тестовый секрет в фабрике.
+- **С цикла 36** (✔ `docs/testing-isolation.md`, «Хосты тестов»; `TestDatabaseFixture.cs`):
+  - основной хост класса `fixture.Factory` **ленивый** — классу, которому нужна только `fixture.ConnectionString`, он не поднимается;
+  - вторичный хост другой конфигурации — **один на класс**: `fixture.ClassHost("ключ", cs => new XxxFactory(cs))`; им владеет
+    фикстура, `using` на него не ставят, ключ уникален внутри класса. Свой хост на тест (`new XxxFactory(ConnectionString)`)
+    оставляют, только если тест меняет конфигурацию хоста, проверяет пороги rate limit, ждёт кеш с TTL или читает записи
+    двойников без `Reset()`;
+  - демо-сценарию свежий демо-стенд даёт **клон засеянного шаблона** (`DemoSeededTemplate`), а не собственный сброс; настоящий
+    продуктовый сброс вызывают только тесты, где сброс или генератор — предмет проверки. Имя демо-базы обязано заканчиваться на
+    `_demo`; новый слот добавляется в `DemoDatabaseSlots.All` **и** в `TestInfrastructure.DemoDatabaseSlotCount` (иначе прогон
+    откажется стартовать), новая демо-коллекция — в список `HeavyFirstCollectionOrderer`;
+  - удаление, замена и переименование теста записываются строкой реестра в `TEST_CATALOG.md` (раздел цикла 36, формат —
+    `API_CONTRACT_CYCLE36.md` §36.29); удаляются только категории А (проверяет удалённую функцию) и Б (доказанный дубль);
+  - vitest: новый `*.test.ts` без обращений к DOM начинается строкой `// @vitest-environment node`; новый файл теста должен
+    попадать под префикс области в `contracts/cycle36/test-areas.json`, иначе падает guard CY36-02;
+  - полный замер времени — только через `tools/test-timing/measure.sh` (машинная блокировка, отказ при чужом живом прогоне).
 
 ### 6.5 Git и процесс
 - Модель веток: `cycle/NNN-<slug>` → `develop` → (`release-candidate` → `master` + тег для `deploy-production.yml`).
@@ -1530,6 +1594,19 @@ goods нет (✔ grep по `frontend/goods/src`); гостевой заказ �
 (preexisting, зависит от дня недели запуска, §9.5). Числа юнит- и фронтовых прогонов в отчёте QA не приведены. Три файла
 `Cycle35*.cs` и раздел `TEST_CATALOG.md`, которые на момент проверки QA не были закоммичены, ✔ в `develop` есть (коммит `8677493`).
 
+**На `f60da0d` (цикл 36)** (✔ подсчёт файлов; числа прогонов ↪ из `tools/test-timing/results/`, codebase-analyst не запускал):
+`ServiceBooking.Tests/Tests/` — 96 файлов `.cs` (+`DemoSeededTemplateGuardTests.cs`); `ServiceBooking.UnitTests` — добавлены
+`UploadsWindowTests.cs` и помощник `FrozenFingerprintCulture.cs`; фронт — 205 файлов `*.test.ts(x)` (удалён
+`goods/src/components/UpdateBanner.test.tsx`, добавлен `src/test/testAreas.guard.test.ts`).
+| Набор | До цикла (`b0-baseline`, `a1e2259`) | После ревизии, до влития цикла 35 (`final`, `6723a9f`) | После влития цикла 35 (`pre-merge-s1/s2`, `d64ba8a`) |
+|---|---|---|---|
+| unit | 2 732, все зелёные | 2 732 | в отчётах не мерялся (добавлено 7 юнит-тестов по реестру R36-B900…B907) |
+| functional | 1 267 (1 266 + 1 красный — CY20-SR-01, «красный по четвергам») | 1 267, все зелёные | **1 300**, все зелёные (1 267 + 32 цикла 35 + CY36-03) |
+| vitest | 1 541 | 1 536 (−7 дублей, +2 guard) | в отчётах не мерялся; тесты фронта цикла 35 пришли мерджем (R36-M021…M026) |
+
+Времена этих прогонов — §7.5. Последний прогон CI на `f60da0d` (✔ `gh run view 36903494650`, только чтение): все три джоба
+зелёные (§7.3).
+
 Прогоны различаются по объёму: в прогоне считаются и наборы `[Theory]`, поэтому число прогонов больше числа атрибутов.
 Были ли в отчёте цикла 31 зелёные `tsc`, `lint`, `typecheck:node`, `build:release` и сколько тестов упало, в этом
 обновлении не проверялось: переданы только общие числа.
@@ -1547,7 +1624,19 @@ health, регистрация, загрузка аватара) и `deploy/ci/s
 dotnet test ServiceBooking.Tests
 ```
 Предусловие — **запущенный Docker**. Прогон сам поднимает `postgres:16-alpine`, заводит базы `sbtest_<key>_<slot>` и
-убирает их. Локальный параллелизм — 4 потока (`ServiceBooking.Tests/xunit.runner.json`), в CI — 2.
+убирает их. Локальный параллелизм — 4 потока (`ServiceBooking.Tests/xunit.runner.json`), в CI — 2. С цикла 36 одновременно
+живых классов — не больше 3 × P (локально 12; в CI явно 4), демо-баз — не больше P (§7.5). Ожидаемое время функционального
+набора на машине разработки (P=4, colima 2 CPU / 4 ГБ) — **5:36–6:38** на 1 300 тестах (↪ отчёты, §7.5).
+
+Тот же прогон с замером и отчётом (цикл 36, `tools/test-timing/README.md`; запускает qa-engineer, не codebase-analyst):
+```bash
+tools/test-timing/measure.sh --label adhoc --runs 1                      # unit + functional + vitest, отчёт в TestResults/timing/adhoc/
+tools/test-timing/measure.sh --label adhoc --runs 1 --suites functional  # только функциональный
+```
+`measure.sh` сам собирает решение (сборка в замер не входит), сам выставляет переменные colima, если есть
+`~/.colima/default/docker.sock`, берёт машинную блокировку `${TMPDIR}/sb-test-timing.lock` и **отказывается стартовать (код 2),
+если `TestKit status` видит чужой живой прогон** (`--force` снимает отказ, но отчёт помечается `foreignRunsDetected`). Коды
+выхода: 0 — успех, 1 — аргументы, 2 — среда/чужой прогон/блокировка, 3 — есть упавшие тесты (отчёт всё равно пишется).
 
 Полная последовательность, как в CI:
 ```bash
@@ -1570,6 +1659,14 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   ⚠️ Защита от разрушения работает по имени базы, а не по серверу: боевую строку сюда подставлять нельзя.
 - Другие переменные: `SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS`, `SERVICEBOOKING_TEST_RUN_KEY` (8 hex),
   `SERVICEBOOKING_TEST_NO_TEMPLATE`, `SERVICEBOOKING_TEST_ORDER_SEED`. Уборка: `dotnet run --project ServiceBooking.TestKit -- status | sweep [--apply]`.
+  С цикла 36 (✔ grep по `ServiceBooking.Tests/Infrastructure` и `ServiceBooking.TestKit`): `SERVICEBOOKING_TEST_CLASS_CONCURRENCY`
+  (предел одновременно живых классов, по умолчанию 3 × P), `SERVICEBOOKING_TEST_METRICS` (`0` выключает запись метрик прогона
+  `TestResults/sb-test-metrics-<runKey>.jsonl`), `SERVICEBOOKING_TEST_ROUTE_LOG=1` (журнал маршрутов
+  `TestResults/sb-test-routes-<runKey>.jsonl`; такой прогон по времени не сравнивают).
+- Быстрый контур фронта (цикл 36): `cd frontend && npm run test:area -- orders notifications` — только файлы названных областей
+  (`account`, `bookings`, `companies`, `orders`, `notifications`, `billing`, `legal`, `admin`, `security`, `platform`; весь
+  `goods/src` входит в `orders`; неизвестная область — код 1). **Полный `npm run test:run` перед мерджем он не заменяет.**
+  У бэкенда аналога по областям нет (трейтов `Area` в коде нет, §9.6) — подмножество берут фильтром по имени класса, как ниже.
 - **Побочные эффекты прогона** (✔ по фабрикам):
   - окружение `Testing`, фоновые задачи выключены;
   - `Notifications:Provider=logging`, `SmartCaptcha:SecretKey` пуст;
@@ -1582,8 +1679,12 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - два полных прогона параллельно на одном Docker дают ложные падения тестов, чувствительных ко времени;
   - по отчёту цикла 27 полный прогон на colima бывает нестабилен по таймаутам Npgsql;
   - флейк CY24-31 около 03:30–04:05 по времени магазина (C25-9);
-  - флейк `Cycle20SubjectRequestsTests.RegisterManually_DueDateComputedFromReceivedAt_NotFromNow` — зависит от дня недели
-    запуска (упал в финальном прогоне цикла 35, к циклу не относится; §9.5);
+  - ~~флейк `Cycle20SubjectRequestsTests.RegisterManually_DueDateComputedFromReceivedAt_NotFromNow` — зависит от дня недели
+    запуска~~ — **починен в цикле 36** (`11d27b3`, `f156d42`: ожидание теста считало календарные +10 дней вместо рабочих; §9.5 C35-7);
+  - (цикл 36, ↪ отчёты) `NotificationDispatchExtraTests.Budget_InterruptedPass_…` — редкий флейк под нагрузкой (C36-2, §9.6);
+  - (цикл 36, ↪ `post-merge-3.md`) `Cycle35DemoResetTests.Determinism_…` падает, если прогон пересекает **местную полночь**
+    (+07): два сброса «на одну дату» попадают на разные даты;
+  - (цикл 36) повышать P выше 4 локально не принято: P=6 быстрее на ~5 % (на границе шума), P=8 не быстрее и дал флейк C36-2;
   - ~~8 тестов `CartPanel.test.tsx` падают~~ — **закрыто** (C34-1, §9.1): причиной был локальный `frontend/.env` с непустым
     `VITE_SMARTCAPTCHA_SITEKEY`, в CI ключа нет. Тест теперь мокает `SmartCaptcha` (как `SubjectRequestPage.test.tsx`) и
     зелёный при любом `.env`; ✔ 16/16 при заполненном ключе.
@@ -1597,7 +1698,10 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   Цикл 35 — `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle35"` (классы `Cycle35DemoContractTests`,
   `Cycle35DemoScenarioTests`, `Cycle35DemoLocksTests`, `Cycle35OffDemoTests`; демо-классы поднимают `DemoHostFactory` на БД
   `sbtest_<ключ>_demo` и выполняют `ops demo reset --yes` внутри тестовой БД — это запись только в тестовую базу и во временные
-  каталоги файлов) плюс регрессия демо цикла 28 — `--filter "FullyQualifiedName~Cycle28"`; юнит —
+  каталоги файлов; **с цикла 36** классов больше — ещё `Cycle35DemoMutationATests`, `Cycle35DemoMutationBTests`,
+  `Cycle35DemoResetTests`, демо-баз несколько (`sbtest_<ключ>_<variant>_demo`), а сброс как подготовка заменён клоном
+  засеянного шаблона, §7.5) плюс регрессия демо цикла 28 — `--filter "FullyQualifiedName~Cycle28"`; страж шаблона —
+  `--filter "FullyQualifiedName~DemoSeededTemplateGuardTests"`; юнит —
   `dotnet test ServiceBooking.UnitTests --filter "FullyQualifiedName~Showcase|FullyQualifiedName~DemoBoardTick|FullyQualifiedName~DemoModeValidation|FullyQualifiedName~OpsCommandLine"`;
   vitest — `cd frontend && npx vitest run goods/src/demo src/components/demo src/hooks/useDemoStatus src/api/demo src/utils/demoRoles`.
   ⚠️ `deploy/ci/demo-zakaz-smoke.sh` — **не тест**: это смоук живого стенда по HTTP (делает три входа под ролями), запускается
@@ -1607,11 +1711,26 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   В базовый прогон не входит, в CI запускается как сверка (§7.3). JSON цикла 33 он не создаёт (C33-1).
 
 ### 7.3 CI — `.github/workflows/ci.yml` (push в `master`, `release-candidate`, `develop`, `cycle/**`, `fix/**` и любой PR)
-- **backend**:
-  - сервис `postgres:16`; restore, затем build `-c Release -warnaserror`;
-  - юнит-тесты, затем функциональные с `xUnit.MaxParallelThreads=2`;
+- **backend** (✔ `ci.yml` на `f60da0d`; цикл 36 шагов не удалял):
+  - `timeout-minutes: 20` (было 15; цикл 36, DO-36-02);
+  - сервис `postgres:16`; **первым шагом** (цикл 36) Postgres переводится в режим без долговечности:
+    `ALTER SYSTEM SET fsync=off, synchronous_commit=off, full_page_writes=off` + `pg_reload_conf()` через `docker exec`; шаг
+    печатает `nproc`, P и предел классов. Касается только одноразового сервиса CI;
+  - restore, затем build `-c Release -warnaserror`;
+  - юнит-тесты, затем функциональные. P задан **одним числом** — env джоба `SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS: "2"`,
+    шаг берёт его оттуда же (`-- xUnit.MaxParallelThreads="$SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS"`). Рядом —
+    `SERVICEBOOKING_TEST_CLASS_CONCURRENCY: "4"` (предел одновременно живых классов; выведен из бюджета соединений при
+    `max_connections=100`: `N × 2 × 8 + min(P, 9) × 8 + 4 ≤ 90` → N ≤ 4; формула для пересчёта при смене P — в комментарии `ci.yml`).
+    Оба набора пишут TRX в `TestResults/ci` (`unit.trx`, `functional.trx`);
+  - шаг `Slow tests summary` (`if: always()`): `python3 tools/test-timing/analyze.py --ci-summary … --thresholds
+    tools/test-timing/thresholds.json >> $GITHUB_STEP_SUMMARY` — топ-10 классов и тестов, старты хоста; превышение порога даёт
+    `::warning::`, **шаг не падает** (порог — сигнал, не гейт). Пороги: функциональные 350 с, vitest 120 с, класс 60 с, тест 10 с,
+    стартов хоста на класс 3; `unitWallSecondsWarn` = 0;
+  - артефакт `backend-test-results-<sha>` (каталог `TestResults/`, 14 дней);
   - `check-image-pins.sh` — сверка версии Postgres в четырёх местах;
-  - дрейф снапшота миграций: `migrations add __DriftProbe` + `check-drift-probe.py`;
+  - дрейф снапшота миграций: `migrations add __DriftProbe --no-build --configuration Release` + `check-drift-probe.py`; с цикла 36
+    проба убирается **не** `migrations remove` (без сборки он снял бы настоящую последнюю миграцию), а `rm -rf …/__probe` +
+    `git checkout` снапшота + проверка `git diff --exit-code`/`git status --porcelain` по каталогу миграций;
   - монотонность Designer-снимков: `check-migration-snapshots.sh`;
   - `LegalKit check`.
 - **frontend** (Node 20):
@@ -1627,7 +1746,8 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - `npm audit --omit=dev --audit-level=high`;
   - `lint`, `tsc` для ezbook и для goods, `npm run typecheck:node` (шаг «Type-check node (shots)», цикл 30);
   - греп на заглушку правового текста и на `fetch`/Cache в `sw.js`;
-  - `test:run`;
+  - `test:run` (с цикла 36 — с `--reporter=default --reporter=json --outputFile.json=../TestResults/ci/vitest.json`), затем
+    `Slow tests summary (vitest)` (та же сводка, шаг не падает) и артефакт `frontend-test-results-<sha>` (14 дней);
   - `build:release` — оба сайта;
   - смоук `dist` и `dist/__goods`;
   - артефакт `frontend-dist-<sha>` для `master`/`release-candidate`/`develop`.
@@ -1642,6 +1762,19 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   Guard-тест общих исходников goods (§5.8) отдельного шага не имеет: он часть `test:run`. JSON-схемы `contracts/cycle30/*.schema.json` в CI **не**
   проверяются: сверку манифеста скриншотов со схемой делает человек при пересъёмке (`ajv-cli`), а форму манифеста в
   каждом прогоне держит vitest T30-15. Скрипты засева и съёмки CI не запускает.
+- **Время CI, цикл 36** (↪ таблицы «CI: до / после» в `docs/testing-isolation.md`; последняя строка — ✔ `gh run view`, только чтение):
+
+  | Что | `backend` | Функциональные | `frontend` | vitest | `docker-build` |
+  |---|---|---|---|---|---|
+  | До цикла, `develop` на `a1e2259`, три зелёных прогона | 462–597 с | 356–457 с | 169–228 с | 78–118 с | 128–135 с |
+  | Ветка цикла, P=2, предел классов 5, fsync off, **1 267 тестов** (прогон 36874566046) | 392 с | 273 с | 136 с | 59 с | 137 с |
+  | То же при P=4 (прогон 36875472098; не быстрее, оставлено P=2) | 401 с | 279 с | 206 с | 94 с | 135 с |
+  | **`f60da0d`, P=2, предел классов 4, 1 300 тестов** (прогон 36903494650, один прогон) | 518 с | 382 с | 194 с | 85 с | 138 с |
+
+  Джобы не разносились (DO-36-05 — по условию «`backend` дольше 9 минут» — не выполнялась). Защиты ветки `develop` нет
+  (`gh api …/branches/develop/protection` → 404 по записи в `docs/testing-isolation.md`), обязательных проверок нет, id джобов
+  `backend`/`frontend`/`docker-build` не менялись. ⚠️ На `f60da0d` функциональный шаг (382 с) уже выше порога предупреждения
+  350 с, который ставился от 273 с до влития цикла 35 (§9.6).
 
 ### 7.4 Деплой
 - `deploy-staging.yml` — ручной запуск, только ветка `develop`, окружение GitHub `staging`. Шаги: сборка фронта, SSH-ключ,
@@ -1667,6 +1800,90 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   предупреждение, боевой выкат не валится. ⚠️ Новый код демо **не стартует** со старым живым `.env.demo`, если там задан
   `DEMO_ALLOWED_ORIGINS` только с `demo.visit` или `DEMO_ORDERS_BASE_URL` не демо (замок п. 1a; CHANGELOG цикла 35, «Что стоит
   прочитать до выката»). На машине 🖥 ни один демо-стенд, по данным репозитория, не подтверждён развёрнутым.
+
+### 7.5 Тестовая инфраструктура и время прогона после цикла 36 (✔ по коду на `f60da0d`; времена ↪ из отчётов, ничего не запускалось)
+
+Описание для человека — `docs/testing-isolation.md` (разделы «Параллелизм», «Засеянный шаблон демо-базы», «Хосты тестов»,
+«Быстрый контур фронта», «Как это устроено в CI»). Ниже — что есть в коде.
+
+**Механизмы функционального набора (`ServiceBooking.Tests/Infrastructure/`, `ServiceBooking.TestKit/`).**
+- **`ClassConcurrencyGate`** — предел числа одновременно живых тест-классов. xUnit 2 ограничивает `maxParallelThreads` только
+  потоки, а не классы в работе (до цикла жило до 65 баз сразу). Слот берётся в `TestDatabaseFixture.InitializeAsync` до аренды
+  базы и возвращается в `DisposeAsync` после её удаления. Предел — `TestInfrastructure.ClassConcurrencyFor(P)` = **3 × P**
+  (`ClassConcurrencyFactor = 3`; локально 12), либо `SERVICEBOOKING_TEST_CLASS_CONCURRENCY`. Одно определение на гейт, проверку
+  бюджета в прогоне и `doctor`.
+- **`ClassHost` и ленивый хост** (`TestDatabaseFixture`): основной хост `fixture.Factory` — `Lazy<CustomWebApplicationFactory>`;
+  вторичные хосты — `fixture.ClassHost<TFactory>(key, create)`, один на класс, останавливаются до удаления базы; старт с ошибкой
+  кешируется. Правила, когда тесту всё же нужен свой хост, — §6.4.
+- **`HeavyFirstCollectionOrderer`** (`[assembly: TestCollectionOrderer]` в `AssemblyInfo.cs`): первыми стартуют коллекции
+  `Cycle28Demo`, `Cycle28DemoMutations`, `Cycle35DemoRead`, `Cycle35DemoMutA`, `Cycle35DemoMutB`, `Cycle35DemoReset`,
+  `DemoSeededGuard` и три класса генератора витрины (`Cycle28ShowcaseLifecycleTests`, `Cycle28ShowcaseFreshDeleteTests`,
+  `Cycle28ShowcaseContentTests`). Список зашит в коде; порядок тестов внутри класса по-прежнему случайный.
+- **Демо-базы**: `DemoDatabaseSlots` — **9 слотов** (`demo`, `m28_demo`, `r35_demo`, `a35_demo`, `b35_demo`, `x35_demo`,
+  `tpl_demo`, `g36_demo`, `k36_demo`); `TestDatabaseNaming` принимает имя `sbtest_<hex8>_<слот>` с необязательным хвостом `_demo`
+  (регулярное выражение `\Asbtest_[0-9a-f]{8}_[a-z][a-z0-9]{0,11}(_demo)?\z`). Классы одной коллекции делят свою демо-базу по
+  очереди, коллекции с разными базами идут параллельно. **`DemoGate`** (семафор в `TestRunEnvironment`) — не больше P демо-баз
+  одновременно; шаблон `tpl_demo` под гейт не попадает. Число слотов сверяется с `TestInfrastructure.DemoDatabaseSlotCount` на
+  старте прогона (расхождение — `TestSafetyException`).
+- **`DemoSeededTemplate`**: продуктовый сброс демо (`DemoResetService`, ~10 тысяч записей, 13–25 с) выполняется **один раз за
+  прогон**, лениво, под общей блокировкой, на явный момент `ResetAtUtc` в базу `tpl_demo`; сценарии получают базу клоном
+  (`CREATE DATABASE … TEMPLATE`) плюс копию опубликованных файлов; сбой сборки шаблона запоминается. Настоящий сброс вызывают
+  CY28-40/49/50/51, CY35-15/60/61 и тесты генератора витрины. Переменной-выключателя нет (`SERVICEBOOKING_TEST_SEEDED_TEMPLATE`
+  в коде не существует; шаблон включён всегда).
+- **Страж CY36-03** — `DemoSeededTemplateGuardTests.ClonedTemplate_HoldsTheSameRowsAndFiles_AsTheRealProductReset` (коллекция
+  `DemoSeededGuard`): настоящий сброс на тот же момент сверяется с клоном — число строк каждой таблицы, хеш детерминированных
+  столбцов ключевых таблиц, список файлов.
+- **Бюджет соединений**: `EnvStatus.RequiredConnectionsWithDemo` = `классы_гейта × 2 хоста × пул 8 + 4 + min(P, 9) × 8`; одна
+  формула для прогона и `TestKit doctor`. Локально (свой контейнер, `max_connections=300`, P=4): 12 × 16 + 4 + 32 = 228 при
+  безопасном пределе 270; CI (P=2, N=4, `max_connections=100`): 84 при пределе 90.
+- **Инструментирование** — `TestRunMetrics`: события `server-ready`, `template-ready`, `class-db-created`/`-dropped`, старты хоста по
+  фабрикам пишутся в `TestResults/sb-test-metrics-<runKey>.jsonl` (выключается `SERVICEBOOKING_TEST_METRICS=0`); журнал маршрутов —
+  только при `SERVICEBOOKING_TEST_ROUTE_LOG=1`. Каталог `TestResults/` в `.gitignore`.
+
+**Vitest (`frontend/`).** `pool: 'threads'` в `vitest.config.ts`; окружение по умолчанию осталось jsdom, но файлы без DOM несут
+первой строкой `// @vitest-environment node` (✔ grep: 86 из 94 файлов `*.test.ts`, плюс `src/test/setup.ts`; все `*.test.tsx` — на
+jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 20 нет глобального `navigator`). `npm run test:area` —
+`frontend/scripts/test-area.mjs` + `contracts/cycle36/test-areas.json`; guard **CY36-02** (`frontend/src/test/testAreas.guard.test.ts`,
+2 теста) падает на тест-файле вне областей.
+
+**Инструменты (python3/bash; codebase-analyst их не запускал).**
+- `tools/test-timing/measure.sh --label <метка> --runs N [--suites unit,functional,vitest] [--parallel P] [--seed S] [--route-log]
+  [--concurrent] [--with-build] [--force] [--out-dir] [--filter EXPR]` — результат в `TestResults/timing/<метка>/{report.json,report.md}`
+  (не в git; итоговые отчёты копируются в `tools/test-timing/results/`). Блокировка и отказ при чужом прогоне — §7.2.
+- `tools/test-timing/analyze.py`: `<dir> --out … --md …` (отчёт: фазы, топ классов, старты хоста по фабрикам и классам, простой
+  потоков и хвост, CPU Postgres, vitest), `--compare a.json b.json`, `--emit-durations`, **`--ci-summary <trx|vitest.json>…
+  [--metrics "<glob>"] --thresholds thresholds.json`** — Markdown в stdout и `::warning title=Slow tests::`, код выхода 0 (1 —
+  только ошибка разбора). Схема отчёта — `contracts/cycle36/timing-report.schema.json`.
+- `tools/test-timing/thresholds.json`: `functionalWallSecondsWarn` 350, `vitestWallSecondsWarn` 120, `classWallSecondsWarn` 60,
+  `testSecondsWarn` 10, `hostBootsPerClassWarn` 3, `unitWallSecondsWarn` 0.
+- `tools/test-audit/`: `inventory.py --suite {unit,functional,vitest} --out F.json` (нужна собранная сборка / `node_modules`),
+  `diff_inventory.py --suite S --before B --after A --registry TEST_CATALOG.md` (правило «после = до − реестр»; нарушение — код 4;
+  понимает строки `R36-B…`, `R36-F…`, `R36-M…`), `route_coverage.py --golden Cycle22RouteTable.golden.txt --before … --after …`
+  (потерянные маршруты — код 4; никогда не покрытые — только информация). `test_diff_inventory.py` — unit-тесты самой сверки
+  (шага в `ci.yml` для них нет ✔ grep). Снимки `before-*`/`after-*` сняты **до** влития цикла 35 и намеренно не переснимались.
+
+**Время функционального набора локально** (↪ `tools/test-timing/results/`; MacBook 8 ядер / 8 ГБ, colima 2 CPU / 4 ГБ, P=4, свой
+контейнер Postgres, сборка вне замера):
+
+| Этап | Коммит | Тестов | Wall функционального набора |
+|---|---|---|---|
+| До цикла (`b0-baseline`, медиана 3 прогонов) | `a1e2259` | 1 267 (1 красный) | **7:04** (весь регресс с unit и vitest — 7:33) |
+| После рычагов, до влития цикла 35 (`final`, медиана 3) | `6723a9f` | 1 267 | 3:10 (весь регресс — 3:31; прогоны стабильности 3:09–3:39) |
+| После влития цикла 35, демо без оптимизаций (`post-merge`, 3 прогона) | `8b1d54d` | 1 299 | **9:24–10:41** |
+| Демо-классы по своим демо-базам (`post-merge-2`, 3 прогона) | — | 1 299 | 7:07–7:18 |
+| Засеянный шаблон демо-базы (`post-merge-3`, 4 прогона; один красный — пересечение полуночи, §7.2) | — | 1 300 | 5:36–6:28 |
+| **Итог** (`pre-merge-s1`, `pre-merge-s2`) | `d64ba8a` | 1 300, все зелёные | **6:38 и 5:54** |
+
+- Итоговый диапазон по `post-merge-3` и `pre-merge` — **5:36–6:38**. Unit: 2,7–3,0 с. Vitest: 26,0 с → 17,9 с (`final`); после
+  влития цикла 35 vitest и unit отчётами не мерялись.
+- В итоговых прогонах: простой потоков 0 %, хвост 20–34 с, CPU контейнера Postgres — максимум 147–155 % при лимите 2 ядра (среднее
+  56 %), самый длинный класс — `BookingsFlowSmokeTests` (3:40–3:50 wall при полной загрузке), 202 старта хоста суммарно 4:16–5:00
+  (из них `CustomWebApplicationFactory` — 100 стартов, 2:32–2:54), 141 база класса.
+- **Цель по времени не достигнута.** В отчётах цель записана как «≤ 4:30»; в `SPEC.md` цикла 36 формулировка другая — «не более
+  50 % базовой линии (ориентир — не больше 5 минут)», числа 4:30 в `SPEC.md` и `ARCHITECTURE_CYCLE36.md` нет (✔ grep). Итог
+  5:36–6:38 не укладывается ни в одну из формулировок; причина по отчётам — упор в CPU (§9.6).
+- Покрытие маршрутов (↪ `post-merge-2.md`, `post-merge-3.md`): в эталоне `Cycle22RouteTable.golden.txt` 270 маршрутов, покрыто до
+  цикла 247, после — 247, потеряно 0; **23 маршрута не вызывает ни один функциональный тест** (§9.6).
 
 ---
 
@@ -2014,6 +2231,9 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   для `https://`-адреса, т. е. в автоматическом шаге выката — нет.
 - **C35-7 — preexisting флейк** `Cycle20SubjectRequestsTests.RegisterManually_DueDateComputedFromReceivedAt_NotFromNow`: зависит от
   дня недели запуска (единственное падение финального прогона цикла 35, 1 298/1 299). К циклу не относится.
+  **Закрыт в цикле 36** (✔ `11d27b3`, `f156d42`, `TEST_CATALOG.md` «Починено в ходе ревизии»): тест (CY20-SR-01) был красным по
+  четвергам — срок Access это 10 рабочих дней, а ожидание теста считало `AddDays(10)`; продукт (`WorkingDays.Add`) верен, исправлено
+  ожидание теста.
 - **C35-8 — расхождения схемы `contracts/cycle35/openapi.yaml` с реализацией** (✔ по файлам):
   - `DemoLoginRequest` объявлен с `additionalProperties: false`, а сервер (`record DemoLoginRequest(string? Role)`, глобального
     `UnmappedMemberHandling` в API нет) лишние поля молча игнорирует — тело с лишним полем по схеме недопустимо, а сервер отвечает 200;
@@ -2040,6 +2260,68 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - Не сделано по решению (не долг кода, для справки): магазин одежды из брифа (нет вариантов товара), «симулятор покупателя»
   (новые заказы днём сами не появляются), единый вход на два демо, ссылки на демо с боевых сайтов, отдельная редакция правовых
   документов для демо.
+
+### 9.6 Долг цикла 36 (ревизия и ускорение тестов) — ✔ по коду и документам на `f60da0d`, ничего не запускалось
+Источники: `TEST_CATALOG.md` (раздел цикла 36, «Долг цикла 36»), `tools/test-timing/results/*.md`, `docs/testing-isolation.md`,
+`ARCHITECTURE_CYCLE36.md`, постановка задачи этого обновления (пункты, которых нет в репозитории, помечены ↪).
+- **C36-0 — цель по времени не достигнута.** Функциональный набор локально 5:36–6:38 (1 300 тестов) при цели «≤ 4:30» из отчётов
+  (и «≤ 50 % базовой линии, ориентир ≤ 5 минут» из `SPEC.md`). По отчётам набор упёрся в CPU: простой потоков 0 %, хвост секунды,
+  Postgres до 155 % при лимите colima в 2 ядра. Самые тяжёлые классы — генератор витрины `Cycle28Showcase*` (282 с и 122 с wall),
+  `BookingsFlowSmokeTests` (3:40–3:50), `CompaniesTests`; сами сбросы демо (13–25 с, вставка ~10 тысяч записей — работа продукта)
+  тестовым кодом не ускоряются. До влития цикла 35 набор из 1 267 тестов шёл 3:10; разница с итогом (2,5–3,5 минуты wall)
+  приходится на 32 теста демо «Заказов» цикла 35 и стража CY36-03.
+- **C36-1** (↪ `TEST_CATALOG.md`) — `LegalPricingGateTests`: 7 × `Task.Delay(2500)` не заменены на `ReloadLegalNow()` (рычаг L5
+  пробован и откачен). С детерминированной перезагрузкой класс в случайном порядке падает с 451: записи согласий SuperAdmin лежат в
+  базе класса и не перезаписываются версией старше уже принятой. По записи в каталоге лечить нужно посев/сброс согласий между
+  тестами класса, а не ожидание.
+- **C36-2 (⚠️ исправлено в `TEST_CATALOG.md`/`CHANGELOG.md` при закрытии цикла: падал и при P=4) — флейк `NotificationDispatchExtraTests.Budget_InterruptedPass_…`** (тест с реальным бюджетом в 1 с; гонка между
+  проверкой и вторым проходом диспетчера). ⚠️ `TEST_CATALOG.md` пишет «упал один раз при P=8, при P=4 и P=6 не воспроизводился»,
+  но `tools/test-timing/results/final-stability.md` фиксирует падение этого же теста **при P=4** (семя 360005, `ownCallCount()` 3
+  вместо 2; повтор семени зелёный). Тест оставлен как есть.
+- **C36-3 — `LegalConsentVersionChangeTests.RegisterAsync` повторяет регистрацию при 409** (до 3 попыток; `8156a18`). Причина 409 —
+  фоновое перечитывание манифеста правовых текстов сервером между чтением версии и регистрацией; до правки это дало 2 красных прогона
+  в серии стабильности (`final-stability.md`). Повтор лечит тест, а не гонку: сам сервер в этой ситуации по-прежнему отвечает 409.
+- **C36-4 — 23 маршрута API не вызывает ни один функциональный тест** (270 в эталоне `Cycle22RouteTable.golden.txt`, покрыто 247;
+  ↪ `post-merge-2.md`). Долг старый: цикл его измерил, но не уменьшал и не увеличил (потеряно 0). Списка этих 23 маршрутов в
+  документах репозитория нет — его печатает `route_coverage.py` по журналам маршрутов (в git лежит только `before-routes.jsonl`).
+- **C36-5 — пороги `thresholds.json` (при закрытии цикла `functionalWallSecondsWarn` пересчитан: 305 с = 1,25 × медианы 243 с трёх последних зелёных прогонов, `docs/testing-isolation.md`).** Было:** `functionalWallSecondsWarn` = 350 поставлен как 1,25 × 273 с — времени шага
+  CI **до** влития цикла 35 и при пределе классов 5; пересчёт «по `ci-final`» (запись в `docs/testing-isolation.md`) не сделан. На
+  `f60da0d` шаг функциональных тестов в CI идёт 382 с (один прогон), то есть выше порога; джоб `backend` — 518 с (8:38) при условии
+  разнесения джобов «дольше 9 минут» и таймауте 20 минут. `unitWallSecondsWarn` = 0.
+- **C36-6 — не проверено после изменений цикла** (↪ постановка задачи; отметок о выполнении в репозитории нет): два одновременных
+  полных прогона из разных worktree (появились общие на процесс `ClassConcurrencyGate`/`DemoGate`, машинная блокировка
+  `measure.sh`, 9 демо-слотов; фраза «проверено на приёмке двумя одновременными прогонами» в `docs/testing-isolation.md` относится
+  к циклу 8) и запуск из Rider — ручной кейс **M36-01** (`ARCHITECTURE_CYCLE36.md` §36.13.5). Вердиктов M36-01/M36-02 в
+  `TEST_CATALOG.md` нет (✔ grep).
+- **C36-7 (в `TEST_CATALOG.md` и `CHANGELOG.md` та же запись названа C36-3: «области и быстрый контур бэкенда не реализованы»; guard CY36-01 из таблицы убран при закрытии цикла) — запланированное архитектурой, чего в коде нет** (✔ `ls`, grep), при том что документы местами пишут обратное:
+  - трейты `Area` на функциональных классах, `ServiceBooking.Tests/Infrastructure/TestAreas.cs` и guard **CY36-01**
+    `ServiceBooking.Tests/Tests/TestAreaCoverageTests.cs` (BE-36-09) — файлов нет, `Trait("Area"…)` в проекте нет. ⚠️ Таблица «Новые
+    guard-тесты цикла 36» в `TEST_CATALOG.md` перечисляет CY36-01 с путём к файлу, как существующий (`API_CONTRACT_CYCLE36.md` §36.29 требует эту строку).
+    Следствие: `dotnet test --filter "Area=…"` не работает, быстрый контур по областям есть только у фронта; M36-02 невыполним;
+  - быстрый хеш паролей в тестовых хостах (L3, `SERVICEBOOKING_TEST_FAST_HASH`) — переменной в коде нет; записи A/B-решения по L3 в
+    `TEST_CATALOG.md` и `docs/testing-isolation.md` не найдено;
+  - `ServiceBooking.Tests/test-durations.json` и `LongestFirstCollectionOrderer` (L7) — нет; вместо них `HeavyFirstCollectionOrderer`
+    с зашитым списком (новую тяжёлую коллекцию он сам не узнает); `analyze.py --emit-durations` остался без потребителя;
+  - разбиение длинных классов на вложенные partial-классы (L4) для `BookingsFlowSmokeTests`/`CompaniesTests` — не сделано (✔ они
+    остаются самыми длинными в итоговых отчётах).
+- **C36-8 (устранено при закрытии цикла: формула бюджета, таблицы времён и «CI: после», «46 с») — `docs/testing-isolation.md` противоречил себе и коду** (✔ по тексту):
+  - раздел «Параллелизм»: «бюджет соединений (`P × 2 × 8 + 4`) считается по P, а не по 3 × P» — и ниже в том же разделе (и в коде,
+    `RequiredConnectionsWithDemo`) бюджет считается по классам гейта плюс демо-базы;
+  - таблица «CI: после» и вывод под ней описывают предел классов 5 и 1 267 тестов; в `ci.yml` сейчас 4, тестов 1 300, итоговой строки
+    CI в документе нет;
+  - строка «46 с» в таблице «Что изменилось» — замер цикла 8.
+- **C36-9 — чувствительность демо-тестов к полуночи.** Данные засеянного шаблона датированы моментом его сборки; прогон через
+  местную полночь даёт красный `Cycle35DemoResetTests.Determinism_…` (↪ `post-merge-3.md`, наблюдалось один раз).
+- **C36-10 — `NTF-L001`** на общем хосте класса падает, причина не установлена (версия про буфер файлового приёмника Serilog не
+  подтверждена, `8b1d54d`); тесту оставлен свой хост.
+- **C36-11 — инструменты `tools/` без автоматической проверки.** `analyze.py` (630 строк), `measure.sh`, `inventory.py`,
+  `route_coverage.py` в CI не тестируются; `test_diff_inventory.py` есть, но шага для него в `ci.yml` нет. При этом шаг `Slow tests
+  summary` зависит от `analyze.py` (ошибка в нём даёт только `::warning::`, прогон не роняет).
+- **C36-12 — `Uploads:WindowMinutes` — продуктовый параметр, введённый ради тестов.** Заданный в конфигурации боя, он растянул бы окно
+  лимита загрузок (10 в минуту → 10 за N минут). Защита — только юнит `UploadsWindowTests.ShippedConfigs_DoNotSetTheWindow` по
+  поставляемым `appsettings*.json`; переменные окружения боевой машины 🖥 он не видит.
+- Снимки `tools/test-audit/results/after-*.json` сняты до влития цикла 35 (тесты цикла 35 закрыты строками `R36-M…` реестра, а не
+  пересъёмкой) — как точка отсчёта для следующей ревизии они устарели на 33 функциональных теста и 7 юнит-тестов.
 
 ---
 
@@ -2084,6 +2366,11 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - общие статьи: `accounts.md`, `personal-data.md`, `schedule.md`;
   - `faq.md` — частые вопросы и честный список ограничений.
 - Для команды в той же папке: `testing-isolation.md` (запуск тестов, colima, уборка) и `incident-runbook.md` (утечка ПДн).
+  **С цикла 36** `testing-isolation.md` (543 строки на `f60da0d`) дополнен: «Быстрый контур фронта (vitest)», «Сколько классов
+  живёт одновременно», «Засеянный шаблон демо-базы», «Хосты тестов (цикл 36)», новые переменные в таблице окружения, в разделе CI —
+  P одним числом, Postgres без долговечности, «Сводка медленных тестов», таблицы «CI: до» и «CI: после». Внутренние противоречия
+  документа — C36-8 (§9.6). Справки по инструментам — `tools/test-timing/README.md` и `tools/test-audit/README.md` (markdown,
+  команды, флаги, коды выхода).
 - **Руководства по goods.ezbook.ru нет.** Магазины упоминаются только в `docs/personal-data.md`.
 - ⚠️ `docs/master.md`, раздел «Уведомления о новых записях на телефон или компьютер» (строка ~270) описывает состояние
   **до** цикла 33: карточка на странице «Мои записи». С цикла 33 это раздел «Устройства и уведомления» в профиле, одно
@@ -2165,12 +2452,29 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
     устаревшая фраза про vhost — C35-13); «Ручные кейсы (T-35-02, гейт выката, не мержа)» — вердикт «НЕ ВЫПОЛНЕНО QA», таблица
     M35-01…06 (`Кейс | Шаги | Ожидаемый результат | Критерий | Вердикт`, все «не выполнен»). Ручные кейсы в архитектуре
     (`ARCHITECTURE_CYCLE35.md` §35.16.3) описаны словами без номеров; первоисточник номеров — каталог.
+  - **На `f60da0d`** (7 411 строк, ✔ `grep -n`): последним идёт **раздел «Цикл 36 — ревизия (реестр удалений и изменений)»**
+    (строка ~6806, после цикла 35), около 600 строк. Это не таблица кейсов, а **реестр ревизии**, его разбирает
+    `tools/test-audit/diff_inventory.py` (формат — `API_CONTRACT_CYCLE36.md` §36.29; правка формы таблиц ломает сверку). В нём:
+    легенда категорий А–Е; «Категории по файлам» (`Набор | Файл | Кат. | Примечание` — все файлы vitest, функциональных и юнит-тестов);
+    «Реестр — бэкенд» (пуст) и «Реестр — фронтенд» с колонками `№ | Набор | ID | Тест | Кат. | Действие | Причина | Замена / ссылка`
+    (R36-F001…F009); «Переименования классов»; «Долг цикла 36» (C36-1, C36-2); «Починено в ходе ревизии» (CY20-SR-01, CY31-23,
+    NTF-L001); «Пришло мерджем develop (цикл 35)» (R36-M001…M029); «Новые unit-тесты цикла 36» (R36-B900…B907, B950); «Новые
+    guard-тесты цикла 36» (CY36-01, CY36-02, CY36-03 — ⚠️ CY36-01 в коде нет, §9.6 C36-7). Ручных кейсов M36-01/02 (они описаны
+    только в `ARCHITECTURE_CYCLE36.md` §36.13.5) и вердиктов QA в разделе нет.
   - ↪ TD16-7: вердикты раздела «Цикл 16» устарели.
 - ID кейсов продублированы в коде атрибутом `[TestCase("CY26-01")]` на тестах `ServiceBooking.Tests`.
 - Ручные живые проверки выката — чек-листы в `DEPLOY.md` (§16 и шаги циклов).
 - Отдельного `TESTPLAN.md` или `docs/testing/` нет. Каталог сценариев — только `TEST_CATALOG.md`.
 
 ### 10.5 Документы циклов
+- **На `f60da0d`** (✔ `ls`, `head`, `wc -l`): корневой `SPEC.md` (303 строки) — спека **цикла 36** («ревизия регрессионных тестов и
+  ускорение полного прогона», отправная точка `a1e2259`); архивной копии `SPEC_CYCLE36_*.md` нет — по конвенции её сделает
+  следующий цикл (архивы предыдущих — `SPEC_CYCLE33_UNIFIED_NOTIFICATIONS_PROFILE.md` и `SPEC_CYCLE35_GOODS_DEMO_STAND.md` — в
+  корне лежат). Добавились `ARCHITECTURE_CYCLE36.md` (829 строк, §36.0–§36.17: рычаги L0–L13, задачи BE-36/FE-36/QA-36/DO-36, ручные
+  M36-01/02 — §36.13.5; часть запланированного не реализована, §9.6 C36-7), `API_CONTRACT_CYCLE36.md` (293 строки, §36.20–§36.29: HTTP API
+  не меняется; формы файлов метрик, журнала маршрутов, отчёта замера, инвентаря, областей, CLI инструментов и реестра ревизии) и `contracts/cycle36/` (JSON-схемы и `test-areas.json`, не OpenAPI).
+  Отчёты замеров — `tools/test-timing/results/*.md` (+ `.json`), снимки инвентаря — `tools/test-audit/results/`. В этом обновлении
+  ничего не переносилось: `docs/history/` нет, архив — суффиксы в корне.
 - **На `c28ccbb`** (✔ `ls`, `cmp`, `git ls-files`): корневой `SPEC.md` — спека **цикла 35** и **побайтно совпадает** с архивной копией
   `SPEC_CYCLE35_GOODS_DEMO_STAND.md` (426 строк; цикл сразу положил архивную копию, как цикл 34). Спека 33 заархивирована циклом 35 —
   `SPEC_CYCLE33_UNIFIED_NOTIFICATIONS_PROFILE.md`. Добавились `ARCHITECTURE_CYCLE35.md` (§35.0–§35.19, 921 строка; отклонения —

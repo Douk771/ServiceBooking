@@ -15,6 +15,10 @@ public sealed class TestClassDatabaseLease(string classSlot, string connectionSt
     public string ClassSlot { get; } = classSlot;
     public string ConnectionString { get; } = connectionString;
 
+    /// <summary>Имя базы класса (<c>sbtest_&lt;key&gt;_&lt;slot&gt;</c>) — берётся из строки подключения, хост для этого не нужен.</summary>
+    public string DatabaseName { get; } = new Npgsql.NpgsqlConnectionStringBuilder(connectionString).Database
+        ?? throw new ArgumentException("connectionString has no Database segment", nameof(connectionString));
+
     private int _dropped;
 
     public async Task DropAsync(CancellationToken cancellationToken = default)
@@ -85,6 +89,11 @@ public static class TestRunEnvironment
     private static readonly SemaphoreSlim EnvironmentGate = new(1, 1);
     private static readonly SemaphoreSlim DropGate = new(1, 1);
 
+    /// <summary>At most P demo databases (one host, one pool each) alive together: what the connection budget assumes. The template of the seeded demo is not counted (no host after its build).</summary>
+    private static readonly SemaphoreSlim DemoGate = new(TestParallelism.MaxParallelThreads, int.MaxValue);
+
+    private static bool IsGatedDemoSlot(string slot) => slot.EndsWith("demo", StringComparison.Ordinal) && slot != DemoDatabaseSlots.Template;
+
     private static TestServerLease? _server;
     private static TestDatabaseLease? _databases;
     private static bool _bannerPrinted;
@@ -98,7 +107,22 @@ public static class TestRunEnvironment
     /// <summary>Ensures the server/template exist (creating them on the very first call across the whole
     /// process), then clones and returns this class' own database. Call exactly once per
     /// <see cref="TestDatabaseFixture"/>, from <see cref="IAsyncLifetime.InitializeAsync"/>.</summary>
-    public static async Task<TestClassDatabaseLease> LeaseClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default)
+    public static async Task<TestClassDatabaseLease> LeaseClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default, string? sourceSlot = null)
+    {
+        var gatedDemo = IsGatedDemoSlot(classSlot);
+        if (gatedDemo) await DemoGate.WaitAsync(cancellationToken);
+        try
+        {
+            return await LeaseClassDatabaseCoreAsync(classSlot, cancellationToken, sourceSlot);
+        }
+        catch
+        {
+            if (gatedDemo) DemoGate.Release();
+            throw;
+        }
+    }
+
+    private static async Task<TestClassDatabaseLease> LeaseClassDatabaseCoreAsync(string classSlot, CancellationToken cancellationToken, string? sourceSlot)
     {
         var databases = await EnsureEnvironmentAsync(cancellationToken);
 
@@ -107,7 +131,9 @@ public static class TestRunEnvironment
         // "connection limit exceeded" 300 tests into a run is expensive to diagnose; this is not.
         await EnsureConnectionBudgetCheckedOnceAsync(cancellationToken);
 
-        var databaseName = await databases.CreateClassDatabaseAsync(classSlot, cancellationToken);
+        var createWatch = System.Diagnostics.Stopwatch.StartNew();
+        var databaseName = await databases.CreateClassDatabaseAsync(classSlot, cancellationToken, sourceSlot);
+        TestRunMetrics.ClassDb("class-db-created", classSlot, createWatch.Elapsed.TotalMilliseconds);
         var connectionString = databases.ConnectionStringFor(classSlot);
         Console.WriteLine($"[sb-test] class-db slot={classSlot} db={databaseName}");
         return new TestClassDatabaseLease(classSlot, connectionString);
@@ -120,11 +146,27 @@ public static class TestRunEnvironment
     /// class' <see cref="LeaseClassDatabaseAsync"/> from starting.</summary>
     internal static async Task ReleaseClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default)
     {
+        try
+        {
+            await DropClassDatabaseCoreAsync(classSlot, cancellationToken);
+        }
+        finally
+        {
+            if (IsGatedDemoSlot(classSlot)) DemoGate.Release();
+        }
+    }
+
+    private static async Task DropClassDatabaseCoreAsync(string classSlot, CancellationToken cancellationToken)
+    {
         await DropGate.WaitAsync(cancellationToken);
         try
         {
             if (_databases is not null)
+            {
+                var dropWatch = System.Diagnostics.Stopwatch.StartNew();
                 await _databases.DropClassDatabaseAsync(classSlot, cancellationToken);
+                TestRunMetrics.ClassDb("class-db-dropped", classSlot, dropWatch.Elapsed.TotalMilliseconds);
+            }
         }
         finally
         {
@@ -152,9 +194,16 @@ public static class TestRunEnvironment
             {
                 try
                 {
+                    var serverWatch = System.Diagnostics.Stopwatch.StartNew();
                     _server = await TestServerLease.AcquireAsync(cancellationToken);
+                    TestRunMetrics.RunStart(
+                        _server.Mode == TestServerMode.Container ? "container" : "external",
+                        TestParallelism.MaxParallelThreads);
+                    TestRunMetrics.Timed("server-ready", serverWatch.Elapsed.TotalMilliseconds);
                     _databases = new TestDatabaseLease(_server);
+                    var templateWatch = System.Diagnostics.Stopwatch.StartNew();
                     await _databases.EnsureTemplateAsync(MigrateTemplateAsync, cancellationToken);
+                    TestRunMetrics.Timed("template-ready", templateWatch.Elapsed.TotalMilliseconds);
                     PrintBanner(_server);
                     RegisterProcessExitTeardown();
                 }
@@ -236,7 +285,14 @@ public static class TestRunEnvironment
         // T9 review (M4): was `maxParallelThreads * 2 * TestInfrastructure.PoolMaxSize + 4` typed out here
         // a second time, next to an identical literal in EnvStatus.RequiredConnections — despite both
         // copies' comments claiming "no number duplicated". Now the one formula EnvStatus exposes.
-        var required = EnvStatus.RequiredConnections(maxParallelThreads, hostsPerClass, TestInfrastructure.PoolMaxSize);
+        // Cycle 36 review (N4): connections are held by the classes inside ClassConcurrencyGate (3 x P by default, or SERVICEBOOKING_TEST_CLASS_CONCURRENCY) and by the
+        // demo databases, which are leased outside the gate but through DemoGate: at most P of them at once, one host and one pool each. The template of the seeded demo
+        // is built once and has no host afterwards. The same formula is used by `doctor` (EnvStatus.RequiredConnectionsWithDemo).
+        if (DemoDatabaseSlots.All.Length != TestInfrastructure.DemoDatabaseSlotCount)
+            throw new TestSafetyException($"[sb-test] DemoDatabaseSlots.All has {DemoDatabaseSlots.All.Length} slots, TestInfrastructure.DemoDatabaseSlotCount says {TestInfrastructure.DemoDatabaseSlotCount}: the connection budget would be wrong.");
+        var concurrentClasses = ClassConcurrencyGate.EffectiveLimit;
+        var concurrentDemoDatabases = Math.Min(maxParallelThreads, DemoDatabaseSlots.All.Length);
+        var required = EnvStatus.RequiredConnectionsWithDemo(maxParallelThreads, concurrentClasses, DemoDatabaseSlots.All.Length, hostsPerClass, TestInfrastructure.PoolMaxSize);
 
         await using var connection = new Npgsql.NpgsqlConnection(_server.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken);
@@ -260,7 +316,7 @@ public static class TestRunEnvironment
 
         throw new TestSafetyException(
             "[sb-test] Отказ: бюджет соединений не сходится.\n" +
-            $"  Параллелизм P={maxParallelThreads}, пул на хост={TestInfrastructure.PoolMaxSize}, хостов на класс=2 " +
+            $"  Параллелизм P={maxParallelThreads}, классов одновременно={concurrentClasses} (+ демо-баз {concurrentDemoDatabases}), пул на хост={TestInfrastructure.PoolMaxSize}, хостов на класс=2 " +
             $"→ нужно {required} соединений.\n" +
             $"  Сервер отдаёт max_connections={maxConnections}, безопасный предел {safeLimit:F0}.\n" +
             "  Что сделать (любое из):\n" +

@@ -22,7 +22,8 @@ namespace ServiceBooking.Tests.Tests;
 /// against the implementation — see each test's own <c>TestCase</c> id / comment for which US-14-xx it
 /// proves.
 ///
-/// Every test that needs the subsystem actually ENABLED uses its own <see cref="PhoneVerificationEnabledFactory"/>
+/// Every test that needs the subsystem actually ENABLED uses the class' <see cref="PhoneVerificationEnabledFactory"/>
+/// (<c>Fixture.ClassHost("phv", …)</c>, cycle 36 L1; the recording bot client is cleared by tests that assert on it)
 /// against this class' own database (same pattern as <c>PushEnabledFactory</c>/<c>NotificationTestFactory</c>)
 /// — <see cref="Factory"/> itself stays on the Testing default (<c>PhoneVerification:Provider = "stub"</c>),
 /// which is exactly what the "disabled by default" tests below need.
@@ -67,7 +68,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
         // Needs the subsystem enabled — otherwise a bad phone and a disabled subsystem would both be a
         // rejection and this test couldn't tell which one actually fired (US-14-01's own criterion:
         // "действие недоступно и объяснено почему").
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var response = await enabled.CreateClient().PostAsJsonAsync(
             "/api/phone-verification/sessions", new StartPhoneVerificationRequestDto("not-a-phone"));
 
@@ -81,7 +82,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-010")]
     public async Task StartSession_Enabled_ReturnsDeepLinkQrAndShortOpaquePayload()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var phone = UniquePhone();
 
         var response = await enabled.CreateClient().PostAsJsonAsync(
@@ -100,7 +101,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-011")]
     public async Task GetSession_WrongStatusToken_Returns404NotTheRealStatus()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var client = enabled.CreateClient();
         var created = await StartAsync(client, UniquePhone());
 
@@ -111,7 +112,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-012")]
     public async Task GetSession_UnknownId_Returns404()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var response = await enabled.CreateClient().GetAsync($"/api/phone-verification/sessions/{Guid.NewGuid()}?statusToken=whatever");
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -119,7 +120,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-013")]
     public async Task CancelSession_AlwaysReturns204_EvenForGarbageIds()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var client = enabled.CreateClient();
         var created = await StartAsync(client, UniquePhone());
 
@@ -136,7 +137,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-014")]
     public async Task BotStarted_UnknownPayload_DoesNothingAndStaysSilentlySafe()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var client = enabled.CreateClient();
         var created = await StartAsync(client, UniquePhone());
 
@@ -150,7 +151,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-015")]
     public async Task BotStarted_SentTwice_IsIdempotent_DoesNotBreakTheSession()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var client = enabled.CreateClient();
         var created = await StartAsync(client, UniquePhone());
         var payload = ExtractPayload(created.DeepLink);
@@ -167,7 +168,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-016")]
     public async Task Webhook_WrongToken_Returns404_NeverProcessesTheBody()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var client = enabled.CreateClient();
 
         var response = await client.PostAsJsonAsync(
@@ -181,7 +182,8 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-020")]
     public async Task HappyPath_LinkAndValidOwnContact_VerifiesAndFeedsRegistration()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
+        enabled.RecordingClient.Reset();
         var client = enabled.CreateClient();
         var phone = UniquePhone();
         var created = await StartAsync(client, phone);
@@ -233,7 +235,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     {
         // US-14-04's headline scenario: a valid signature alone must NEVER be enough — the platform also
         // proves the contact belongs to whoever sent it.
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var client = enabled.CreateClient();
         var victimPhone = UniquePhone();
         var created = await StartAsync(client, victimPhone);
@@ -255,7 +257,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     public async Task OwnContact_TamperedSignature_IsRejected()
     {
         // The second half of US-14-04: contact IS the sender's own, but the HMAC does not check out.
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var client = enabled.CreateClient();
         var phone = UniquePhone();
         var created = await StartAsync(client, phone);
@@ -277,7 +279,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     {
         // US-14-05: everything checks out except the number itself does not match what was typed on
         // the site.
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var client = enabled.CreateClient();
         var formPhone = UniquePhone();
         var actualContactPhone = UniquePhone();
@@ -301,7 +303,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-024")]
     public async Task Contact_NoUsablePhone_IsRejectedAsNoPhoneInContact()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var client = enabled.CreateClient();
         var phone = UniquePhone();
         var created = await StartAsync(client, phone);
@@ -323,7 +325,8 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-025")]
     public async Task Ceiling_FourthDistinctPhoneFromSameMaxAccount_IsRejected_TextDoesNotRevealOthers()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
+        enabled.RecordingClient.Reset();
         var client = enabled.CreateClient();
         const string sameMaxSenderId = "ceiling-account-1";
 
@@ -419,7 +422,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-032")]
     public async Task ChangePhone_NewNumberHasGuestBookings_SubsystemEnabled_RequiresVerification_ThenSucceeds()
     {
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
 
         var userPhone = UniquePhone();
         var registerResponse = await enabled.CreateClient().PostAsJsonAsync("/api/auth/register", new RegisterDto(
@@ -467,7 +470,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
         // US-14-11 + US-14-14/US-14-15: verify from profile, confirm the badge/personnel signal is on,
         // then change to a fresh (no guest bookings) number and confirm the mark is gone immediately —
         // not "eventually", and visible both to the user's own profile and to company staff.
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
 
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
@@ -583,7 +586,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
         // test names the property directly: the diagnostics endpoint (SuperAdmin-only, unrelated to
         // billing) is reachable without any billing wiring, and Register's phoneVerified field does not
         // require EffectivePlan/LegalOptionGuards to be evaluated.
-        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var enabled = Fixture.ClassHost("phv", cs => new PhoneVerificationEnabledFactory(cs));
         var phone = UniquePhone();
         var client = enabled.CreateClient();
         var created = await StartAsync(client, phone);
@@ -622,7 +625,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            TestHostSettings.Apply(builder, "startup-qa9", connectionString);
+            TestHostSettings.Apply(builder, "startup-qa9", connectionString, factoryType: GetType().Name);
             builder.UseSetting("PhoneVerification:Provider", "definitely-not-a-real-provider");
         }
     }

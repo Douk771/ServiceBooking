@@ -39,7 +39,7 @@ public sealed class CompanyAddressTestFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        Identity = TestHostSettings.Apply(builder, "addr", _connectionString);
+        Identity = TestHostSettings.Apply(builder, "addr", _connectionString, factoryType: GetType().Name);
 
         if (_permitLimit is { } limit)
         {

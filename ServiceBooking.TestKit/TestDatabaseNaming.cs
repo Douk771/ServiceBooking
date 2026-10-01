@@ -14,8 +14,10 @@ public static class TestDatabaseNaming
     // \A...\z (not ^...$): in .NET, "$" matches immediately before a trailing '\n', so a name like
     // "sbtest_a3f19c7b_api\n" used to pass this check (review finding N1) even though it is not a
     // valid Postgres identifier and was never something CREATE/DROP DATABASE actually produced.
+    // Cycle 36: besides the plain slot, a demo variant "<variant>_demo" (several demo databases at once; the demo mode demands a name ending with "_demo").
+    // The prefix, the 8-hex run key and the rest of the pattern are unchanged, so no production name can pass.
     private static readonly Regex DisposableNamePattern =
-        new(@"\Asbtest_[0-9a-f]{8}_[a-z][a-z0-9]{0,11}\z", RegexOptions.Compiled);
+        new(@"\Asbtest_[0-9a-f]{8}_[a-z][a-z0-9]{0,11}(_demo)?\z", RegexOptions.Compiled);
 
     public static readonly string[] NeverDrop =
         ["postgres", "template0", "template1", "servicebooking", "servicebooking_test"];
