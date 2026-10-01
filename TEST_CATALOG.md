@@ -7389,6 +7389,17 @@ Vitest разработчиков (не пересобирались QA): раз
 | R36-M028 | functional | — | `ServiceBooking.Tests.Tests.Cycle28DemoContractTests.DemoStatusLoginRestrictedAndResetting_MatchTheCycle28Contract` | Е | переименован | переименован в цикле 35 (develop) | `ServiceBooking.Tests.Tests.Cycle28DemoContractTests.DemoStatusLoginRestrictedAndResetting_MatchTheCycle35Contract` |
 | R36-M029 | vitest | — | `src/utils/demoRoles.test.ts::demoRoleHome (API_CONTRACT_CYCLE28.md §598) > sends each demo role to its own start screen` | Е | переименован | переименован в цикле 35 (develop) | `src/utils/demoRoles.test.ts (см. строку файла)` |
 
+### Новые unit-тесты цикла 36 (после влития develop)
+
+| № | Набор | ID | Тест | Кат. | Действие | Причина | Замена |
+|---|---|---|---|---|---|---|---|
+| R36-B900 | unit | — | `ServiceBooking.UnitTests.TestDatabaseNamingTests.EnsureOwnedByThisRun_reads_the_run_key_of_a_variant_demo_name` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+| R36-B901 | unit | — | `ServiceBooking.UnitTests.TestDatabaseNamingTests.IsDisposable_accepts_the_demo_slot_and_a_variant_demo_slot` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+| R36-B902 | unit | — | `ServiceBooking.UnitTests.TestDatabaseNamingTests.IsDisposable_rejects_malformed_demo_names` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+| R36-B903 | unit | — | `ServiceBooking.UnitTests.UploadsWindowTests.ShippedConfigs_DoNotSetTheWindow` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+| R36-B904 | unit | — | `ServiceBooking.UnitTests.UploadsWindowTests.Window_FromTheSetting_IsTakenButNeverBelowOneMinute` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+| R36-B905 | unit | — | `ServiceBooking.UnitTests.UploadsWindowTests.Window_WithoutTheSetting_IsOneMinute` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+
 ### Новые guard-тесты цикла 36
 
 | ID | Где | Что проверяет |
