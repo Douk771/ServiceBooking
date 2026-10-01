@@ -7375,8 +7375,8 @@ Vitest разработчиков (не пересобирались QA): раз
 | R36-M014 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoLocksTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
 | R36-M015 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoMutationATests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop; в цикле 36 класс сценариев разбит на читающие (общий сброс) и меняющие (`Cycle35DemoMutationATests`), тесты те же | — |
 | R36-M016 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoMutationBTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop; в цикле 36 класс сценариев разбит на читающие (общий сброс) и меняющие (`Cycle35DemoMutationBTests`), тесты те же | — |
-| R36-M017 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoMutationCTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop; в цикле 36 класс сценариев разбит на читающие (общий сброс) и меняющие (`Cycle35DemoMutationCTests`), тесты те же | — |
-| R36-M018 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoScenarioTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop; в цикле 36 класс сценариев разбит на читающие (общий сброс) и меняющие (три класса `Cycle35DemoMutation{A,B,C}Tests`, у каждого коллекция и своя демо-база), тесты те же | — |
+| R36-M017 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoResetTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop; в цикле 36 класс сценариев разбит на читающие (общий сброс) и меняющие (`Cycle35DemoResetTests`), тесты те же | — |
+| R36-M018 | functional | — | `ServiceBooking.Tests.Tests.Cycle35DemoScenarioTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop; в цикле 36 класс сценариев разбит на читающие (общий сброс) и меняющие (классы `Cycle35DemoMutation{A,B}Tests` (демо из засеянного шаблона) и `Cycle35DemoResetTests` (CY35-15/60/61, настоящий сброс), у каждого коллекция и своя демо-база), тесты те же | — |
 | R36-M019 | functional | — | `ServiceBooking.Tests.Tests.Cycle35OffDemoTests` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
 | R36-M020 | functional | — | `ServiceBooking.Tests.Tests.OpenApiContractValidatorTests.Bundled_contracts_load_and_unknown_path_is_reported` | Е | пришло мерджем develop | develop добавил в тест контракт cycle35 (запусков 2 -> 3) | — |
 | R36-M021 | vitest | — | `goods/src/demo.test.tsx` | Е | пришло мерджем develop | тесты цикла 35, влиты мерджем develop | — |
@@ -7399,6 +7399,7 @@ Vitest разработчиков (не пересобирались QA): раз
 | R36-B903 | unit | — | `ServiceBooking.UnitTests.UploadsWindowTests.ShippedConfigs_DoNotSetTheWindow` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
 | R36-B904 | unit | — | `ServiceBooking.UnitTests.UploadsWindowTests.Window_FromTheSetting_IsTakenButNeverBelowOneMinute` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
 | R36-B905 | unit | — | `ServiceBooking.UnitTests.UploadsWindowTests.Window_WithoutTheSetting_IsOneMinute` | Е | добавлен (замена) | новый unit-тест цикла 36 (демо-слоты в TestDatabaseNaming / окно uploads) | см. «Новые guard-тесты цикла 36» |
+| R36-B950 | functional | CY36-03 | `ServiceBooking.Tests.Tests.DemoSeededTemplateGuardTests.ClonedTemplate_HoldsTheSameRowsAndFiles_AsTheRealProductReset` | Е | добавлен (замена) | страж засеянного шаблона демо-базы: клон сравнивается с настоящим продуктовым сбросом | см. «Новые guard-тесты цикла 36» |
 
 ### Новые guard-тесты цикла 36
 
@@ -7406,3 +7407,4 @@ Vitest разработчиков (не пересобирались QA): раз
 |---|---|---|
 | CY36-01 | `ServiceBooking.Tests/Tests/TestAreaCoverageTests.cs` (BE-36-09) | на каждом функциональном классе с тестами есть трейт `Area` с допустимым id |
 | CY36-02 | `frontend/src/test/testAreas.guard.test.ts` (FE-36-03) | каждый `*.test.ts(x)` входит хотя бы в одну область |
+| CY36-03 | `ServiceBooking.Tests/Tests/DemoSeededTemplateGuardTests.cs` | клон засеянного шаблона демо-базы = настоящий сброс (строки каждой таблицы, личность магазинов и демо-людей, файлы) |
