@@ -23,9 +23,18 @@ public enum ShowcasePlanKind { Create, Recreate, Delete }
 /// (<see cref="HostArgs"/>), so that an operator can still override a setting for one run. <c>--yes</c> confirms a changing command.
 /// Anything else after <c>ops</c> is either the command or an error (exit code 64, help text).
 /// </summary>
-public sealed record OpsCommandLine(OpsAction? Action, ShowcasePlanKind? PlanOf, bool Confirmed, string[] HostArgs, string? Error)
+public sealed record OpsCommandLine(
+    OpsAction? Action, ShowcasePlanKind? PlanOf, bool Confirmed, string[] HostArgs, string? Error, string? Profile = null)
 {
     public const int ExitUnknownCommand = 64;
+
+    /// <summary>The value of <c>--profile</c> for the profile of the demo stand (ARCHITECTURE_CYCLE35.md §35.9.6).</summary>
+    public const string DemoProfile = "demo";
+
+    public const string ProdProfile = "prod";
+
+    /// <summary>The answer of <c>showcase create|recreate|delete --profile demo</c> (exit code 2): the demo profile is created by the reset of the demo only.</summary>
+    public const string DemoProfileRefusal = "Профиль demo создаётся только сбросом демо: ops demo reset";
 
     public const string Help = """
         Использование: dotnet ServiceBooking.API.dll ops <команда> [--yes]
@@ -33,6 +42,7 @@ public sealed record OpsCommandLine(OpsAction? Action, ShowcasePlanKind? PlanOf,
           tariffs plan                          показать, какие тарифы «Записи» будут созданы (ничего не меняет)
           tariffs apply                         создать недостающие тарифы (существующие не трогает)
           showcase plan [create|recreate|delete]  показать, что будет создано / удалено (ничего не меняет)
+          showcase plan --profile demo          показать, что создаст сброс демо (обе строки: салоны и магазины «Заказов»; ничего не меняет)
           showcase create [--yes]               создать витрину (без --yes только план)
           showcase recreate [--yes]             удалить помеченное и создать заново
           showcase delete [--yes]               удалить всё помеченное как витрина, включая файлы
@@ -50,13 +60,27 @@ public sealed record OpsCommandLine(OpsAction? Action, ShowcasePlanKind? PlanOf,
         var words = new List<string>();
         var hostArgs = new List<string>();
         var confirmed = false;
+        string? profile = null;
+        var expectProfileValue = false;
         foreach (var token in args.Skip(1))
         {
-            if (string.Equals(token, "--yes", StringComparison.OrdinalIgnoreCase)) confirmed = true;
+            if (expectProfileValue)
+            {
+                profile = token.ToLowerInvariant();
+                expectProfileValue = false;
+            }
+            else if (string.Equals(token, "--yes", StringComparison.OrdinalIgnoreCase)) confirmed = true;
+            else if (string.Equals(token, "--profile", StringComparison.OrdinalIgnoreCase)) expectProfileValue = true;
+            else if (token.StartsWith("--profile=", StringComparison.OrdinalIgnoreCase)) profile = token["--profile=".Length..].ToLowerInvariant();
             else if (token.StartsWith("--", StringComparison.Ordinal) && token.Contains('=')) hostArgs.Add(token);
             else if (token.StartsWith('-')) return Fail($"Неизвестный параметр: {token}");
             else words.Add(token.ToLowerInvariant());
         }
+
+        if (expectProfileValue) return Fail("Параметр --profile требует значение: prod или demo.");
+        if (profile is not null && profile is not (ProdProfile or DemoProfile)) return Fail($"Неизвестный профиль: {profile} (есть prod и demo).");
+        // The profile belongs to the showcase commands only; the others would silently ignore it.
+        if (profile is not null && words is not (["showcase", ..])) return Fail("Параметр --profile относится только к командам showcase.");
 
         return words switch
         {
@@ -74,7 +98,7 @@ public sealed record OpsCommandLine(OpsAction? Action, ShowcasePlanKind? PlanOf,
             _ => Fail($"Неизвестная команда: {string.Join(' ', words)}"),
         };
 
-        OpsCommandLine Ok(OpsAction action, ShowcasePlanKind? planOf = null) => new(action, planOf, confirmed, hostArgs.ToArray(), null);
-        OpsCommandLine Fail(string error) => new(null, null, confirmed, hostArgs.ToArray(), error);
+        OpsCommandLine Ok(OpsAction action, ShowcasePlanKind? planOf = null) => new(action, planOf, confirmed, hostArgs.ToArray(), null, profile);
+        OpsCommandLine Fail(string error) => new(null, null, confirmed, hostArgs.ToArray(), error, profile);
     }
 }

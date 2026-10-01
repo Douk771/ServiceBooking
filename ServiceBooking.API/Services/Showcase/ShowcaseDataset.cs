@@ -199,6 +199,10 @@ public static class ShowcaseDataset
         if (profile.Reviews) BuildReviews(graph, profile, nowUtc, demoClient);
         if (profile.ClientNotes) BuildClientNotes(graph, profile, nowUtc);
 
+        // ARCHITECTURE_CYCLE35.md §35.9.1 — the shops of «Заказы» come LAST: their people take the phones after every salon one and their rows are
+        // appended after every salon row, so the salon part of the demo (and the whole production showcase) is byte-for-byte what it was before.
+        if (profile.Shops) ShowcaseShopsDataset.Build(graph, profile, phones, nowUtc);
+
         return graph;
     }
 
@@ -216,7 +220,7 @@ public static class ShowcaseDataset
         return (first, female ? surname.Female : surname.Male);
     }
 
-    private static AppUser NewUser(ShowcaseGraph graph, ShowcasePhones phones, string profile, string key, string first, string last, DateTime createdAtUtc, string role)
+    internal static AppUser NewUser(ShowcaseGraph graph, ShowcasePhones phones, string profile, string key, string first, string last, DateTime createdAtUtc, string role)
     {
         var phone = phones.Next();
         var id = ShowcaseIds.For(profile, "user", key).ToString();

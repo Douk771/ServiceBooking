@@ -38,9 +38,12 @@ public class ShowcaseGenerator(
     public (int Photos, int Files) CountAssets(ShowcaseGraph graph)
     {
         var photoKeys = graph.PhotoKeysByCompany.Values.SelectMany(k => k).ToList();
-        var allKeys = photoKeys.Concat(graph.LogoKeyByCompany.Values).Concat(graph.ServiceImageKeys.Values);
+        var allKeys = photoKeys.Concat(graph.LogoKeyByCompany.Values).Concat(graph.ServiceImageKeys.Values).Concat(graph.ProductImageKeys.Values);
         return (photoKeys.Count(assets.IsAvailable), assets.CountFiles(allKeys));
     }
+
+    /// <summary>How many products have a picture that is in the manifest and on disk (the <c>productImages</c> figure of the report, API_CONTRACT_CYCLE35.md §35.26).</summary>
+    public int CountProductImages(ShowcaseGraph graph) => graph.ProductImageKeys.Values.Count(assets.IsAvailable);
 
     /// <summary>Names of the files in <c>uploads/showcase/</c> that the rows written by <see cref="PersistAsync"/> point at.</summary>
     public IReadOnlySet<string> PublishedFileNames => assets.PublishedFileNames;
@@ -50,6 +53,8 @@ public class ShowcaseGenerator(
     {
         await EnsureRolesAsync();
         await tariffSeeder.EnsureShowcasePlanAsync(ct);
+        // ARCHITECTURE_CYCLE35.md §35.3.3: the hidden tariff of the demo shops only when there are shops, so that the production command never creates it.
+        if (graph.HasShops) await tariffSeeder.EnsureOrdersShowcasePlanAsync(ct);
         db.ChangeTracker.Clear();
 
         var roleIds = await db.Roles.Where(r => RoleNames.Contains(r.Name!)).ToDictionaryAsync(r => r.Name!, r => r.Id, ct);
@@ -64,6 +69,8 @@ public class ShowcaseGenerator(
             foreach (var (companyId, key) in graph.LogoKeyByCompany) logos[companyId] = await assets.PublishAsync(key, ct);
             var serviceImages = new Dictionary<string, PublishedShowcaseAsset?>(StringComparer.Ordinal);
             foreach (var key in graph.ServiceImageKeys.Values.Distinct()) serviceImages[key] = await assets.PublishAsync(key, ct);
+            var productImages = new Dictionary<string, PublishedShowcaseAsset?>(StringComparer.Ordinal);
+            foreach (var key in graph.ProductImageKeys.Values.Distinct()) productImages[key] = await assets.PublishAsync(key, ct);
             var photos = new List<CompanyPhoto>();
             foreach (var company in graph.Companies)
             {
@@ -95,6 +102,12 @@ public class ShowcaseGenerator(
             }
             foreach (var service in graph.Services)
                 service.ImageUrl = serviceImages[graph.ServiceImageKeys[service.Id]]?.Url;
+            foreach (var product in graph.Products)
+                if (graph.ProductImageKeys.TryGetValue(product.Id, out var imageKey) && productImages[imageKey] is { } image)
+                {
+                    product.ImageUrl = image.Url;
+                    product.ThumbnailUrl = image.ThumbnailUrl ?? image.Url;
+                }
 
             await SaveAsync(graph.Users, ct);
             await SaveAsync(graph.UserRoles.Select(r => new IdentityUserRole<string> { UserId = r.UserId, RoleId = roleIds[r.RoleName] }).ToList(), ct);
@@ -114,7 +127,22 @@ public class ShowcaseGenerator(
             // The demo profile only (US-28-13): empty lists for the production showcase.
             await SaveAsync(graph.Reviews, ct);
             await SaveAsync(graph.ClientNotes, ct);
-            logger.LogInformation("showcase create: {Counts} reviews={Reviews} clientNotes={Notes}", graph.Counts(photos.Count), graph.Reviews.Count, graph.ClientNotes.Count);
+            // The shops of «Заказы» (the demo profile only, §35.9.1), in the order of the foreign keys. Empty lists for the production showcase.
+            await SaveAsync(graph.ShopSettings, ct);
+            await SaveAsync(graph.ProductCategories, ct);
+            await SaveAsync(graph.Products, ct);
+            await SaveAsync(graph.DailyMenus, ct);
+            await SaveAsync(graph.DailyMenuItems, ct);
+            await SaveAsync(graph.SpecialDays, ct);
+            await SaveAsync(graph.OrdersSubscriptions, ct);
+            await SaveAsync(graph.Orders, ct);
+            await SaveAsync(graph.OrderItems, ct);
+            await SaveAsync(graph.OrderEvents, ct);
+            await SaveAsync(graph.OrderDailyCounters, ct);
+            await SaveAsync(graph.OrderMonthlyUsages, ct);
+            await SaveAsync(graph.ShopCustomerNotes, ct);
+            logger.LogInformation("showcase create: {Counts} reviews={Reviews} clientNotes={Notes}; shops: {OrdersCounts}",
+                graph.Counts(photos.Count), graph.Reviews.Count, graph.ClientNotes.Count, graph.OrdersCounts(CountProductImages(graph)));
         }
         finally
         {

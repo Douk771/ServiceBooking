@@ -492,6 +492,9 @@ public class AdminBillingController(
             plan = await db.SubscriptionPlanConfigs.FindAsync(dto.PlanId.Value);
             if (plan is null) return NotFound("Тариф не найден.");
             if (plan.Line != CompanyKind.Orders) return BadRequest(BillingTexts.AdminDifferentLine);
+            // ARCHITECTURE_CYCLE35.md §35.3.3: the hidden demo tariff of «Заказы» is for showcase accounts only, like the one of «Записи».
+            if (ShowcaseMixingGuard.CheckServicePlan(plan.Id, account.IsShowcase) is { } servicePlanRefusal)
+                return Conflict(servicePlanRefusal);
         }
         var reasonError = ManualPlanAssignmentPolicy.Validate(dto.ReasonCode, dto.ReasonDetails, required: false);
         if (reasonError is not null) return BadRequest(reasonError);

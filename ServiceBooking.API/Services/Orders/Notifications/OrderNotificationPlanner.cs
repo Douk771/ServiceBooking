@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using ServiceBooking.API.Services.Demo;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.API.Services.Shops;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -18,7 +21,7 @@ public sealed class OrderNotificationPlanner(
     AppDbContext db, OrderStaffPushQueue staffQueue, CustomerOrderPushQueue customerQueue, OrderMessageScheduler messenger,
     ShopGateLoader gates, ServiceBooking.API.Services.Notifications.INotificationClock clock,
     OrderStaffMaxQueue staffMaxQueue, ServiceBooking.API.Services.StaffMax.StaffMaxAvailability staffMaxAvailability,
-    ServiceBooking.API.Services.PublicSites.PublicSiteLinks links)
+    ServiceBooking.API.Services.PublicSites.PublicSiteLinks links, IOptions<DemoModeOptions> demoOptions)
 {
     public async Task OnEventAsync(Order order, OrderEvent orderEvent, CancellationToken ct = default)
     {
@@ -34,6 +37,9 @@ public sealed class OrderNotificationPlanner(
         if (plan.IsEmpty) return;
 
         var shop = await db.Companies.AsNoTracking().FirstAsync(c => c.Id == order.CompanyId, ct);
+        // ARCHITECTURE_CYCLE35.md §35.6.2 (C35-0-1): the second, "given" lock of the demo. Every order event of the demo stand (and of a showcase shop anywhere) ends
+        // here, so nothing is queued for a customer or for staff: message, web push, MAX. The dispatchers' own safety nets hold what is queued some other way.
+        if (ShowcaseOutboundGuard.IsSuppressed(shop, demoOptions.Value.Enabled)) return;
         // T-25-04: "today" in every text is the shop's WORKING day (the same value the storefront and "Мои заказы" use).
         var pickupContext = await gates.PickupContextAsync(shop, settings, clock.UtcNow, ct);
         var facts = BuildFacts(order, orderEvent, shop, pickupContext.WorkingDay);

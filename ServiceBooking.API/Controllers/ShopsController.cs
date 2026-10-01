@@ -7,6 +7,7 @@ using ServiceBooking.API.DTOs.Catalog;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.DTOs.Orders;
 using ServiceBooking.API.DTOs.Shops;
+using ServiceBooking.API.Services.Demo;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Legal;
@@ -203,6 +204,7 @@ public class ShopsController(
     }
 
     /// <summary>§409.7 — change the shop's address (owner). The old link and printed QR codes stop working: no redirect.</summary>
+    [DemoForbidden]
     [HttpPut("{shopId:guid}/slug")]
     [RequiresOwnerTerms]
     public async Task<ActionResult<ShopManageDto>> ChangeSlug(Guid shopId, ShopSlugInput input, CancellationToken ct)

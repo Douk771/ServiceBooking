@@ -667,6 +667,8 @@ public static class DeploymentSafetyChecks
     ///
     /// <list type="number">
     /// <item><c>PublicSites:ServicesBaseUrl</c> is on a host that starts with <c>demo.</c>;</item>
+    /// <item>(1a, ARCHITECTURE_CYCLE35.md §35.5.1) <c>PublicSites:OrdersBaseUrl</c> is set explicitly and is on a host that starts with <c>demo.</c> — an EMPTY value
+    /// falls back to the production goods address in <c>PublicSitesOptions</c>, so emptiness is a violation too;</item>
     /// <item>every <c>AllowedOrigins</c> entry is on a host that starts with <c>demo.</c>;</item>
     /// <item>the database name in <c>ConnectionStrings:DefaultConnection</c> ends with <c>_demo</c>;</item>
     /// <item><c>Jwt:Issuer</c> ends with <c>.Demo</c> — a production token cannot pass on the demo and vice versa, even if the keys happen to coincide;</item>
@@ -684,6 +686,13 @@ public static class DeploymentSafetyChecks
         var servicesBaseUrl = configuration["PublicSites:ServicesBaseUrl"];
         if (!IsDemoHost(servicesBaseUrl))
             problems.Add($"PublicSites:ServicesBaseUrl is '{servicesBaseUrl}' — the host must start with 'demo.' (for example https://demo.visit.ezbook.ru)");
+
+        // Empty means "the production goods address" (PublicSitesOptions default), so it has to be rejected explicitly, not skipped.
+        var ordersBaseUrl = configuration["PublicSites:OrdersBaseUrl"];
+        if (string.IsNullOrWhiteSpace(ordersBaseUrl))
+            problems.Add("PublicSites:OrdersBaseUrl must be set explicitly on the demo — the default is the production goods (for example https://demo.zakaz.ezbook.ru)");
+        else if (!IsDemoHost(ordersBaseUrl))
+            problems.Add($"PublicSites:OrdersBaseUrl is '{ordersBaseUrl}' — the host must start with 'demo.' (for example https://demo.zakaz.ezbook.ru)");
 
         var origins = (configuration["AllowedOrigins"] ?? "")
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

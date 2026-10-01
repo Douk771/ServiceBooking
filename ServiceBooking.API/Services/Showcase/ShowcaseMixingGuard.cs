@@ -27,9 +27,9 @@ public static class ShowcaseMixingGuard
         return null;
     }
 
-    /// <summary>The hidden service tariff may only be assigned to a showcase billing account.</summary>
+    /// <summary>The hidden service tariffs (of «Записи» and, since cycle 35, of «Заказы») may only be assigned to a showcase billing account.</summary>
     public static string? CheckServicePlan(Guid planConfigId, bool accountIsShowcase) =>
-        planConfigId == ShowcaseCatalog.ShowcasePlanId && !accountIsShowcase ? ServicePlanText : null;
+        ShowcaseCatalog.IsServicePlan(planConfigId) && !accountIsShowcase ? ServicePlanText : null;
 
     /// <summary>The slug prefix reserved for showcase companies (case-insensitive, after trimming).</summary>
     public static bool IsReservedSlug(string? slug) =>

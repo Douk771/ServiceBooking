@@ -1,0 +1,638 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ServiceBooking API — цикл 35 (демо-стенд «Заказов»)",
+    "version": "35.1.0",
+    "license": {
+      "name": "Proprietary"
+    },
+    "description": "Конвенции проекта без изменений: camelCase; enum — строкой; DateTime — ISO-8601 UTC;\n400/409/429 — голая строка по-русски (text/plain); 401/403 — пустое тело (исключение — DemoRestricted);\n404 — пустое тело.\n\nГЛАВНЫЕ ПРАВИЛА ЦИКЛА, ЗАКРЕПЛЁННЫЕ ФОРМОЙ:\n  1. Демо-маршруты существуют только в демо-режиме; на бою — 404 с пустым телом.\n  2. GET /api/demo/status без параметра отвечает ровно как в цикле 28 (три салонные роли) плюс поле siteUrls.\n     С product=orders — три роли «Заказов». Роли всегда ровно три.\n  3. Имена ролей уникальны во всех продуктах: POST /api/demo/login параметра продукта не имеет.\n  4. Во время сброса демо любой /api/* (кроме /api/health/* и GET /api/demo/status) отвечает 503 DemoResetting.\n  5. Три действия (слаг магазина, удаление сотрудника, подключение MAX сотруднику) для демо-ролей — 403 DemoRestricted.\n"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "dev (dotnet run) в демо-режиме"
+    },
+    {
+      "url": "http://localhost:4035",
+      "description": "prism mock по этой схеме"
+    }
+  ],
+  "tags": [
+    {
+      "name": "demo",
+      "description": "Демо-режим экземпляра. На боевой конфигурации маршруты отвечают 404 с пустым телом."
+    },
+    {
+      "name": "demo-restricted",
+      "description": "Действия, недоступные демо-ролям (токен с claim sb_demo = 1 или токен одной из шести демо-учёток) в демо-режиме.\nВне демо-режима и для зарегистрированных посетителей — поведение прежних циклов.\n"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "DemoProductQuery": {
+        "name": "product",
+        "in": "query",
+        "required": false,
+        "description": "Продукт, роли которого нужны. Без учёта регистра. Нет или пусто — services (как в цикле 28).\nЛюбое другое значение — 400 text/plain «Параметр product должен быть services или orders.»\n",
+        "schema": {
+          "$ref": "#/components/schemas/DemoProduct"
+        }
+      },
+      "ShopId": {
+        "name": "shopId",
+        "in": "path",
+        "required": true,
+        "description": "Id магазина (компании с Kind = Orders).",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "CompanyId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Id компании (салона или магазина).",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "MemberId": {
+        "name": "memberId",
+        "in": "path",
+        "required": true,
+        "description": "Id строки CompanyMember.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "headers": {
+      "RetryAfter": {
+        "description": "Через сколько секунд повторить.",
+        "schema": {
+          "type": "integer",
+          "example": 60
+        }
+      },
+      "DemoResettingFlag": {
+        "description": "Идёт сброс демо — фронт показывает экран «Демо обновляется».",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        }
+      },
+      "DemoRestrictedFlag": {
+        "description": "Отказ демо-роли — фронт показывает тело ответа.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        }
+      },
+      "RobotsTag": {
+        "description": "В демо-режиме — на всех ответах API.",
+        "schema": {
+          "type": "string",
+          "example": "noindex, nofollow"
+        }
+      }
+    },
+    "responses": {
+      "PlainTextError": {
+        "description": "Осознанный отказ — голая строка по-русски.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PlainTextConflict": {
+        "description": "409 — голая строка по-русски.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Лимит частоты — голая строка.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Нет или недействителен токен. Тело пустое."
+      },
+      "NotFound": {
+        "description": "Не найдено (или демо-режим выключен). Тело пустое."
+      },
+      "NoContent": {
+        "description": "Выполнено, тела нет."
+      },
+      "LegalGate": {
+        "description": "Требуется принять новую редакцию правовых документов (форма циклов 5 и 17).",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          },
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "DemoResetting": {
+        "description": "Только демо-режим: идёт сброс. Тело — «Демо обновляется, зайдите через минуту».\n",
+        "headers": {
+          "Retry-After": {
+            "$ref": "#/components/headers/RetryAfter"
+          },
+          "X-Demo-Resetting": {
+            "$ref": "#/components/headers/DemoResettingFlag"
+          }
+        },
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string",
+              "example": "Демо обновляется, зайдите через минуту"
+            }
+          }
+        }
+      },
+      "DemoRestricted": {
+        "description": "Демо-режим, токен демо-роли: действие недоступно. ЕДИНСТВЕННЫЙ 403 с телом в проекте.\nТело — «В демо-версии это действие недоступно.» Любой другой 403 этого маршрута (нет прав) — прежний, с пустым телом\nи без заголовка X-Demo-Restricted.\n",
+        "headers": {
+          "X-Demo-Restricted": {
+            "$ref": "#/components/headers/DemoRestrictedFlag"
+          }
+        },
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string",
+              "example": "В демо-версии это действие недоступно."
+            }
+          }
+        }
+      },
+      "AnyJson": {
+        "description": "Успех. Форма не меняется в цикле 35 (описана в контрактах прежних циклов).",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      }
+    },
+    "schemas": {
+      "DemoProduct": {
+        "type": "string",
+        "description": "Продукт демо-стенда. services — «Запись» (demo.visit), orders — «Заказы» (demo.zakaz).",
+        "enum": [
+          "services",
+          "orders"
+        ]
+      },
+      "DemoRole": {
+        "type": "string",
+        "description": "Проводные имена демо-ролей. owner/master/client — «Запись» (цикл 28);\nshop-owner/shop-staff/shop-customer — «Заказы» (цикл 35).\n",
+        "enum": [
+          "owner",
+          "master",
+          "client",
+          "shop-owner",
+          "shop-staff",
+          "shop-customer"
+        ]
+      },
+      "DemoRoleDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "label"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/DemoRole"
+          },
+          "label": {
+            "type": "string",
+            "description": "Подпись кнопки на странице входа.",
+            "example": "Войти как владелец магазина"
+          }
+        }
+      },
+      "DemoSiteUrls": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "services",
+          "orders"
+        ],
+        "description": "Базовые адреса обоих демо-сайтов из PublicSites, без пути и завершающего «/».",
+        "properties": {
+          "services": {
+            "type": "string",
+            "pattern": "^https?://[^/]+$",
+            "example": "https://demo.visit.ezbook.ru"
+          },
+          "orders": {
+            "type": "string",
+            "pattern": "^https?://[^/]+$",
+            "example": "https://demo.zakaz.ezbook.ru"
+          }
+        }
+      },
+      "DemoStatusDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "demoMode",
+          "resetting",
+          "resetLocalTime",
+          "timeZoneId",
+          "roles",
+          "siteUrls"
+        ],
+        "properties": {
+          "demoMode": {
+            "type": "boolean",
+            "description": "Всегда true (вне демо маршрут отвечает 404)."
+          },
+          "resetting": {
+            "type": "boolean",
+            "description": "Идёт сброс — фронт показывает «Демо обновляется, зайдите через минуту»."
+          },
+          "resetLocalTime": {
+            "type": "string",
+            "pattern": "^\\d{2}:\\d{2}$",
+            "example": "04:00"
+          },
+          "timeZoneId": {
+            "type": "string",
+            "example": "Europe/Moscow"
+          },
+          "lastResetAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "null до первого сброса."
+          },
+          "roles": {
+            "type": "array",
+            "description": "Роли запрошенного продукта (query product), в порядке владелец, сотрудник, клиент/покупатель.",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/DemoRoleDto"
+            }
+          },
+          "siteUrls": {
+            "$ref": "#/components/schemas/DemoSiteUrls"
+          }
+        }
+      },
+      "DemoLoginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/DemoRole"
+          }
+        }
+      },
+      "AuthResponseDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token",
+          "userId",
+          "phone",
+          "firstName",
+          "lastName",
+          "roles",
+          "phoneVerified"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "JWT с claim sb_demo = 1; у owner и shop-owner — ещё версия TermsOwner."
+          },
+          "userId": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "phoneVerified": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ShopSlugInput": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Тело смены адреса магазина (форма цикла 24). Для демо-роли не разбирается — отказ раньше привязки модели.",
+        "properties": {
+          "slug": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/demo/status": {
+      "get": {
+        "tags": [
+          "demo"
+        ],
+        "operationId": "demoGetStatus",
+        "summary": "Статус демо — плашка, кнопки ролей продукта, «идёт сброс», адреса обоих демо; вне демо 404",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DemoProductQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Экземпляр в демо-режиме. Во время сброса — 200 с resetting = true (не 503).",
+            "headers": {
+              "X-Robots-Tag": {
+                "$ref": "#/components/headers/RobotsTag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoStatusDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "«Параметр product должен быть services или orders.»",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/demo/login": {
+      "post": {
+        "tags": [
+          "demo"
+        ],
+        "operationId": "demoLogin",
+        "summary": "Вход под готовой демо-ролью любого продукта без пароля; вне демо 404",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoLoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Токен демо-роли (claim sb_demo = 1).",
+            "headers": {
+              "X-Robots-Tag": {
+                "$ref": "#/components/headers/RobotsTag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "«Неизвестная демо-роль.»",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "«Демо-данные ещё не созданы. Зайдите чуть позже.» (учётки роли нет — сброса ещё не было)",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/DemoResetting"
+          }
+        }
+      }
+    },
+    "/api/shops/{shopId}/slug": {
+      "put": {
+        "tags": [
+          "demo-restricted"
+        ],
+        "operationId": "shopUpdateSlug",
+        "summary": "Смена адреса магазина — демо-роли получают 403 DemoRestricted",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ShopId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShopSlugInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AnyJson"
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/DemoRestricted"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/PlainTextConflict"
+          },
+          "451": {
+            "$ref": "#/components/responses/LegalGate"
+          },
+          "503": {
+            "$ref": "#/components/responses/DemoResetting"
+          }
+        }
+      }
+    },
+    "/api/Companies/{id}/members/{memberId}": {
+      "delete": {
+        "tags": [
+          "demo-restricted"
+        ],
+        "operationId": "companyRemoveMember",
+        "summary": "Удаление сотрудника компании (салона или магазина) — демо-роли получают 403 DemoRestricted",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/MemberId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/NoContent"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/DemoRestricted"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "451": {
+            "$ref": "#/components/responses/LegalGate"
+          },
+          "503": {
+            "$ref": "#/components/responses/DemoResetting"
+          }
+        }
+      }
+    },
+    "/api/staff-max/link-sessions": {
+      "post": {
+        "tags": [
+          "demo-restricted"
+        ],
+        "operationId": "staffMaxCreateLinkSession",
+        "summary": "Подключение MAX сотруднику — демо-роли получают 403 DemoRestricted",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Сессия привязки создана (форма цикла 25). На демо недостижимо для демо-ролей.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/DemoRestricted"
+          },
+          "409": {
+            "$ref": "#/components/responses/PlainTextConflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/DemoResetting"
+          }
+        }
+      }
+    }
+  }
+}

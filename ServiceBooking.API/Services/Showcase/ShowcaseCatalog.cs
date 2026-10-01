@@ -17,6 +17,16 @@ public static class ShowcaseCatalog
 
     public const string ShowcasePlanName = "Витрина (служебный)";
 
+    /// <summary>ARCHITECTURE_CYCLE35.md §35.3.2, D35-2 — the hidden service tariff of the demo shops (line «Заказы»): no limit of orders, never public. Literal Id,
+    /// never changes. Created by the demo generator only when the graph has shops, never assignable to a real account (<c>ShowcaseMixingGuard</c>).</summary>
+    public static readonly Guid OrdersShowcasePlanId = Guid.Parse("5a1e0c35-0000-4000-8000-000000000901");
+
+    /// <summary>The customer names it (D35-2, default «Демо»); a changed name is edited in the admin panel, the code is not touched.</summary>
+    public const string OrdersShowcasePlanName = "Демо";
+
+    /// <summary>Either of the two hidden service tariffs: the showcase of «Записи» or the demo of «Заказы».</summary>
+    public static bool IsServicePlan(Guid planConfigId) => planConfigId == ShowcasePlanId || planConfigId == OrdersShowcasePlanId;
+
     /// <summary>UUIDv5 namespace for <c>ShowcaseIds</c>. Random once, then frozen forever: changing it changes every id.</summary>
     public static readonly Guid IdNamespace = Guid.Parse("c28e6b0a-5f3d-4b7e-9a41-7d2f0e8c1b56");
 

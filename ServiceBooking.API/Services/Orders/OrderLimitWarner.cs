@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Demo;
 using ServiceBooking.API.Services.Orders.Notifications;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.API.Services.Shops;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -15,7 +18,8 @@ namespace ServiceBooking.API.Services.Orders;
 /// </summary>
 public class OrderLimitWarner(
     AppDbContext db, OrderMonthlyCounter counter, OrderStaffPushQueue pushQueue, OrderStaffMaxQueue maxQueue,
-    ServiceBooking.API.Services.StaffMax.StaffMaxAvailability maxAvailability, ServiceBooking.API.Services.PublicSites.PublicSiteLinks links)
+    ServiceBooking.API.Services.StaffMax.StaffMaxAvailability maxAvailability, ServiceBooking.API.Services.PublicSites.PublicSiteLinks links,
+    IOptions<DemoModeOptions> demoOptions)
 {
     public async Task AfterIncrementAsync(
         Company shop, Guid billingAccountId, DateOnly month, MonthlyUsage usage, OrdersPlan plan, DateTime nowUtc, CancellationToken ct)
@@ -30,6 +34,10 @@ public class OrderLimitWarner(
         // Both thresholds can coincide (limit 1): the stronger message is the only one, and it settles the weaker flag too.
         if (warnReached && usage.Warned80AtUtc is null) await counter.MarkWarnedAsync(billingAccountId, month, reached: false, nowUtc, ct);
         if (!await counter.MarkWarnedAsync(billingAccountId, month, reached, nowUtc, ct)) return;
+
+        // ARCHITECTURE_CYCLE35.md §35.6.2 (C35-0-1): after the flag (it is set exactly as before), but before anything is queued. A visitor may create a shop on the free
+        // tariff of the demo and cross 80 % of its limit: no push and no MAX message goes out.
+        if (ShowcaseOutboundGuard.IsSuppressed(shop, demoOptions.Value.Enabled)) return;
 
         var ownerId = await db.BillingAccounts.AsNoTracking().Where(a => a.Id == billingAccountId).Select(a => a.OwnerUserId).FirstOrDefaultAsync(ct);
         if (ownerId is null) return;

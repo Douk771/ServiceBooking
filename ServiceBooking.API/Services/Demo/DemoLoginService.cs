@@ -21,7 +21,7 @@ public sealed record DemoLoginResult(DemoLoginStatus Status, AuthResponseDto? Re
 /// <summary>
 /// ARCHITECTURE_CYCLE28.md §579.4, API_CONTRACT_CYCLE28.md §598 — the passwordless sign-in of the demo: finds the ready account of a role by its stable id
 /// (<see cref="ShowcaseDemoRoles"/>) and issues a token exactly like <c>POST /api/auth/login</c> does, with two differences:
-/// the claim <c>sb_demo = 1</c> (the demo filter reads it), and the legal-document versions are the CURRENT ones (owner terms for the owner) instead of being
+/// the claim <c>sb_demo = 1</c> (the demo filter reads it), and the legal-document versions are the CURRENT ones (owner terms for the owner of a salon or of a shop) instead of being
 /// read from the consent journal — the accounts are fictional and nothing is written to the journal, so the gate of HTTP 451 never stops a demo role.
 /// Reachable only through <c>[DemoOnly]</c> routes.
 /// </summary>
@@ -40,9 +40,11 @@ public sealed class DemoLoginService(UserManager<AppUser> users, TokenService to
         var snapshot = legal.Current;
         var privacy = snapshot?.Get(LegalDocumentType.Privacy)?.Version;
         var terms = snapshot?.Get(LegalDocumentType.TermsClient)?.Version;
-        var ownerTerms = string.Equals(role?.Trim(), ShowcaseDemoRoles.Owner, StringComparison.OrdinalIgnoreCase)
-            ? snapshot?.Get(LegalDocumentType.TermsOwner)?.Version
-            : null;
+        // The owner of a salon AND the owner of a shop: [RequiresOwnerTerms] guards the owner cabinet of both products (ARCHITECTURE_CYCLE35.md §35.7.2).
+        var normalizedRole = role?.Trim();
+        var isOwnerRole = string.Equals(normalizedRole, ShowcaseDemoRoles.Owner, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalizedRole, ShowcaseDemoRoles.ShopOwner, StringComparison.OrdinalIgnoreCase);
+        var ownerTerms = isOwnerRole ? snapshot?.Get(LegalDocumentType.TermsOwner)?.Version : null;
 
         var token = tokens.GenerateToken(user, roles, privacy, terms, ownerTerms, demo: true);
         return new DemoLoginResult(DemoLoginStatus.Ok,

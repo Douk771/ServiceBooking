@@ -2,8 +2,26 @@
 
 > **Цикл 32 влит в `develop` после этого снимка** (общий `CompanyProfileCard`, `SalonProfileSection`, `BookingRulesSection`, новая раскладка `SettingsTab`, удалён `CompanyAddressField`; сервер не менялся). Описания настроек компании ниже — до цикла 32; полная синхронизация — при следующем обновлении файла.
 
-**Актуально по состоянию на коммит: `2834e00` (`develop` = `origin/develop`, мердж `cycle/033-unified-notifications-profile`; дата коммита — 2026-10-01), дата обновления: 2026-10-01.**
-**Режим: обновление поверх полного сканирования на `1837373`** (прежние точечные обновления — на `b9c2a79`, `aeed251`, `364cc2b`, `050816f`).
+**Актуально по состоянию на коммит: `c28ccbb` (`develop` = `origin/develop`, цикл 35 влит fast-forward; дата коммита — 2026-10-01), дата обновления: 2026-10-01.**
+**Режим: обновление поверх полного сканирования на `1837373`** (прежние точечные обновления — на `b9c2a79`, `aeed251`, `364cc2b`, `050816f`, `2834e00`, `a1e2259`).
+**Обновление на `c28ccbb`** (✔ `git diff a1e2259..c28ccbb`: 262 файла, из них ~165 картинок `ShowcaseAssets/`; 24 коммита
+`31814d7`…`c28ccbb`; после `git fetch`; **ничего не запускалось** — ни тесты, ни сборка, ни смоук). Это **цикл 35 «Демо-стенд
+„EZBOOK Заказы“ (`demo.zakaz.ezbook.ru`)»**, влит fast-forward, мерджа нет. Миграций, новых пакетов NuGet/npm и переменных боя
+нет. Обновлены: шапка, §0 (ветки), §4 (эталон маршрутов), §5.4 (генераты), §5.5 (новый блок «Цикл 35» перед блоками цикла 28),
+§5.6 (задача `demo-board-tick`), §5.11 (переписан: «после цикла 35»), §7.1–§7.4, §9.4 (C35-0-1…8 закрыты/перенесены), §9.5
+(новый — долг цикла 35), §10. Источник намерения — `SPEC.md` (= `SPEC_CYCLE35_GOODS_DEMO_STAND.md`), `ARCHITECTURE_CYCLE35.md`
+(отклонения — §35.19.3), `API_CONTRACT_CYCLE35.md`, раздел цикла 35 в `CHANGELOG.md`; код сверен с ними выборочно (✔ по diff).
+**Следующий diff отсчитывайте от `c28ccbb`.**
+
+*Ниже — шапка прежнего обновления на `a1e2259`, сохранена для истории.*
+**Обновление на `a1e2259`** (✔ `git diff 2834e00..HEAD`: 8 файлов, после `git fetch`; ничего не запускалось). В диапазоне два
+коммита: `d83cdc7` — документы цикла 33 (CHANGELOG, README, этот файл; `SPEC.md` восстановлен, спека цикла 28 в архиве
+`SPEC_CYCLE28_SHOWCASE_DEMO_STAND.md`) и `a1e2259` — фикс горизонта записи в календаре ezbook (§5.5). Бэкенд, API, БД,
+контракты, CI и пакеты не менялись. Перед циклом 35 («демо-стенд для товаров») **блоки цикла 28 перепроверены по коду** (раньше
+были ↪): статус в §5.5 исправлен (цикл 28 влит мерджем `99c56b0`), добавлен §5.11 — что из демо-механики цикла 28
+распространяется на goods, а что нет, и пункты C35-0-1…8 в §9.4. **Следующий diff отсчитывайте от `a1e2259`.**
+
+*Ниже — шапка прежнего обновления на `2834e00`, сохранена для истории.*
 **Обновление на `2834e00`** (✔ `git diff 050816f..2834e00`: 392 файла; ничего не запускалось). В диапазоне по первому
 родителю: цикл 32 (мердж `09344b1`, см. плашку выше — описан только ею), фикс `fix/goods-cartpanel-test-captcha-env`
 (`f981a62`, C34-1), фикс `fix/navbar-brand-unified` (`b5669c9`), **цикл 28** (мердж `99c56b0`; его блоки в этом файле —
@@ -51,6 +69,16 @@
 - 🖥 — факт о боевой машине. В репозитории его нет, в этом сканировании он не проверялся (SSH не использовался).
   Источник — прежняя редакция, блок «🚀20», проверено по SSH 30.09.2026.
 
+**Ветки на `c28ccbb`** (✔ после `git fetch`, 2026-10-01): `develop` = `origin/develop` = `c28ccbb` (цикл 35 влит
+fast-forward, мерджа нет). Локальная `cycle/035-goods-showcase-demo-stand` = `c28ccbb` (влита целиком);
+`origin/cycle/035-goods-showcase-demo-stand` по ссылке стоит на `b2c8346` (третий коммит цикла — документы архитектуры), дальше
+на origin не публиковалась — невлитого кода в ней нет. `BRIEF_CYCLE35_GOODS_DEMO.md` теперь отслеживается git (`31814d7`).
+Остальные ветки — как ниже.
+
+**Ветки на `a1e2259`** (✔ после `git fetch`, 2026-10-01): `develop` = `origin/develop` = `a1e2259`; от него создана
+локальная `cycle/035-goods-showcase-demo-stand` (на origin не публиковалась, в рабочем дереве один неотслеживаемый файл —
+`BRIEF_CYCLE35_GOODS_DEMO.md`). Ниже — состояние веток на `2834e00`, остальное с тех пор не менялось.
+
 **Ветки** (✔ по локальным ссылкам `origin/*` на 2026-10-01, `git fetch` в этом обновлении не делался):
 - `origin/develop` = `2834e00` (совпадает с локальным `develop`). В нём влиты **цикл 29** «Доделки цикла 26» (§5.5),
   **цикл 30** «Для покупателей» и скриншоты на главной goods (мердж `e1d7cdb`, §5.7), **цикл 31** «Общий блок фото,
@@ -68,7 +96,8 @@
 - `origin/cycle/027-goods-business-block` влита в `develop` целиком (0 впереди, 0 позади).
 
 **Ориентиры.** На `491406c` было 1 058 коммитов и 1 783 отслеживаемых файла; цикл 27 добавил 7 коммитов. На `050816f` —
-1 128 коммитов и 1 868 отслеживаемых файлов. На `2834e00` — 1 220 коммитов и 2 097 отслеживаемых файлов.
+1 128 коммитов и 1 868 отслеживаемых файлов. На `2834e00` — 1 220 коммитов и 2 097 отслеживаемых файлов. На `c28ccbb` —
+1 245 коммитов и 2 289 отслеживаемых файлов (✔ `git rev-list --count`, `git ls-files`).
 `origin/master` — `263c661` (2026-07-28), тегов нет, ветки `release-candidate` на origin нет.
 
 ---
@@ -305,7 +334,10 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 
 **266 маршрутов в контроллерах плюс 2 health (`/api/health/live`, `/api/health/ready`) — итого 268** (✔ на `364cc2b`;
 цикл 31 добавил 2). **На `2834e00` в эталоне 270 строк** (✔ `wc -l`): цикл 28 добавил `GET /api/demo/status` и
-`POST /api/demo/login` (§5.5), цикл 33 маршрутов не добавлял — поменял две строки (`allSites`). Эталон со всеми атрибутами — `ServiceBooking.Tests/Tests/Cycle22RouteTable.golden.txt` (авторизация, rate limit, фильтры
+`POST /api/demo/login` (§5.5), цикл 33 маршрутов не добавлял — поменял две строки (`allSites`). **На `c28ccbb` — по-прежнему
+270 строк** (✔ `wc -l`): цикл 35 маршрутов не добавлял, поменял 4 строки — параметр `product` (query) у `GET api/demo/status` и
+атрибут `[DemoForbidden]` у `PUT api/shops/{shopId}/slug`, `DELETE api/Companies/{id}/members/{memberId}`,
+`POST api/staff-max/link-sessions` (§5.5, блок «Цикл 35»). Эталон со всеми атрибутами — `ServiceBooking.Tests/Tests/Cycle22RouteTable.golden.txt` (авторизация, rate limit, фильтры
 вроде `RequiresOwnerTerms`, параметры). Его сверяет тест `Cycle22RouteTableTests`: новый маршрут без правки эталона
 роняет тест. Эталон — первоисточник, список ниже — его человекочитаемая сводка.
 
@@ -535,6 +567,9 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
   `src/types/index.ts` и `goods/src/types.ts`. С цикла 33 `PushConfig`, `PushConfigCompany`, `PushSiteUrls`,
   `PushSubscriptionDevice` в `index.ts` — реэкспорт из `api-cycle33.generated.ts` (раньше `PushConfig`/`PushSubscriptionDevice`
   брались из генерата цикла 9); этот генерат CI **не** сверяет (C33-1). Генераты циклов 28 и 32 появились в тех же мерджах (↪).
+  С цикла 35 (✔) есть `api-cycle35.generated.ts`: из него `src/api/demo.ts` берёт `DemoRole`, `DemoRoleDto`, `DemoStatusDto`,
+  `DemoProduct` (раньше — из генерата цикла 28); CI его сверяет (§7.3). `api-cycle28.generated.ts` по-прежнему импортируют
+  `src/utils/showcaseFilter.ts` и `src/api/adminBilling.ts`.
 - **Удалено циклом 33** (✔, ссылок в `frontend/src` и `frontend/goods/src` не осталось): `goods/src/pages/cabinet/DevicesPage.tsx`
   (+ тест), `src/components/push/MyDevicesCard.tsx`, `goods/src/components/push/GoodsIosSteps.tsx` (папки
   `goods/src/components/push/` больше нет), константа `PUSH_UNAVAILABLE_MESSAGES` из `src/utils/pushAvailability.ts`
@@ -547,6 +582,15 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 - ↪ C22-1: восемь навигационных свойств EF без ссылок в коде.
 
 ### 5.5 Что сделали последние циклы
+
+**Цикл 35 — демо-стенд «EZBOOK Заказы» (`demo.zakaz`)** (✔ `git diff a1e2259..c28ccbb`, влит fast-forward). Блок стоит ниже,
+**рядом с блоками цикла 28**, механику которого он расширяет («Цикл 35 — демо „Заказов“…»); итог для goods — §5.11.
+
+**Фикс ezbook мимо цикла — горизонт записи в календаре по UTC** (✔ `a1e2259`, коммит прямо в `develop`). В
+`frontend/src/utils/bookingHorizon.ts` добавлена `lastBookableDateUtc(now, horizonDays)`: последняя дата, которую примет
+сервер, считается от **UTC-даты** (как `BookingHorizon.LastBookableDate` на сервере), а не от местной. `BookingCalendar.tsx`
+при 400 «превышен горизонт» обрезает диапазон по ней (раньше — от местной полуночи, из-за чего с 00:00 до смещения UTC
+календарь оставался пустым). Тест — `bookingHorizon.test.ts` (+15 строк). Сервер не менялся.
 
 **Цикл 34 — плашка «Доступна новая версия» в goods** (✔ `git diff 364cc2b..050816f`, влит мерджем `050816f`). Только
 фронт goods и vhost nginx goods. API, БД, миграции, контракты, пакеты и CI не менялись. Подробно — §5.9.
@@ -601,7 +645,116 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 `b9c2a79` — в `CHANGELOG.md` добавлен раздел «Не выпущено — цикл 26: одна карточка компании…» (строка 34, под
 разделом цикла 27), в `README.md` цикл 26 описан в блоках goods и ezbook и в «Чего пока нет». Этим закрыт C26-6.
 
-**Цикл 28, проход A — тарифы «Записи», витринные данные (✔ backend; ветка `cycle/028-showcase-data-demo-stand`, в `develop` не влит, на бою нет).** Документы: `ARCHITECTURE_CYCLE28.md` §570–§583,
+**Цикл 35 — демо „Заказов“ на `demo.zakaz.ezbook.ru`: та же механика цикла 28 распространена на goods (✔ по коду
+`git diff a1e2259..c28ccbb`; влит в `develop` fast-forward; ничего не запускалось; на машину не выкачен — 🖥, `DEPLOY.md` §27 —
+инструкция, а не журнал).** Документы: `SPEC_CYCLE35_GOODS_DEMO_STAND.md` (= корневой `SPEC.md`), `ARCHITECTURE_CYCLE35.md`
+§35.0–§35.19 (отклонения от SPEC — **§35.19.3**), `API_CONTRACT_CYCLE35.md` §35.20–§35.29, `contracts/cycle35/openapi.yaml` (+ `.json`),
+`API_DOCUMENTATION.md` §4.21.9, `DEPLOY.md` §27, бриф `BRIEF_CYCLE35_GOODS_DEMO.md`. **Миграций нет** (пометка — существующий
+`Companies.IsShowcase` у магазина, A35-1), новых NuGet/npm-пакетов и переменных боя нет. Всё ниже либо стоит за
+`DemoMode:Enabled`, либо срабатывает только на `Companies.IsShowcase` (витринных магазинов профиль `prod` не создаёт).
+- **Генератор магазинов** (`Services/Showcase/`):
+  - `ShowcaseProfile.Shops` (init-флаг; `Demo` — `true`, `Prod` — `false`). `ShowcaseDataset.Build` последней строкой зовёт
+    `ShowcaseShopsDataset.Build(graph, profile, phones, now)` (новый, static, чистый, ~1 100 строк): телефоны людей магазинов берутся
+    из `ShowcasePhones` **после** всех салонных, Id — `ShowcaseIds.For("demo", <вид>, <ключ>)`, случайность — `ShowcaseRandom` по
+    ключу магазина/дня/заказа. `ShowcaseDataset.NewUser` стал `internal` (переиспользуется). Профиль `prod` и салонная часть `demo`
+    закреплены замороженными отпечатками в `ShowcaseDatasetTests` (снятыми на `a1e2259` до правки, `32e6180`, R35-6).
+  - `ShowcaseShopSpecs` — 5 магазинов (`Kind = Orders`, `IsShowcase`, слаг `primer-<ключ>`): `kofeinya` «Зерно и корица» (Москва,
+    07–23, `Manual`, магазин демо-владельца, 3 сотрудника), `pekarnya` «Золотой колос» (Москва, 07–21, `Auto`, `TrackStock`),
+    `stolovaya` «Обед дома» (Санкт-Петербург, будни 11–17, меню на дату), `cvety` «Ромашка и лён» (Казань, 09–20, долгая готовка,
+    особый день), `fermerskaya` «Речные луга» (Новосибирск, `Asia/Novosibirsk`, весовые). Продавец — только `SellerLegalName`
+    «… (пример)», без ИНН/ОГРН. Телефон магазина есть (из блока `+7 (200)`, отклонение §35.19.3 п. 6).
+  - `ShowcaseGraph` получил коллекции goods (`ShopSettings`, `ProductCategories`, `Products`, `DailyMenus(+Items)`, `SpecialDays`,
+    `Orders`, `OrderItems`, `OrderEvents`, `OrderDailyCounters`, `OrderMonthlyUsages`, `OrdersSubscriptions`, `ShopCustomerNotes`,
+    `ProductImageKeys`), `HasShops`, `OrdersCounts(...)` → `ShowcaseOrdersCounts`. `ShowcaseGenerator.PersistAsync` пишет их в порядке FK
+    и при `graph.HasShops` вызывает `TariffCatalogSeeder.EnsureOrdersShowcasePlanAsync`; `CountProductImages`.
+  - Объём по CHANGELOG: ~5 тыс. заказов (60 дней назад … 3 дня вперёд), каталоги 20–29 товаров. Не пишутся: согласия, обращения,
+    push-подписки, каналы, привязки MAX, очереди исходящих (§35.3.4).
+  - `0fda589` (фикс после реализации, US-35-02): `EnsureReadyOrder` — при сбросе в любой час в каждом магазине есть заказ
+    «Готов к выдаче» (ближайший предстоящий «собран заранее» — `PreparedEarly`; после последней выдачи дня последний простой заказ
+    держится `Ready` — `HeldReady`). Заказы демо-покупателя не выбираются.
+- **`ShowcaseOrderTimeline`** (новый, чистый): `Plan(orderId, createdAtUtc, pickupStartUtc, mode[, forcedFate])` → моменты
+  принятия (−30…50 мин до выдачи; заказ, сделанный больше чем за 12 ч, принимается рано), готовности (−5…15), выдачи (+3…20),
+  5 % `NotPickedUp` через 45 мин; `StateAt(plan, now)`. Её читают генератор (в момент сброса) и `demo-board-tick` (днём).
+- **«Живая» доска — задача `demo-board-tick`** (`Scheduling/Tasks/DemoBoardTickTask.cs` → `Services/Demo/DemoBoardTicker.cs`,
+  решения — чистые `DemoBoardTickRules`): полоса `main`, период 2 мин, `ScheduledTasks:demo-board-tick` (`Enabled: true`,
+  `MaxRunMinutes: 1`; в `appsettings.Testing.json` выключена), **регистрируется только при `DemoMode:Enabled`** (вместе с
+  `DemoBoardTicker`). Внутри повторно проверяет `DemoMode:Enabled`, метку БД `instance.kind = demo`
+  (`DemoInstanceGuard.IsDemoDatabaseAsync`), флаг обслуживания и наличие `demo.last-reset-utc`. Ветка A: заказы витринных магазинов с
+  `CreatedAtUtc ≤ demo.last-reset-utc` догоняют план (по одному переходу, только если текущий статус — предшественник; выдача —
+  только без весовых позиций и без `ReservesStock`; исполнитель — демо-сотрудник). Ветка B: заказы посетителей в витринных
+  магазинах через 50 мин после времени получения закрываются (`New→Rejected`, `Accepted→CancelledByShop`, `Ready→NotPickedUp`,
+  `ActorKind.System`, причина «Демо: заказ закрыт автоматически — время получения прошло.»). Одна транзакция на заказ, конфликт
+  версии — пропуск до следующего прохода. Журнал пишется через `OrderEventLog.AppendAsync` с **новым необязательным**
+  `occurredAtUtc` (по умолчанию `DateTime.UtcNow`; продуктовые вызовы не менялись).
+- **Шесть демо-ролей** (`ShowcaseDemoRoles`): к `owner`/`master`/`client` добавлены `shop-owner` (ключ `shop:kofeinya-owner` —
+  отдельный человек, не владелец «Лаванды»), `shop-staff` (`shop:kofeinya:s0`, `CompanyMember.Role = Master`), `shop-customer`
+  (`demo-shop-customer`; магазины — `CustomerShopKeys` = кофейня и пекарня). Новые `enum DemoProduct { Services, Orders }`,
+  `ForProduct`, `ProductOf`, `TryParseProduct`; `IsKnown`/`IsDemoUserId` — на шесть. `DemoLoginService` кладёт версию `TermsOwner`
+  в токен и для `shop-owner` (иначе 451 в кабинете goods).
+- **API** (`DemoController`, `DemoDtos`): `GET /api/demo/status?product=services|orders` — без учёта регистра, отсутствует или
+  пусто → `services` (ответ цикла 28), иное → 400 text/plain «Параметр product должен быть services или orders.»; порядок
+  `[DemoOnly]` 404 → разбор → 200. В `roles` — три роли продукта; в конец `DemoStatusDto` добавлено `SiteUrls`
+  (`DemoSiteUrlsDto(Services, Orders)` из `PublicSiteLinks.SiteBaseUrl`). `POST /api/demo/login` принимает шесть имён.
+- **Три новых `[DemoForbidden]`** (итого 10): `PUT /api/shops/{shopId}/slug` (`ShopsController`),
+  `DELETE /api/Companies/{id}/members/{memberId}` (`CompanyMembersController`, **общий с салонами** — запрет действует и на
+  `demo.visit`, §35.19.3 п. 3), `POST /api/staff-max/link-sessions` (`StaffMaxController`). Решение по токену демо-роли, как в цикле 28.
+- **Замок конфигурации** `DeploymentSafetyChecks.ValidateDemoMode`, п. 1a: `PublicSites:OrdersBaseUrl` обязан быть задан явно
+  (пусто → нарушение, т. к. дефолт `PublicSitesOptions` — боевой goods) и иметь хост `demo.*`. Функциональная `DemoHostFactory`
+  (`Cycle28DemoContractTests.cs`) получила `PublicSites:OrdersBaseUrl = https://demo.zakaz.ezbook.ru`.
+- **Исходящие по заказам** — второй, «данный» замок: `ShowcaseOutboundGuard.IsSuppressed(shop, DemoMode:Enabled)` в
+  `OrderNotificationPlanner.OnEventAsync` (сразу после загрузки магазина — закрывает сообщения покупателю, push покупателю,
+  push персоналу, MAX персоналу) и в `OrderLimitWarner.AfterIncrementAsync` (после `MarkWarnedAsync`, до постановки). Страховки
+  в `CustomerOrderPushDispatchTask` и `StaffMaxDispatchTask` (через `SuppressedCompanyIdsAsync`: строки → `Skipped` +
+  `NotificationReason.ShowcaseSuppressed`; в MAX-диспетчере — до проверки платформенного выключателя).
+- **Сопоставление по телефону:** `SubjectDataExporter` и `AccountDeletionService` исключают гостевые заказы витринных магазинов
+  (`!db.Companies.Any(c => c.Id == o.CompanyId && c.IsShowcase)`; маркеры `SUBJECT-PHONE-GATE` сохранены).
+- **Служебный тариф «Заказов»** (D35-2): `ShowcaseCatalog.OrdersShowcasePlanId = 5a1e0c35-0000-4000-8000-000000000901`, имя «Демо»,
+  `Line = Orders`, `IsPublic = false`, `MaxOrdersPerMonth = null`, `MaxCompanies 3 / MaxEmployees 10 / MaxProductsPerShop 200`,
+  `AllowNotificationChannel = false`, все опции «недоступна»; `ShowcaseCatalog.IsServicePlan(id)` (оба служебных).
+  `ShowcaseMixingGuard.CheckServicePlan` перешёл на `IsServicePlan` и вызывается ещё и в
+  `AdminBillingController.AssignOrdersSubscriptionAsync` (409). Публичной сетки тарифов «Заказов» нет.
+- **Удаление витрины** (`ShowcaseOwnership`): 14 шагов goods в `DeleteSteps` перед `companies` (дети раньше родителей: `OrderEvents`,
+  `OrderItems`, `OrderPushSubscriptions`, `CustomerOrderPushNotifications`, `StaffMaxMessages`, `Orders`, `OrderDailyCounters`,
+  `ShopCustomerNotes`, `ShopDailyMenuItems`, `ShopDailyMenus`, `ShopSpecialDays`, `Products`, `ProductCategories`, `ShopSettings`);
+  в `NeverWritten` осталась только `NotificationChannels`.
+- **Команды оператора:** `ops demo reset` (план и итог) печатает вторую строку `… (Заказы): shops=… …`; новый ключ
+  `ops showcase plan --profile demo` (только план, БД не нужна), `create|recreate|delete --profile demo` → код 2 «Профиль demo
+  создаётся только сбросом демо: ops demo reset»; `--profile` вне команд `showcase` — ошибка разбора (`OpsCommandLine`).
+  `DemoResetService` по шагам не менялся (таблицы goods и так в `TRUNCATE`).
+- **Картинки** (`54ce931`): `tools/showcase-assets/generate.py --only shops` дорисовал 5 логотипов, 30 фото магазинов, 64 товара +
+  64 миниатюры (~1,9 МБ; роли манифеста `logo`/`photo`/новая `product` с `thumbnail`); `ShowcaseAssets/` теперь 233 файла, 3,6 МБ на
+  диске (✔ `find`, `du`); `LICENSES.md` дополнен; бюджет держит `ShowcaseShopAssetsTests`.
+- **Фронт:** новый `src/components/demo/DemoProductContext.tsx` (`DemoProductProvider`, `useDemoProduct`, по умолчанию `services`);
+  `useDemoStatus` — `queryKey ['demo-status', product]`; `demoApi.getStatus(product)` (для `services` запрос без параметра);
+  `demoRoles.ts` — дом шести ролей (`shop-owner`/`shop-staff` → `/cabinet`, `shop-customer` → `/orders`); `DemoRoleButtons` —
+  иконки шести ролей; `DemoBanner` — ссылка на соседнее демо по `siteUrls` (`src/utils/demoNeighbour.ts`, US-35-10).
+  goods: `GoodsApp.tsx` оборачивает всё в `<DemoProductProvider product="orders">`, внутри `BrowserRouter` — `<DemoMaintenanceGate>`,
+  `<DemoBanner />` над `GoodsNavbar` (в потоке); `goods/src/utils/orderError.ts` первым шагом зовёт `getDemoRestrictedMessage`
+  (403 + `X-Demo-Restricted` → текст тела). `LoginPage` не менялась.
+- **Выкатные файлы (T-35-40, `c8a6b0b`):** `docker-compose.demo.yml` — `PublicSites__OrdersBaseUrl=${DEMO_ORDERS_BASE_URL:-https://demo.zakaz.ezbook.ru}`,
+  `AllowedOrigins` по умолчанию с двумя origin (один `api-demo` на два vhost; лимиты памяти не менялись — 400 + 256 МБ);
+  `.env.demo.example` — `DEMO_ORDERS_BASE_URL`, два origin, предупреждение про живой `.env.demo`, комментарий `DEMO_ZAKAZ_ENABLED`;
+  новый vhost `deploy/nginx/demo.zakaz.ezbook.conf` (`server_name demo.zakaz.ezbook.ru`, root `current/__goods`, свои имена
+  `map`/`log_format`, noindex, 404 на вебхуки/телефон/отписку, кеш-заголовки как у goods); новый смоук `deploy/ci/demo-zakaz-smoke.sh`;
+  в `deploy/deploy-remote.sh` — необязательный шаг: при `DEMO_ZAKAZ_ENABLED=true` смоук против `http://127.0.0.1:<порт демо>`, сбой —
+  только предупреждение. `demo.visit.ezbook.conf` не менялся. Ручные шаги — `DEPLOY.md` §27 (DNS, сертификат, SmartCaptcha, правка
+  `DEMO_ALLOWED_ORIGINS` в живом `.env.demo`, первый `ops demo reset --yes`, замер памяти).
+- **Контракт и CI (T-35-10):** `contracts/cycle35/openapi.yaml` + `openapi.json`, генерат `api-cycle35.generated.ts`, скрипт
+  `types:api:cycle35`; `ci.yml` линтует, сверяет генерат и JSON цикла 35; `contracts-to-json.mjs` — `cycle31, cycle32, cycle35`;
+  `OpenApiContractValidatorTests` — `[InlineData("cycle35")]`. Проверки формы `/api/demo/status` и `/api/demo/login` в CY28-38
+  переведены на схему цикла 35.
+- **Тесты** (§7.1): функциональные `Cycle35DemoContractTests.cs`, `Cycle35DemoScenarioTests.cs`, `Cycle35LocksAndOffDemoTests.cs`
+  (классы `Cycle35DemoLocksTests`, `Cycle35OffDemoTests`) — кейсы CY35-01…82 в `TEST_CATALOG.md`; юнит `ShowcaseShopsDatasetTests`,
+  `ShowcaseOrderTimelineTests`, `DemoBoardTickRulesTests`, `ShowcaseDemoRolesTests`, `ShowcaseShopAssetsTests` (новые) и правки
+  `ShowcaseDatasetTests`, `ShowcaseDemoProfileTests`, `ShowcaseOwnershipCoverageTests`, `DemoModeValidationTests`, `OpsCommandLineTests`,
+  `ShowcaseMixingGuardTests`; vitest `goods/src/demo.test.tsx` (новый) и правки `src/api/demo.test.ts`, `DemoBanner.test.tsx`,
+  `DemoRoleButtons.test.tsx`, `useDemoStatus.test.tsx`, `demoRoles.test.ts`.
+- **Отклонения от SPEC** (полный список — `ARCHITECTURE_CYCLE35.md` §35.19.3): «Завершённые сегодня» — с открытия кофейни (~07:15),
+  а не с 04:00; новая фоновая задача; запрет удаления сотрудника действует и на `demo.visit`; продукт — параметром, а не по хосту;
+  новое поле `siteUrls`; телефон у витринных магазинов; кофейня 07–23; ключ `--profile demo` только для плана; фильтр витрины в
+  выборках «по номеру». P1 «домен текстом» перенесён в долг C35-1 (§9.5). Магазин одежды из брифа не сделан (CHANGELOG).
+
+**Цикл 28, проход A — тарифы «Записи», витринные данные (✔ backend; влит в `develop` мерджем `99c56b0`; состояние на бою — см. `DEPLOY.md` §26, здесь не проверялось 🖥).** *Сверено по коду на `a1e2259`: перечисленные ниже классы и точки вызова на месте; как это касается goods — §5.11.* Документы: `ARCHITECTURE_CYCLE28.md` §570–§583,
 `API_CONTRACT_CYCLE28.md` §590–§603, `contracts/cycle28/openapi.yaml`. Проход B (демо-стенд: `/api/demo/*`, `DemoMode`, сброс, `[DemoForbidden]`) — описан в следующем блоке («Цикл 28, проход B»).
 - **Одна миграция `Cycle28ShowcaseMarks`** (только добавления): `AspNetUsers.IsShowcase`, `BillingAccounts.IsShowcase`, `Companies.IsShowcase` и `ShowcaseBookingOpen`, `Bookings.ShowcaseKind`
   (`ShowcaseBookingKind`: 0 обычная, 1 генератор, 2 посетитель), CHECK `CK_Companies_ShowcaseBookingOpen`, четыре частичных индекса. Enum'ы только дописаны: `NotificationReason.ShowcaseSuppressed`,
@@ -622,14 +775,14 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 - Тесты: unit +180 (`OpsCommandLineTests`, `ZapisTariffCatalogTests`, `Showcase*Tests`, `TrialMailingRulePolicyTests`, …); в функциональных обновлены 6 тестов под новый бесплатный тариф (`CompaniesTests`, `AdminTests`).
   Функциональных тестов цикла 28 backend не писал — их пишет QA (`CY28-*`).
 
-**Цикл 28, проход B — демо-стенд (✔ backend: код и прогон на локальной БД; ветка `cycle/028-showcase-data-demo-stand`, в `develop` не влит, на бою нет, выкат DO-2 не выполнялся).** Документы: `ARCHITECTURE_CYCLE28.md` §579–§581,
+**Цикл 28, проход B — демо-стенд (✔ backend; влит в `develop` мерджем `99c56b0`; развёрнут ли стенд на машине — 🖥, в репозитории не видно: `DEPLOY.md` §25 — инструкция, а не журнал выката).** *Сверено по коду на `a1e2259`; фронт демо — `frontend/src/components/demo/*` (`DemoBanner`, `DemoMaintenanceGate`, `DemoMaintenanceScreen`, `DemoRoleButtons`), `src/store/demoStore.ts`, `src/hooks/useDemoStatus.ts`, `src/api/demo.ts`, `src/utils/demo*.ts`; функциональные тесты `ServiceBooking.Tests/Tests/Cycle28*.cs` (6 файлов: `DemoContract`, `DemoScenario`, `OutboundSuppression`, `ShowcaseGenerator`, `ShowcaseGuards`, `Tariffs`).* Документы: `ARCHITECTURE_CYCLE28.md` §579–§581,
 `API_CONTRACT_CYCLE28.md` §597–§600a, `API_DOCUMENTATION.md` §4.21.8. Новых миграций и зависимостей нет. Всё ниже **инертно при `DemoMode:Enabled=false`** (по умолчанию): маршруты отвечают 404 без тела, middleware и фильтр проходят насквозь,
 сброс отказывает кодом 2, задача `demo-reset` не регистрируется.
 - **Настройки** `DemoMode` (`DemoModeOptions`): `Enabled`, `ResetLocalTime` (`04:00`), `TimeZoneId` (`Europe/Moscow`), `MaintenanceFlagPath` (`App_Data/state/demo-resetting`); лимит `RateLimits:demo-login` 30/мин на IP (вне демо лимитер «не включается», чтобы 404 не превращался в 429).
 - **Два замка** (`Services/Demo/`): `DeploymentSafetyChecks.ValidateDemoMode` (конфигурация, до `Build()`, любое окружение: хосты `demo.*`, БД `*_demo`, `Jwt:Issuer` `*.Demo`, провайдеры `logging`/`stub`, StaffMax и пересев витрины выключены; нарушения собираются в одно сообщение)
   и `DemoInstanceGuard` (данные; вызывается из `StartupSeedingExtensions` сразу после `MigrateAsync`: метка `PlatformSettings` `instance.kind = demo`, на пустой БД пишется, на БД с невитринной компанией или записью `ShowcaseKind = None` — отказ старта).
 - **Маршруты** `DemoController` (`[DemoOnly]` — `IResourceFilter`, 404 до действия): `GET /api/demo/status` (`DemoStatusDto`), `POST /api/demo/login` (`DemoLoginService`: учётка роли по стабильному Id из `ShowcaseDemoRoles`, `TokenService.GenerateToken(…, demo: true)` — claim `sb_demo = 1`
-  и текущие версии документов; 400/409/404/429 по контракту). Эталон `Cycle22RouteTable.golden.txt`: +2 маршрута и атрибут `[DemoForbidden]` на семи существующих действиях (`change-password`, `change-phone`, `delete-account`, `subscription/request`, `trial`, `transfer`, `PUT …/owner`).
+  и текущие версии документов; 400/409/404/429 по контракту). Эталон `Cycle22RouteTable.golden.txt`: +2 маршрута и атрибут `[DemoForbidden]` на семи существующих действиях (`change-password`, `change-phone`, `delete-account`, `subscription/request`, `trial`, `transfer`, `PUT …/owner`). *С цикла 35 ролей шесть, у статуса есть `?product` и `siteUrls`, запретов десять — блок «Цикл 35» выше.*
 - **Конвейер:** `DemoResponseHeadersMiddleware` (`X-Robots-Tag: noindex, nofollow`) и `DemoMaintenanceMiddleware` (503 с `Retry-After` и `X-Demo-Resetting`; исключения `/api/health/*` и `GET /api/demo/status`) стоят первыми после `UseForwardedHeaders`, проверяют `DemoMode:Enabled` на каждом запросе.
   `DemoForbiddenFilter` — глобальный `IAsyncResourceFilter` (403 `text/plain` + `X-Demo-Restricted`; срабатывает до привязки модели, после авторизации). Заголовки `X-Demo-*` и `Retry-After` объявлены в CORS (`WithExposedHeaders`).
   Флаг обслуживания — файл (`DemoMaintenanceFlag`, singleton, кеш 1 с, зависший старше 10 минут игнорируется с `LogError`); общий для API и процесса `ops`.
@@ -704,7 +857,8 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 - Документация цикла 26 дописана отдельным коммитом `b9c2a79` уже после влития: раздел в CHANGELOG и абзацы README.
 
 ### 5.6 Фоновые задачи (✔ `ApplicationServicesExtensions`, `appsettings.json`)
-Одиннадцать `IScheduledTask` (с цикла 28), регистрируются поимённо; двенадцатая, `demo-reset`, — только при `DemoMode:Enabled` (проход B):
+Одиннадцать `IScheduledTask` (с цикла 28), регистрируются поимённо; ещё две — `demo-reset` (цикл 28, проход B) и
+`demo-board-tick` (цикл 35) — только при `DemoMode:Enabled`:
 
 | Задача | Полоса | Что делает |
 |---|---|---|
@@ -720,6 +874,7 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 | `staff-max-dispatch` | realtime | MAX персоналу, период 5 с |
 | `showcase-reseed` | main | (цикл 28) раз в неделю пересоздаёт **уже существующую** витрину; период 1 ч; **выключена** (`Showcase:Reseed:Enabled=false`), в `Testing` выключена. Время последнего пересева — `PlatformSettings` `showcase.last-reseed-utc` |
 | `demo-reset` | main | (цикл 28, проход B) **регистрируется только в демо-режиме**; период 10 мин; ночной сброс демо (`DemoResetService`), когда локальное время прошло `DemoMode:ResetLocalTime`, а `PlatformSettings` `demo.last-reset-utc` старше сегодняшнего слота. Без метки не делает ничего (первый сброс — команда оператора). `MaxRunMinutes=5`, в `Testing` выключена |
+| `demo-board-tick` | main | (цикл 35) **регистрируется только в демо-режиме**; период 2 мин; двигает заказы витринных магазинов по плану генератора (`ShowcaseOrderTimeline`) и закрывает заказы посетителей через 50 мин после времени получения (`DemoBoardTicker`, §5.5). Сама перепроверяет `DemoMode:Enabled`, метку `instance.kind = demo`, флаг обслуживания, `demo.last-reset-utc`. `MaxRunMinutes=1`, в `Testing` выключена |
 
 Тик `main` — 10 с, тик `realtime` — 1 с. В окружении `Testing` все задачи выключены (`appsettings.Testing.json`).
 
@@ -1144,6 +1299,94 @@ ordersExtra={<StaffMaxCard />}`). Поведение:
 
 ---
 
+### 5.11 Витрина и демо-стенд применительно к goods («Заказы») — после цикла 35 (✔ по коду на `c28ccbb`, ничего не запускалось)
+Раздел описывает состояние **после цикла 35**; прежняя редакция (до цикла 35, на `a1e2259`) — `git show a1e2259:CURRENT_STATE.md`,
+§5.11. Подробности реализации — §5.5, блок «Цикл 35». Итог одной строкой: **демо-механика цикла 28 теперь охватывает goods
+на демо-стенде (один `api-demo`, одна БД, два vhost — `demo.visit` и `demo.zakaz`); на бою витринных магазинов нет — профиль
+`prod` магазинов не создаёт, `ops showcase create|recreate|delete --profile demo` отказывает кодом 2.**
+
+**Пометка «витрина».** Миграции не было (A35-1): магазин помечается тем же `Companies.IsShowcase`; генератор ставит его пяти
+магазинам, их владельцам/сотрудникам/покупателям (`AppUser.IsShowcase`) и аккаунтам (`BillingAccount.IsShowcase`). Своей пометки у
+таблиц goods по-прежнему нет, аналога `Booking.ShowcaseKind` у `Order` нет: заказ генератора от заказа посетителя отличает только
+правило `Order.CreatedAtUtc ≤ PlatformSettings[demo.last-reset-utc]` (`DemoBoardTickRules.IsGeneratorOrder`), и нужно оно одной
+задаче `demo-board-tick`. Пометку магазина читают: `ShowcaseOutboundGuard` (исходящие), `DemoBoardTicker`, `ShowcaseOwnership`,
+`SubjectDataExporter`/`AccountDeletionService`.
+
+**Генератор.** `ShowcaseProfile.Demo.Shops = true` → `ShowcaseShopsDataset` (вызывается последним в `ShowcaseDataset.Build`) строит 5
+магазинов (`ShowcaseShopSpecs`), каталоги, меню, особые дни, ~5 тыс. заказов с журналом и счётчиками, заметки магазина;
+`ShowcaseOrderTimeline` даёт статус сегодняшних заказов на момент сброса. `ShowcaseGraph` содержит коллекции goods.
+`ShowcaseAssets/` — 233 файла: салонные 68 + 5 логотипов магазинов, 30 фото, 64 товара с миниатюрами (роль манифеста `product`).
+Профиль `prod` и салонная часть `demo` не изменились (замороженные отпечатки в `ShowcaseDatasetTests`).
+
+**Удаление витрины** (`ShowcaseOwnership`): таблицы goods перенесены из `NeverWritten` в `DeleteSteps` (14 шагов перед
+`companies`, включая `OrderItems`, `OrderEvents`, `ShopDailyMenuItems`, `OrderPushSubscriptions`, которых раньше не было ни в одном
+списке). В `NeverWritten` осталась только `NotificationChannels`. Тест покрытия — `ShowcaseOwnershipCoverageTests`.
+
+**Сброс демо** (`DemoResetService`, `DemoResetTables`) по шагам не менялся: таблицы goods стираются `TRUNCATE` (список «всё кроме
+разрешённых»), файлы посетителей — `FileStorage.ClearAllFiles`; картинки магазинов публикуются заново тем же
+`ShowcaseAssetStore` (они в `PublishedFileNames` и сохраняются). Изменился только отчёт: вторая строка «(Заказы)». Тарифы
+«Заказов» живут в `SubscriptionPlanConfigs` (разрешённая таблица) и сбросом сохраняются.
+
+**Тарифы.** Публичного набора тарифов «Заказов» по-прежнему нет (`ZapisTariffCatalog` — только «Записи»). Добавлен **скрытый
+служебный** тариф «Демо» линии «Заказы» (`ShowcaseCatalog.OrdersShowcasePlanId`), его создаёт генератор
+(`TariffCatalogSeeder.EnsureOrdersShowcasePlanAsync`, идемпотентно, только если в графе есть магазины); назначить его невитринному
+аккаунту запрещают `ShowcaseMixingGuard` и проверка в `AdminBillingController.AssignOrdersSubscriptionAsync`. Демо-магазины — без
+лимита заказов, поэтому предупреждений 80/100 % и 402 у них не бывает. Магазины, созданные посетителями демо, — на системном
+бесплатном тарифе «Заказов».
+
+**Демо-роли и вход.** Шесть ролей: салонные `owner`/`master`/`client` и `shop-owner`/`shop-staff`/`shop-customer` (кофейня; покупатель —
+кофейня и пекарня). `GET /api/demo/status?product=orders` отдаёт роли «Заказов» и `siteUrls`; без параметра — ответ цикла 28.
+Продукт фронт знает из `DemoProductProvider` (goods — `orders`), не из хоста. Входы на `demo.visit` и `demo.zakaz` раздельные
+(токен в `localStorage` своего origin).
+
+**Замки.** `ValidateDemoMode` теперь требует и явный `PublicSites:OrdersBaseUrl` с хостом `demo.*` (п. 1a); `AllowedOrigins` (все —
+`demo.*`) не менялся, в compose по умолчанию два origin. `DemoInstanceGuard` не менялся: магазин — это компания, непомеченный
+магазин уже считается «настоящими данными» (C35-0-5 закрыт разбором, без кода). **Ссылки:** все абсолютные адреса строит один
+`PublicSiteLinks`, поэтому при `PublicSites__OrdersBaseUrl=https://demo.zakaz.ezbook.ru` ссылки магазина, QR, `orderUrl`,
+`kinds-summary`, `siteUrls` push и демо ведут на демо (CY35-50/51). **Неверен только текст** — 11 надписей с боевым доменом
+(C35-1, §9.5); строка `zakaz` в C#-коде встречается только в `DeploymentSafetyChecks` (примеры в сообщениях замка).
+
+**Исходящие goods** — после цикла 35 (`ShowcaseOutboundGuard.IsSuppressed` в демо-режиме глушит **все** компании, вне демо — витринные):
+| Путь goods | Очередь | Замок в точке постановки | Страховка при отправке | Плюс конфигурация демо |
+|---|---|---|---|---|
+| сообщения покупателю о заказе | `OutboundNotifications` | `OrderNotificationPlanner` | `NotificationDispatchTask` | `Notifications:Provider=logging` |
+| push покупателю | `CustomerOrderPushNotifications` | `OrderNotificationPlanner` | **новая** в `CustomerOrderPushDispatchTask` | `LoggingWebPushSender` |
+| push персоналу о заказе | `StaffPushNotifications` | `OrderNotificationPlanner` | `StaffPushDispatchTask` | `logging` |
+| MAX персоналу о заказе | `StaffMaxMessages` | `OrderNotificationPlanner` | **новая** в `StaffMaxDispatchTask` (до проверки платформенного выключателя) | `StaffMax:Enabled=false` |
+| предупреждение о лимите (push + MAX) | обе выше | `OrderLimitWarner` (после отметки «предупреждён») | обе выше | как выше |
+Новые страховки диспетчеров и гвард `OrderLimitWarner` прямыми тестами не покрыты (§9.5).
+
+**Запреты в демо.** `[DemoForbidden]` — на 10 действиях: семь цикла 28 (действуют и на `demo.zakaz`, фильтр глобальный) плюс
+`PUT /api/shops/{shopId}/slug`, `DELETE /api/Companies/{id}/members/{memberId}` (общий маршрут — запрет и для салонного демо),
+`POST /api/staff-max/link-sessions`. Решение — по токену демо-роли; зарегистрированный посетитель в своём магазине запретов не
+получает. Намеренно **не** запрещены (чинит ночной сброс, D35-4): `PUT …/catalog-listing`, `…/settings`, `…/seller`, пауза и стоп
+приёма, правка каталога и цен, фото, каналы уведомлений. Отдельного маршрута «сменить роль сотрудника магазина» в коде нет.
+
+**Запрет смешивания** — как раньше (слаг `primer-` и `CheckMember` действуют и для магазинов) плюс служебный тариф «Заказов» (выше).
+**Сопоставление по номеру:** выгрузка и удаление аккаунта не подтягивают гостевые заказы витринных магазинов.
+
+**Публичные выборки** — без изменений: `GET /api/goods/catalog` и `StorefrontDto` поле `isShowcase` не отдают, бейджа «пример» в
+goods нет (✔ grep по `frontend/goods/src`); гостевой заказ требует SmartCaptcha (хост `demo.zakaz` надо добавить в консоль — ручной
+шаг `DEPLOY.md` §27); закрыть витринный магазин для заказов (аналог `ShowcaseBookingClosed`) нечем — по замыслу, магазины открыты
+посетителям. Правила retention для заказов посетителей нет (не нужно: демо стирается каждую ночь, D35-1).
+
+**Фронт goods.** `GoodsApp` → `DemoProductProvider product="orders"` → `BrowserRouter` → `DemoMaintenanceGate` (экран «Демо
+обновляется» и `meta robots`) → `DemoBanner` над навбаром (с ссылкой «Посмотреть демо „Записи“»); общий интерсептор
+`api/client.ts` на 503 + `X-Demo-Resetting` теперь отображается. Кнопки ролей рисует общая `LoginPage` через `DemoRoleButtons`
+(роли продукта из контекста). Отказ 403 `X-Demo-Restricted` показывается текстом (`orderError.ts`). Вне демо (404 статуса) ничего
+из этого не рисуется. Тесты — `goods/src/demo.test.tsx`.
+
+**Инфраструктура.** `docker-compose.demo.yml` — тот же проект `ezbook-demo` (api-demo 400 МБ + postgres-demo 256 МБ, порт API 5001),
+теперь с `PublicSites__OrdersBaseUrl` и двумя origin. Vhost-ов демо два: `demo.visit.ezbook.conf` (в нём `/__goods/` → 404 остаётся)
+и новый `demo.zakaz.ezbook.conf` (root `current/__goods` — та же сборка goods из того же релиза). Смоук — `deploy/ci/demo-zakaz-smoke.sh`
+(в `deploy-remote.sh` — только при `DEMO_ZAKAZ_ENABLED=true`). Ручные шаги — `DEPLOY.md` §27. На машине ничего из этого не
+выполнено (🖥, по CHANGELOG/README «на машине не выкачен»).
+
+**Уже существующие «демо-данные» goods — не витрина, а съёмка скриншотов цикла 30** (циклом 35 не менялись, с генератором не связаны): `frontend/scripts/screenshots/`
+(`demo-data.mjs` — один магазин, категории, заказы; `seed-goods-demo.mjs` — засев через HTTP API **только** на локальный
+стек `sb-shots`, отказывает `*.ezbook.ru`; `stack.sh`, `capture-goods-screenshots.mjs`, `README.md`), самотесты —
+`frontend/goods/src/assets/screenshots/seed-goods-demo.test.ts`. С `ShowcaseGenerator` не связаны.
+
 ## 6. Конвенции проекта (✔ выборочно по коду; им следовать, а не вводить рядом свои)
 
 ### 6.1 Бэкенд (C#)
@@ -1278,6 +1521,15 @@ ordersExtra={<StaffMaxCard />}`). Поведение:
 цикл 33 добавил 9 и удалил 1, §5.10); в `ServiceBooking.UnitTests` цикл 33 добавил `StaffPushLinksTests.cs` (6). Числа
 прогонов циклов 28, 32 и 33 при постановке задачи не передавались.
 
+**На `c28ccbb`** (✔ подсчёт файлов, атрибуты не пересчитывались): `ServiceBooking.Tests/Tests/` — 95 файлов `.cs` (цикл 35 добавил
+`Cycle35DemoContractTests.cs`, `Cycle35DemoScenarioTests.cs`, `Cycle35LocksAndOffDemoTests.cs`; 32 функциональных теста цикла по
+отчёту QA); `ServiceBooking.UnitTests` — 194 файла `.cs` (цикл 35 добавил 5: `ShowcaseShopsDatasetTests`, `ShowcaseOrderTimelineTests`,
+`DemoBoardTickRulesTests`, `ShowcaseDemoRolesTests`, `ShowcaseShopAssetsTests`); фронт — 205 файлов `*.test.ts(x)` (+`goods/src/demo.test.tsx`
+и др.). **Прогон цикла 35 (↪ из CHANGELOG, раздел цикла 35, «Для команды»; codebase-analyst не запускал):** полный
+`ServiceBooking.Tests` (Release) — 1 299 тестов, прошли 1 298; упал `Cycle20SubjectRequestsTests.RegisterManually_DueDateComputedFromReceivedAt_NotFromNow`
+(preexisting, зависит от дня недели запуска, §9.5). Числа юнит- и фронтовых прогонов в отчёте QA не приведены. Три файла
+`Cycle35*.cs` и раздел `TEST_CATALOG.md`, которые на момент проверки QA не были закоммичены, ✔ в `develop` есть (коммит `8677493`).
+
 Прогоны различаются по объёму: в прогоне считаются и наборы `[Theory]`, поэтому число прогонов больше числа атрибутов.
 Были ли в отчёте цикла 31 зелёные `tsc`, `lint`, `typecheck:node`, `build:release` и сколько тестов упало, в этом
 обновлении не проверялось: переданы только общие числа.
@@ -1330,6 +1582,8 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - два полных прогона параллельно на одном Docker дают ложные падения тестов, чувствительных ко времени;
   - по отчёту цикла 27 полный прогон на colima бывает нестабилен по таймаутам Npgsql;
   - флейк CY24-31 около 03:30–04:05 по времени магазина (C25-9);
+  - флейк `Cycle20SubjectRequestsTests.RegisterManually_DueDateComputedFromReceivedAt_NotFromNow` — зависит от дня недели
+    запуска (упал в финальном прогоне цикла 35, к циклу не относится; §9.5);
   - ~~8 тестов `CartPanel.test.tsx` падают~~ — **закрыто** (C34-1, §9.1): причиной был локальный `frontend/.env` с непустым
     `VITE_SMARTCAPTCHA_SITEKEY`, в CI ключа нет. Тест теперь мокает `SmartCaptcha` (как `SubjectRequestPage.test.tsx`) и
     зелёный при любом `.env`; ✔ 16/16 при заполненном ключе.
@@ -1340,7 +1594,16 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   `dotnet test ServiceBooking.UnitTests --filter "FullyQualifiedName~StaffPush"`; vitest —
   `cd frontend && npx vitest run src/components/push src/utils/staffPushTexts src/utils/pushWorker src/utils/serviceWorkerRouting goods/src/utils/serviceWorkerRouting goods/src/cabinetDevicesRedirect goods/src/pages/GoodsProfilePage goods/src/components/GoodsNavbar goods/src/pages/cabinet/CabinetHomePage src/pages/ProfilePage src/pages/MyBookingsPage`.
   Реальной отправки push тесты не делают: `PushDispatchTestFactory` подменяет `IWebPushSender` записывающим фейком (↪ §7.2 выше).
-- `npm run contracts:json` — не тест: скрипт **перезаписывает** `contracts/cycle31/openapi.json` и `contracts/cycle32/openapi.json`.
+  Цикл 35 — `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle35"` (классы `Cycle35DemoContractTests`,
+  `Cycle35DemoScenarioTests`, `Cycle35DemoLocksTests`, `Cycle35OffDemoTests`; демо-классы поднимают `DemoHostFactory` на БД
+  `sbtest_<ключ>_demo` и выполняют `ops demo reset --yes` внутри тестовой БД — это запись только в тестовую базу и во временные
+  каталоги файлов) плюс регрессия демо цикла 28 — `--filter "FullyQualifiedName~Cycle28"`; юнит —
+  `dotnet test ServiceBooking.UnitTests --filter "FullyQualifiedName~Showcase|FullyQualifiedName~DemoBoardTick|FullyQualifiedName~DemoModeValidation|FullyQualifiedName~OpsCommandLine"`;
+  vitest — `cd frontend && npx vitest run goods/src/demo src/components/demo src/hooks/useDemoStatus src/api/demo src/utils/demoRoles`.
+  ⚠️ `deploy/ci/demo-zakaz-smoke.sh` — **не тест**: это смоук живого стенда по HTTP (делает три входа под ролями), запускается
+  только на машине по `DEPLOY.md` §27.
+- `npm run contracts:json` — не тест: скрипт **перезаписывает** `contracts/cycle31/openapi.json` и `contracts/cycle32/openapi.json`
+  (с цикла 35 — и `contracts/cycle35/openapi.json`).
   В базовый прогон не входит, в CI запускается как сверка (§7.3). JSON цикла 33 он не создаёт (C33-1).
 
 ### 7.3 CI — `.github/workflows/ci.yml` (push в `master`, `release-candidate`, `develop`, `cycle/**`, `fix/**` и любой PR)
@@ -1373,6 +1636,9 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - Контракты 26 и 29 в CI охвачены с цикла 29 (C26-1 закрыт), контракт 31 — с цикла 31 (lint, генерат, JSON), контракт 32 —
   с цикла 32. Контракт 33 в CI **не охвачен ничем** (C33-1); тело push и адрес воркера (§33.27–§33.28) держат только
   функциональные CY33-01/02/12 и vitest `serviceWorkerRouting.test.ts` в `test:run`.
+  **Контракт 35** (✔ `ci.yml` на `c28ccbb`) охвачен целиком с первого коммита цикла: `redocly lint ../contracts/cycle35/openapi.yaml`,
+  `npm run types:api:cycle35` + `api-cycle35.generated.ts` в `git diff --exit-code`, шаг «Contract JSON must match cycle31, cycle32
+  and cycle35 yaml». Новых шагов и инлайн-скриптов в `ci.yml` цикл не добавлял; `demo-zakaz-smoke.sh` CI не запускает.
   Guard-тест общих исходников goods (§5.8) отдельного шага не имеет: он часть `test:run`. JSON-схемы `contracts/cycle30/*.schema.json` в CI **не**
   проверяются: сверку манифеста скриншотов со схемой делает человек при пересъёмке (`ajv-cli`), а форму манифеста в
   каждом прогоне держит vitest T30-15. Скрипты засева и съёмки CI не запускает.
@@ -1391,7 +1657,16 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   `location /` (§5.9, `DEPLOY.md` §24). На бою 🖥 не проверено.
 - Обслуживание: бэкап `deploy/backup/` (systemd-таймер), мониторинг `deploy/monitor/health-alert.*`, SQL-гейты выката
   `deploy/checks/`.
-- Подробная инструкция — `DEPLOY.md` (§0–§24); отдельно — `DEPLOY-windows.md`.
+- Подробная инструкция — `DEPLOY.md` (§0–§24); отдельно — `DEPLOY-windows.md`. С циклов 28 и 35 — §25 (демо `demo.visit`), §26
+  (тарифы и витрина на бою), §27 (демо «Заказов» `demo.zakaz`: DNS, `free -m`, `.env.demo`, перезапуск `api-demo`, `ops demo reset --yes`
+  с замером, vhost, certbot, SmartCaptcha, `DEMO_ZAKAZ_ENABLED=true` в `.env` боя, смоуки обоих демо, замер памяти через сутки,
+  откат).
+- **Демо-стек** (✔ по файлам): `docker-compose.demo.yml` + `.env.demo.example`, vhost-ы `deploy/nginx/demo.visit.ezbook.conf` и
+  `deploy/nginx/demo.zakaz.ezbook.conf` (ставятся руками), смоуки `deploy/ci/demo-smoke.sh` и `deploy/ci/demo-zakaz-smoke.sh`.
+  `deploy-remote.sh` в шаге демо гоняет `demo-smoke.sh`, а `demo-zakaz-smoke.sh` — только при `DEMO_ZAKAZ_ENABLED=true`; сбой демо —
+  предупреждение, боевой выкат не валится. ⚠️ Новый код демо **не стартует** со старым живым `.env.demo`, если там задан
+  `DEMO_ALLOWED_ORIGINS` только с `demo.visit` или `DEMO_ORDERS_BASE_URL` не демо (замок п. 1a; CHANGELOG цикла 35, «Что стоит
+  прочитать до выката»). На машине 🖥 ни один демо-стенд, по данным репозитория, не подтверждён развёрнутым.
 
 ---
 
@@ -1676,6 +1951,96 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - **C28-15.** Пробный запуск демо с `ASPNETCORE_ENVIRONMENT=Production` (проверено вручную) требует переменных, которых нет в перечне `.env.demo.example` из §581.1 архитектора: `Trial__PhoneKeyHmac` и `Trial__PhoneKeyId` (`ValidateTrialSecrets`, иначе старт падает), плюс `ForwardedHeaders__TrustedNetworks__0` и `SuperAdmin__Password` без заглушки (они в перечне есть). **Закрыто DO-4 (заготовка):** все четыре переменные есть в `.env.demo.example` и `docker-compose.demo.yml` (`DEMO_TRIAL_PHONEKEY_HMAC`/`_ID`, `DEMO_FORWARDEDHEADERS__TRUSTEDNETWORKS__0` с фиксированной подсетью проекта, `DEMO_SUPERADMIN_PASSWORD` — обязательные, без значений по умолчанию); проверено `docker compose config`, но на машине стенд ещё не запускался.
 - **C28-14.** Запись посетителей демо в открытые витринные компании по-прежнему ограничена капчей: хост `demo.visit.ezbook.ru` нужно добавить в консоль SmartCaptcha (ручной шаг `DEPLOY.md` §25.6, заказчик); без него гостевая запись на демо отвечает «Invalid captcha», запись под ролью клиента работает.
 
+**Хрупкие места демо-механики относительно goods (✔ по коду на `a1e2259`, найдено перед циклом 35; подробности — §5.11).**
+Номера `C35-0-*` — «до начала цикла 35», чтобы не пересекаться с долгом, который заведёт сам цикл.
+
+**Статус после цикла 35 (✔ по коду на `c28ccbb`; тексты пунктов ниже сохранены как были, для истории):**
+- **C35-0-1 — закрыт.** Гвард в точке постановки (`OrderNotificationPlanner`, `OrderLimitWarner`) и страховки в
+  `CustomerOrderPushDispatchTask`/`StaffMaxDispatchTask`. Остаток — нет прямых тестов на новые страховки и гвард лимита → §9.5.
+- **C35-0-2 — закрыт.** Замок `ValidateDemoMode` п. 1a, `PublicSites__OrdersBaseUrl` в `docker-compose.demo.yml`. Надписи с боевым
+  доменом (текст, не ссылки) — перенесены в C35-1 (§9.5).
+- **C35-0-3 — закрыт.** Таблицы goods — в `DeleteSteps` (включая четыре прежде не упомянутые), в `NeverWritten` только
+  `NotificationChannels`; держит `ShowcaseOwnershipCoverageTests`.
+- **C35-0-4 — закрыт тестом** (CY35-60: сброс стирает магазины, заказы и файлы посетителей, восстанавливает оба демо). Замер
+  на машине — в C28-9 / M35-05.
+- **C35-0-5 — закрыт разбором, без кода** (`ARCHITECTURE_CYCLE35.md` §35.3.1: заказ не существует без компании).
+- **C35-0-6 — закрыт.** goods подключил `DemoProductProvider`, `DemoMaintenanceGate`, `DemoBanner`, обработку 403 `X-Demo-Restricted`.
+  Вид на 360/1280 px и в браузере не проверен (M35-01, M35-03) → §9.5.
+- **C35-0-7 — закрыт в объёме решения D35-2:** скрытый служебный тариф «Демо» для демо-магазинов; публичной сетки «Заказов»
+  по-прежнему нет (вне цикла, решение заказчика).
+- **C35-0-8 — перенесён:** замер сброса с картинками (теперь 233 файла) и памяти на машине не сделан — ручной M35-05, C28-9.
+- **C35-0-1.** Push покупателю о заказе (`CustomerOrderPushDispatchTask`) и MAX персоналу о заказе (`StaffMaxDispatchTask`)
+  не проходят через `ShowcaseOutboundGuard`. На демо их глушат только настройки (`LoggingWebPushSender` при
+  `Notifications:StaffPush:Provider=logging`, `StaffMax:Enabled=false`) — второго, «данного» замка, как у записей, нет.
+- **C35-0-2.** `PublicSites:OrdersBaseUrl` не входит в замок `ValidateDemoMode` и не задан в `docker-compose.demo.yml`: ссылки
+  на магазины, собираемые демо-API (`PublicSiteLinks`), указывают на боевой `https://goods.ezbook.ru`.
+- **C35-0-3.** `ShowcaseOwnership.NeverWritten` утверждает «в витрине нет магазинов» для 10 таблиц goods; тест покрытия
+  модели держится на этом утверждении. Любой витринный магазин делает его ложным, и `ops showcase delete/recreate` оставит
+  его товары и заказы (поведение удаления самой компании при этом зависит от `OnDelete` у FK goods — не проверялось). `OrderItems`, `OrderEvents`, `ShopDailyMenuItems`,
+  `OrderPushSubscriptions` в обоих списках отсутствуют.
+- **C35-0-4.** Сброс демо стирает все таблицы goods и все загруженные файлы (в том числе картинки товаров) — это
+  предусмотрено, но для goods не проверялось ни одним тестом (тесты цикла 28 салонные).
+- **C35-0-5.** `DemoInstanceGuard` на пустой БД без метки пишет `instance.kind = demo`; «настоящими данными» считает любую
+  невитринную компанию и любую запись `ShowcaseKind = None`. Заказы в эту проверку не входят.
+- **C35-0-6.** Во фронте goods нет обработки демо (баннер, экран обслуживания, 403 `X-Demo-Restricted`), хотя общий
+  `api/client.ts` уже выставляет `demoStore.resetting` — в goods это состояние молча игнорируется.
+- **C35-0-7.** `TariffCatalogSeeder` (часть сброса) знает только линию «Записи»; тарифы «Заказов» на демо — то, что
+  оставили миграции (системный «Заказы · Бесплатно»), публичного набора нет.
+- **C35-0-8.** Отметка «`ShowcaseAssets/` пуст» в C28-9 устарела: после C28-4 там 68 файлов (1,2 МБ), замер сброса с
+  картинками по-прежнему не сделан.
+
+### 9.5 Долг цикла 35 (демо «Заказов», `demo.zakaz`) — ✔ по коду и документам на `c28ccbb`, ничего не запускалось
+Источники: `ARCHITECTURE_CYCLE35.md` §35.19.2–§35.19.3, раздел цикла 35 в `CHANGELOG.md`, отчёты цикла (переданы при постановке
+задачи), сверка с кодом в этом обновлении.
+- **C35-1.** На демо 11 надписей показывают **текстом** боевой домен goods (ссылки за ними верные — ведут на демо). Места
+  (`ARCHITECTURE_CYCLE35.md` §35.5.3): `goods/src/pages/cabinet/CabinetHomePage.tsx` (2), `LinkPage.tsx`, `CreateShopPage.tsx`,
+  `goods/src/components/CatalogListingSection.tsx` (2), `goods/src/pages/GoodsProfilePage.tsx` (2); **общие с боем** —
+  `src/components/company/GoodsShopsNotice.tsx`, `src/utils/staffPushTexts.ts` (3 строки), `ServiceBooking.API/Services/Shops/CatalogListingRules.cs`
+  (текст статуса листинга — единственное допущенное исключение в CY35-50). Номера строк в архитектуре — на `a1e2259`.
+- **C35-2 (L35-1, L35-2).** Юрист демо «Заказов» не смотрел: плашка — прежний `DemoBanner` (заглушка, вне `LegalTextKey.All`), отдельного
+  предупреждения в форме гостевого заказа нет, продавец — вымышленное название «(пример)» без ИНН/ОГРН, покупательские тексты goods
+  (L1–L20) будут показаны клиентам без вычитки. **Ссылку на `demo.zakaz` клиентам не давать до заключения юриста** (D35-3).
+- **C35-3.** «Завершённые сегодня» в кофейне пусты с ночного сброса (04:00) до открытия (~07:15) — отклонение §35.19.3 п. 1.
+- **C35-4.** Кеш каталога goods (`GoodsCatalogService`, 30 с) после сброса командой `ops` из другого процесса может показывать вчерашний
+  список (того же рода, что C28-13).
+- **C35-5 (D35-4) — изоляции посетителей нет.** Все посетители под ролью `shop-owner` входят в одну и ту же кофейню; любой из них может
+  до ночного сброса «сломать» демо другим (правка каталога, цен, часов, пауза приёма, отклонение заказов — намеренно не запрещены).
+  Компенсация — только ручной `ops demo reset --yes` перед встречей (`DEPLOY.md` §27.2 «Перед встречей с клиентом»).
+- **C35-6 — смоук `deploy/ci/demo-zakaz-smoke.sh` ни разу не запускался на живом API.** Поля, которые он читает, написаны по
+  контракту: `id` (и `publicUrl`) из `GET /api/shops/my`, `items`/`totalCount` каталога `GET /api/goods/catalog`. ✔ По коду они совпадают с
+  DTO (`ShopListItemDto(Guid Id, …, string PublicUrl, …)` — массив; `GoodsCatalogPageDto(Items, Page, PageSize, TotalCount, …)`), но
+  исполнением это не подтверждено. Там же: в `deploy-remote.sh` смоук гоняется против `http://127.0.0.1:<порт>`, а ожидаемый адрес
+  «Заказов» — `EXPECTED_ORDERS_URL` (по умолчанию `https://demo.zakaz.ezbook.ru`); шаг 7 (главная и `robots.txt`) выполняется только
+  для `https://`-адреса, т. е. в автоматическом шаге выката — нет.
+- **C35-7 — preexisting флейк** `Cycle20SubjectRequestsTests.RegisterManually_DueDateComputedFromReceivedAt_NotFromNow`: зависит от
+  дня недели запуска (единственное падение финального прогона цикла 35, 1 298/1 299). К циклу не относится.
+- **C35-8 — расхождения схемы `contracts/cycle35/openapi.yaml` с реализацией** (✔ по файлам):
+  - `DemoLoginRequest` объявлен с `additionalProperties: false`, а сервер (`record DemoLoginRequest(string? Role)`, глобального
+    `UnmappedMemberHandling` в API нет) лишние поля молча игнорирует — тело с лишним полем по схеме недопустимо, а сервер отвечает 200;
+  - параметр `product`: в описании «нет или пусто — services», и сервер на `?product=` отвечает 200 (CY35-01 это проверяет), но схема
+    `DemoProduct` — `enum: [services, orders]` без пустой строки. Фаззер по схеме (schemathesis, `API_CONTRACT_CYCLE35.md` §35.29)
+    сочтёт одно из двух поведений нарушением.
+- **C35-9 — новые замки исходящих без прямых тестов.** Страховки `CustomerOrderPushDispatchTask`/`StaffMaxDispatchTask` и гвард
+  `OrderLimitWarner` не вызываются ни одним тестом по имени (✔ grep по `ServiceBooking.UnitTests` и `Cycle35*.cs`). CY35-40/82
+  проверяют только, что очереди пусты (гвард в `OrderNotificationPlanner` срабатывает раньше). ⚠️ `TEST_CATALOG.md` (раздел цикла 35,
+  «Не покрыто») ссылается на «юнит `ShowcaseOutboundGuardTests` разработчика» как на покрытие лимита и MAX — этот файл в цикле 35 не
+  менялся и `OrderLimitWarner`/диспетчеры не упоминает.
+- **C35-10 — ручные M35-01…06 не выполнены** (вердикт QA «НЕ ВЫПОЛНЕНО»): 360/1280 px, два устройства со звуком, экран обслуживания,
+  переходы между демо, замер сброса и памяти (порог A35-3: пик `api-demo` > 360 МБ → `mem_limit 512m`), гостевой заказ без хоста в
+  SmartCaptcha. Это гейт выката, а не мержа.
+- **C35-11 — выкат ломает живое demo.visit без ручной правки `.env.demo`** (если стенд на машине есть и `DEMO_ENABLED=true`): замок п. 1a
+  не пустит API при старом `DEMO_ALLOWED_ORIGINS` / пустом или боевом адресе «Заказов». Бой при этом не страдает (сбой демо при выкате —
+  предупреждение). Порядок — `DEPLOY.md` §27.1.
+- **C35-12 — запрет `DELETE …/members/{memberId}` действует и на салонном демо** (маршрут общий): демо-владелец «Лаванды» больше не
+  может удалить демо-мастера (§35.19.3 п. 3; сознательно).
+- **C35-13 — документы цикла местами противоречат сами себе** (✔ по тексту): раздел цикла 35 в `CHANGELOG.md` во вступлении пишет
+  «заготовки развёртывания demo.zakaz в цикле нет» и повторяет это первым пунктом «Чего этот цикл не даёт», хотя ниже (и по коду)
+  заготовка добавлена коммитом `c8a6b0b`; в «Для команды» — «три новых файла тестов не были закоммичены» (✔ закоммичены, `8677493`).
+  `TEST_CATALOG.md`, раздел цикла 35: «vhost/DNS/сертификат/капча (кода ещё нет, US-35-08)» — vhost и смоук уже есть.
+- Не сделано по решению (не долг кода, для справки): магазин одежды из брифа (нет вариантов товара), «симулятор покупателя»
+  (новые заказы днём сами не появляются), единый вход на два демо, ссылки на демо с боевых сайтов, отдельная редакция правовых
+  документов для демо.
+
 ---
 
 ## 10. Что уже существует в документации и тест-кейсах (дополнять существующее, параллельных версий не заводить)
@@ -1701,6 +2066,13 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   (строка 19), 34 (29), 31 (42), 30 (180), 29 (301), 28 (329), 27 (394), 26 (408); **раздела цикла 33 нет** (C33-4). Внутри крупных разделов сложились подзаголовки `###`: «Что стоит прочитать до
   выката», тематические блоки, «Чего этот цикл не даёт», «Для команды» (итоги тестов и документы цикла). Даты разделов
   «Не выпущено» при выкате не проставлялись.
+- **На `c28ccbb`** (✔ `wc -l`, `grep -n '^## '`): `README.md` — 831 строка; цикл 35 вписан в «О проекте» блоком **«Демо-стенды —
+  `demo.visit.ezbook.ru` и `demo.zakaz.ezbook.ru`»** (строка ~410: оба демо, как устроены, ограничения ролей) и пунктом «открытого
+  демо „Заказов“ (цикл 35)» в «Чего пока нет» (~445). `CHANGELOG.md` — 4 766 строк; **раздел цикла 35 — самый верхний** (строка 19,
+  `## Не выпущено — цикл 35: демо-стенд «Заказов» на demo.zakaz.ezbook.ru…`), под ним фикс календаря (`a1e2259`, 224), цикл 33 (234),
+  32, 34, 31… Подзаголовки раздела цикла 35 — по сложившемуся шаблону: «Что стоит прочитать до выката», тематические блоки, «Чего этот
+  цикл не даёт», «Для команды». Разделов «Не выпущено» — 33, во вступлении написано «тридцать один». Внутренние противоречия раздела
+  цикла 35 — C35-13 (§9.5).
 - Releases на GitHub и wiki не используются: тегов нет, ссылок на wiki в репозитории нет.
 - Внутренние справки: `BRIEF_BRAND_AND_DOMAINS.md` (бренд и домены «EZBOOK Запись» / «EZBOOK Заказы»),
   `BENCHMARK_CYCLE22.md`.
@@ -1718,7 +2090,10 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   включение на оба сайта (C33-4). Инструкции по push сотрудникам магазина в `docs/` нет вовсе.
 - Справки внутри приложения: правовые документы и тексты интерфейса отдаются из `/api/legal/*` (исходники —
   `legal-drafts/`) и показываются на `/privacy`, `/terms` и т.д. Отдельной базы знаний или сайта документации нет.
-- Эксплуатация: `DEPLOY.md` (2 481 строка на `050816f`, §0–§24, выкат, переменные, ручные шаги по циклам; §24 — цикл 34,
+- Руководства по демо-стендам для пользователей в `docs/` нет (✔ цикл 35 `docs/` не трогал); описание демо — только README и CHANGELOG.
+- Эксплуатация: на `c28ccbb` `DEPLOY.md` — 2 724 строки, §25 (демо `demo.visit`), §26 (тарифы и витрина), **§27 «Демо „Заказов“
+  demo.zakaz.ezbook.ru»** (строка ~2399: §27.1 порядок, §27.2 перед встречей с клиентом, §27.3 откат, §27.4 замер памяти M35).
+  Ниже — состояние на `050816f`: `DEPLOY.md` (2 481 строка на `050816f`, §0–§24, выкат, переменные, ручные шаги по циклам; §24 — цикл 34,
   кеш-заголовки goods, есть дубль-абзац в §21, C34-3), `DEPLOY-windows.md`,
   `INCIDENT_CHECK_PROCEDURE_CYCLE16.md`. Правовые внутренние документы — `legal-internal/*.md`, `LEGAL_REVIEW*.md`,
   `LEGAL_DECISIONS_CYCLE20.md`, `legal-drafts/README.md`.
@@ -1732,7 +2107,10 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
     лимиты галереи, строка для CHANGELOG об ослаблении лимита. **В двух местах текст расходится с кодом** (C31-7, §9.1);
   - §5 «Сквозные сценарии», §6 «Справочник кодов ответа», §7 «Известные ограничения».
   - ↪ C23-8: в §4 есть повторяющиеся номера подразделов.
-  - Цикл 33 сюда **не вписан** (✔ grep: нет `allSites`, `siteUrls`, «Цикл 33»); изменения `/api/push/*` описаны только в
+  - Цикл 35 вписан (✔ на `c28ccbb`, 4 697 строк): **§4.21.9 «Демо-стенд „Заказов“ — цикл 35, НЕ ВЫПУЩЕНО (unreleased)»** (строка
+    ~4352, сразу после §4.21.8): параметр `product`, `siteUrls`, шесть ролей, три запрета, ссылки, замок, гвард исходящих, живая доска,
+    `ops … --profile demo`. Для `/api/demo/*` эталон формы — `contracts/cycle35`.
+  - Цикл 33 сюда **не вписан** (✔ grep: нет `allSites`, `siteUrls`, «Цикл 33»; `siteUrls` с цикла 35 встречается, но про демо, а не про push); изменения `/api/push/*` описаны только в
     `API_CONTRACT_CYCLE33.md` и `contracts/cycle33/openapi.yaml` (C33-4).
 - **OpenAPI по циклам** — `contracts/cycleN/openapi.yaml` для циклов 7, 9, 10, 11, 13–20, 23–26, 29, 31. У 26, 29 и 31
   есть ещё `openapi.json`. JSON 26 и 29 читает валидатор функциональных тестов `OpenApiContract.cs`, JSON 31 генерирует
@@ -1740,7 +2118,10 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   `contracts/cycle8/servicebooking-invariant.openapi.yaml`. Каждый файл описывает **дельту своего цикла, а не весь API
   целиком**. Сводного OpenAPI нет. С мерджами на `2834e00` добавились `contracts/cycle28/openapi.yaml` + `openapi.json` (↪),
   `cycle32/openapi.yaml` + `openapi.json` и `cycle33/openapi.yaml` (без JSON; дельта `/api/push/*` и схема тела push
-  `StaffPushPayload`, которая в пути не входит; C33-1).
+  `StaffPushPayload`, которая в пути не входит; C33-1). **С цикла 35** — `contracts/cycle35/openapi.yaml` + `openapi.json` (OpenAPI 3.0.3;
+  дельта: `GET /api/demo/status` с `product` и `siteUrls`, `POST /api/demo/login` на шесть ролей, 403 на трёх запрещённых маршрутах;
+  JSON читает валидатор `OpenApiContract.cs` в `Cycle35DemoContractTests` и CY28-38); в CI — lint, генерат, JSON (§7.3). Расхождения
+  схемы с сервером — C35-8 (§9.5).
 - Прочие контракты: `contracts/cycle23/goods-routes.json`, `order-money-vectors.json`, `cycle24/pickup-schedule-vectors.json`,
   `cycle11/*.schema.json`, `legal-routes.json`, `contracts/legal/runtime-value-forms.json`, `cycle30/screenshots-manifest.schema.json`
   и `cycle30/seed-state.schema.json` (JSON Schema файлов съёмки, не API). Линт — `contracts/redocly.yaml`.
@@ -1777,12 +2158,33 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
     выката, не мержа)» — вердикт «НЕ ВЫПОЛНЕНО QA» и таблица M33-01…07 (`Кейс | Шаги | Ожидаемый результат | Критерий |
     Вердикт`, все «не выполнен»). Номера M33 в каталоге не совпадают по смыслу с `ARCHITECTURE_CYCLE33.md` §33.13.3 (например,
     выход на goods — M33-07 в каталоге и M33-05 в архитектуре); первоисточник для QA — каталог. CY33-13 в каталоге нет.
+  - **На `c28ccbb`** (6 804 строки, ✔ `grep -n '^## Цикл'`): последним идёт **раздел цикла 35** (строка ~6758, после цикла 32):
+    «Цикл 35 — демо-стенд „EZBOOK Заказы“ (`CY35-`, `M35-`, …)». В нём: вводная (хост `DemoHostFactory`, БД `sbtest_<ключ>_demo`,
+    коллекция `Cycle28Generator`, один сброс на класс); таблица CY35-01, 10–15, 20–26, 30–31, 40, 50–51, 60–62, 70, 80–82 с колонками
+    `Кейс | Критерий | Шаги / ожидание | Тест` (как у цикла 33); абзац «Не покрыто автотестами QA» (в нём неточность — C35-9, и
+    устаревшая фраза про vhost — C35-13); «Ручные кейсы (T-35-02, гейт выката, не мержа)» — вердикт «НЕ ВЫПОЛНЕНО QA», таблица
+    M35-01…06 (`Кейс | Шаги | Ожидаемый результат | Критерий | Вердикт`, все «не выполнен»). Ручные кейсы в архитектуре
+    (`ARCHITECTURE_CYCLE35.md` §35.16.3) описаны словами без номеров; первоисточник номеров — каталог.
   - ↪ TD16-7: вердикты раздела «Цикл 16» устарели.
 - ID кейсов продублированы в коде атрибутом `[TestCase("CY26-01")]` на тестах `ServiceBooking.Tests`.
 - Ручные живые проверки выката — чек-листы в `DEPLOY.md` (§16 и шаги циклов).
 - Отдельного `TESTPLAN.md` или `docs/testing/` нет. Каталог сценариев — только `TEST_CATALOG.md`.
 
 ### 10.5 Документы циклов
+- **На `c28ccbb`** (✔ `ls`, `cmp`, `git ls-files`): корневой `SPEC.md` — спека **цикла 35** и **побайтно совпадает** с архивной копией
+  `SPEC_CYCLE35_GOODS_DEMO_STAND.md` (426 строк; цикл сразу положил архивную копию, как цикл 34). Спека 33 заархивирована циклом 35 —
+  `SPEC_CYCLE33_UNIFIED_NOTIFICATIONS_PROFILE.md`. Добавились `ARCHITECTURE_CYCLE35.md` (§35.0–§35.19, 921 строка; отклонения —
+  §35.19.3, долги — §35.19.2), `API_CONTRACT_CYCLE35.md` (§35.20–§35.29), `contracts/cycle35/`, `BRIEF_CYCLE35_GOODS_DEMO.md` (теперь
+  отслеживается git). Нумерация § — по номеру цикла. В этом обновлении ничего не переносилось: `docs/history/` нет, архивом служат
+  суффиксы в корне, и копии цикла 35 под архивными именами уже лежат; корневой `SPEC.md` следующий цикл заменит своей спекой.
+  Корневые `ARCHITECTURE.md`/`API_CONTRACT.md` — по-прежнему от цикла 3.
+- **На `a1e2259`** (✔ `ls`, `head SPEC.md`): корневой `SPEC.md` (305 строк) — чистая спека **цикла 33** (C33-7 закрыт
+  коммитом `d83cdc7`); спека цикла 28 — `SPEC_CYCLE28_SHOWCASE_DEMO_STAND.md` (381 строка). `SPEC_CYCLE33_*.md` ещё нет — по
+  конвенции спеку 33 архивирует цикл 35. Корневые `ARCHITECTURE.md`/`API_CONTRACT.md` по-прежнему от цикла 3; документы
+  цикла 28 для образца — `ARCHITECTURE_CYCLE28.md` (§570–§583), `API_CONTRACT_CYCLE28.md` (§590–§603, демо — §597–§600a),
+  `contracts/cycle28/openapi.yaml`, `API_DOCUMENTATION.md` §4.21 (демо — §4.21.8), `DEPLOY.md` §25 (демо-стенд), §26 (тарифы
+  и витрина). Бриф цикла 35 — `BRIEF_CYCLE35_GOODS_DEMO.md` (не отслеживается git; по образцу `BRIEF_CYCLE28_SHOWCASE_AND_DEMO.md`,
+  `BRIEF_BRAND_AND_DOMAINS.md`). Описание ручных/автоматических кейсов цикла 28 — раздел в `TEST_CATALOG.md` (префикс `CY28-`).
 - **На `2834e00`** (✔ `git show 2834e00:SPEC.md`, `git ls-files`): корневой `SPEC.md` (675 строк) — ⚠️ **артефакт мерджа, две
   спеки вперемешку** (C33-7): заголовок и строки 1–45 — спека **цикла 33** («Устройства и уведомления» в профиле; дата
   2026-10-01, отправная точка `49f0d60`), со строки 46 — `# SPEC — цикл 28 …`, дальше разделы циклов 33 и 28 чередуются

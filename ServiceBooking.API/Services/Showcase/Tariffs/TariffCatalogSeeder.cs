@@ -124,6 +124,58 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
         return created;
     }
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE35.md §35.3.3, D35-2 — the hidden service tariff «Демо» of the «Заказы» line, for the five demo shops. Same template as
+    /// <see cref="EnsureShowcasePlanAsync"/>: found by Id, only created (an existing row, possibly renamed in the admin panel, is never overwritten), gets an explicit
+    /// "unavailable" rule per option. No limit of orders a month (so a demo shop never reaches 80 %/100 % and never answers 402), never public. Called by the
+    /// generator only when the graph has shops: <c>ops showcase create</c> on production never creates it.
+    /// </summary>
+    public async Task<bool> EnsureOrdersShowcasePlanAsync(CancellationToken ct = default)
+    {
+        var plan = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.Id == ShowcaseCatalog.OrdersShowcasePlanId, ct);
+        var created = plan is null;
+        if (plan is null)
+        {
+            plan = new SubscriptionPlanConfig
+            {
+                Id = ShowcaseCatalog.OrdersShowcasePlanId,
+                Name = ShowcaseCatalog.OrdersShowcasePlanName,
+                Line = CompanyKind.Orders,
+                PricePerMonth = 0m,
+                MaxCompanies = 3,
+                MaxEmployees = 10,
+                MaxProductsPerShop = 200,
+                MaxOrdersPerMonth = null,
+                AllowOrders = true,
+                AllowPublicListing = true,
+                AllowNotificationChannel = false,
+                AllowOnlineBooking = false,
+                AllowAnalytics = false,
+                AllowMailing = false,
+                AllowOnlinePayment = false,
+                PhotoQuotaMb = null,
+                PhotoRetention = PhotoRetention.TwelveMonths,
+                Description = "Служебный тариф демо-магазинов «Заказов». Не назначайте его настоящим аккаунтам.",
+                Highlights = null,
+                IsActive = true,
+                IsPublic = false,
+                IsSystemFree = false,
+                IsSystemTrial = false,
+                SortOrder = 901,
+                CreatedAt = DateTime.UtcNow,
+            };
+            db.SubscriptionPlanConfigs.Add(plan);
+        }
+
+        var options = await db.SubscriptionOptions.WhereNotRetired().ToListAsync(ct);
+        var have = (await db.PlanOptionRules.Where(r => r.PlanConfigId == plan.Id).Select(r => r.OptionId).ToListAsync(ct)).ToHashSet();
+        foreach (var option in options.Where(o => !have.Contains(o.Id)))
+            db.PlanOptionRules.Add(new PlanOptionRule { Id = Guid.NewGuid(), PlanConfigId = plan.Id, OptionId = option.Id, Availability = OptionAvailability.Unavailable });
+
+        await db.SaveChangesAsync(ct);
+        return created;
+    }
+
     private async Task<int> AddMissingUnavailableRulesAsync(
         bool apply, List<SubscriptionPlanConfig> created, List<SubscriptionPlanConfig> existingTargets, CancellationToken ct)
     {

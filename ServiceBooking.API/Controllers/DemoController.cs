@@ -6,7 +6,9 @@ using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Auth;
 using ServiceBooking.API.DTOs.Demo;
 using ServiceBooking.API.Services.Demo;
+using ServiceBooking.API.Services.PublicSites;
 using ServiceBooking.API.Services.Showcase;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
@@ -19,13 +21,17 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/demo")]
 [DemoOnly]
 public class DemoController(
-    IOptions<DemoModeOptions> options, DemoMaintenanceFlag maintenanceFlag, DemoLoginService loginService, AppDbContext db) : ControllerBase
+    IOptions<DemoModeOptions> options, DemoMaintenanceFlag maintenanceFlag, DemoLoginService loginService, PublicSiteLinks siteLinks, AppDbContext db) : ControllerBase
 {
     /// <summary>Status of the demo: the caption of the banner's data (reset time), the role buttons and "reset in progress". Anonymous; answers 200 even while the
-    /// reset runs (the maintenance middleware lets this one route through).</summary>
+    /// reset runs (the maintenance middleware lets this one route through). The optional <c>product</c> query (API_CONTRACT_CYCLE35.md §35.21) picks the three roles
+    /// of "Запись" (default, the answer of cycle 28) or of "Заказы"; any other value is a 400. The order of checks: demo mode ([DemoOnly], 404) → product → 200.</summary>
     [HttpGet("status")]
-    public async Task<ActionResult<DemoStatusDto>> GetStatus(CancellationToken ct)
+    public async Task<ActionResult<DemoStatusDto>> GetStatus([FromQuery] string? product, CancellationToken ct)
     {
+        if (!ShowcaseDemoRoles.TryParseProduct(product, out var demoProduct))
+            return BadRequest("Параметр product должен быть services или orders.");
+
         var settings = options.Value;
         var raw = await db.PlatformSettings.AsNoTracking()
             .Where(s => s.Key == DemoCatalog.LastResetKey).Select(s => s.Value).FirstOrDefaultAsync(ct);
@@ -39,7 +45,8 @@ public class DemoController(
             ResetLocalTime: settings.ResetLocalTime,
             TimeZoneId: settings.TimeZoneId,
             LastResetAtUtc: lastReset,
-            Roles: ShowcaseDemoRoles.All.Select(r => new DemoRoleDto(r.Role, r.Label)).ToList()));
+            Roles: ShowcaseDemoRoles.ForProduct(demoProduct).Select(r => new DemoRoleDto(r.Role, r.Label)).ToList(),
+            SiteUrls: new DemoSiteUrlsDto(siteLinks.SiteBaseUrl(CompanyKind.Services), siteLinks.SiteBaseUrl(CompanyKind.Orders))));
     }
 
     /// <summary>Signs in as a ready demo role without a password. 400 for an unknown role, 409 while the demo data has not been created yet.</summary>

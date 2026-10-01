@@ -1,4 +1,4 @@
-# Демо-стенд demo.visit.ezbook.ru (цикл 28, проход B; ARCHITECTURE_CYCLE28.md §581, SPEC US-28-12).
+# Демо-стенд demo.visit.ezbook.ru и demo.zakaz.ezbook.ru: два vhost, ОДИН API (цикл 35 добавил demo.zakaz) (цикл 28, проход B; ARCHITECTURE_CYCLE28.md §581, SPEC US-28-12).
 #
 # ОТДЕЛЬНЫЙ compose-проект `ezbook-demo`: свой Postgres, свои тома, своя сеть. С боевым стеком (docker-compose.prod.yml)
 # не делит ничего, кроме ОБРАЗА API и каталога ./legal (только чтение). Запуск и остановка демо боевой стек не задевают.
@@ -10,7 +10,7 @@
 # боевой выкат (DEPLOY.md §25).
 #
 # Память (A9, §581.2): api-demo 400 МБ + postgres-demo 256 МБ = 656 МБ потолок, в покое ожидается 250-400 МБ.
-# Порт API — только на localhost (5001), наружу его отдаёт nginx-vhost demo.visit.ezbook.ru. Порт Postgres НЕ публикуется.
+# Порт API — только на localhost (5001), наружу его отдают nginx-vhost demo.visit.ezbook.ru и demo.zakaz.ezbook.ru. Порт Postgres НЕ публикуется.
 #
 # Замки демо-режима (DeploymentSafetyChecks.ValidateDemoMode, §579.2): при DemoMode__Enabled=true API НЕ стартует, если
 # хост, origins, имя БД, издатель токенов или провайдеры похожи на боевые. Значения по умолчанию ниже их проходят;
@@ -54,7 +54,11 @@ services:
       - DemoMode__ResetLocalTime=${DEMO_RESET_LOCAL_TIME:-04:00}
       - DemoMode__TimeZoneId=${DEMO_TIMEZONE_ID:-Europe/Moscow}
       - PublicSites__ServicesBaseUrl=${DEMO_PUBLIC_BASE_URL:-https://demo.visit.ezbook.ru}
-      - AllowedOrigins=${DEMO_ALLOWED_ORIGINS:-https://demo.visit.ezbook.ru}
+      # Адрес «Заказов» (цикл 35, T-35-11/T-35-40): замок ValidateDemoMode п. 1a требует хост demo.* и НЕ даёт API стартовать,
+      # если значение пусто или боевое (по умолчанию в коде — боевой goods/zakaz). Все ссылки и QR магазинов строятся от него.
+      - PublicSites__OrdersBaseUrl=${DEMO_ORDERS_BASE_URL:-https://demo.zakaz.ezbook.ru}
+      # Два origin: один API обслуживает оба vhost (demo.visit и demo.zakaz). Замок требует demo.* у КАЖДОГО.
+      - AllowedOrigins=${DEMO_ALLOWED_ORIGINS:-https://demo.visit.ezbook.ru,https://demo.zakaz.ezbook.ru}
       # Имя БД обязано оканчиваться на _demo (замок 1, п. 3). Пул ограничен под max_connections=20 у postgres-demo.
       - ConnectionStrings__DefaultConnection=Host=postgres-demo;Database=servicebooking_demo;Username=postgres;Password=${DEMO_POSTGRES_PASSWORD};Maximum Pool Size=10
       # Издатель заканчивается на .Demo — боевой токен на демо не пройдёт и наоборот (замок 1, п. 4). Ключ СВОЙ, не боевой.

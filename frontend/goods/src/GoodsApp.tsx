@@ -4,6 +4,9 @@ import { QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { queryClient } from '@/queryClient'
 import { useAuthStore } from '@/store/authStore'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { DemoBanner } from '@/components/demo/DemoBanner'
+import { DemoMaintenanceGate } from '@/components/demo/DemoMaintenanceGate'
+import { DemoProductProvider } from '@/components/demo/DemoProductContext'
 import { LegalGuard } from '@/components/legal/LegalGuard'
 import { NoticeLinkProvider } from '@/components/legal/NoticeLink'
 import { OwnerTermsGateModal } from '@/components/legal/OwnerTermsGateModal'
@@ -101,65 +104,73 @@ function RouteErrorBoundary({ children }: { children: ReactNode }) {
 export function GoodsApp() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <div className="min-h-screen bg-cream font-sans text-ink">
-          <GoodsNavbar />
-          <GoodsNoticeLinks>
-            <LegalGuard bypassPaths={CONSENT_GATE_BYPASS_PATHS} showPlatformNotices>
-              <RouteErrorBoundary>
-                <Routes>
-                  <Route path="/" element={<CatalogHomePage />} />
-                  <Route path="/city/:cityId" element={<CatalogHomePage />} />
-                  <Route path="/login" element={<LoginPage />} />
-                  <Route path="/register" element={<RegisterPage />} />
-                  <Route path="/o/:token" element={<OrderPage />} />
+      {/* Cycle 35 (§35.13): this build is the «Заказы» demo — the status asks for `?product=orders`, the login screen
+          shows the three shop roles. Outside the demo (404 on the status) none of it renders. */}
+      <DemoProductProvider product="orders">
+        <BrowserRouter>
+          <DemoMaintenanceGate>
+            <div className="min-h-screen bg-cream font-sans text-ink">
+              {/* In flow, above the sticky navbar, not fixed: the cart bar and the update banner sit at the bottom. */}
+              <DemoBanner />
+              <GoodsNavbar />
+              <GoodsNoticeLinks>
+                <LegalGuard bypassPaths={CONSENT_GATE_BYPASS_PATHS} showPlatformNotices>
+                  <RouteErrorBoundary>
+                    <Routes>
+                      <Route path="/" element={<CatalogHomePage />} />
+                      <Route path="/city/:cityId" element={<CatalogHomePage />} />
+                      <Route path="/login" element={<LoginPage />} />
+                      <Route path="/register" element={<RegisterPage />} />
+                      <Route path="/o/:token" element={<OrderPage />} />
 
-                  <Route element={<RequireAuth />}>
-                    <Route path="/orders" element={<MyOrdersPage />} />
-                    <Route path="/profile" element={<GoodsProfilePage />} />
-                    <Route path="/profile/consents" element={<ConsentsPage />} />
-                    <Route path="/notices" element={<NoticesPage />} />
-                    <Route path="/cabinet" element={<CabinetHomePage />} />
-                    <Route path="/cabinet/new" element={<CreateShopPage />} />
-                    <Route path="/cabinet/devices" element={cabinetDevicesRedirect} />
-                    <Route path="/cabinet/subscription" element={<SubscriptionPage />} />
-                    <Route element={<ShopLayout />}>
-                      <Route path="/cabinet/:shopId/orders" element={<OrdersScreenPage />} />
-                      <Route path="/cabinet/:shopId/catalog" element={<CatalogPage />} />
-                      <Route path="/cabinet/:shopId/settings" element={<SettingsPage />} />
-                      <Route path="/cabinet/:shopId/staff" element={<StaffPage />} />
-                      <Route path="/cabinet/:shopId/link" element={<LinkPage />} />
-                      <Route path="/cabinet/:shopId/hours" element={<HoursPage />} />
-                      <Route path="/cabinet/:shopId/menu" element={<MenuPage />} />
-                      <Route path="/cabinet/:shopId/notifications" element={<ShopNotificationsPage />} />
-                      <Route path="/cabinet/:shopId/history" element={<HistoryPage />} />
-                      <Route path="/cabinet/:shopId/summary" element={<SummaryPage />} />
-                      <Route path="/cabinet/:shopId/picklist" element={<PickListPage />} />
-                      <Route path="/cabinet/:shopId/customers/:customerRef" element={<CustomerPage />} />
-                    </Route>
-                  </Route>
+                      <Route element={<RequireAuth />}>
+                        <Route path="/orders" element={<MyOrdersPage />} />
+                        <Route path="/profile" element={<GoodsProfilePage />} />
+                        <Route path="/profile/consents" element={<ConsentsPage />} />
+                        <Route path="/notices" element={<NoticesPage />} />
+                        <Route path="/cabinet" element={<CabinetHomePage />} />
+                        <Route path="/cabinet/new" element={<CreateShopPage />} />
+                        <Route path="/cabinet/devices" element={cabinetDevicesRedirect} />
+                        <Route path="/cabinet/subscription" element={<SubscriptionPage />} />
+                        <Route element={<ShopLayout />}>
+                          <Route path="/cabinet/:shopId/orders" element={<OrdersScreenPage />} />
+                          <Route path="/cabinet/:shopId/catalog" element={<CatalogPage />} />
+                          <Route path="/cabinet/:shopId/settings" element={<SettingsPage />} />
+                          <Route path="/cabinet/:shopId/staff" element={<StaffPage />} />
+                          <Route path="/cabinet/:shopId/link" element={<LinkPage />} />
+                          <Route path="/cabinet/:shopId/hours" element={<HoursPage />} />
+                          <Route path="/cabinet/:shopId/menu" element={<MenuPage />} />
+                          <Route path="/cabinet/:shopId/notifications" element={<ShopNotificationsPage />} />
+                          <Route path="/cabinet/:shopId/history" element={<HistoryPage />} />
+                          <Route path="/cabinet/:shopId/summary" element={<SummaryPage />} />
+                          <Route path="/cabinet/:shopId/picklist" element={<PickListPage />} />
+                          <Route path="/cabinet/:shopId/customers/:customerRef" element={<CustomerPage />} />
+                        </Route>
+                      </Route>
 
-                  <Route path="/data-request" element={<SubjectRequestPage />} />
-                  <Route path="/privacy" element={<LegalDocumentPage type="Privacy" />} />
-                  <Route path="/terms" element={<LegalDocumentPage type="TermsClient" />} />
-                  <Route path="/terms-owner" element={<LegalDocumentPage type="TermsOwner" />} />
-                  <Route path="/pdn-consent" element={<LegalDocumentPage type="PdnConsent" />} />
-                  <Route path="/channel-risk" element={<LegalDocumentPage type="ChannelRiskNotice" />} />
-                  <Route path="/offer-channel" element={<Navigate to="/terms-owner#offer-channel" replace />} />
-                  <Route path="/payment-terms" element={<Navigate to="/terms-owner#payment-terms" replace />} />
+                      <Route path="/data-request" element={<SubjectRequestPage />} />
+                      <Route path="/privacy" element={<LegalDocumentPage type="Privacy" />} />
+                      <Route path="/terms" element={<LegalDocumentPage type="TermsClient" />} />
+                      <Route path="/terms-owner" element={<LegalDocumentPage type="TermsOwner" />} />
+                      <Route path="/pdn-consent" element={<LegalDocumentPage type="PdnConsent" />} />
+                      <Route path="/channel-risk" element={<LegalDocumentPage type="ChannelRiskNotice" />} />
+                      <Route path="/offer-channel" element={<Navigate to="/terms-owner#offer-channel" replace />} />
+                      <Route path="/payment-terms" element={<Navigate to="/terms-owner#payment-terms" replace />} />
 
-                  {/* /:slug is the shop page; it stays last-resort among single-segment paths (static routes rank higher). */}
-                  <Route path="/:slug" element={<StorefrontPage />} />
-                  <Route path="*" element={<NotFoundPage />} />
-                </Routes>
-              </RouteErrorBoundary>
-              <GoodsFooter />
-            </LegalGuard>
-          </GoodsNoticeLinks>
-          <OwnerTermsGateModal />
-          <UpdateBanner />
-        </div>
-      </BrowserRouter>
+                      {/* /:slug is the shop page; it stays last-resort among single-segment paths (static routes rank higher). */}
+                      <Route path="/:slug" element={<StorefrontPage />} />
+                      <Route path="*" element={<NotFoundPage />} />
+                    </Routes>
+                  </RouteErrorBoundary>
+                  <GoodsFooter />
+                </LegalGuard>
+              </GoodsNoticeLinks>
+              <OwnerTermsGateModal />
+              <UpdateBanner />
+            </div>
+          </DemoMaintenanceGate>
+        </BrowserRouter>
+      </DemoProductProvider>
     </QueryClientProvider>
   )
 }

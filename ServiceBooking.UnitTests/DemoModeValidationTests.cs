@@ -16,7 +16,8 @@ public class DemoModeValidationTests
         {
             ["DemoMode:Enabled"] = "true",
             ["PublicSites:ServicesBaseUrl"] = "https://demo.visit.ezbook.ru",
-            ["AllowedOrigins"] = "https://demo.visit.ezbook.ru",
+            ["PublicSites:OrdersBaseUrl"] = "https://demo.zakaz.ezbook.ru",
+            ["AllowedOrigins"] = "https://demo.visit.ezbook.ru,https://demo.zakaz.ezbook.ru",
             ["ConnectionStrings:DefaultConnection"] = "Host=postgres-demo;Database=servicebooking_demo;Username=postgres;Password=x",
             ["Jwt:Issuer"] = "ServiceBooking.Demo",
             ["Notifications:Provider"] = "logging",
@@ -55,6 +56,9 @@ public class DemoModeValidationTests
     [InlineData("PublicSites:ServicesBaseUrl", "https://ezbook.ru", "PublicSites:ServicesBaseUrl")]
     [InlineData("PublicSites:ServicesBaseUrl", "https://visit.ezbook.ru", "PublicSites:ServicesBaseUrl")]
     [InlineData("PublicSites:ServicesBaseUrl", null, "PublicSites:ServicesBaseUrl")]
+    [InlineData("PublicSites:OrdersBaseUrl", "", "PublicSites:OrdersBaseUrl must be set explicitly")]
+    [InlineData("PublicSites:OrdersBaseUrl", null, "PublicSites:OrdersBaseUrl must be set explicitly")]
+    [InlineData("PublicSites:OrdersBaseUrl", "https://goods.ezbook.ru", "PublicSites:OrdersBaseUrl is 'https://goods.ezbook.ru'")]
     [InlineData("AllowedOrigins", "https://demo.visit.ezbook.ru,https://ezbook.ru", "https://ezbook.ru")]
     [InlineData("AllowedOrigins", "http://localhost:5173", "localhost")]
     [InlineData("AllowedOrigins", "", "AllowedOrigins is empty")]
@@ -76,6 +80,10 @@ public class DemoModeValidationTests
 
         act.Should().Throw<InvalidOperationException>().Which.Message.Should().Contain(expectedInMessage).And.Contain("DemoMode:Enabled is true");
     }
+
+    [Fact]
+    public void TheOrdersDemoAddress_OnDemoZakaz_Passes() =>
+        ((Action)(() => DeploymentSafetyChecks.ValidateDemoMode(Config(v => v["PublicSites:OrdersBaseUrl"] = "https://demo.zakaz.ezbook.ru")))).Should().NotThrow();
 
     [Fact]
     public void AllProblemsAreReportedTogether()

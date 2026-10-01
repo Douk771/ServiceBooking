@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Companies;
+using ServiceBooking.API.Services.Demo;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Companies;
@@ -298,6 +299,7 @@ public class CompanyMembersController(
         return Ok(new { member.UserId, member.CommissionPercent });
     }
 
+    [DemoForbidden]
     [HttpDelete("{id:guid}/members/{memberId:guid}")]
     [Authorize]
     [RequiresOwnerTerms]

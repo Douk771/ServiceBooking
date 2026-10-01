@@ -16,13 +16,14 @@ namespace ServiceBooking.API.Services.Orders;
 /// revision with one upsert statement. Callers must NOT wrap it in try/catch: a journal that silently misses a change is
 /// worse than a failed request. The revision statement is a row-level write on the shop's settings row, held until the
 /// transaction ends — order changes of one shop are serialized on it, which at ~500 orders a day is invisible.
+/// The optional <c>occurredAtUtc</c> exists for the demo stand's board task alone (§35.10.3); the writer stays one.
 /// </summary>
 public class OrderEventLog(AppDbContext db, OrderNotificationPlanner planner)
 {
     public async Task AppendAsync(
         Order order, OrderEventKind kind, OrderActor actor, OrderStatus? fromStatus, OrderStatus? toStatus,
         string? reason = null, string? comment = null, string? changesJson = null,
-        decimal? totalBefore = null, decimal? totalAfter = null, bool visibleToCustomer = true)
+        decimal? totalBefore = null, decimal? totalAfter = null, bool visibleToCustomer = true, DateTime? occurredAtUtc = null)
     {
         var orderEvent = new OrderEvent
         {
@@ -30,7 +31,9 @@ public class OrderEventLog(AppDbContext db, OrderNotificationPlanner planner)
             OrderId = order.Id,
             CompanyId = order.CompanyId,
             Kind = kind,
-            OccurredAtUtc = DateTime.UtcNow,
+            // Only the demo board task (ARCHITECTURE_CYCLE35.md §35.10.3) passes a moment: the planned one of the generator's timeline, not "now". Every product call
+            // leaves it null, so nothing else changes. The journal keeps exactly ONE writer.
+            OccurredAtUtc = occurredAtUtc ?? DateTime.UtcNow,
             ActorKind = actor.Kind,
             ActorUserId = actor.UserId,
             ActorNameSnapshot = actor.NameSnapshot,

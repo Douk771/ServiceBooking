@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using ServiceBooking.API.DTOs.StaffMax;
+using ServiceBooking.API.Services.Demo;
 using ServiceBooking.API.Services.StaffMax;
 
 namespace ServiceBooking.API.Controllers;
@@ -22,6 +23,7 @@ public class StaffMaxController(StaffMaxLinkService service) : ControllerBase
     [HttpGet]
     public async Task<ActionResult<StaffMaxStatusDto>> GetStatus(CancellationToken ct) => Ok(await service.GetStatusAsync(UserId, ct));
 
+    [DemoForbidden]
     [HttpPost("link-sessions")]
     [EnableRateLimiting("staff-max-link")]
     public async Task<ActionResult<StaffMaxLinkSessionDto>> CreateLinkSession(CancellationToken ct)

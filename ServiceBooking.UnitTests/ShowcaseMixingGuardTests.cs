@@ -37,6 +37,18 @@ public class ShowcaseMixingGuardTests
             .Should().Be("Витринную компанию нельзя перенести в настоящий аккаунт, а настоящую — в витринный.");
 
     [Fact]
+    public void CheckServicePlan_TheHiddenDemoTariffOfOrders_IsRestricted_ToShowcaseAccountsToo()
+    {
+        ShowcaseCatalog.IsServicePlan(ShowcaseCatalog.ShowcasePlanId).Should().BeTrue();
+        ShowcaseCatalog.IsServicePlan(ShowcaseCatalog.OrdersShowcasePlanId).Should().BeTrue();
+        ShowcaseCatalog.IsServicePlan(Guid.NewGuid()).Should().BeFalse();
+        ShowcaseCatalog.OrdersShowcasePlanId.Should().Be(Guid.Parse("5a1e0c35-0000-4000-8000-000000000901"), "a literal that never changes");
+        ShowcaseMixingGuard.CheckServicePlan(ShowcaseCatalog.OrdersShowcasePlanId, accountIsShowcase: true).Should().BeNull();
+        ShowcaseMixingGuard.CheckServicePlan(ShowcaseCatalog.OrdersShowcasePlanId, accountIsShowcase: false)
+            .Should().Be(ShowcaseMixingGuard.ServicePlanText);
+    }
+
+    [Fact]
     public void CheckServicePlan_OnlyTheShowcasePlan_IsRestricted_ToShowcaseAccounts()
     {
         ShowcaseMixingGuard.CheckServicePlan(ShowcaseCatalog.ShowcasePlanId, accountIsShowcase: true).Should().BeNull();
