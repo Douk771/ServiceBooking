@@ -2396,6 +2396,61 @@ curl -s "https://ezbook.ru/api/companies/public?pageSize=20" | grep -o '"isShowc
 **Откат.** Витрину удаляет `ops showcase delete --yes` (вместе с файлами `uploads/showcase/`), пересоздаёт с датами от «сегодня» `ops showcase recreate --yes`.
 Перед откатом миграции цикла 28 **обязательно** выполните `ops showcase delete --yes`. Тарифы откатывают в админке (деактивировать, не удалять).
 
+## 27. Демо «Заказов» demo.zakaz.ezbook.ru (цикл 35, US-35-08; ARCHITECTURE_CYCLE35.md §35.14)
+
+Демо «Заказов» — это **тот же** `api-demo` и та же база, что у `demo.visit` (§25), плюс второй vhost, который отдаёт
+сборку goods из текущего релиза. Пять вымышленных магазинов, три кнопки входа: владелец магазина, сотрудник, покупатель.
+Ничего никому не отправляет, закрыто от индексации, ночной сброс в 04:00 по Москве (общий с «Записью»). §25 не меняется:
+все его замки, секреты и каталоги действуют. **Агенты выкат на машину не выполняют — всё ниже делает человек (sudo — заказчик).**
+
+**Файлы.** `docker-compose.demo.yml` и `.env.demo.example` (переменная `DEMO_ORDERS_BASE_URL`, второй origin в
+`DEMO_ALLOWED_ORIGINS`), `deploy/nginx/demo.zakaz.ezbook.conf`, `deploy/ci/demo-zakaz-smoke.sh`, необязательный шаг в
+`deploy/deploy-remote.sh` (`DEMO_ZAKAZ_ENABLED=true` в боевом `.env`).
+
+**Замок.** Новый API не стартует, если `PublicSites__OrdersBaseUrl` пуст или не `demo.*` (по умолчанию в коде он боевой).
+Значения по умолчанию в compose его проходят. Причина отказа — в `docker compose logs api-demo`.
+
+### 27.1 Порядок
+
+Если `demo.visit` на машине ещё не развёрнут — сначала весь §25 целиком (тогда это первый выкат демо). Дальше:
+
+| Шаг | Ожидаемый результат |
+|---|---|
+| DNS (заведён заказчиком, Р35-2): `dig +short demo.zakaz.ezbook.ru` | адрес этого сервера. Пусто — certbot сертификат не выпустит |
+| `free -m` | `available` не меньше 900 (после замера M35 при пике api-demo > 360 МБ — 1000, см. 27.4) |
+| `cd /opt/ezbook/app && git pull` или обычный боевой выкат | образ `servicebooking-api:latest` собран из кода цикла 35 (иначе `/api/demo/status?product=orders` отвечает не так) |
+| В `.env.demo`: проверить `DEMO_ALLOWED_ORIGINS`. Если строка есть и содержит только `demo.visit` — дописать `,https://demo.zakaz.ezbook.ru` (или удалить строку, возьмётся значение по умолчанию). `DEMO_ORDERS_BASE_URL` по умолчанию `https://demo.zakaz.ezbook.ru`, менять не нужно | оба origin на месте, адрес «Заказов» начинается с `demo.` |
+| `docker compose -f docker-compose.demo.yml --env-file .env.demo config > /dev/null` | без ошибок |
+| `docker compose -f docker-compose.demo.yml --env-file .env.demo up -d` | `api-demo` перезапущен с новыми переменными. Не стартует — `docker compose ... logs api-demo`: замок назовёт адрес |
+| `docker compose -f docker-compose.demo.yml --env-file .env.demo exec -T api-demo dotnet ServiceBooking.API.dll ops demo reset --yes` | сброс до ~3 минут; создаёт и салоны, и магазины. Замерить время и пик `docker stats --no-stream` в другом окне (M35) |
+| `sudo cp /opt/ezbook/app/deploy/nginx/demo.zakaz.ezbook.conf /etc/nginx/sites-available/` и `sudo ln -sf /etc/nginx/sites-available/demo.zakaz.ezbook.conf /etc/nginx/sites-enabled/demo.zakaz.ezbook.conf` | конфиг подключён |
+| `sudo nginx -t && sudo systemctl reload nginx` | `syntax is ok`, `test is successful` (имена `map`/`log_format` у демо уникальны, с `goods.ezbook.conf` не пересекаются) |
+| `sudo certbot --nginx -d demo.zakaz.ezbook.ru`, затем `sudo certbot renew --dry-run` | сертификат выпущен, блок 443 дописан, `all simulated renewals succeeded` |
+| Консоль Yandex Cloud → SmartCaptcha → боевой ключ → разрешённые хосты → добавить `demo.zakaz.ezbook.ru` | без этого гостевой заказ на демо отвечает ошибкой капчи; заказ под ролью покупателя работает |
+| `bash deploy/ci/demo-zakaz-smoke.sh http://127.0.0.1:5001`, затем `bash deploy/ci/demo-zakaz-smoke.sh https://demo.zakaz.ezbook.ru` | `ALL OK`: статус `product=orders`, три входа, магазины и ссылки только с `demo.zakaz`, нет боевых доменов, `X-Robots-Tag: noindex`, `robots.txt` |
+| `bash deploy/ci/demo-smoke.sh https://demo.visit.ezbook.ru` | `ALL OK` (демо «Записи» не сломано) |
+| (необязательно) в боевой `.env` добавить `DEMO_ZAKAZ_ENABLED=true` | после каждого боевого выката (при `DEMO_ENABLED=true`, §25.8) дополнительно идёт смоук «Заказов»; сбой — только `WARNING` |
+
+Повторное копирование конфига поверх установленного стирает блок 443 — сразу снова `sudo certbot --nginx -d demo.zakaz.ezbook.ru`.
+
+### 27.2 Перед встречей с клиентом
+
+Выполнить **вручную** `ops demo reset --yes` (команда из таблицы выше): демо возвращается к исходному состоянию, в каждом
+магазине есть заказ «Готов». Колонка «Завершённые сегодня» пуста с ночного сброса до открытия кофейни (~07:15, долг C35-3).
+Ссылку клиентам давать только после заключения юриста по демо «Заказов» (L35-1, L35-2, долг C35-2).
+
+### 27.3 Откат и остановка
+
+Удалить symlink `/etc/nginx/sites-enabled/demo.zakaz.ezbook.conf` и `sudo systemctl reload nginx`; убрать `DEMO_ZAKAZ_ENABLED`
+из боевого `.env`. Данные «Заказов» в демо-базе `demo.visit` не мешают. Полное удаление стенда — §25.9.
+
+### 27.4 Замер памяти (M35)
+
+Лимиты не меняются до замера. Если пик `api-demo` во время сброса > 360 МБ (90 % лимита) или был OOM-kill: в
+`docker-compose.demo.yml` `mem_limit: 512m` и `DOTNET_GCHeapHardLimit=0x14000000`, условие запуска — `available` ≥ 1000 МБ.
+Цифры (пусто до замера): пик `api-demo` при сбросе — ___ МБ, покой через сутки — ___ МБ, `postgres-demo` — ___ МБ,
+время сброса — ___ с, `available` — ___ МБ, дата — ___.
+
 ## Почему так сделано
 
 ### Docker не из snap

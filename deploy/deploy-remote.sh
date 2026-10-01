@@ -371,6 +371,18 @@ update_demo_stand() {
   else
     echo "WARNING: demo smoke failed — production deploy is NOT affected. If it says 409, run the first reset: DEPLOY.md §25." >&2
   fi
+  # Цикл 35 (T-35-40): смоук демо «Заказов» — только если в .env задан DEMO_ZAKAZ_ENABLED=true (vhost demo.zakaz поставлен, DEPLOY.md §27).
+  local zakaz_enabled="${DEMO_ZAKAZ_ENABLED:-}"
+  if [ -z "$zakaz_enabled" ] && [ -f .env ]; then
+    zakaz_enabled="$(env_file_value .env DEMO_ZAKAZ_ENABLED)"
+  fi
+  if [ "$zakaz_enabled" = "true" ]; then
+    if bash deploy/ci/demo-zakaz-smoke.sh "http://127.0.0.1:$demo_port"; then
+      echo "    demo zakaz OK"
+    else
+      echo "WARNING: demo zakaz smoke failed — production deploy is NOT affected. If it says 409, run the reset: DEPLOY.md §27." >&2
+    fi
+  fi
   return 0
 }
 update_demo_stand || echo "WARNING: demo stand step failed unexpectedly — production deploy is NOT affected." >&2
