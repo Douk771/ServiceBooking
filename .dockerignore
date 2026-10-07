@@ -21,6 +21,12 @@ ServiceBooking.API/App_Data/private-uploads/**
 # Serilog's rolling file sink (runtime log output) — not data or config, shouldn't be in the image.
 ServiceBooking.API/logs/**
 
+# Host bind-mount dirs for runtime state (mirrors .gitignore /state/ and /state-demo/). They are created
+# on the host with mode 0700 and owned by the container uid, so the build context sender cannot read them:
+# `docker build` fails with "error from sender: open .../state-demo: permission denied" on a deploy host.
+state
+state-demo
+
 # Test run artifacts (coverage/trx output) — never needed inside the runtime image.
 **/TestResults
 
