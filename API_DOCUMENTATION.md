@@ -4655,6 +4655,51 @@ JSON** с `code` и готовым `message`; 401/403/404 — пустое те�
 (блок `stays`), `POST /api/billing/subscription/request` (`line: Stays`), `GET|POST|PUT /api/admin/plans` (`maxHouses`), `PUT /api/admin/billing-accounts/{id}/subscription` (`line: Stays`),
 `GET /api/push/config` (`siteUrls.stays`), `GET /api/profile/export` (`stayBookings`), `GET /api/profile/delete-account/preview` (`stayBookings`), отзыв согласия (`effects.stayBookingsMessengerDisabled`).
 
+## 4.22. «Дома» — услуги-слоты и напоминание накануне заезда (цикл 39; НЕ ВЫПУЩЕНО — доступно с ветки `cycle/039-stays-slots-ical`, на боевом адресе появится с релизом цикла 39)
+
+Документ отражает **фактическую реализацию**; контракт до кода — `API_CONTRACT_CYCLE39.md`, форма — `contracts/cycle39/openapi.yaml` (+ `openapi.json`, `service-vectors.json`, `dom-routes.json`).
+Новых маршрутов 59 (эталон `Cycle22RouteTable.golden.txt`). Время суток услуги — **минуты от 00:00 даты бизнес-дня** (`360` = 06:00, `1560` = 02:00 следующих суток; граница дня — конфигурация
+`Stays:Services:BusinessDayStartMinute`, менять при наличии данных нельзя). Подписи времени собирает сервер: гостю — календарными датами («пт 15 янв, 22:00 — сб 16 янв, 01:00»), персоналу — на бизнес-дне старта.
+
+### Правила, которые закреплены кодом
+
+* **Двойную бронь сеанса исключает ограничение PostgreSQL** `EX_StayServiceSessions_NoOverlap` по реальным моментам `[StartUtc, OccupiedUntilUtc)` (зазор — часть занятого); замок `stay-service:{serviceId}` сериализует всё, что занимает время.
+  Единый порядок замков: номер → дом → услуги (по возрастанию) → строка брони/заказа → ночи → сеансы → ревизия. Освобождение замок услуги не берёт; истёкшее удержание чужого дома снимается только `pg_try_advisory_xact_lock`.
+* Один код для «показано» и «принято»: `ServiceSlotCalculator.Calculate` и `IsStartAllowed` поверх него; причину отказа (409) выбирает `Diagnose`.
+* **Отдельный сеанс** = заказ `StayServiceOrder` (тот же `StayBookingStatus` и `StayStateMachine`) + один сеанс. Таймер — `HoldMinutes` компании, вторым проходом задачи `stays-hold-expiry`.
+* Каскад «бронь → сеансы» идёт только через `StayBookingReleaser` (страж-тест). Сеанс в брони меняет итог и остаток брони; предоплата не меняется; строки суммы — `ServiceSlot`/`ServiceItem`, `prepayEligible: false`.
+* **Возврат (ЮР39-1):** шаблоны «Без удержаний» и «Расходы на подготовку» (рубеж 3…24 ч, по умолчанию 12; удержание — только фактические расходы, не больше первого часа). Текста «не меньше 0 ₽» нет: `refund.kind = CostsOnlyUpTo`, `refundAtLeastRub = null`.
+* **Исполнитель (ЮР39-2)** обязателен при любой предоплате, в том числе для домов с 0 % (`reasonCode: NoProviderInfo`); включение заказов без проживания без сведений — 409 `ProviderRequiredForServiceOrders`.
+* **Сеанс, добавленный персоналом (ЮР39-6):** `requestBasis` обязателен (иначе 400), гостю уходит сообщение «по вашей просьбе…», на странице брони — блок с бесплатной отменой.
+* **Напоминание (ЮР39-3/4/5):** шаблон `NULL` — прежний текст цикла 37 байт в байт; push с текстом шаблона — только при включённом переключателе, жёсткий фильтр строк; маркеры кодов — 409 `ReminderConfirmationRequired`; снимок текста страницы брони пишется задачей и стирается при обезличивании.
+
+### Публичные маршруты (`stays-public`, `stay-service-create`, `stay-session-add`, `stay-public`, `stay-proof`, `stay-push`)
+
+| Метод и путь | Назначение |
+|---|---|
+| `GET /api/stays/public/companies/{slug}/services/{serviceSlug}` | страница услуги (таблица цен, позиции, правила отмены при предоплате); архив — 200 `available:false` |
+| `GET …/services/{serviceId}/availability?from&days&houseId&checkIn&checkOut` | календарь дат (`hasStarts`), режим «к проживанию» |
+| `GET …/services/{serviceId}/starts?date&…` | старты и допустимые часы |
+| `POST …/services/{serviceId}/quote` | расчёт, всегда 200, `problems[]` |
+| `POST …/services/{serviceId}/orders` | заказ без проживания: 201 / 200 (повтор) / 409 `ServiceRefusalDto` / 429 |
+| `GET /api/stays/service-orders/public/{token}` (+ `payment-proofs` POST/GET, `cancel`, `push-subscription`, `…/remove`) | страница заказа `/s/<token>` |
+| `GET /api/stays/bookings/public/{token}/services`, `…/services/{serviceId}/starts`, `…/quote`, `POST …/sessions`, `POST …/sessions/{sessionId}/cancel` | услуги к проживанию по ссылке брони |
+
+### Кабинет (`/api/stays/companies/{companyId}/…`, права `ManageServices`, `EditServiceContent`, `ManageServiceDates`)
+
+`services` (список, создание, `order`, карточка, удаление, `setup`, `content`, `publish|unpublish|archive`, `photos` ×3, `price-rules` ×4, `items` ×5, `weekly-schedule`, `date-overrides`), `service-day`,
+`service-sessions` (список, карточка, `confirm-payment`, `reject-payment`, `cancel`, файл, `quote`, ручной заказ), `services/{serviceId}/starts` и `…/availability` (для персонала: без минимального времени до начала, с позициями),
+`bookings/{bookingId}/sessions`, `arrival-reminder` (GET/PUT, `preview`, `history`).
+
+Фактические отличия от `API_CONTRACT_CYCLE39.md`: добавлен маршрут `GET …/services/{serviceId}/availability` для персонала; `serviceId` и `items` добавлены в `PublicServiceSummaryDto`, `BookingServiceOptionDto`, `ServiceLinkDto`;
+у `ServiceStartsDto` для персонала есть `items`; CHECK «не более одного владельца» (а не «ровно один») у `StayGuestPushNotifications`; файлы подтверждений заказов удаляет отдельное правило `stay-service-order-payment-proofs`.
+
+### Изменения существующих маршрутов
+
+Компания и дом (`services`, `servicesForStay`), `quote`/`bookings` дома (`services[]`), страница брони (`sessions`, `servicesBlock`, `arrivalReminder`), карточка брони (`sessions`, действие `AddSession`),
+шахматка (`services`, `serviceCells`), график (`sessions` в дне), настройки (`acceptServiceOrdersWithoutStay`), `GET /api/profile/export` (`stayServiceOrders`, `sessions`, `arrivalReminderText`),
+`GET /api/profile/delete-account/preview` (`stayServiceOrders`), `GET /api/admin/retention/policy` (+4 срока), `GET /api/staff-max` (`eligible` и для персонала «Домов»).
+
 ## 6. Справочник кодов ответа
 
 | Код | Когда встречается |
