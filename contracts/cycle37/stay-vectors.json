@@ -56,7 +56,7 @@
   },
 
   "refund": {
-    "_rule": "ЮР-1 (LEGAL_REVIEW_CYCLE37.md §6.2). prepay = 0 или статус Held → NothingPaid, 0. Отменяет владелец → Full. NoDeductions → Full. Standard: момент < 00:00 даты заезда (пояс брони) → Full, иначе Partial: refundAtLeast = prepay − min(prepay, firstNight). Flexible: момент < (дата заезда + время заезда) → Full, иначе Partial по той же формуле. AwaitingPaymentCheck и Confirmed считаются оплаченными.",
+    "_rule": "ЮР-1 (LEGAL_REVIEW_CYCLE37.md §6.2). prepay = 0 или статус Held → NothingPaid, 0. Отменяет владелец → Full. NoDeductions → Full. Standard: момент < 00:00 даты заезда (пояс брони) → Full, иначе Partial: refundAtLeast = prepay − min(prepay, firstNight). Flexible: момент < (дата заезда + время заезда) → Full, иначе Partial по той же формуле. AwaitingPaymentCheck и Confirmed считаются оплаченными. Конечный статус (ExpiredUnpaid, PaymentRejected, CancelledByGuest, CancelledByOwner) → NothingPaid, 0 при любой предоплате: отменить уже нечего.",
     "common": { "timeZoneId": "Asia/Novokuznetsk", "checkInDate": "2026-12-30", "checkInTime": "14:00", "_utc": "00:00 30.12 по Новокузнецку = 2026-12-29T17:00:00Z; 14:00 30.12 = 2026-12-30T07:00:00Z" },
     "cases": [
       { "id": "R01", "policy": "Standard", "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-29T16:59:59Z", "expected": { "kind": "Full", "refundAtLeastRub": 4950, "maxDeductionRub": 0 } },
@@ -68,7 +68,11 @@
       { "id": "R07", "policy": "Standard", "status": "Held", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-30T05:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } },
       { "id": "R08", "policy": "Standard", "status": "Confirmed", "cancelledBy": "Owner", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-30T05:00:00Z", "expected": { "kind": "Full", "refundAtLeastRub": 4950, "maxDeductionRub": 0 } },
       { "id": "R09", "policy": "Standard", "status": "AwaitingPaymentCheck", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-28T10:00:00Z", "expected": { "kind": "Full", "refundAtLeastRub": 4950, "maxDeductionRub": 0 } },
-      { "id": "R10", "policy": "Standard", "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 0, "firstNightRub": 4500, "atUtc": "2026-12-30T05:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } }
+      { "id": "R10", "policy": "Standard", "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 0, "firstNightRub": 4500, "atUtc": "2026-12-30T05:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } },
+      { "id": "R11", "policy": "Standard", "status": "ExpiredUnpaid", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-28T10:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } },
+      { "id": "R12", "policy": "Standard", "status": "CancelledByGuest", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-28T10:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } },
+      { "id": "R13", "policy": "Standard", "status": "CancelledByOwner", "cancelledBy": "Owner", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-28T10:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } },
+      { "id": "R14", "policy": "Standard", "status": "PaymentRejected", "cancelledBy": "Owner", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-28T10:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } }
     ]
   },
 
