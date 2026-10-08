@@ -602,6 +602,10 @@ P1 показа), `messages[]` (P1: отправленные гостю увед
   обезличивание броней домов (§37.13.1).
 - `GET /api/profile/consents/revoke-preview`, `POST …/revoke` (`ProviderDelivery`) — охватывают брони домов (число активных
   броней с мессенджером — в конец превью).
+- `GET /api/admin/retention/policy` (SuperAdmin) — в конец `RetentionPolicyDto` шесть сроков «Домов» из той же конфигурации
+  `Retention:*`, что читают правила (`ARCHITECTURE_CYCLE37.md` §37.13.3): `stayPaymentProofDays`, `stayUnpaidBookingDays`,
+  `stayBookingPersonalDataDays`, `stayBookingEventDays`, `stayGuestPushSubscriptionDays`, `stayGuestPushNotificationDays`
+  (целые дни; схема цикла 20 — `additionalProperties: true`).
 
 ---
 
