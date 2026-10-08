@@ -28,5 +28,11 @@ public enum ConsentSource
     // obtained" after the client signs the paper form. This is the ONLY source that opens the health
     // field (§402.3); the electronic HealthDataConsent uiText/salon form no longer does. Append-only
     // member, no migration.
-    PaperForm
+    PaperForm,
+
+    // ARCHITECTURE_CYCLE40.md §40.2.2 (Т40-L-07) — the signed-in client ticked "messages in a messenger" on a
+    // booking / order / stay form. Append-only members with explicit values.
+    MessengerOptInBooking = 12,
+    MessengerOptInOrder = 13,
+    MessengerOptInStay = 14
 }

@@ -112,8 +112,9 @@ public class ShowcaseOwnershipCoverageTests
         string[] stays = ["StaysSettings", "Houses", "HousePhotos", "HousePricePeriods", "HouseRegistryAttestations", "HouseBlocks", "HouseBlockEvents",
             "HouseOccupancies", "StayBookings", "StayBookingCharges", "StayBookingEvents", "StayPaymentProofs",
             "StayGuestPushSubscriptions", "StayGuestPushNotifications", "StaysSubscriptions"];
-        ShowcaseOwnership.NeverWritten.Keys.Where(k => k != "NotificationChannels").Should().BeEquivalentTo(stays);
-        ShowcaseOwnership.NeverWritten.Keys.Should().Contain("NotificationChannels").And.HaveCount(16);
+        // Cycle 40 (§40.2.3): ChannelOptionChangeLogs — journal of channel options, showcase accounts own no numbers.
+        ShowcaseOwnership.NeverWritten.Keys.Where(k => k != "NotificationChannels" && k != "ChannelOptionChangeLogs").Should().BeEquivalentTo(stays);
+        ShowcaseOwnership.NeverWritten.Keys.Should().Contain("NotificationChannels").And.Contain("ChannelOptionChangeLogs").And.HaveCount(17);
     }
 
     [Fact]

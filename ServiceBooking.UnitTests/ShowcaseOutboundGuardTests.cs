@@ -34,7 +34,9 @@ public class ShowcaseOutboundGuardTests
 
         // Cycle 37 appended three "Дома" reasons AFTER it (append-only): it keeps its number and the members before it stay put.
         ((int)NotificationReason.ShowcaseSuppressed).Should().Be(30);
-        ((int)NotificationReason.StayMessageOutdated).Should().Be(values.Max() - 2);
+        // Cycle 40 appended three more (34..36), so the cycle-37 trio is pinned by number, not relative to the maximum.
+        ((int)NotificationReason.StayMessageOutdated).Should().Be(31);
+        values.Max().Should().BeGreaterThanOrEqualTo(33);
         ((int)NotificationReason.StaffMaxShopInactive).Should().Be((int)NotificationReason.ShowcaseSuppressed - 1);
     }
 
