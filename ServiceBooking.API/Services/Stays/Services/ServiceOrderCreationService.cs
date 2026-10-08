@@ -192,7 +192,7 @@ public class ServiceOrderCreationService(
 
         var scope = await slots.FindOfCompanyAsync(companyId, dto.ServiceId.Value, ct);
         if (scope is null || scope.Service.ArchivedAtUtc is not null) return new ServiceOrderCreateResult(new NotFoundResult());
-        var (service, company, settings) = scope;
+        var (service, company, _) = scope;
         var existing = await db.StayServiceOrders.AsNoTracking().FirstOrDefaultAsync(o => o.CompanyId == companyId && o.IdempotencyKey == dto.IdempotencyKey, ct);
         if (existing is not null) return new ServiceOrderCreateResult(null, existing, Created: false);
 
@@ -218,7 +218,6 @@ public class ServiceOrderCreationService(
         db.StayServiceOrders.Add(order);
         sessionWriter.Add(new NewServiceSession(company.Id, service, null, order.Id, evaluation, actor.Kind, actor.UserId, actor.NameSnapshot, dto.RequestBasis, null, null), now);
         await eventLog.AppendAsync(order, StayServiceOrderEventKind.Created, actor, null, order.Status);
-        _ = settings;
         try
         {
             await db.SaveChangesAsync(ct);

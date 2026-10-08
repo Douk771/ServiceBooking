@@ -49,7 +49,7 @@ public class ServiceScheduleWriter(AppDbContext db, ServiceSlotService slots, Se
                 db.StayServiceWeeklyWindows.Add(new StayServiceWeeklyWindow { Id = Guid.NewGuid(), ServiceId = scope.Service.Id, DayOfWeek = d.DayOfWeek, StartMinute = w.StartMinute, EndMinute = w.EndMinute });
         await db.SaveChangesAsync(ct);
         var after = await WeeklyAsync(scope.Service.Id, ct);
-        await AppendAsync(scope, StayServiceScheduleEventKind.WeeklyTemplateChanged, null, before, after, actor, ct);
+        await AppendAsync(scope, StayServiceScheduleEventKind.WeeklyTemplateChanged, null, before, after, actor);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return new(null, await ResultAsync(scope, after, null, ct));
@@ -80,7 +80,7 @@ public class ServiceScheduleWriter(AppDbContext db, ServiceSlotService slots, Se
         existing.Comment = comment;
         existing.UpdatedAtUtc = clock.UtcNow;
         existing.UpdatedByUserId = actor.UserId;
-        await AppendAsync(scope, StayServiceScheduleEventKind.DateOverrideSet, date, before, OverrideSnapshot(existing), actor, ct);
+        await AppendAsync(scope, StayServiceScheduleEventKind.DateOverrideSet, date, before, OverrideSnapshot(existing), actor);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return new(null, await ResultAsync(scope, null, date, ct));
@@ -96,7 +96,7 @@ public class ServiceScheduleWriter(AppDbContext db, ServiceSlotService slots, Se
         {
             var before = OverrideSnapshot(existing);
             db.StayServiceDateOverrides.Remove(existing);
-            await AppendAsync(scope, StayServiceScheduleEventKind.DateOverrideRemoved, date, before, null, actor, ct);
+            await AppendAsync(scope, StayServiceScheduleEventKind.DateOverrideRemoved, date, before, null, actor);
             await db.SaveChangesAsync(ct);
         }
         await tx.CommitAsync(ct);
@@ -106,7 +106,7 @@ public class ServiceScheduleWriter(AppDbContext db, ServiceSlotService slots, Se
     private static object OverrideSnapshot(StayServiceDateOverride o) =>
         new { closed = o.IsClosed, windows = ServiceJson.ReadWindows(o.WindowsJson), comment = o.Comment };
 
-    private async Task AppendAsync(ServiceScope scope, StayServiceScheduleEventKind kind, DateOnly? date, object? before, object? after, StayActor actor, CancellationToken ct)
+    private async Task AppendAsync(ServiceScope scope, StayServiceScheduleEventKind kind, DateOnly? date, object? before, object? after, StayActor actor)
     {
         db.StayServiceScheduleEvents.Add(new StayServiceScheduleEvent
         {
@@ -114,7 +114,6 @@ public class ServiceScheduleWriter(AppDbContext db, ServiceSlotService slots, Se
             ActorNameSnapshot = actor.NameSnapshot, BeforeJson = JsonSerializer.Serialize(before, Json), AfterJson = JsonSerializer.Serialize(after, Json),
         });
         await bookingLog.BumpRevisionAsync(scope.Company.Id);
-        _ = ct;
     }
 
     // ── result, month, sessions outside the windows ──

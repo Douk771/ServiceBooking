@@ -81,7 +81,7 @@ public class ServiceDtoMapper(
             new OrderCancellationDto(o.CancellationPolicySnapshot, ServiceTexts.CancellationSummary(o.CancellationPolicySnapshot, o.CancellationBoundaryHoursSnapshot), canCancel,
                 refund, !canCancel && active ? (holdExpired ? ServiceTexts.HoldExpired(phone) : ServiceTexts.AlreadyStarted(phone)) : null),
             o.GuestName, StayPhone.Mask(o.GuestPhone), o.Comment, o.StatusReason,
-            StayStateMachine.IsTerminal(o.Status) ? (ServiceTexts.OutcomeText(o.Status, o.StatusReason, phone, o.PrepayRub) is { Length: > 0 } t ? t : null) : null,
+            StayStateMachine.IsTerminal(o.Status) ? (ServiceTexts.OutcomeText(o.Status, o.StatusReason, phone, o.PaymentConfirmedAtUtc != null || proofs.Count > 0) is { Length: > 0 } t ? t : null) : null,
             new OrderNotificationsDto(new WebPushInfoDto(pushOn, pushOn ? webPush.Value.VapidPublicKey : null), o.NotifyByMessenger), actions);
     }
 
@@ -131,8 +131,8 @@ public class ServiceDtoMapper(
         return new BookingServicesBlockDto(reason is null, reason, reason is null && b.Status == StayBookingStatus.Held ? ServiceTexts.HeldHint : null);
     }
 
-    public async Task<ArrivalReminderSnapshotDto?> ReminderSnapshotOf(StayBooking b) =>
-        await Task.FromResult(b.ArrivalReminderPageText is { } text && b.ArrivalReminderSentAtUtc is { } sent ? new ArrivalReminderSnapshotDto(text, sent) : null);
+    public static ArrivalReminderSnapshotDto? ReminderSnapshotOf(StayBooking b) =>
+        b.ArrivalReminderPageText is { } text && b.ArrivalReminderSentAtUtc is { } sent ? new ArrivalReminderSnapshotDto(text, sent) : null;
 
     // ── the staff's views ──
 

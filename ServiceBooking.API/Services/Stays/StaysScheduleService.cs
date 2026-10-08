@@ -39,7 +39,7 @@ public class StaysScheduleService(AppDbContext db, IStaysClock clock)
                 b.Adults, b.Children, b.ExtraBeds, b.Dogs, b.NeedCot, b.Comment, b.Status, b.PersonalDataErased
             }).ToListAsync(ct);
 
-        var sessionsByDay = await SessionsAsync(company, role, showComment, from, to, ct);
+        var sessionsByDay = await SessionsAsync(company, showComment, from, to, ct);
         var result = new List<ScheduleDayDto>();
         for (var d = from; d < to; d = d.AddDays(1))
         {
@@ -64,9 +64,8 @@ public class StaysScheduleService(AppDbContext db, IStaysClock clock)
     /// ARCHITECTURE_CYCLE39.md §39.10, Т39-10 — the sessions of services in the schedule: ONE shape for every role, WITHOUT a phone, amounts, files or a payment status (only the mark that
     /// payment is not confirmed). On the business date of the start; only sessions whose parent is awaiting a check or confirmed.
     /// </summary>
-    private async Task<Dictionary<DateOnly, List<ScheduleSessionDto>>> SessionsAsync(Company company, StaysMyRole role, bool showComment, DateOnly from, DateOnly to, CancellationToken ct)
+    private async Task<Dictionary<DateOnly, List<ScheduleSessionDto>>> SessionsAsync(Company company, bool showComment, DateOnly from, DateOnly to, CancellationToken ct)
     {
-        _ = role;
         var sessions = await db.StayServiceSessions.AsNoTracking()
             .Where(s => s.CompanyId == company.Id && s.ReleasedAtUtc == null && s.BusinessDate >= from && s.BusinessDate < to).OrderBy(s => s.StartUtc).ToListAsync(ct);
         if (sessions.Count == 0) return [];

@@ -585,6 +585,11 @@ namespace ServiceBooking.Infrastructure.Migrations
                 column: "StayServiceOrderId",
                 filter: "\"StayServiceOrderId\" IS NOT NULL");
 
+            migrationBuilder.AddCheckConstraint(
+                name: "CK_StaffMaxMessages_OneSubject",
+                table: "StaffMaxMessages",
+                sql: "num_nonnulls(\"OrderId\", \"StayBookingId\", \"StayServiceOrderId\") <= 1");
+
             migrationBuilder.CreateIndex(
                 name: "IX_OutboundNotifications_StayServiceOrderId",
                 table: "OutboundNotifications",
@@ -929,6 +934,10 @@ namespace ServiceBooking.Infrastructure.Migrations
 
             migrationBuilder.DropIndex(
                 name: "IX_StaffMaxMessages_StayServiceOrderId",
+                table: "StaffMaxMessages");
+
+            migrationBuilder.DropCheckConstraint(
+                name: "CK_StaffMaxMessages_OneSubject",
                 table: "StaffMaxMessages");
 
             migrationBuilder.DropIndex(

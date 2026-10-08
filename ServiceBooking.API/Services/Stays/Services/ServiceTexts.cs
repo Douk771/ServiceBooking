@@ -117,14 +117,14 @@ public static class ServiceTexts
         _ => "Снят вместе с заказом"
     };
 
-    public static string OutcomeText(StayBookingStatus status, string? reason, string? phone, int prepayRub)
+    public static string OutcomeText(StayBookingStatus status, string? reason, string? phone, bool prepaid)
     {
         var contact = string.IsNullOrWhiteSpace(phone) ? "" : $" Контакт компании: {phone}.";
         var why = string.IsNullOrWhiteSpace(reason) ? "" : $" Причина: {reason}.";
         return status switch
         {
             StayBookingStatus.PaymentRejected => $"Компания не подтвердила оплату.{why} Если вы платили, компания обязана вернуть деньги или восстановить заказ, если время свободно.{contact}",
-            StayBookingStatus.CancelledByOwner when prepayRub > 0 =>
+            StayBookingStatus.CancelledByOwner when prepaid =>
                 $"Компания отменила заказ.{why} Внесённая предоплата должна быть возвращена полностью. Вы также вправе требовать возмещения убытков.{contact}",
             StayBookingStatus.CancelledByOwner => $"Компания отменила заказ.{why} Оплата за сеанс не вносилась.{contact}",
             StayBookingStatus.ExpiredUnpaid => $"Время на оплату истекло, заказ снят. Если вы успели оплатить — свяжитесь с компанией.{contact}",

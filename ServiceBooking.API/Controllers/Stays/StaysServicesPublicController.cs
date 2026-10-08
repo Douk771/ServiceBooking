@@ -39,13 +39,11 @@ public class StaysServicesPublicController(
         {
             if (!StaysCatalogService.TryDate(from, out start)) return BadRequest("Неверный период");
         }
-        var max = scope.Settings.HorizonDays;
         var count = days ?? 14;
         if (count is < 1 or > 31) return BadRequest("Неверный период");
         var (stay, error) = await StayModeAsync(scope, houseId, checkIn, checkOut, ct);
         if (error is not null) return error;
         if (stay is not null && !scope.Service.AvailableForHouseBookings) return Ok(new ServiceAvailabilityDto(serviceId, today, []));
-        _ = max;
         return Ok(new ServiceAvailabilityDto(serviceId, today, await slots.AvailabilityAsync(scope, start, count, staff: false, stay, ct)));
     }
 

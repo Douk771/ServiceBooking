@@ -6,7 +6,7 @@ namespace ServiceBooking.API.Services.Stays;
 /// <summary>What the texts of a service notification are made of — assembled once by the planner from the session/order, never from the request.</summary>
 public sealed record ServiceTextFacts(
     string CompanyName, string ServiceName, string? HouseName, DateOnly BusinessDate, int StartMinute, int Hours, string? CompanyPhone, string? Reason,
-    int PrepayRub, string? PaymentDetails, string? PaymentPurpose, DateTime? HoldExpiresLocal, string? Address);
+    int PrepayRub, bool Paid, string? PaymentDetails, string? PaymentPurpose, DateTime? HoldExpiresLocal, string? Address);
 
 /// <summary>
 /// API_CONTRACT_CYCLE39.md §39.34 — fixed texts of the notifications about services. Staff messages carry NO name or phone of the guest and use the staff form of time;
@@ -65,7 +65,7 @@ public static class ServiceNotificationTexts
                 $"{f.CompanyName}: оплата подтверждена. «{f.ServiceName}», {time}." + (string.IsNullOrWhiteSpace(f.Address) ? string.Empty : $" Адрес: {f.Address}.") + $" Заказ: {pageUrl}",
             NotificationType.ServiceGuestPaymentRejected =>
                 $"{f.CompanyName}: оплата заказа «{f.ServiceName}» не подтверждена.{why} Если вы платили, компания обязана вернуть деньги или восстановить заказ.{contact} {pageUrl}",
-            NotificationType.ServiceGuestCancelledByOwner when f.PrepayRub > 0 =>
+            NotificationType.ServiceGuestCancelledByOwner when f.Paid =>
                 $"{f.CompanyName}: заказ «{f.ServiceName}», {time} отменён компанией.{why} Предоплата возвращается полностью; вы вправе требовать возмещения убытков.{contact} {pageUrl}",
             NotificationType.ServiceGuestCancelledByOwner =>
                 $"{f.CompanyName}: заказ «{f.ServiceName}», {time} отменён компанией.{why} Оплата за сеанс не вносилась.{contact} {pageUrl}",

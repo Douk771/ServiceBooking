@@ -136,9 +136,10 @@ public class StaysHousesController(
         if (input.ExtraBedsEnabled && input.ExtraBedsMax is < 1 or > 10) return BadRequest("Доп. мест — от 1 до 10");
         if (input.ExtraBedPriceRub is < 0 or > 100_000) return BadRequest("Сумма — от 0 до 100 000 ₽");
 
-        if (StaysSlugPolicy.IsReservedHouseSlug(slug)) return Conflict(new StaysConflictDto("SlugReserved", "Этот адрес зарезервирован — выберите другой"));
         if (slug != house.Slug)
         {
+            // A house that kept an old address (the migration renames only the reserved ones it finds) can still save its card; only a CHANGE to a reserved word is refused.
+            if (StaysSlugPolicy.IsReservedHouseSlug(slug)) return Conflict(new StaysConflictDto("SlugReserved", "Этот адрес зарезервирован — выберите другой"));
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             await AdvisoryLock.AcquireAsync(db, $"stay-houses:{companyId}");
             if (await db.Houses.AnyAsync(h => h.CompanyId == companyId && h.Slug == slug && h.Id != houseId, ct))

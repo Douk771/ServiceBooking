@@ -3650,7 +3650,10 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("ExpiresAtUtc", "CreatedAt"), new[] { "CompanyId", "ChatKey" });
 
-                    b.ToTable("StaffMaxMessages");
+                    b.ToTable("StaffMaxMessages", t =>
+                        {
+                            t.HasCheckConstraint("CK_StaffMaxMessages_OneSubject", "num_nonnulls(\"OrderId\", \"StayBookingId\", \"StayServiceOrderId\") <= 1");
+                        });
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.StaffPushNotification", b =>

@@ -327,7 +327,7 @@ public class StayBookingCreationService(
         // The booking of cycle 37 byte for byte when no service is chosen: the details of the event appear only with services.
         await eventLog.AppendAsync(booking, StayBookingEventKind.Created, actor, null, booking.Status,
             detailsJson: serviceChoices.Count > 0 ? System.Text.Json.JsonSerializer.Serialize(new { services = serviceChoices.Count }) : null);
-        if (serviceChoices.Count > 0) await AddSessionsAsync(booking, ctx, serviceChoices, actor, now, ct);
+        if (serviceChoices.Count > 0) await AddSessionsAsync(booking, serviceChoices, actor, now);
         if (!held) await checkInInfo.ReleaseIfDueAsync(booking, StayActor.System, ct);
 
         // 9. Save. A race with another booking / block is the database's EXCLUDE constraint; a race of the same key is the unique index.
@@ -442,10 +442,10 @@ public class StayBookingCreationService(
     private static StayQuoteDto MergeServicesOrSame(StayQuoteDto quote, List<StayServiceChoice> choices) => choices.Count == 0 ? quote : MergeServices(quote, choices);
 
     /// <summary>The sessions chosen together with the stay: rows, charge lines and the totals of the booking (a service is paid on site: the prepayment does not change).</summary>
-    private async Task AddSessionsAsync(StayBooking booking, StayHouseContext ctx, List<StayServiceChoice> choices, StayActor actor, DateTime now, CancellationToken ct)
+    private async Task AddSessionsAsync(StayBooking booking, List<StayServiceChoice> choices, StayActor actor, DateTime now)
     {
         var noticeVersion = legalProvider.Current?.GetText(LegalTextKey.StayServiceAddNotice)?.Version;
-        var position = await Task.FromResult(db.ChangeTracker.Entries<StayBookingCharge>().Count(e => e.Entity.StayBookingId == booking.Id));
+        var position = db.ChangeTracker.Entries<StayBookingCharge>().Count(e => e.Entity.StayBookingId == booking.Id);
         foreach (var c in choices)
         {
             var evaluation = c.Evaluation!;
@@ -459,8 +459,6 @@ public class StayBookingCreationService(
             await eventLog.AppendAsync(booking, StayBookingEventKind.ServiceSessionAdded, actor, booking.Status, booking.Status,
                 detailsJson: System.Text.Json.JsonSerializer.Serialize(new { sessionId = session.Id, addedByStaff = false, viaBooking = true }), serviceSessionId: session.Id);
         }
-        _ = ctx;
-        _ = ct;
     }
 
     private StayBooking NewBooking(StayHouseContext ctx, StayStayInput input, StayEvaluation eval, StayQuoteResult money, DateTime now)

@@ -88,7 +88,7 @@ public class StayDtoMapper(
                 !canCancel && active ? (holdExpired ? StaysTexts.HoldExpiredMessage(phone) : StaysTexts.CannotCancel(phone)) : null),
             b.StatusReason, StayStateMachine.IsTerminal(b.Status) ? StaysTexts.OutcomeText(b.Status, b.StatusReason, phone) is { Length: > 0 } t ? t : null : null,
             info, new BookingNotificationsDto(new WebPushInfoDto(pushOn, pushOn ? webPush.Value.VapidPublicKey : null), b.NotifyByMessenger), actions,
-            await serviceMapper.PublicSessionsOfAsync(b, company, ct), await serviceMapper.ServicesBlockAsync(b, company, settings, ct), await serviceMapper.ReminderSnapshotOf(b));
+            await serviceMapper.PublicSessionsOfAsync(b, company, ct), await serviceMapper.ServicesBlockAsync(b, company, settings, ct), ServiceDtoMapper.ReminderSnapshotOf(b));
     }
 
     // ── the staff's card ──

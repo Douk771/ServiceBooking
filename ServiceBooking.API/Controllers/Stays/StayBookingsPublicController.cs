@@ -21,7 +21,7 @@ public class StayBookingsPublicController(
     AppDbContext db, StayDtoMapper mapper, StayPaymentProofService proofs, StayBookingTransitionService transitions, StayActorResolver actors,
     StayProofIpLimiter proofIpLimiter, IStaysClock clock, ServiceBooking.API.Services.Notifications.StayGuestPushSubscriptionWriter pushWriter,
     Microsoft.Extensions.Options.IOptions<ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions> webPush,
-    ServiceSessionAddService sessionAdd, ServiceSlotService slots, ServiceDtoMapper serviceMapper, StaysCompanyService companyService) : ControllerBase
+    ServiceSessionAddService sessionAdd, StaySessionIpLimiter sessionIpLimiter, ServiceSlotService slots, ServiceDtoMapper serviceMapper, StaysCompanyService companyService) : ControllerBase
 {
     private const int MaxTokenLength = 100;
 
@@ -153,6 +153,8 @@ public class StayBookingsPublicController(
     public async Task<ActionResult<PublicStayBookingDto>> AddSession(string token, AddSessionInput input, CancellationToken ct)
     {
         if (token.Length > MaxTokenLength) return NotFound();
+        // the second link of the chain (§39.32): 30 per hour per IP
+        if (!sessionIpLimiter.TryAcquire(HttpContext.Connection.RemoteIpAddress?.ToString())) return StatusCode(StatusCodes.Status429TooManyRequests, StaySessionIpLimiter.Text);
         var result = await sessionAdd.AddByGuestAsync(token, input, User, ct);
         if (result.Error is not null) return result.Error;
         var dto = await mapper.ToPublicAsync((await FindAsync(token, ct))!, ct);

@@ -107,8 +107,15 @@ public class StaysServiceSessionsController(
         if (serviceId is { } sid) orderQuery = orderQuery.Where(x => x.Session.ServiceId == sid);
         if (fromDate is { } fd) orderQuery = orderQuery.Where(x => x.Session.BusinessDate >= fd);
         if (toDate is { } td) orderQuery = orderQuery.Where(x => x.Session.BusinessDate <= td);
-        var orderRows = await orderQuery.Take(500).ToListAsync(ct);
-        var firstProofs = await db.StayPaymentProofs.AsNoTracking().Where(p => p.CompanyId == companyId && p.StayServiceOrderId != null)
+        // Sorted and cut IN THE DATABASE: each source gives its first page*pageSize rows in the final order, the merge below slices the page.
+        var take = page * pageSize;
+        var orderCount = await orderQuery.CountAsync(ct);
+        var orderedOrders = awaitingOnly
+            ? orderQuery.OrderBy(x => x.Order.PaymentProofs.Min(p => (DateTime?)p.UploadedAtUtc) ?? x.Order.CreatedAtUtc)
+            : orderQuery.OrderByDescending(x => x.Session.StartUtc);
+        var orderRows = await orderedOrders.Take(take).ToListAsync(ct);
+        var pageOrderIds = orderRows.Select(x => x.Order.Id).ToList();
+        var firstProofs = await db.StayPaymentProofs.AsNoTracking().Where(p => p.StayServiceOrderId != null && pageOrderIds.Contains(p.StayServiceOrderId.Value))
             .GroupBy(p => p.StayServiceOrderId!.Value).Select(g => new { Id = g.Key, First = g.Min(p => p.UploadedAtUtc) }).ToDictionaryAsync(x => x.Id, x => x.First, ct);
 
         var now = clock.UtcNow;
@@ -121,6 +128,7 @@ public class StaysServiceSessionsController(
                 x.Order.Status == StayBookingStatus.Held ? x.Order.HoldExpiresAtUtc : null, firstProofs.TryGetValue(x.Order.Id, out var fp) ? fp : null, x.Order.CreatedAtUtc), x.Session.StartUtc);
         }).ToList();
 
+        var bookingCount = 0;
         if (withBookingSessions)
         {
             var bq = from s in db.StayServiceSessions.AsNoTracking()
@@ -131,7 +139,8 @@ public class StaysServiceSessionsController(
             if (serviceId is { } sid2) bq = bq.Where(x => x.Session.ServiceId == sid2);
             if (fromDate is { } fd2) bq = bq.Where(x => x.Session.BusinessDate >= fd2);
             if (toDate is { } td2) bq = bq.Where(x => x.Session.BusinessDate <= td2);
-            foreach (var x in await bq.Take(500).ToListAsync(ct))
+            bookingCount = await bq.CountAsync(ct);
+            foreach (var x in await bq.OrderByDescending(x => x.Session.StartUtc).Take(take).ToListAsync(ct))
                 items.Add((x.Session.CreatedAtUtc, new StaffServiceSessionListItemDto(
                     x.Session.Id, ServiceSessionKind.InBooking, x.Session.ServiceId, x.Session.ServiceNameSnapshot, ServiceDtoMapper.TimeOf(x.Session, forStaff: true), x.HouseName,
                     x.Booking.Id, x.Booking.GuestName, x.Booking.GuestPhone, null, x.Session.State, ServiceTexts.SessionStateText(x.Session.State), x.Session.TotalRub, 0, null, null,
@@ -139,7 +148,7 @@ public class StaysServiceSessionsController(
         }
 
         var ordered = awaitingOnly ? items.OrderBy(i => i.Sort).ToList() : items.OrderByDescending(i => i.Item.Time.StartUtc).ToList();
-        return Ok(new StaffServiceSessionPage(ordered.Skip((page - 1) * pageSize).Take(pageSize).Select(i => i.Item).ToList(), ordered.Count, page, pageSize));
+        return Ok(new StaffServiceSessionPage(ordered.Skip((page - 1) * pageSize).Take(pageSize).Select(i => i.Item).ToList(), orderCount + bookingCount, page, pageSize));
     }
 
     [HttpGet("service-sessions/{sessionId:guid}")]

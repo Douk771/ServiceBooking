@@ -19,9 +19,15 @@ public static class BusinessClock
         return (date, minute);
     }
 
-    /// <summary>The instant at which the local wall clock shows <c>date 00:00 + minute</c>.</summary>
-    public static DateTime ToUtc(string timeZoneId, DateOnly date, int minute) =>
-        StayTime.ToUtc(timeZoneId, date, TimeOnly.MinValue).AddMinutes(minute);
+    /// <summary>
+    /// The instant at which the local WALL CLOCK shows <c>date 00:00 + minute</c>. The wall time is built first and converted after, so a zone with daylight saving time is right too
+    /// (adding the minutes to the UTC instant of midnight would be an hour off after a transition); a wall time that does not exist is moved forward by an hour (<see cref="StayTime.ToUtc"/>).
+    /// </summary>
+    public static DateTime ToUtc(string timeZoneId, DateOnly date, int minute)
+    {
+        var wall = date.ToDateTime(TimeOnly.MinValue).AddMinutes(minute);
+        return StayTime.ToUtc(timeZoneId, DateOnly.FromDateTime(wall), TimeOnly.FromDateTime(wall));
+    }
 
     /// <summary>"Today" of a service schedule: at 01:00 on Saturday it is still Friday.</summary>
     public static DateOnly TodayBusinessDate(string timeZoneId, DateTime nowUtc, int businessDayStartMinute = DefaultBusinessDayStartMinute) =>

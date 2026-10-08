@@ -12,7 +12,7 @@ using ServiceBooking.Infrastructure.Data;
 namespace ServiceBooking.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261008175119_Cycle39StaysServices")]
+    [Migration("20261008220221_Cycle39StaysServices")]
     partial class Cycle39StaysServices
     {
         /// <inheritdoc />
@@ -3653,7 +3653,10 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("ExpiresAtUtc", "CreatedAt"), new[] { "CompanyId", "ChatKey" });
 
-                    b.ToTable("StaffMaxMessages");
+                    b.ToTable("StaffMaxMessages", t =>
+                        {
+                            t.HasCheckConstraint("CK_StaffMaxMessages_OneSubject", "num_nonnulls(\"OrderId\", \"StayBookingId\", \"StayServiceOrderId\") <= 1");
+                        });
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.StaffPushNotification", b =>

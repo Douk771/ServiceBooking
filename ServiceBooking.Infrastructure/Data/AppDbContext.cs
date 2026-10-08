@@ -1373,6 +1373,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(m => m.StayBookingId);
             e.HasOne(m => m.StayServiceOrder).WithMany().HasForeignKey(m => m.StayServiceOrderId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(m => m.StayServiceOrderId).HasFilter("\"StayServiceOrderId\" IS NOT NULL");
+            e.ToTable(t => t.HasCheckConstraint("CK_StaffMaxMessages_OneSubject", "num_nonnulls(\"OrderId\", \"StayBookingId\", \"StayServiceOrderId\") <= 1"));
             e.Property(m => m.ChatKey).HasMaxLength(64);
             e.Property(m => m.Text).HasMaxLength(2000);
             e.Property(m => m.ReasonDetail).HasMaxLength(300);

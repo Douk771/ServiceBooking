@@ -24,8 +24,8 @@ public class ServiceTextsTests
         foreach (var status in Enum.GetValues<StayBookingStatus>())
         {
             texts.Add(ServiceTexts.StatusText(status.ToString()));
-            texts.Add(ServiceTexts.OutcomeText(status, "причина", "+7 900", 0));
-            texts.Add(ServiceTexts.OutcomeText(status, "причина", "+7 900", 1000));
+            texts.Add(ServiceTexts.OutcomeText(status, "причина", "+7 900", false));
+            texts.Add(ServiceTexts.OutcomeText(status, "причина", "+7 900", true));
         }
         texts.AddRange(Enum.GetValues<StayServiceSessionState>().Select(ServiceTexts.SessionStateText));
         texts.AddRange(Enum.GetValues<StayServiceOrderEventKind>().Select(ServiceTexts.StaffEventText));

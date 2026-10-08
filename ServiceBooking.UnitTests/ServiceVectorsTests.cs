@@ -82,6 +82,21 @@ public class ServiceVectorsTests
     }
 
     [Fact]
+    public void BusinessDay_is_right_in_a_zone_with_daylight_saving_time()
+    {
+        // Europe/Berlin changes its clock on the night of 28 March 2027 (02:00 → 03:00): ToUtc must follow the wall clock, not add minutes to the UTC instant of midnight.
+        const string berlin = "Europe/Berlin";
+        var date = new DateOnly(2027, 3, 27);
+        BusinessClock.ToUtc(berlin, date, 1500).Should().Be(new DateTime(2027, 3, 28, 0, 0, 0, DateTimeKind.Utc), "01:00 on the 28th, still winter time (UTC+1)");
+        BusinessClock.ToUtc(berlin, date, 1680).Should().Be(new DateTime(2027, 3, 28, 2, 0, 0, DateTimeKind.Utc), "04:00 on the 28th, summer time (UTC+2)");
+        for (var minute = 360; minute < 1800; minute += 30)
+        {
+            if (minute is >= 1560 and < 1620) continue; // 02:00–03:00 does not exist that night
+            BusinessClock.BusinessDateOf(berlin, BusinessClock.ToUtc(berlin, date, minute)).Should().Be((date, minute));
+        }
+    }
+
+    [Fact]
     public void Today_of_a_service_is_still_friday_at_01_00_on_saturday()
     {
         BusinessClock.TodayBusinessDate(Tz, Utc("2027-01-15T18:00:00Z")).Should().Be(new DateOnly(2027, 1, 15));

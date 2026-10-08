@@ -129,6 +129,8 @@ public class StaysServicesController(
             return BadRequest($"Срок для полного возврата — от {range.Min} до {range.Max} часов до начала");
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // §39.5.2: a change of the rules of a service runs under the lock of the service, the board revision comes last.
+        await sessionWriter.LockServiceAsync(serviceId);
         await AdvisoryLock.AcquireAsync(db, $"stay-services:{companyId}");
         if (await db.StayServices.AnyAsync(s => s.CompanyId == companyId && s.Slug == slug && s.Id != serviceId, ct))
             return Conflict(new StaysServiceConflictDto(nameof(StaysServiceConflictCode.SlugTaken), "Такой адрес уже есть у другой услуги"));
@@ -145,6 +147,7 @@ public class StaysServicesController(
         service.CancellationBoundaryHours = input.CancellationBoundaryHours;
         service.AvailableForHouseBookings = input.AvailableForHouseBookings;
         service.UpdatedAtUtc = clock.UtcNow;
+        await revision.BumpRevisionAsync(companyId);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return Ok(await catalog.BuildManageAsync(r.Company!, service, await companyService.LoadSettingsAsync(companyId, ct: ct), ct));

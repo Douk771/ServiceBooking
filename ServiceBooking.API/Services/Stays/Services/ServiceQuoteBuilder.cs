@@ -18,7 +18,6 @@ public static class ServiceQuoteBuilder
         ServiceScope scope, ServiceEvaluation e, int? prepayPercent, GateResult gate, int holdMinutes)
     {
         var svc = scope.Service;
-        var tz = scope.Company.TimeZoneId;
         var timeShown = e.Hours is >= 1 and <= 12 && e.StartMinute is >= 0 and <= 2880;
         var time = timeShown
             ? new ServiceTimeDto(e.BusinessDate, e.StartMinute, e.StartMinute + 60 * e.Hours, e.Hours, e.StartUtc, e.EndUtc, ServiceTimeFormat.Guest(e.BusinessDate, e.StartMinute, e.Hours))
@@ -28,7 +27,6 @@ public static class ServiceQuoteBuilder
         var lines = m is null ? [] : Lines(svc.Name, e.Hours, m.ServiceAmountRub, e.Items);
         var withPrepay = prepayPercent is > 0;
         var summary = withPrepay ? ServiceTexts.CancellationSummary(svc.CancellationPolicy, svc.CancellationBoundaryHours) : null;
-        _ = tz;
         return new ServiceQuoteDto(
             e.Ok, e.Problems.Select(p => new ServiceProblemDto(p.Code, p.Message)).ToList(), time, hourPrices, lines,
             m?.ServiceAmountRub ?? 0, m?.ItemsAmountRub ?? 0, m?.TotalRub ?? 0, withPrepay ? prepayPercent : null, withPrepay ? m?.PrepayRub ?? 0 : 0,

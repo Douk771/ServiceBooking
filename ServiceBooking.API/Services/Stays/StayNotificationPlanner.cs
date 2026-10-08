@@ -41,11 +41,11 @@ public class StayNotificationPlanner(
     private async Task<StayServiceSession?> SessionAsync(Guid id, CancellationToken ct) =>
         db.StayServiceSessions.Local.FirstOrDefault(x => x.Id == id) ?? await db.StayServiceSessions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
 
-    private ServiceTextFacts ServiceFacts(Company company, StayServiceSession session, string? houseName, string? reason, StayServiceOrder? order, StaysSettings settings)
+    private ServiceTextFacts ServiceFacts(Company company, StayServiceSession session, string? houseName, string? reason, StayServiceOrder? order, StaysSettings settings, bool paid = false)
     {
         var holdLocal = order?.HoldExpiresAtUtc is { } h ? StayTime.LocalDateTime(order.TimeZoneIdSnapshot, h) : (DateTime?)null;
         return new ServiceTextFacts(company.Name, session.ServiceNameSnapshot, houseName, session.BusinessDate, session.StartMinute, session.Hours, company.Phone, reason,
-            order?.PrepayRub ?? 0, order?.PaymentDetailsSnapshot, order?.PaymentPurposeSnapshot, holdLocal, company.Address);
+            order?.PrepayRub ?? 0, paid, order?.PaymentDetailsSnapshot, order?.PaymentPurposeSnapshot, holdLocal, company.Address);
     }
 
     private async Task DeliverSessionAsync(StayBooking booking, Guid sessionId, StayBookingEvent ev, IReadOnlyList<PlannedNotification> entries, CancellationToken ct)
@@ -66,13 +66,13 @@ public class StayNotificationPlanner(
         var entries = StayNotificationPlan.ForOrderEvent(ev.Kind, order.IsManual).ToList();
         if (ev.Kind == StayServiceOrderEventKind.PaymentProofUploaded && ev.DetailsJson is { } d && !d.Contains("\"proofNumber\":1")) return;
         if (entries.Count == 0) return;
-        await DeliverOrderAsync(order, ev.Id.ToString(), entries, ct);
+        await DeliverOrderAsync(order, ev.Id.ToString(), entries, ct, paid: ev.FromStatus is StayBookingStatus.AwaitingPaymentCheck or StayBookingStatus.Confirmed);
     }
 
     public async Task OnOrderScheduledAsync(StayServiceOrder order, CancellationToken ct = default) =>
         await DeliverOrderAsync(order, "HoldExpiring", [new PlannedNotification(NotificationType.ServiceGuestHoldExpiring, StayAudience.Guest)], ct);
 
-    private async Task DeliverOrderAsync(StayServiceOrder order, string marker, IReadOnlyList<PlannedNotification> entries, CancellationToken ct)
+    private async Task DeliverOrderAsync(StayServiceOrder order, string marker, IReadOnlyList<PlannedNotification> entries, CancellationToken ct, bool paid = false)
     {
         var company = await db.Companies.AsNoTracking().FirstAsync(c => c.Id == order.CompanyId, ct);
         if (ShowcaseOutboundGuard.IsSuppressed(company, demo.Value.Enabled)) return;
@@ -80,7 +80,7 @@ public class StayNotificationPlanner(
             ?? await db.StayServiceSessions.AsNoTracking().FirstOrDefaultAsync(x => x.StayServiceOrderId == order.Id, ct);
         if (session is null) return;
         var settings = await db.StaysSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == order.CompanyId, ct) ?? new StaysSettings { CompanyId = order.CompanyId };
-        var facts = ServiceFacts(company, session, null, order.StatusReason, order, settings);
+        var facts = ServiceFacts(company, session, null, order.StatusReason, order, settings, paid);
         await DeliverCoreAsync(StayNotificationSubject.Of(order), company, settings, order.NotifyByMessenger, order.GuestPhone, order.GuestName, order.GuestUserId,
             order.PersonalDataErased, marker, entries, session.Id, facts, links.StayServiceOrderPageUrl(order.PublicToken), $"/s/{order.PublicToken}", order.Id, forOrder: true, ct);
     }

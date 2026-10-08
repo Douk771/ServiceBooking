@@ -64,8 +64,9 @@ public class ServiceOrderProofService(
             }
             else
             {
-                await db.Database.ExecuteSqlInterpolatedAsync(
-                    $"""UPDATE "StayServiceOrders" SET "Version" = "Version" + 1, "UpdatedAtUtc" = {now} WHERE "Id" = {orderId}""", ct);
+                var touched = await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"""UPDATE "StayServiceOrders" SET "Version" = "Version" + 1, "UpdatedAtUtc" = {now} WHERE "Id" = {orderId} AND "Status" = {(int)StayBookingStatus.AwaitingPaymentCheck}""", ct);
+                if (touched == 0) return new OrderProofResult(ProofOutcome.NotAllowed, await db.StayServiceOrders.AsNoTracking().FirstAsync(o => o.Id == orderId, ct));
             }
 
             db.StayPaymentProofs.Add(new StayPaymentProof
