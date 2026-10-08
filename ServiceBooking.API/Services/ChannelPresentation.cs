@@ -1,3 +1,4 @@
+using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.Services;
@@ -104,6 +105,121 @@ public static class ChannelPresentation
         _ => null,
     };
 
+    // ---- Cycle 40 (ARCHITECTURE_CYCLE40.md §40.6; texts: API_CONTRACT_CYCLE40.md §40.33) ----
+
+    /// <summary>§40.6.2 — the three-state presentation of one channel (first matching row wins). Pure.
+    /// Vectors: <c>display</c>. A <see langword="null"/> status means "do not show to the owner" (row 1, Replaced).</summary>
+    public static ChannelDisplay Display(ChannelDisplayFacts f)
+    {
+        var m = MessengerTexts.DisplayName(f.Transport);
+        var mismatch = f.LastStateReason == ChannelStateReason.ServerCountryMismatch;
+
+        if (f.State == ChannelState.Replaced) return ChannelDisplay.Hidden;
+        if (!f.PlatformEnabled) return new(ChannelDisplayStatus.Off, MessengerTexts.PlatformDisabled, null);
+        if (f.Suspended) return new(ChannelDisplayStatus.Off, "Приостановлен администратором", null);
+        if (f.State == ChannelState.DisabledByOwner)
+            return new(ChannelDisplayStatus.Off, "Отключён вами",
+                f.Paid ? ChannelAction.BindNumber : f.OptionSellable ? ChannelAction.Pay : null);
+        if (f.IsDuplicate)
+            return new(ChannelDisplayStatus.ActionRequired,
+                $"Лишний номер {m}: сообщения уходят с другого номера. Отвяжите этот", ChannelAction.Unbind);
+        if (!f.Paid && f.RequestNewerThanPayment)
+            return new(ChannelDisplayStatus.ActionRequired, MessengerTexts.PaymentUnderReview, null);
+        if (!f.Paid && !f.OptionSellable)
+            return new(ChannelDisplayStatus.ActionRequired, $"Подключение {m} временно недоступно", null);
+        if (!f.Paid && f.PaidUntil is { } expired)
+            return new(ChannelDisplayStatus.ActionRequired, $"Оплата закончилась {MessengerTexts.FormatDate(expired)}", ChannelAction.Pay);
+        if (!f.Paid) return new(ChannelDisplayStatus.ActionRequired, "Не оплачено", ChannelAction.Pay);
+
+        var needsTerms = f.State == ChannelState.NotConnected || f.State == ChannelState.NeedsReconnect ||
+                         (f.State == ChannelState.Disconnected && !mismatch);
+        if (needsTerms && !f.TermsAccepted)
+            return new(ChannelDisplayStatus.ActionRequired, $"Примите условия подключения {m}", ChannelAction.AcceptTerms);
+
+        switch (f.State)
+        {
+            case ChannelState.NotConnected:
+                return new(ChannelDisplayStatus.ActionRequired, "Оплата подтверждена — привяжите номер", ChannelAction.BindNumber);
+            case ChannelState.Connecting:
+                return new(ChannelDisplayStatus.ActionRequired, "Номер привязывается — отсканируйте QR", ChannelAction.BindNumber);
+            case ChannelState.Disconnected when mismatch:
+                return new(ChannelDisplayStatus.ActionRequired, "Требуется вмешательство платформы", null);
+            case ChannelState.Disconnected:
+                return new(ChannelDisplayStatus.ActionRequired, $"Связь с {m} разорвана — подключите номер заново", ChannelAction.Reconnect);
+            case ChannelState.NeedsReconnect when f.LastStateReason == ChannelStateReason.SecretUnavailable:
+                return new(ChannelDisplayStatus.ActionRequired,
+                    "Нужна повторная привязка после технических работ. Оплата сохранена", ChannelAction.Reconnect);
+            case ChannelState.NeedsReconnect:
+                var used = f.IdleDays is { } d
+                    ? $"им {d} {DaysWord(d)} никто не пользовался"
+                    : "им давно никто не пользовался";
+                return new(ChannelDisplayStatus.ActionRequired,
+                    $"Номер отключён: {used}. Оплата сохранена — подключите заново", ChannelAction.Reconnect);
+            case ChannelState.Blocked:
+                return new(ChannelDisplayStatus.ActionRequired,
+                    $"{m} заблокировал этот номер. Подключите другой — оплата сохранится", ChannelAction.ReplaceNumber);
+            case ChannelState.Connected when f.IdleSinceUtc is not null:
+                return new(ChannelDisplayStatus.ActionRequired,
+                    f.IdleDeadlineUtc is { } deadline
+                        ? $"Номер отключится {MessengerTexts.FormatDayMonth(deadline)}: ни у одной вашей компании не включены сообщения клиентам"
+                        : "Номер скоро отключится: ни у одной вашей компании не включены сообщения клиентам",
+                    null);
+            case ChannelState.Connected:
+                return new(ChannelDisplayStatus.Working,
+                    f.PhoneMasked is null ? "Номер работает" : $"Сообщения уходят с номера {f.PhoneMasked}", null);
+            default:
+                throw new ArgumentOutOfRangeException(nameof(f), f.State, null);
+        }
+    }
+
+    /// <summary>§40.6.3 — which wizard step to open at (first matching row wins). <paramref name="hasChannel"/> = the
+    /// account has a live channel of this transport. Pure. Vectors: <c>wizardStep</c>.</summary>
+    public static ChannelWizardStep WizardStep(ChannelDisplayFacts f, bool hasChannel)
+    {
+        if (!f.PlatformEnabled || (!f.Paid && !f.OptionSellable)) return ChannelWizardStep.Unavailable;
+        if (!f.Paid && f.RequestNewerThanPayment) return ChannelWizardStep.PaymentPending;
+        if (!f.Paid) return ChannelWizardStep.Payment;
+        if (f.Suspended || f.State == ChannelState.Blocked ||
+            (f.State == ChannelState.Disconnected && f.LastStateReason == ChannelStateReason.ServerCountryMismatch) || f.IsDuplicate)
+            return ChannelWizardStep.None;
+        // Without a live channel there is no real state (callers pass a placeholder): "Connected" needs a channel.
+        if (hasChannel && f.State == ChannelState.Connected) return ChannelWizardStep.Done;
+        if (!hasChannel || !f.TermsAccepted) return ChannelWizardStep.Terms;
+        return f.State is ChannelState.NotConnected or ChannelState.Connecting or ChannelState.Disconnected
+            or ChannelState.NeedsReconnect or ChannelState.DisabledByOwner
+            ? ChannelWizardStep.Qr
+            : ChannelWizardStep.None;
+    }
+
+    /// <summary>§40.6.3: <c>(!Paid ∨ IsTrial) ∧ OptionSellable</c>.</summary>
+    public static bool CanRequestPayment(ChannelDisplayFacts f) => (!f.Paid || f.IsTrial) && f.OptionSellable;
+
+    /// <summary>§40.33.2 — detailed <c>stateText</c> naming the right messenger (the transport-aware successor of the
+    /// overload above, which stays for old callers until they are moved).</summary>
+    public static string StateText(
+        NotificationTransport transport, ChannelState state, string? phoneMasked, int idleDays, ChannelStateReason? lastReason = null)
+    {
+        var m = MessengerTexts.DisplayName(transport);
+        return state switch
+        {
+            ChannelState.NotConnected => "Номер не привязан",
+            ChannelState.Connecting => "Номер привязывается",
+            ChannelState.Connected => phoneMasked is null ? "Номер работает" : $"Номер работает, сообщения уходят с номера {phoneMasked}",
+            ChannelState.Disconnected when lastReason == ChannelStateReason.ServerCountryMismatch =>
+                "Требуется вмешательство платформы для восстановления канала",
+            ChannelState.Disconnected => $"Связь с {m} разорвана — возможно, устройство отключено в приложении. Подключите заново",
+            ChannelState.Blocked =>
+                $"{m} заблокировал этот номер. Восстановить его нельзя — подключите другой номер, оплаченный период сохранится",
+            ChannelState.DisabledByOwner => "Номер отключён вами",
+            ChannelState.NeedsReconnect when lastReason == ChannelStateReason.SecretUnavailable =>
+                "Требуется повторная привязка после технических работ на платформе. Оплаченный период сохранён — подключите номер заново, повторная оплата не потребуется",
+            ChannelState.NeedsReconnect =>
+                $"Номер был отключён, потому что им {idleDays} {DaysWord(idleDays)} никто не пользовался. Оплаченный период сохранён — подключите номер заново, повторная оплата не потребуется",
+            ChannelState.Replaced => "Этот номер заменён — используйте новый",
+            _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
+        };
+    }
+
     private static string DaysWord(int days)
     {
         var lastTwo = days % 100;
@@ -115,4 +231,38 @@ public static class ChannelPresentation
             _ => "дней",
         };
     }
+}
+
+/// <summary>§40.6.1 — everything <see cref="ChannelPresentation.Display"/> and <see cref="ChannelPresentation.WizardStep"/>
+/// read. <see cref="IdleDays"/> is the configured idle period (the N in "им {N} дней никто не пользовался"), not derived
+/// from the dates.</summary>
+public sealed record ChannelDisplayFacts(
+    NotificationTransport Transport,
+    ChannelState State,
+    ChannelStateReason? LastStateReason,
+    string? PhoneMasked,
+    bool Paid,
+    DateTime? PaidUntil,
+    bool IsTrial,
+    bool RequestNewerThanPayment,
+    bool IsDuplicate,
+    bool Suspended,
+    bool PlatformEnabled,
+    bool OptionOpen,
+    bool OptionSellable,
+    bool TermsAccepted,
+    DateTime? IdleSinceUtc,
+    DateTime? IdleDeadlineUtc,
+    int? IdleDays);
+
+public enum ChannelDisplayStatus { Working, ActionRequired, Off }
+
+public enum ChannelAction { Pay, AcceptTerms, BindNumber, Reconnect, ReplaceNumber, Unbind }
+
+public enum ChannelWizardStep { Payment, PaymentPending, Terms, Qr, Done, Unavailable, None }
+
+/// <summary>A <see langword="null"/> <see cref="Status"/> = the channel is not shown to the owner (Replaced).</summary>
+public readonly record struct ChannelDisplay(ChannelDisplayStatus? Status, string? Text, ChannelAction? Action)
+{
+    public static readonly ChannelDisplay Hidden = new(null, null, null);
 }

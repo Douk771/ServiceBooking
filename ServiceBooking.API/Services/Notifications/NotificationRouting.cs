@@ -27,7 +27,7 @@ public static class NotificationRouting
     /// the caller's Skipped row point at the specific channel that's the problem, the same way an
     /// ordinary <c>NoUsableChannel</c> Skipped row already carries a <c>ChannelId</c> when one exists.</param>
     /// <param name="SkipReason">Null when <see cref="Targets"/> is non-empty, or when the candidate list
-    /// passed to <see cref="SelectTargets"/> was empty to begin with (the caller's own "no assignment at all"
+    /// passed to <c>SelectTargets</c> was empty to begin with (the caller's own "no assignment at all"
     /// path already has a reason for that — <see cref="NotificationReason.NoUsableChannel"/> — this class
     /// doesn't repeat it). Otherwise <see cref="NotificationReason.PriorityChannelUnavailable"/> for
     /// <see cref="NotificationDeliveryMode.PriorityChannel"/>'s two zero-target cases (§104.5); null for
@@ -35,6 +35,40 @@ public static class NotificationRouting
     /// back to its own generic "nothing usable" reason for that case, same as it always has.</param>
     public readonly record struct RoutingResult(
         IReadOnlyList<Target> Targets, Guid? UnavailableChannelId, NotificationReason? SkipReason);
+
+    // ---- Cycle 40 (ARCHITECTURE_CYCLE40.md §40.5.1–§40.5.2) ----
+
+    /// <summary>One transport of the account (its first live number), reduced to routability facts.</summary>
+    public readonly record struct TransportCandidate(
+        NotificationTransport Transport, bool Paid, bool Funded, bool Suspended, ChannelState State)
+    {
+        /// <summary>"Routable transport": paid ∧ funded ∧ not suspended by admin ∧ the number was bound at least once
+        /// (a breakage keeps the messages <c>Pending</c>, it does not drop the transport).</summary>
+        public bool IsRoutable => Paid && Funded && !Suspended &&
+            State is ChannelState.Connected or ChannelState.Disconnected or ChannelState.NeedsReconnect or ChannelState.Blocked;
+    }
+
+    /// <summary>§40.5.2: 0 routable transports → none (the gate gives the reason); 1 → it (mode and priority are not
+    /// read); 2 → <c>AllChannels</c>: both, <c>PriorityChannel</c>: the priority one, no silent switch. Result order is
+    /// always WhatsApp, MAX.</summary>
+    public static IReadOnlyList<NotificationTransport> SelectRoutedTargets(
+        NotificationDeliveryMode mode, NotificationTransport priorityTransport, IReadOnlyList<TransportCandidate> candidates) =>
+        SelectRoutedTransports(mode, priorityTransport,
+            candidates.Where(c => c.IsRoutable).Select(c => c.Transport));
+
+    /// <summary>The same rule over transports already known to be routable.</summary>
+    public static IReadOnlyList<NotificationTransport> SelectRoutedTransports(
+        NotificationDeliveryMode mode, NotificationTransport priorityTransport, IEnumerable<NotificationTransport> routable)
+    {
+        var distinct = routable.Distinct().OrderBy(t => (int)t).ToList();
+        if (distinct.Count <= 1) return distinct;
+        return mode switch
+        {
+            NotificationDeliveryMode.AllChannels => distinct,
+            NotificationDeliveryMode.PriorityChannel => [priorityTransport],
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null),
+        };
+    }
 
     public static RoutingResult SelectTargets(
         NotificationDeliveryMode mode, NotificationTransport priorityTransport, IReadOnlyList<Candidate> candidates)
