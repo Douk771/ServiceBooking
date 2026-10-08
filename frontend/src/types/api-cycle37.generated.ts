@@ -1161,8 +1161,21 @@ export interface components {
             warningLevel: components["schemas"]["StaysWarningLevel"];
             text?: string | null;
         };
-        /** @description Существующий OwnerSubscriptionDto; при line=Stays заполнен блок stays. */
+        /** @description AvailablePlanDto цикла 24 + maxHouses в конце (лимит домов тарифа «Дома»; null — без ограничения у «Домов», всегда null у других линеек). */
+        AvailablePlanDtoCycle37: {
+            /** Format: uuid */
+            planId: string;
+            name: string;
+            pricePerMonth: number;
+            description?: string | null;
+            highlights?: string[];
+            /** @example до 3 домов */
+            limitsText: string;
+            maxHouses?: number | null;
+        };
+        /** @description Существующий OwnerSubscriptionDto; при line=Stays заполнен блок stays, availablePlans — тарифы линейки «Дома» без триала. */
         OwnerSubscriptionDtoCycle37: {
+            availablePlans?: components["schemas"]["AvailablePlanDtoCycle37"][] | null;
             stays?: components["schemas"]["StaysSubscriptionBlockDto"] | null;
         } & {
             [key: string]: unknown;

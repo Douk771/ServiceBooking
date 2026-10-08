@@ -44,9 +44,11 @@ public record OrdersUsageDto(
     int OrdersThisMonth, int? OrdersLimit, string MonthLabel, string? Text, ServiceBooking.API.Services.Shops.OrderLimitWarningLevel WarningLevel,
     int? ProductsPerShopLimit, bool AllowOrders);
 
-/// <summary>An active tariff of the "Заказы" line the owner may ask for — shown ONLY to a signed-in owner, never publicly [legal L14].</summary>
+/// <summary>An active tariff of the "Заказы" line the owner may ask for — shown ONLY to a signed-in owner, never publicly [legal L14].
+/// Cycle 37 (API_CONTRACT_CYCLE37.md §37.21.4): the same DTO lists the «Дома» plans; <c>MaxHouses</c> (appended) is their house limit — null means
+/// "no limit" for a «Дома» plan and is always null for the other lines.</summary>
 public record AvailablePlanDto(
-    Guid PlanId, string Name, decimal PricePerMonth, string? Description, IReadOnlyList<string> Highlights, string LimitsText);
+    Guid PlanId, string Name, decimal PricePerMonth, string? Description, IReadOnlyList<string> Highlights, string LimitsText, int? MaxHouses = null);
 
 public record RejectedRequestDto(string Reason, DateTime RejectedAtUtc);
 

@@ -303,7 +303,8 @@ public class OwnerSubscriptionService(
             .Select(p => new AvailablePlanDto(
                 p.Id, p.Name, p.PricePerMonth, p.Description,
                 string.IsNullOrWhiteSpace(p.Highlights) ? [] : p.Highlights.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(PricingCatalogBuilder.MaxHighlights).ToList(),
-                p.MaxHouses is { } m ? $"до {m} {Stays.StaysTexts.Plural(m, "дома", "домов", "домов")}" : "дома без ограничения"))
+                p.MaxHouses is { } m ? $"до {m} {Stays.StaysTexts.Plural(m, "дома", "домов", "домов")}" : "дома без ограничения",
+                p.MaxHouses))
             .ToList();
 
         return new OwnerSubscriptionDto(

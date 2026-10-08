@@ -471,11 +471,29 @@ components:
         trialEndsAtUtc: { type: string, format: date-time, nullable: true }
         warningLevel: { $ref: '#/components/schemas/StaysWarningLevel' }
         text: { type: string, nullable: true }
+    AvailablePlanDtoCycle37:
+      type: object
+      description: AvailablePlanDto цикла 24 + maxHouses в конце (лимит домов тарифа «Дома»; null — без ограничения у «Домов», всегда null у других линеек).
+      required: [planId, name, pricePerMonth, limitsText]
+      properties:
+        planId: { type: string, format: uuid }
+        name: { type: string }
+        pricePerMonth: { type: number }
+        description: { type: string, nullable: true }
+        highlights:
+          type: array
+          items: { type: string }
+        limitsText: { type: string, example: 'до 3 домов' }
+        maxHouses: { type: integer, nullable: true }
     OwnerSubscriptionDtoCycle37:
       type: object
       additionalProperties: true
-      description: Существующий OwnerSubscriptionDto; при line=Stays заполнен блок stays.
+      description: Существующий OwnerSubscriptionDto; при line=Stays заполнен блок stays, availablePlans — тарифы линейки «Дома» без триала.
       properties:
+        availablePlans:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/AvailablePlanDtoCycle37' }
         stays: { allOf: [ { $ref: '#/components/schemas/StaysSubscriptionBlockDto' } ], nullable: true }
 
     # ───────────── публичное ─────────────
