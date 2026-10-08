@@ -381,6 +381,8 @@ nano .env
 | `NOTIFICATIONS_PARTNER_TOKEN` | кабинет партнёра GREEN-API | обязательно при `NOTIFICATIONS_PROVIDER=green-api`; вне Production ДОЛЖНО быть пустым |
 | `NOTIFICATIONS_WEBHOOK_TOKEN` | `openssl rand -base64 32` | обязательно при `NOTIFICATIONS_PROVIDER=green-api`, иначе контейнер не стартует |
 | `NOTIFICATIONS_UNSUBSCRIBE_KEY` | `openssl rand -base64 32` | обязательно при `NOTIFICATIONS_PROVIDER=green-api`, иначе контейнер не стартует |
+| `NOTIFICATIONS_GREEN_API_INSTANCE_CREATION` | `true` — когда подписан договор и заданы партнёрские токены; по умолчанию `false` | без `true` кнопка «подключить номер» отвечает 409 «Создание каналов приостановлено платформой» |
+| `NOTIFICATIONS_GREEN_API_SERVER_COUNTRY` | страна сервера провайдера из договора или от поддержки GREEN-API | обязательно при `NOTIFICATIONS_GREEN_API_INSTANCE_CREATION=true`, иначе контейнер не стартует (ч. 5 ст. 18 152-ФЗ) |
 | `NOTIFICATIONS_KEY_ROTATION_ACK` | оставьте пустым | заполняется только на время намеренной ротации ключа, см. §11.3 |
 | `SENTRY_DSN` | из GlitchTip, см. §12 | необязательно |
 

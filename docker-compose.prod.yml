@@ -71,6 +71,12 @@ services:
       - Notifications__GreenApiMax__PartnerToken=${NOTIFICATIONS_GREENAPI_MAX_PARTNER_TOKEN:-}
       - Notifications__WebhookToken=${NOTIFICATIONS_WEBHOOK_TOKEN:-}
       - Notifications__UnsubscribeKey=${NOTIFICATIONS_UNSUBSCRIBE_KEY:-}
+      # ARCHITECTURE_CYCLE5.md §52.1 (T5-B13) — platform-wide switch for creating provider instances and the
+      # server country it is bound to (ч. 5 ст. 18 152-ФЗ). appsettings.json bakes false/"" — without these two the
+      # salon's "connect" button answers 409 "Создание каналов приостановлено платформой". Non-empty
+      # SERVER_COUNTRY is REQUIRED once INSTANCE_CREATION=true (fail-fast at startup).
+      - Notifications__GreenApi__InstanceCreationEnabled=${NOTIFICATIONS_GREEN_API_INSTANCE_CREATION:-false}
+      - Notifications__GreenApi__ServerCountry=${NOTIFICATIONS_GREEN_API_SERVER_COUNTRY:-}
       # ARCHITECTURE_CYCLE9.md §105 (проход C, Web Push мастеру) — own provider switch/secret, empty
       # WEBPUSH_STAFFPUSH_PROVIDER/logging default keeps the subsystem off exactly like
       # NOTIFICATIONS_PROVIDER/logging above.
