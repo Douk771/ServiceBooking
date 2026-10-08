@@ -103,6 +103,34 @@ public class Cycle37ConcurrencyTests(TestDatabaseFixture fixture) : Cycle37TestB
         await AssertNoOverlapAsync(house.Id);
     }
 
+    [Fact, TestCase("CY37-60b")]
+    public async Task ParallelStaffConfirmAndGuestProofUpload_NeverDeadlock_NoServerErrors_ManyRounds()
+    {
+        // The lock order house -> booking -> occupancy -> revision is the same on both paths (40P01 -> 500 before the fix).
+        var company = await CreateStaysCompanyAsync();
+        var house = await CreateHouseAsync(company, price: 2000);
+        var statuses = new List<HttpStatusCode>();
+        for (var round = 0; round < 25; round++)
+        {
+            var ci = InDays(10 + round * 3);
+            var booked = await BookOkAsync(house.Id, ci, ci.AddDays(2));
+            var id = await BookingIdAsync(booked.Token);
+            await AttachProofOkAsync(booked.Token); // AwaitingPaymentCheck: staff may confirm, the guest may still add a proof
+            var version = (await StaffCardAsync(company, id)).Version;
+
+            var gate = new TaskCompletionSource();
+            var confirm = Task.Run(async () => { await gate.Task; return await StaffActionAsync(company, id, "confirm-payment", version); });
+            var upload = Task.Run(async () => { await gate.Task; return await AttachProofAsync(booked.Token); });
+            gate.SetResult();
+            var (c, u) = (await confirm, await upload);
+            statuses.Add(c.StatusCode);
+            statuses.Add(u.StatusCode);
+            c.StatusCode.Should().BeOneOf(new[] { HttpStatusCode.OK, HttpStatusCode.Conflict }, $"раунд {round}");
+            u.StatusCode.Should().BeOneOf(new[] { HttpStatusCode.OK, HttpStatusCode.Created, HttpStatusCode.Conflict }, $"раунд {round}");
+        }
+        statuses.Should().NotContain(s => (int)s >= 500);
+    }
+
     [Fact, TestCase("CY37-63")]
     public async Task ParallelOverlappingRanges_NeverShareANight_AdjacentRangesBothAllowed()
     {

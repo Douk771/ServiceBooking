@@ -403,6 +403,30 @@ public class Cycle37PrivacyTests(TestDatabaseFixture fixture) : Cycle37TestBase(
         (await StaffCardAsync(company, old.Id)).Events.Count(e => e.Kind == nameof(StayBookingEventKind.PaymentProofsPurged)).Should().Be(1);
     }
 
+    [Fact, TestCase("CY37-106b")]
+    public async Task Retention_PaymentProofs_NotDeletedHoursBeforeTheExactCheckOutMoment_WhenTerminalStatusIsOld()
+    {
+        var company = await CreateStaysCompanyAsync();
+        var house = await CreateHouseAsync(company, price: 2000);
+        var b = await BookingWithProofAsync(company, house, 20);
+        var checkOutUtc = await WithDbAsync(async db =>
+        {
+            var row = await db.StayBookings.SingleAsync(x => x.Id == b.Id);
+            row.CheckOutDate = InDays(-90);
+            row.CheckInDate = row.CheckOutDate.AddDays(-2);
+            row.CheckOutTimeSnapshot = new TimeOnly(12, 0);
+            row.TerminalAtUtc = DateTime.UtcNow.AddDays(-200); // the final status is long ago: only the check-out moment decides
+            await db.SaveChangesAsync();
+            return ServiceBooking.API.Services.Stays.StayTime.ToUtc(row.TimeZoneIdSnapshot, row.CheckOutDate, row.CheckOutTimeSnapshot);
+        });
+
+        await RunRuleAsync((db, st) => new StayPaymentProofRule(db, st), dryRun: false, now: checkOutUtc.AddDays(90).AddHours(-2));
+        (await WithDbAsync(db => db.StayPaymentProofs.AsNoTracking().SingleAsync(p => p.StayBookingId == b.Id))).StorageKey.Should().NotBeNull("до срока ещё два часа");
+
+        await RunRuleAsync((db, st) => new StayPaymentProofRule(db, st), dryRun: false, now: checkOutUtc.AddDays(90).AddHours(1));
+        (await WithDbAsync(db => db.StayPaymentProofs.AsNoTracking().SingleAsync(p => p.StayBookingId == b.Id))).StorageKey.Should().BeNull("срок прошёл");
+    }
+
     [Fact, TestCase("CY37-107")]
     public async Task Retention_UnpaidReleasedBookings_AreDepersonalisedAfter30Days_OthersUntouched()
     {
