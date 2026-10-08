@@ -54,4 +54,13 @@ public class BillingCatalogSeedKeysTests
         knownKeys.Should().NotContain(CapabilityKeys.Employees);
         knownKeys.Should().Contain(CapabilityKeys.NotificationsWhatsApp);
     }
+
+    [Fact]
+    public void OptionCapabilityCatalog_OffersTheMaxChannelOption_Cycle40()
+    {
+        // ARCHITECTURE_CYCLE40.md §40.7.1 — the MAX option row (Cycle40ChannelOptions migration) has CapabilityKey = its code.
+        CapabilityKeys.NotificationsMax.Should().Be("notifications.max");
+        OptionCapabilityCatalog.Known.Select(c => c.Key).Should().Contain(CapabilityKeys.NotificationsMax);
+        OptionCapabilityCatalog.IsKnown("notifications.max").Should().BeTrue();
+    }
 }
