@@ -7409,3 +7409,111 @@ Vitest разработчиков (не пересобирались QA): раз
 |---|---|---|
 | CY36-02 | `frontend/src/test/testAreas.guard.test.ts` (FE-36-03) | каждый `*.test.ts(x)` входит хотя бы в одну область |
 | CY36-03 | `ServiceBooking.Tests/Tests/DemoSeededTemplateGuardTests.cs` | клон засеянного шаблона демо-базы = настоящий сброс (строки каждой таблицы, личность магазинов и демо-людей, файлы) |
+
+## Цикл 37 — «Дома» (посуточная аренда, dom.ezbook.ru) (`CY37-`, `ServiceBooking.Tests/Tests/Cycle37*.cs`)
+
+Функциональные кейсы написаны QA по `SPEC_CYCLE37_STAYS_HOUSES.md`, `ARCHITECTURE_CYCLE37.md` (§37.0a, решения заказчика ЮР-1…ЮР-9) и `API_CONTRACT_CYCLE37.md`, не по реализации. Помощники — `Infrastructure/Cycle37TestBase.cs`; хост с поддельными часами `IStaysClock`, включённым Web Push и ручным запуском задач — `Infrastructure/StaysTestFactory.cs`. Контракт — `contracts/cycle37/openapi.json` (валидатор `OpenApiContract`). Кейсы CY37-60…75 — целостность (SPEC §6, ARCHITECTURE §37.5.4).
+
+| Кейс | Класс | Метод (что проверяет — в имени и в комментарии класса) |
+|---|---|---|
+| CY37-01 | `Cycle37ContractTests` | `PublicRoutes_MatchContract` |
+| CY37-02 | `Cycle37ContractTests` | `GuestBookingRoutes_MatchContract` |
+| CY37-03 | `Cycle37ContractTests` | `CabinetRoutes_MatchContract` |
+| CY37-04 | `Cycle37ContractTests` | `JsonConflicts_MatchContract` |
+| CY37-10 | `Cycle37IsolationTests` | `SalonRoutes_RefuseStaysCompany_With409Text_AfterRightsCheck` |
+| CY37-11 | `Cycle37IsolationTests` | `ShopRoutes_SeeStaysCompanyAs404_AndStaysRoutes_SeeSalonAndShopAs404` |
+| CY37-12 | `Cycle37IsolationTests` | `StaysCompany_IsOnlyOnDom_NotInSalonOrShopListings_AndHasDomPublicUrl` |
+| CY37-13 | `Cycle37IsolationTests` | `OneAccount_OwnsSalonShopAndStays_EachKindSeesOnlyItself_AndSalonShopStayAsBefore` |
+| CY37-14 | `Cycle37IsolationTests` | `StaysCompany_CityIsSheregeshOnly_AndTimeZoneFollowsCity` |
+| CY37-15 | `Cycle37IsolationTests` | `Members_PositionRules` |
+| CY37-16 | `Cycle37IsolationTests` | `Members_CompanyAcceptsAtMost30Staff` |
+| CY37-17 | `Cycle37IsolationTests` | `BlockedStaysCompany_DoesNotAcceptBookings_PagesUnavailable_HousesLeaveCatalog` |
+| CY37-18 | `Cycle37IsolationTests` | `AdminCompanyList_FiltersByStaysKind` |
+| CY37-20 | `Cycle37PermissionTests` | `PermissionMatrix_RoleByPermission` |
+| CY37-21 | `Cycle37PermissionTests` | `NonMembers_Get404_NotAnyOtherCode_AnonymousGets401` |
+| CY37-22 | `Cycle37PermissionTests` | `OwnerOnlyDestructiveRoutes_ManagerAndHousekeeperGet403_AndNothingChanges` |
+| CY37-23 | `Cycle37PermissionTests` | `Housekeeper_SeesOnlyScheduleDataInCompanyCard_NoSettingsPaymentOrProvider` |
+| CY37-24 | `Cycle37PermissionTests` | `RemovedStaff_LosesAccessAtOnce_WithTheSameToken` |
+| CY37-25 | `Cycle37PermissionTests` | `DemotedManager_BecomesHousekeeper_AndLosesBookingRightsAtOnce` |
+| CY37-26 | `Cycle37PermissionTests` | `OwnerTermsGate_StaysOwnerRoutes_RequireCurrentTerms` |
+| CY37-30 | `Cycle37BookingFlowTests` | `Quote_BreakdownAndPrepayment_DefaultTemplate` |
+| CY37-31 | `Cycle37BookingFlowTests` | `Quote_ExtraBedsDogsCot_AreOutsidePrepayment_AndRoundingIsHalfUp` |
+| CY37-32 | `Cycle37BookingFlowTests` | `Quote_ExtraBedsRowAppearsOnlyWhenNeeded_AndGuestsBeyondLimitAreRefused` |
+| CY37-33 | `Cycle37BookingFlowTests` | `Quote_ByDatesMode_PricePerNightByStartOfNight_AndSingleDayOverride` |
+| CY37-34 | `Cycle37BookingFlowTests` | `ExistingBooking_KeepsItsPriceSnapshot_WhenPricesAndSettingsChange` |
+| CY37-35 | `Cycle37BookingFlowTests` | `CreateBooking_HappyPath_HeldWithPaymentInstructions_AndOneTimeSecretLink` |
+| CY37-36 | `Cycle37BookingFlowTests` | `CreateBooking_FormValidation_PlainTextRussian400` |
+| CY37-37 | `Cycle37BookingFlowTests` | `CreateBooking_RuleRefusals_AreJson409WithCode_AndNothingIsCreated` |
+| CY37-38 | `Cycle37BookingFlowTests` | `CreateBooking_MinNights_GapFillRule` |
+| CY37-39 | `Cycle37BookingFlowTests` | `CreateBooking_SameDayCheckInAllowed_Works_And_DayOfDepartureIsDayOfArrival` |
+| CY37-40 | `Cycle37BookingFlowTests` | `CreateBooking_Idempotency_RepeatWithSameKeyIsNotASecondBooking` |
+| CY37-41 | `Cycle37BookingFlowTests` | `CreateBooking_PriceChanged_Json409WithNewQuote_ThenRetryWithSameKeyAndNewTotal` |
+| CY37-42 | `Cycle37BookingFlowTests` | `CreateBooking_ZeroPrepayment_IsConfirmedAtOnce_WithoutHold` |
+| CY37-43 | `Cycle37BookingFlowTests` | `CompanyGate_ClosedBookings_ReasonCodes_ButPagesStayVisible` |
+| CY37-44 | `Cycle37BookingFlowTests` | `CompanyGate_HousesOverTariffLimit_CloseBookings_UntilOwnerUnpublishes` |
+| CY37-45 | `Cycle37BookingFlowTests` | `BookingPage_UnknownOrMalformedToken_Is404WithEmptyBody_EverywhereIndistinguishable` |
+| CY37-46 | `Cycle37BookingFlowTests` | `PaymentProof_FirstFileMovesToAwaitingCheck_TimerGone_DatesOccupied_StaffSeesQueueOldestFirst` |
+| CY37-47 | `Cycle37BookingFlowTests` | `PaymentProof_FileValidation_ByContent_NotByExtension_LimitsAndHeaders` |
+| CY37-48 | `Cycle37BookingFlowTests` | `PaymentProof_ForStaff_ViewedEventNotFlooded_AndOtherCompanyCannotOpenIt` |
+| CY37-49 | `Cycle37BookingFlowTests` | `StaffConfirmPayment_ConfirmsBooking_RecordsWhoAndWhen_AndGuestSeesIt` |
+| CY37-50 | `Cycle37BookingFlowTests` | `StaffReject_RequiresReason_FreesDates_GuestSeesReasonAndOutcomeText` |
+| CY37-51 | `Cycle37BookingFlowTests` | `StaffActions_VersionMismatch_InvalidTransition_AndParallelClicks_OneWins` |
+| CY37-52 | `Cycle37BookingFlowTests` | `OwnerCancel_RequiresReason_ShowsFullRefundToStaff_GuestSeesCompanyCancelledText` |
+| CY37-53 | `Cycle37BookingFlowTests` | `GuestCancel_FreesDates_RefundTextByStatus_NotifiesNothingWrong` |
+| CY37-54 | `Cycle37BookingFlowTests` | `ManualBooking_IsConfirmedAtOnce_NoMinNights_OverridesTotal_AndConflictsLikeAnyBooking` |
+| CY37-55 | `Cycle37BookingFlowTests` | `Blocks_ConflictWithBooking_TouchingAllowed_PastForbidden_CommentHiddenFromPublic` |
+| CY37-56 | `Cycle37BookingFlowTests` | `Calendar_StatesAndPrivacy_NoNamesNoStatusesOfOthers_UnavailableForNoPriceAndPast` |
+| CY37-60 | `Cycle37ConcurrencyTests` | `TwentyParallelGuestBookings_SameDates_ExactlyOneCreated_OthersJson409DatesUnavailable` |
+| CY37-61 | `Cycle37ConcurrencyTests` | `ParallelGuestAndOwnerBlock_ExactlyOneSideWins_RepeatedRounds` |
+| CY37-62 | `Cycle37ConcurrencyTests` | `ParallelGuestAndManualBooking_ExactlyOneSideWins_RepeatedRounds` |
+| CY37-63 | `Cycle37ConcurrencyTests` | `ParallelOverlappingRanges_NeverShareANight_AdjacentRangesBothAllowed` |
+| CY37-64 | `Cycle37ConcurrencyTests` | `ParallelBookings_OfDifferentHouses_DoNotBlockEachOther` |
+| CY37-65 | `Cycle37ConcurrencyTests` | `DatabaseConstraint_StopsOverlap_EvenWithoutTheApplicationLock` |
+| CY37-66 | `Cycle37ConcurrencyTests` | `DoubleClick_WithRealPhoneLimits_SecondRequestGetsExistingBooking_Not429Not409` |
+| CY37-67 | `Cycle37ConcurrencyTests` | `PhoneLimits_OneHeldPerCompany_TwoOnPlatform_TenPerDay_WithRussianTexts` |
+| CY37-68 | `Cycle37ConcurrencyTests` | `IpRateLimit_AnonymousBookingCreation_429WithText` |
+| CY37-69 | `Cycle37ConcurrencyTests` | `ProofUpload_AtHoldBoundary_ExactlyOneOutcome` |
+| CY37-70 | `Cycle37ConcurrencyTests` | `ProofUploadAndExpiryTask_RunTogether_AtBoundary_ExactlyOneOutcomeAndJournalAgrees` |
+| CY37-71 | `Cycle37ConcurrencyTests` | `ExpiredButUnprocessedHold_DoesNotBlockNewBooking_AndIsLazilyReleased` |
+| CY37-72 | `Cycle37ConcurrencyTests` | `ExpiryTask_ReleasesDue_InBatches_WithinOneMinuteOfExpiry_Idempotent` |
+| CY37-73 | `Cycle37ConcurrencyTests` | `GuestCancel_OfExpiredHold_IsRefused_AndAfterCheckInTime_ShowsCompanyPhone` |
+| CY37-74 | `Cycle37ConcurrencyTests` | `RefundByTemplate_ShownToGuest_NotLessThan_NeverMoreThanFirstNightDeduction` |
+| CY37-75 | `Cycle37ConcurrencyTests` | `Refund_CapsDeductionAtPrepayment_WhenFirstNightIsMoreThanPrepay_AndHeldIsNothingPaid_OwnerCancelIsFull` |
+| CY37-80 | `Cycle37HousesCatalogTests` | `HouseCard_Validation_SlugUniqueInCompany_AndNewHouseIsDraftWithoutPrice` |
+| CY37-81 | `Cycle37HousesCatalogTests` | `HousePhotos_UpToFifteen_FirstIsCover_OrderAndDelete` |
+| CY37-82 | `Cycle37HousesCatalogTests` | `PricePeriods_OverlapIs409WithConflictingPeriod_SingleDayInsideLongOneIsAllowed_ValidationAndCalendarOfUncovered` |
+| CY37-83 | `Cycle37HousesCatalogTests` | `Publish_WithoutRegistryNumber_UnderAttestation_Succeeds_ForEveryObjectKind` |
+| CY37-84 | `Cycle37HousesCatalogTests` | `Publish_WithoutAttestation_Is409AttestationRequired_AndNothingIsPublished` |
+| CY37-85 | `Cycle37HousesCatalogTests` | `ChangingRegistryOfPublishedHouse_RequiresNewAttestation_AndAddsOne` |
+| CY37-86 | `Cycle37HousesCatalogTests` | `Unpublish_Archive_Delete_RulesAndBookingsSurvive` |
+| CY37-87 | `Cycle37HousesCatalogTests` | `Catalog_FiltersByDatesGuestsPrice_SortsByPrice_AndShowsTotals` |
+| CY37-88 | `Cycle37HousesCatalogTests` | `Catalog_InvalidQueries_PlainText400` |
+| CY37-89 | `Cycle37HousesCatalogTests` | `Catalog_HidesDraftsArchivedAndUnlistedCompanies_ButDirectLinksStillWork` |
+| CY37-90 | `Cycle37HousesCatalogTests` | `CompanyPage_WithDates_ShowsUnavailableHousesWithFlag_NotHiding_AndProviderPublicFieldsFollowStatus` |
+| CY37-91 | `Cycle37HousesCatalogTests` | `HousePage_ShowsRulesTemperedByCompanySettings_AndNoPaymentDetails` |
+| CY37-92 | `Cycle37HousesCatalogTests` | `Settings_Validation_PlainText400_AndOnlyOwnerChangesThem_AndNewBookingsOnly` |
+| CY37-100 | `Cycle37PrivacyTests` | `Schedule_HasNoPhonesAmountsProofsOrRequisites_CommentHiddenForHousekeeperByDefault` |
+| CY37-101 | `Cycle37PrivacyTests` | `PaymentDetails_NeverInPublicResponses_OnlyOnTheBookingPageOfThatBooking_AndToOwner` |
+| CY37-102 | `Cycle37PrivacyTests` | `CheckInInfo_NotInPublicOrBeforeRelease_ReleasedOnArrivalDayAtConfiguredTime` |
+| CY37-103 | `Cycle37PrivacyTests` | `ForbiddenWords_ZadatokNevozvratnyDepozit_NeverInServerTexts_ForAllTemplatesAndStatuses` |
+| CY37-104 | `Cycle37PrivacyTests` | `Export_ContainsAccountBookings_GuestBookingsOnlyForVerifiedPhone_NoFilesNoStaffNames` |
+| CY37-105 | `Cycle37PrivacyTests` | `DeleteAccount_ErasesGuestBookings_KeepsCalendarStatusAndAmounts_RemovesProofFilesAndPush` |
+| CY37-106 | `Cycle37PrivacyTests` | `Retention_PaymentProofs_DeletedAfter90DaysFromLaterOfCheckOutAndTerminalStatus_DryRunChangesNothing` |
+| CY37-107 | `Cycle37PrivacyTests` | `Retention_UnpaidReleasedBookings_AreDepersonalisedAfter30Days_OthersUntouched` |
+| CY37-108 | `Cycle37PrivacyTests` | `Retention_AllSixStayRulesAreRegistered_AndPeriodsComeFromConfiguration` |
+| CY37-110 | `Cycle37TariffTrialTests` | `StaysTrial_DoesNotBlockSalonTrial_AndSalonTrialDoesNotBlockStaysTrial` |
+| CY37-111 | `Cycle37TariffTrialTests` | `StaysTrial_Refusals_UnverifiedPhone_WrongTerms_AndCompanyIsStillCreated` |
+| CY37-112 | `Cycle37TariffTrialTests` | `TrialBanners_ThreeDays_OneDay_Expired_AndBookingsCloseButPagesStay` |
+| CY37-113 | `Cycle37TariffTrialTests` | `Tariff_PublishedHousesOfAllCompaniesOfTheAccount_AreCounted_LimitTextsByPlan` |
+| CY37-114 | `Cycle37TariffTrialTests` | `SeededPlans_NamesLimitsAndPrices_AndBillingSubscriptionStaysBlock` |
+| CY37-115 | `Cycle37TariffTrialTests` | `Admin_AssignsStaysPlan_TrialPlanCannotBeAssignedOrDeactivated_MaxHousesOnlyForStaysLine` |
+| CY37-116 | `Cycle37TariffTrialTests` | `Admin_CompanyList_ShowsStaysKind_AndAccountCardHasStaysSubscription` |
+| CY37-120 | `Cycle37NotificationsTests` | `StaffPush_GoesToOwnerAndManagerDevices_NeverToHousekeeper_WithoutGuestPersonalData` |
+| CY37-121 | `Cycle37NotificationsTests` | `StaffPushDispatcher_SkipsAMemberWhoBecameHousekeeper_AndSendsToManager` |
+| CY37-122 | `Cycle37NotificationsTests` | `GuestPush_SubscribeOnBookingPage_PayloadHasNoPersonalData_AndIsSentOncePerEvent` |
+| CY37-123 | `Cycle37NotificationsTests` | `GuestPush_Refused_WhenCompanyDisabledIt_OrBookingIsFinished_AndLimitFivePerBooking` |
+| CY37-124 | `Cycle37NotificationsTests` | `ScheduledMessages_TenMinuteWarning_ArrivalReminder_AreQueuedOnce_AndReminderCanBeSwitchedOff` |
+
+Прогон: `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle37"` (нужны `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` и `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`).
+
+Найденное QA: двойное нажатие «Забронировать» (CY37-40, CY37-66) давало 429/409 вместо существующей брони — исправлено (`StayBookingCreationService`, повторная проверка ключа под замком номера). Каталог «Домов» кешируется на 30 с и не сбрасывается при публикации/блокировке — тесты вызывают `InvalidateCatalog()`.
