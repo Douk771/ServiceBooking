@@ -231,7 +231,9 @@
       { "id": "RT15", "_note": "мессенджерные ссылки и сокращатели", "template": "Пишите в t.me/kedr\nВот wa.me/79001112233\nСмотрите bit.ly/abc\nСсылка vk.cc/xyz", "pushTextEnabled": true,
         "expected": { "push": "Завтра заезд — откройте бронь", "pushDropped": [ { "line": 1, "reason": "Link" }, { "line": 2, "reason": "Digits" }, { "line": 3, "reason": "Link" }, { "line": 4, "reason": "Link" } ] } },
       { "id": "RT16", "_note": "wi-fi с неразрывным дефисом и через пробел", "template": "Wi\u2011Fi в доме\nвай фай бесплатный\nДо встречи!", "pushTextEnabled": true,
-        "expected": { "push": "До встречи!", "pushDropped": [ { "line": 1, "reason": "CodeWord" }, { "line": 2, "reason": "CodeWord" } ] } }
+        "expected": { "push": "До встречи!", "pushDropped": [ { "line": 1, "reason": "CodeWord" }, { "line": 2, "reason": "CodeWord" } ] } },
+      { "id": "RT17", "_note": "телефон с типографскими тире, точками и косыми, ссылка со схемой tg:// (QA цикла 39)", "template": "Звоните 8\u2013900\u2013111\u201322\u201333\nЗвоните 8.900.111.22.33\nЗвоните 8/900/111/22/33\nЗвоните +7\u2011900\u2011111\u201122\u201133\nТелеграм tg://resolve?domain=kedr\nДо встречи!", "pushTextEnabled": true,
+        "expected": { "push": "До встречи!", "pushDropped": [ { "line": 1, "reason": "Digits" }, { "line": 2, "reason": "Phone" }, { "line": 3, "reason": "Phone" }, { "line": 4, "reason": "Digits" }, { "line": 5, "reason": "Link" } ] } }
     ],
     "pushLength": { "_rule": "Push длиннее 180 символов обрезается до 179 символов + «…» (суррогатные пары не режутся).", "maxLength": 180 }
   }
