@@ -8,11 +8,8 @@ import { zapisFaq } from './zapisFaq'
  * Три шага клиента — прежний `#how` дословно (Q37-6: push включены, «напоминание накануне визита» остаётся).
  * Тексты `clients.text` и `business.text` — черновики на вычитку заказчиком.
  *
- * «Подключить салон» для вошедшего: `/cabinet` закрыт `ProtectedRoute roles=[Master, CompanyOwner, SuperAdmin]`
- * (App.tsx), а форма «Создать компанию» живёт только внутри кабинета; самостоятельно завести компанию клиент без этих ролей
- * сейчас нигде не может (регистрация даёт роль Client). Поэтому `authedTo = '/cabinet'` — это адрес, куда вошедшего
- * владельца/мастера и нужно вести; клиенту без роли маршрут вернёт на `/`. Отдельного адреса для такого клиента в продукте нет
- * и придумывать его в этом цикле нельзя (вопрос архитектору в отчёте).
+ * «Подключить салон» и «Войти в кабинет»: `/cabinet/new` открыт любому вошедшему (в т.ч. клиенту без роли), гость идёт на `/register`
+ * и возвращается туда (`returnTo`). `/cabinet` закрыт ролями, и клиента без роли он перенаправляет на `/cabinet/new`, так что «Войти в кабинет» (`/cabinet`) не тупик.
  */
 export const zapisLanding: LandingConfig = {
   hero: {
@@ -61,7 +58,7 @@ export const zapisLanding: LandingConfig = {
     titleId: 'biz-title',
     text: 'Клиенты записываются сами, а вам не нужно вести расписание по телефону и в переписках: все записи собраны в одном месте.',
     actions: [
-      { kind: 'auth-route', guestTo: '/register', authedTo: '/cabinet', label: 'Подключить салон' },
+      { kind: 'auth-route', guestTo: '/register?returnTo=%2Fcabinet%2Fnew', authedTo: '/cabinet/new', label: 'Подключить салон' },
       { kind: 'route', to: '/cabinet', label: 'Войти в кабинет' },
     ],
     benefits: [

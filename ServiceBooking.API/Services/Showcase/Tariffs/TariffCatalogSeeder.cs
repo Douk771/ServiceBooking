@@ -194,7 +194,7 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
 
     /// <summary>
     /// Q37-2 — moves the free tariff of the Orders line from the cycle-24 seed to "Бесплатный", field by field, only where the field still equals the seed.
-    /// When <paramref name="apply"/> is false nothing is mutated. Limits are never touched.
+    /// When <paramref name="apply"/> is false nothing is mutated. Limits, IsPublic and Highlights are never touched (an administrator may have unpublished the tariff or cleared the highlights; the new public seed applies only on creation).
     /// </summary>
     public static List<string> AlignOrdersFreeTariff(SubscriptionPlanConfig free, bool apply)
     {
@@ -208,16 +208,6 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
         {
             changes.Add("описание обновлено");
             if (apply) free.Description = OrdersTariffCatalog.FreeDescription;
-        }
-        if (free.Highlights is null)
-        {
-            changes.Add("преимущества заполнены");
-            if (apply) free.Highlights = OrdersTariffCatalog.FreeHighlights;
-        }
-        if (!free.IsPublic)
-        {
-            changes.Add("публичный: нет → да");
-            if (apply) free.IsPublic = true;
         }
         if (free.SortOrder == OrdersTariffCatalog.LegacyFreeSortOrder)
         {

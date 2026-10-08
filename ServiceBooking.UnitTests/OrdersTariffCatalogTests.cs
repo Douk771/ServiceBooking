@@ -73,9 +73,11 @@ public class OrdersTariffCatalogTests
 
         var changes = TariffCatalogSeeder.AlignOrdersFreeTariff(free, apply: true);
 
-        changes.Should().HaveCount(5);
-        (free.Name, free.Description, free.Highlights, free.IsPublic, free.SortOrder).Should().Be(
-            (OrdersTariffCatalog.FreeName, OrdersTariffCatalog.FreeDescription, OrdersTariffCatalog.FreeHighlights, true, OrdersTariffCatalog.FreeSortOrder));
+        changes.Should().HaveCount(3);
+        (free.Name, free.Description, free.SortOrder).Should().Be(
+            (OrdersTariffCatalog.FreeName, OrdersTariffCatalog.FreeDescription, OrdersTariffCatalog.FreeSortOrder));
+        free.Highlights.Should().BeNull("apply never rewrites highlights of an existing tariff");
+        free.IsPublic.Should().BeFalse("apply never changes IsPublic of an existing tariff");
         (free.MaxCompanies, free.MaxEmployees, free.MaxProductsPerShop, free.MaxOrdersPerMonth).Should().Be((1, 2, 50, 150));
         TariffCatalogSeeder.AlignOrdersFreeTariff(free, apply: true).Should().BeEmpty("a second run changes nothing");
     }
@@ -85,7 +87,7 @@ public class OrdersTariffCatalogTests
     {
         var free = SeedFree();
 
-        TariffCatalogSeeder.AlignOrdersFreeTariff(free, apply: false).Should().HaveCount(5);
+        TariffCatalogSeeder.AlignOrdersFreeTariff(free, apply: false).Should().HaveCount(3);
 
         free.Name.Should().Be(OrdersTariffCatalog.LegacyFreeName);
         free.Highlights.Should().BeNull();
@@ -111,8 +113,6 @@ public class OrdersTariffCatalogTests
     [Theory]
     [InlineData("name")]
     [InlineData("description")]
-    [InlineData("highlights")]
-    [InlineData("public")]
     [InlineData("sort")]
     public void AlignOrdersFreeTariff_ChangesOnlyTheFieldStillAtTheSeed(string untouched)
     {
@@ -120,8 +120,8 @@ public class OrdersTariffCatalogTests
         // Every field except one has been edited by an administrator; only that one still carries the seed value.
         free.Name = untouched == "name" ? free.Name : "Моё имя";
         free.Description = untouched == "description" ? free.Description : "Моё описание";
-        free.Highlights = untouched == "highlights" ? null : "Мои преимущества";
-        free.IsPublic = untouched != "public";
+        free.Highlights = null;
+        free.IsPublic = false;
         free.SortOrder = untouched == "sort" ? -1 : 7;
 
         TariffCatalogSeeder.AlignOrdersFreeTariff(free, apply: true).Should().HaveCount(1);

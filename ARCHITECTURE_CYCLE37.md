@@ -660,7 +660,7 @@ public const int FreeSortOrder = 10;
      «недоступна»). `Extra` чужому тарифу не выдаётся никогда.
 5. Выравнивание бесплатного тарифа «Заказов» (`IsSystemFree && Line == Orders`), каждое поле **только пока в нём значение сида
    цикла 24**: `Name == LegacyFreeName → FreeName`; `Description == LegacyFreeDescription → FreeDescription`;
-   `Highlights is null → FreeHighlights`; `IsPublic == false → true`; `SortOrder == -1 → 10`. Лимиты не трогаются.
+   `SortOrder == -1 → 10`. Лимиты, `IsPublic` и `Highlights` не трогаются никогда (админ мог снять публикацию или очистить преимущества; новый публичный сид применяется только при создании тарифа).
    Чистая функция `AlignOrdersFreeTariff(plan, apply)` по образцу `AlignFreeTariff` (юнит-тест на оба случая).
 6. Служебный «Демо» (`OrdersShowcasePlanId`) не ищется, не создаётся, не выравнивается (его заводит генератор демо).
 7. Строка отчёта вместо нынешней про `pricing.public-enabled`: две строки — прежняя про «Записи» и

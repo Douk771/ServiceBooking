@@ -61,6 +61,7 @@ public class OrdersPricingCatalogBuilderTests
     [InlineData(1500, 1000)]
     [InlineData(300, 300)]
     [InlineData(1000, 1000)]
+    [InlineData(0, 1)]
     public void Build_ProductsPerShop_IsCappedByTheCeilingAndNeverNull(int? limit, int expected)
     {
         var dto = OrdersPricingCatalogBuilder.Build("v", [Plan("P", products: limit)], Ceiling, null);

@@ -37,7 +37,7 @@ public static class OrdersPricingCatalogBuilder
                 IncludedShops: p.MaxCompanies,
                 IncludedMembers: p.MaxEmployees,
                 // Same rule as OwnerSubscriptionService: the tariff's own limit, never above the technical ceiling; never null.
-                IncludedProductsPerShop: Math.Min(p.MaxProductsPerShop ?? productsCeiling, productsCeiling),
+                IncludedProductsPerShop: Math.Max(1, Math.Min(p.MaxProductsPerShop ?? productsCeiling, productsCeiling)),
                 IncludedOrdersPerMonth: p.MaxOrdersPerMonth,
                 SortOrder: p.SortOrder,
                 IsFree: p.IsSystemFree))

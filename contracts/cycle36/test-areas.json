@@ -11,6 +11,7 @@
         "src/pages/RegisterPage",
         "src/pages/ProfilePage",
         "src/pages/CabinetPage",
+        "src/pages/CreateCompanyRoute",
         "src/hooks/usePhoneVerification",
         "src/components/ui/PhoneInput",
         "src/utils/authError",

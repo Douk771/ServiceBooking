@@ -26,4 +26,8 @@ describe('service landing guard (T37-09)', () => {
     expect(goodsFaq.length).toBeGreaterThanOrEqual(6)
     expect(goodsFaq.length).toBeLessThanOrEqual(8)
   })
+  it('goods FAQ does not link to or mention the pricing section (grid may be unpublished)', () => {
+    expect(goodsFaq.some((i) => i.link?.to === '/pricing')).toBe(false)
+    expect(JSON.stringify(goodsFaq)).not.toContain('разделе «Тарифы»')
+  })
 })

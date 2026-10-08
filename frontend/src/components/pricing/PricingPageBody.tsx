@@ -24,8 +24,9 @@ const gridClass = (count: number) => `${PRICING_GRID_BASE} ${XL_COLS[count] ?? '
  * consent gate (added to CONSENT_GATE_BYPASS_PATHS in App.tsx) so a logged-in user with a pending
  * legal update can still see prices. US-71.
  *
- * 404 from the API means the publication switch (`pricing.public-enabled`) is off — that is an
- * expected state (API_CONTRACT_CYCLE7.md §39), not an error: the page renders a plain "not available
+ * 404 from the API (line.fetchGrid → null) means there is no grid to show: for «Запись» the publication switch
+ * (`pricing.public-enabled`) is off, for «Заказы» the line has no active public tariff (ARCHITECTURE_CYCLE37.md §37.9.2).
+ * That is an expected state (API_CONTRACT_CYCLE7.md §39), not an error: the page renders a plain "not available
  * yet" notice instead of an error screen.
  */
 interface Props {
@@ -70,7 +71,7 @@ export function PricingPageBody({ line, documentTitle, cta }: Props) {
     )
   }
 
-  // 404 → publication is switched off. Not an error (API_CONTRACT_CYCLE7.md §39).
+  // 404 → no grid for this line (switch off / no public tariff). Not an error (API_CONTRACT_CYCLE7.md §39).
   if (!data) {
     return (
       <div className="max-w-[760px] mx-auto px-8 pt-16 pb-24">
