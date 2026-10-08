@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.API.Services.Notifications.Funding;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -237,10 +238,6 @@ public sealed class ChannelHealthTask(
     {
         var idleDays = await platformSettings.GetChannelIdleDaysAsync(ct);
 
-        var activeCompanyCounts = await db.NotificationChannels
-            .Select(c => new { c.Id, ActiveCompanyCount = c.Assignments.Count(a => a.Company.IsActive) })
-            .ToDictionaryAsync(x => x.Id, x => x.ActiveCompanyCount, ct);
-
         // Replaced is terminal (§23.2) — nothing about its idle state matters anymore.
         var channels = await db.NotificationChannels.Where(c => c.State != ChannelState.Replaced).ToListAsync(ct);
 
@@ -249,14 +246,19 @@ public sealed class ChannelHealthTask(
         // it still reads the wall clock.
         var funding = await fundingReader.LoadAsync(channels, ct, nowUtc: now);
 
+        // Cycle 40 (§40.4.4): one query for the whole pass — which billing accounts have an active, non-showcase company with customer
+        // messaging switched on. A number serves every company of its account, so demand belongs to the account.
+        var accountsWithDemand = await AccountsWithDemandAsync(
+            channels.Where(c => c.BillingAccountId.HasValue).Select(c => c.BillingAccountId!.Value).Distinct().ToList(), ct);
+
         var warned = 0;
         var deleted = 0;
         foreach (var channel in channels)
         {
-            var activeCount = activeCompanyCounts.GetValueOrDefault(channel.Id, 0);
+            var hasDemand = channel.BillingAccountId is { } demandAccountId && accountsWithDemand.Contains(demandAccountId);
             var isFunded = funding.TryGetValue(channel.Id, out var f) && f.State == Billing.ChannelFundingState.Funded;
             var recomputedIdleSince = ChannelIdleCalculator.Recompute(
-                channel.IdleSinceUtc, activeCount, isFunded, channel.IsSuspendedByAdmin, now);
+                channel.IdleSinceUtc, hasDemand, isFunded, channel.IsSuspendedByAdmin, now);
 
             if (recomputedIdleSince != channel.IdleSinceUtc)
             {
@@ -286,6 +288,24 @@ public sealed class ChannelHealthTask(
 
         await db.SaveChangesAsync(ct);
         return (warned, deleted);
+    }
+
+    private async Task<HashSet<Guid>> AccountsWithDemandAsync(IReadOnlyCollection<Guid> accountIds, CancellationToken ct)
+    {
+        if (accountIds.Count == 0) return [];
+        var rows = await db.Companies.AsNoTracking()
+            .Where(c => c.BillingAccountId != null && accountIds.Contains(c.BillingAccountId.Value) && c.IsActive && !c.IsShowcase)
+            .Select(c => new
+            {
+                AccountId = c.BillingAccountId!.Value,
+                Facts = new CompanyDemandFacts(
+                    c.Kind, c.IsActive, c.IsShowcase,
+                    db.CompanyNotificationSettings.Where(s => s.CompanyId == c.Id).Select(s => (int?)s.EnabledTypeMask).FirstOrDefault(),
+                    db.ShopSettings.Any(s => s.CompanyId == c.Id && s.CustomerMessengerEnabled),
+                    db.StaysSettings.Any(s => s.CompanyId == c.Id && s.GuestMessengerEnabled)),
+            })
+            .ToListAsync(ct);
+        return rows.Where(r => MessagingDemand.WantsCustomerMessages(r.Facts)).Select(r => r.AccountId).ToHashSet();
     }
 
     /// <summary>Every channel with a non-null <see cref="NotificationChannel.OrphanedInstanceId"/> —
