@@ -1,0 +1,148 @@
+import type { HouseCalendarDto, PublicHouseDto, PublicStayBookingDto, StayQuoteDto } from '../types'
+import { addDays, nightDates } from '../utils/stayDates'
+
+/** Test data shaped like the cycle-37 contract (never imported by app code). */
+
+export const TODAY = '2027-01-01'
+
+export function houseFixture(over: Partial<PublicHouseDto> = {}): PublicHouseDto {
+  return {
+    id: 'house-1',
+    slug: 'dom-1',
+    name: 'Дом у склона',
+    description: 'Тёплый дом.',
+    photos: [],
+    capacity: 4,
+    extraBeds: { enabled: true, max: 2, priceRub: 800 },
+    dogsForbidden: false,
+    dogFeeRub: 500,
+    hasCot: true,
+    cotFeeRub: 300,
+    amenities: [{ code: 'Wifi', label: 'Wi-Fi' }],
+    address: 'Шерегеш, ул. Лесная, 1',
+    yandexMapsUrl: null,
+    twoGisUrl: null,
+    registry: { objectKind: 'Residential', objectKindLabel: 'Жилое помещение', registryNumber: null, registryUrl: null },
+    company: { slug: 'lesnoy', name: 'Лесной', phone: '79001234567', logoUrl: null, url: '/lesnoy' },
+    provider: { status: 'IndividualEntrepreneur', statusLabel: 'Индивидуальный предприниматель', name: 'ИП Иванов', inn: '123456789012', ogrn: '123456789012345', claimsAddress: 'Новокузнецк' },
+    rules: {
+      checkInTime: '14:00',
+      checkOutTime: '12:00',
+      minNights: 2,
+      maxNights: 30,
+      horizonDays: 365,
+      allowGapFill: false,
+      allowSameDayCheckIn: true,
+      holdMinutes: 60,
+      prepayPercent: 30,
+      cancellationPolicy: 'Standard',
+      cancellationSummary: 'Отмена до 00:00 дня заезда — возврат предоплаты полностью.',
+    },
+    priceFromRub: 5000,
+    acceptingBookings: true,
+    notAcceptingText: null,
+    available: true,
+    notAvailableText: null,
+    today: TODAY,
+    timeZoneId: 'Asia/Novokuznetsk',
+    ...over,
+  }
+}
+
+export function calendarFixture(taken: Record<string, 'Occupied' | 'MayFreeUp'> = {}): HouseCalendarDto {
+  return {
+    houseId: 'house-1',
+    today: TODAY,
+    from: TODAY,
+    to: addDays(TODAY, 200),
+    minNights: 2,
+    maxNights: 30,
+    allowGapFill: false,
+    allowSameDayCheckIn: true,
+    lastNight: addDays(TODAY, 199),
+    days: nightDates(TODAY, addDays(TODAY, 200)).map((date) => ({ date, state: taken[date] ?? ('Free' as const), priceRub: 5000 })),
+  }
+}
+
+export function quoteFixture(over: Partial<StayQuoteDto> = {}): StayQuoteDto {
+  return {
+    ok: true,
+    problems: [],
+    nights: 3,
+    nightPrices: [
+      { date: '2027-01-05', priceRub: 5000 },
+      { date: '2027-01-06', priceRub: 5000 },
+      { date: '2027-01-07', priceRub: 5000 },
+    ],
+    lines: [{ kind: 'Nights', label: 'Проживание, 3 ночи', quantity: 3, unitPriceRub: 5000, nights: 3, amountRub: 15000, prepayEligible: true }],
+    extraBeds: 0,
+    totalRub: 15000,
+    prepayPercent: 30,
+    prepayRub: 4500,
+    dueAtCheckInRub: 10500,
+    averageNightRub: 5000,
+    holdMinutes: 60,
+    checkInTime: '14:00',
+    checkOutTime: '12:00',
+    cancellationPolicy: 'Standard',
+    cancellationSummary: 'Отмена до 00:00 дня заезда — возврат предоплаты полностью.',
+    acceptingBookings: true,
+    notAcceptingText: null,
+    ...over,
+  }
+}
+
+export function bookingFixture(over: Partial<PublicStayBookingDto> = {}): PublicStayBookingDto {
+  return {
+    status: 'Held',
+    displayStatus: 'Held',
+    statusText: 'Удержана — ожидает оплаты',
+    serverTimeUtc: '2027-01-02T10:00:00Z',
+    holdExpiresAtUtc: '2027-01-02T11:00:00Z',
+    house: { name: 'Дом у склона', url: '/lesnoy/dom-1', coverUrl: null, address: 'Шерегеш, ул. Лесная, 1', yandexMapsUrl: null, twoGisUrl: null },
+    company: { name: 'Лесной', phone: '79001234567', url: '/lesnoy' },
+    provider: { status: 'IndividualEntrepreneur', statusLabel: 'Индивидуальный предприниматель', name: 'ИП Иванов', inn: '123456789012', ogrn: '123456789012345', claimsAddress: 'Новокузнецк' },
+    checkInDate: '2027-01-05',
+    checkOutDate: '2027-01-08',
+    checkInTime: '14:00',
+    checkOutTime: '12:00',
+    nights: 3,
+    adults: 2,
+    children: 0,
+    dogs: 0,
+    needCot: false,
+    extraBeds: 0,
+    arrivalTime: null,
+    guestName: 'Анна',
+    guestPhoneMasked: '+7 (9••) •••-••-67',
+    comment: null,
+    lines: [{ kind: 'Nights', label: 'Проживание, 3 ночи', quantity: 3, unitPriceRub: 5000, nights: 3, amountRub: 15000, prepayEligible: true }],
+    nightPrices: [],
+    totalRub: 15000,
+    prepayPercent: 30,
+    prepayRub: 4500,
+    dueAtCheckInRub: 10500,
+    payment: { details: 'Сбербанк, карта 2202 0000 0000 0000', purpose: 'Бронь дома', amountRub: 4500 },
+    paymentConfirmedAtUtc: null,
+    paymentProofs: [],
+    proofs: { canAttach: true, maxCount: 3, maxBytes: 10485760, acceptedTypes: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'] },
+    cancellation: {
+      policy: 'Standard',
+      summary: 'Отмена до 00:00 дня заезда — возврат предоплаты полностью.',
+      canCancel: true,
+      refund: { kind: 'NothingPaid', refundAtLeastRub: 0, maxDeductionRub: 0, text: 'Бронь не оплачена — отмена без последствий' },
+      cannotCancelText: null,
+    },
+    statusReason: null,
+    outcomeText: null,
+    checkInInfo: null,
+    notifications: { webPush: { available: false, publicKey: null }, messengerSelected: false },
+    availableActions: ['AttachProof', 'Cancel'],
+    ...over,
+  }
+}
+
+/** An axios-shaped error for the API mocks. */
+export function httpError(status: number, data: unknown) {
+  return Object.assign(new Error(`HTTP ${status}`), { isAxiosError: true, response: { status, data, headers: {} } })
+}

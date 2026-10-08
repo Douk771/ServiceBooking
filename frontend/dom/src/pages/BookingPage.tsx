@@ -40,6 +40,7 @@ export function BookingPage() {
   const [termsOpen, setTermsOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelError, setCancelError] = useState('')
+  const [proofRefusal, setProofRefusal] = useState('')
 
   const query = useQuery({
     queryKey: key,
@@ -131,6 +132,12 @@ export function BookingPage() {
         <p className="text-xs font-semibold uppercase tracking-wide opacity-80">Статус</p>
         <p className="mt-0.5 text-xl font-semibold">{b.statusText}</p>
       </div>
+
+      {proofRefusal && (
+        <p role="alert" className="mt-4 rounded-2xl bg-danger-bg px-5 py-3 text-sm text-danger" data-testid="proof-refusal">
+          {proofRefusal}
+        </p>
+      )}
 
       <div className="mt-6 flex flex-col gap-5">
         {holding && b.holdExpiresAtUtc && (
@@ -226,7 +233,7 @@ export function BookingPage() {
                 ))}
               </ul>
             )}
-            <ProofUploader token={token} booking={b} onBooking={setBooking} />
+            <ProofUploader token={token} booking={b} onBooking={setBooking} onRefusal={setProofRefusal} />
           </section>
         )}
 

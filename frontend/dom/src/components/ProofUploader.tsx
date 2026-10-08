@@ -12,6 +12,8 @@ interface Props {
   booking: PublicStayBookingDto
   /** The server's answer after every file (it carries the current status and the list of files). */
   onBooking: (booking: PublicStayBookingDto) => void
+  /** A refusal that came with the current booking (e.g. `HoldExpired`): the screen changes under the uploader, so the page keeps the text. */
+  onRefusal?: (message: string) => void
 }
 
 /**
@@ -20,7 +22,7 @@ interface Props {
  * file moves the booking to «ожидает проверки оплаты»; a hold that expired meanwhile comes back as a 409 `HoldExpired` with the
  * current booking, which replaces the screen — nothing is lost silently.
  */
-export function ProofUploader({ token, booking, onBooking }: Props) {
+export function ProofUploader({ token, booking, onBooking, onRefusal }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<{ index: number; total: number; percent: number } | null>(null)
@@ -51,8 +53,12 @@ export function ProofUploader({ token, booking, onBooking }: Props) {
           onBooking(next)
         } catch (err) {
           const conflict = readConflict<StayGuestConflictDto>(err)
-          if (conflict?.booking) onBooking(conflict.booking)
-          setError(getStayErrorMessage(err, 'Не удалось загрузить файл.'))
+          const message = getStayErrorMessage(err, 'Не удалось загрузить файл.')
+          if (conflict?.booking) {
+            onBooking(conflict.booking)
+            onRefusal?.(message)
+          }
+          setError(message)
           return
         }
       }

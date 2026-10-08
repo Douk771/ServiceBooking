@@ -98,16 +98,18 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
   }, [calendar.data])
 
   const hasRange = !!range.checkIn && !!range.checkOut
+  // A range is quoted only once the calendar has confirmed it can be booked (one that came in the URL may be stale).
+  const rangeConfirmed = hasRange && !!calendar.data && validateSelection(calendar.data, range.checkIn!, range.checkOut!) === 'Ok'
   const guestsProblem = guestCountsProblem(house, counts)
   const debouncedCounts = useDebouncedValue(counts, 250)
-  const quoteInput = hasRange ? toQuoteInput(range.checkIn!, range.checkOut!, debouncedCounts) : null
+  const quoteInput = rangeConfirmed ? toQuoteInput(range.checkIn!, range.checkOut!, debouncedCounts) : null
   const settled = debouncedCounts === counts
 
   const quoteKey = ['stays-quote', house.id, quoteInput] as const
   const quote = useQuery({
     queryKey: quoteKey,
     queryFn: () => publicStaysApi.quote(house.id, quoteInput!),
-    enabled: hasRange && house.acceptingBookings && !guestsProblem,
+    enabled: rangeConfirmed && house.acceptingBookings && !guestsProblem,
     staleTime: 0,
     placeholderData: (prev) => prev,
   })
