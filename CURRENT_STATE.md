@@ -172,11 +172,11 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 
 | Интеграция | Переключатель (appsettings → env в `docker-compose.prod.yml`) | По умолчанию | 🖥 На бою |
 |---|---|---|---|
-| GREEN-API, канал WhatsApp для уведомлений клиентам салонов | `Notifications:Provider` → `NOTIFICATIONS_PROVIDER` (`logging`\|`green-api`) | `logging` (заглушка) | не задан → `logging` |
+| GREEN-API, канал WhatsApp для уведомлений клиентам салонов | `Notifications:Provider` → `NOTIFICATIONS_PROVIDER` (`logging`\|`green-api`) | `logging` (заглушка) | `green-api` (подтверждено выводом `.env` 08.10.2026) |
 | GREEN-API MAX, второй транспорт уведомлений | то же значение (`green-api`) | заглушка | заглушка |
 | Бот MAX (`platform-api.max.ru`) для подтверждения телефона | `PhoneVerification:Provider` → `PHONEVERIFY_PROVIDER` (`stub`\|`max-bot`) | `stub` | `max-bot` (включено 24.09.2026) |
 | Бот MAX для сообщений персоналу goods о заказах | `Notifications:StaffMax:Enabled` → `STAFFMAX_ENABLED`; требует `max-bot` | `false` | `false` (C25-1) |
-| Web Push персоналу (ezbook и goods) и покупателям goods — один провайдер. С цикла 33 push сотрудникам идёт на **все** их устройства независимо от сайта подписки; абсолютные адреса «чужого» сайта берутся из существующих `PublicSites:ServicesBaseUrl`/`OrdersBaseUrl` (новых ключей нет) | `Notifications:StaffPush:Provider` → `WEBPUSH_STAFFPUSH_PROVIDER` (`logging`\|`web-push`) | `logging` | `web-push` (включено, по словам заказчика 08.10.2026; в репозитории подтверждения нет) |
+| Web Push персоналу (ezbook и goods) и покупателям goods — один провайдер. С цикла 33 push сотрудникам идёт на **все** их устройства независимо от сайта подписки; абсолютные адреса «чужого» сайта берутся из существующих `PublicSites:ServicesBaseUrl`/`OrdersBaseUrl` (новых ключей нет) | `Notifications:StaffPush:Provider` → `WEBPUSH_STAFFPUSH_PROVIDER` (`logging`\|`web-push`) | `logging` | `web-push` (VAPID заданы, подтверждено выводом `.env` 08.10.2026) |
 | Яндекс SmartCaptcha | `SmartCaptcha:SecretKey` на сервере; site-key — сборочная переменная `VITE_SMARTCAPTCHA_SITEKEY` (GitHub Variables) | пусто → проверка пропускается | ↪ задан |
 | GlitchTip (Sentry-совместимый), сбор ошибок и «сигналы оператору» | `Sentry:Dsn`; своя установка — `docker-compose.glitchtip.yml`, `deploy/nginx/errors.ezbook.conf` | пусто → выключено | ↪ развёрнут |
 | Ссылки на Яндекс Карты и 2ГИС | только строки, которые ввёл владелец (`MapLinkValidation`); API карт не вызывается | — | — |
@@ -561,7 +561,7 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 
 ### 5.2 Код есть целиком, но выключен переключателем (✔ дефолты; 🖥 бой)
 - **Уведомления клиентам салонов в WhatsApp/MAX через GREEN-API.** Каналы, шаблоны, очередь, диспетчер, вебхуки, отписка —
-  всё есть. На бою `logging`. Живого вызова GREEN-API не делал ни один тест и ни один человек. Договор с GREEN-API подписан и партнёрские
+  всё есть. На бою `NOTIFICATIONS_PROVIDER=green-api` (`.env`, 08.10.2026). Живого вызова GREEN-API не делал ни один тест и ни один человек. Договор с GREEN-API подписан и партнёрские
   токены добавлены (со слов заказчика, 08.10.2026); до включения не хватало `InstanceCreationEnabled` и `ServerCountry` в compose (исправлено в `55d01ee`) (C-13, C20-3).
 - **Web Push** персоналу ezbook/goods и покупателям goods. Есть VAPID, service worker'ы `frontend/public/sw.js` и
   `frontend/goods/public/sw.js`, диспетчеры на полосе `realtime`. По словам заказчика (08.10.2026), на бою включён и проверен на
