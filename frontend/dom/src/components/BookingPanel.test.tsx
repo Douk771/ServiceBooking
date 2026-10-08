@@ -81,6 +81,25 @@ describe('BookingPanel', () => {
     expect(sessionStorage.getItem('dom:booking-key:house-1')).toBeNull()
   })
 
+  it('QA CY37: a double click sends one request (one booking) while the first is in flight', async () => {
+    let resolve!: (v: unknown) => void
+    api.createBooking.mockReturnValue(new Promise((r) => { resolve = r }))
+    renderPanel({ checkIn: '2027-01-05', checkOut: '2027-01-08' })
+    await screen.findByText('Проживание, 3 ночи')
+    await fillGuest()
+    const button = screen.getByRole('button', { name: /Забронировать/ })
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
+    fireEvent.click(button)
+    fireEvent.click(button)
+    await waitFor(() => expect(api.createBooking).toHaveBeenCalledTimes(1))
+    fireEvent.click(button)
+    expect(api.createBooking).toHaveBeenCalledTimes(1)
+    resolve({ token: 'tok-2', bookingUrl: 'https://dom.ezbook.ru/b/tok-2', booking: {} })
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/b/tok-2'))
+    expect(api.createBooking).toHaveBeenCalledTimes(1)
+  })
+
   it('the messenger consent is a separate, unchecked box that travels only when ticked', async () => {
     api.createBooking.mockResolvedValue({ token: 't', bookingUrl: 'u', booking: {} })
     renderPanel({ checkIn: '2027-01-05', checkOut: '2027-01-08' })
