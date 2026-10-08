@@ -35,6 +35,7 @@ public class NotificationChannelsController(
     LegalDocumentProvider legalProvider,
     ConsentLedger ledger,
     ChannelFundingReader fundingReader,
+    PendingRebinder pendingRebinder,
     ILogger<NotificationChannelsController> logger) : ControllerBase
 {
     private const string TestMessageText =
@@ -51,14 +52,14 @@ public class NotificationChannelsController(
             return Forbid();
 
         var channels = await db.NotificationChannels.AsNoTracking()
-            .Include(c => c.Assignments).ThenInclude(a => a.Company)
             .Where(c => c.OwnerUserId == userId)
             .OrderByDescending(c => c.CreatedAt)
             .ToListAsync(ct);
 
         var idleDays = await PlatformIdleDaysAsync();
         var funding = await fundingReader.LoadAsync(channels, ct);
-        return Ok(new ChannelListDto(channels.Select(c => MapToDto(c, idleDays, funding)).ToList()));
+        var companies = await AccountCompaniesAsync(channels.Select(c => c.BillingAccountId), ct);
+        return Ok(new ChannelListDto(channels.Select(c => MapToDto(c, idleDays, funding, CompaniesOf(companies, c))).ToList()));
     }
 
     [HttpGet("offer")]
@@ -171,7 +172,8 @@ public class NotificationChannelsController(
 
         var idleDays = await platformSettings.GetChannelIdleDaysAsync();
         var funding = await fundingReader.LoadAsync([channel]);
-        return CreatedAtAction(nameof(GetById), new { id = channel.Id }, MapToDto(channel, idleDays, funding));
+        var companies = await AccountCompaniesAsync([channel.BillingAccountId], HttpContext.RequestAborted);
+        return CreatedAtAction(nameof(GetById), new { id = channel.Id }, MapToDto(channel, idleDays, funding, CompaniesOf(companies, channel)));
     }
 
     [HttpGet("{id:guid}")]
@@ -182,7 +184,8 @@ public class NotificationChannelsController(
 
         var idleDays = await PlatformIdleDaysAsync();
         var funding = await fundingReader.LoadAsync([channel], ct);
-        return Ok(MapToDto(channel, idleDays, funding));
+        var companies = await AccountCompaniesAsync([channel.BillingAccountId], ct);
+        return Ok(MapToDto(channel, idleDays, funding, CompaniesOf(companies, channel)));
     }
 
     [HttpPost("{id:guid}/accept-risk")]
@@ -486,7 +489,7 @@ public class NotificationChannelsController(
 
     /// <summary>B8 / API_CONTRACT_CYCLE4.md §27, US-63 — replacing a banned number. No re-payment: the
     /// paid period belongs to the billing account (cycle 22, §379) and stays with it; company assignments
-    /// move to a fresh channel row; the old one becomes terminal
+    /// stay with the account; the old one becomes terminal
     /// (<see cref="ChannelState.Replaced"/>) with a pointer forward. The owner then goes through the
     /// ordinary accept-risk/connect/QR flow (§24) on the new channel — this endpoint only does the move.</summary>
     [HttpPost("{id:guid}/replace")]
@@ -520,20 +523,10 @@ public class NotificationChannelsController(
         };
         db.NotificationChannels.Add(newChannel);
 
-        // Company assignments move wholesale — the unique index on CompanyId means these rows are
-        // updated in place, not deleted+recreated, so AssignedByUserId/history on the assignment itself
-        // survives the swap.
-        var assignments = await db.ChannelCompanyAssignments.Where(a => a.ChannelId == id).ToListAsync();
-        foreach (var assignment in assignments)
-            assignment.ChannelId = newChannel.Id;
-
-        // Pending queue rows re-bind to the new channel (§27: "Expired не воскрешаются" — this WHERE only
-        // ever touches Pending, so an already-Expired/Failed/Sent row is untouched by construction).
-        var pending = await db.OutboundNotifications
-            .Where(n => n.ChannelId == id && n.Status == NotificationStatus.Pending)
-            .ToListAsync();
-        foreach (var row in pending)
-            row.ChannelId = newChannel.Id;
+        // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.4, §40.9): the number serves every company of the account, so there are no company
+        // assignments to move. The Pending queue rows follow to the new number of the SAME transport (§27: "Expired не воскрешаются" —
+        // only Pending rows are ever touched).
+        await pendingRebinder.OnReplaceAsync(channel, newChannel);
 
         channel.ReplacedByChannelId = newChannel.Id;
         channel.State = ChannelState.Replaced;
@@ -552,119 +545,50 @@ public class NotificationChannelsController(
 
         // The account's paid period as the owner's list shows it for the new channel (ChannelFundingReader).
         var funding = await fundingReader.LoadAsync([newChannel]);
-        return StatusCode(201, new ReplaceChannelResponseDto(
-            newChannel.Id, funding.GetValueOrDefault(newChannel.Id)?.PaidUntil, assignments.Count));
+        // companiesMoved = the companies of the account (§40.28.3): all of them are served by the new number.
+        var companiesServed = channel.BillingAccountId is { } replacedAccountId
+            ? await db.Companies.CountAsync(c => c.BillingAccountId == replacedAccountId) : 0;
+        return StatusCode(201, new ReplaceChannelResponseDto(newChannel.Id, funding.GetValueOrDefault(newChannel.Id)?.PaidUntil, companiesServed));
     }
 
+    /// <summary>ARCHITECTURE_CYCLE40.md §40.28.5 — legacy route: the number serves every company of the account, so there is nothing to
+    /// assign. 404 for a foreign channel, otherwise 410 with a plain Russian line; nothing is read from the body or changed.</summary>
     [HttpPost("{id:guid}/companies")]
-    [RequiresOwnerTerms]
-    public async Task<ActionResult<ChannelDto>> AssignCompany(Guid id, [FromBody] AssignCompanyDto dto)
+    public async Task<IActionResult> AssignCompany(Guid id)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var channel = await LoadOwnedChannelAsync(id, forUpdate: true);
+        var channel = await LoadOwnedChannelAsync(id);
         if (channel is null) return NotFound();
-
-        var company = await db.Companies.FindAsync(dto.CompanyId);
-        if (company is null || company.OwnerUserId != userId) return Forbid();
-
-        // ARCHITECTURE_CYCLE7.md §43.6/§56 last bullet — "a number doesn't serve a company from a
-        // different account". Checked here for a clean 403 with a message; the composite FK on
-        // ChannelCompanyAssignment (stage 6) also makes this impossible at the database level, so this
-        // check and that constraint can never disagree. OwnerUserId matching above is a rights check,
-        // not a money check — this is the money check.
-        if (channel.BillingAccountId.HasValue && company.BillingAccountId.HasValue &&
-            channel.BillingAccountId != company.BillingAccountId)
-            return Forbid();
-        if (channel.BillingAccountId is null || company.BillingAccountId is null)
-            return Forbid();
-
-        // ARCHITECTURE_CYCLE24.md §457.3 (A10): the number can now serve a SHOP too — the cycle-23 refusal is gone (the isolation matrix loses this row).
-
-        await using var transaction = await db.Database.BeginTransactionAsync();
-        await AdvisoryLock.AcquireAsync(db, $"channel-assignment:{id}");
-
-        // ARCHITECTURE_CYCLE9.md §104.3/§114.3 (US-119): the invariant widened from "one channel ever" to
-        // "one channel PER TRANSPORT" — the uniqueness this lookup guards is now (CompanyId, Transport),
-        // matching the database's own unique index exactly. A company already on a WhatsApp channel is
-        // still a perfectly valid candidate for a MAX channel (a DIFFERENT transport's existing
-        // assignment simply doesn't match this WHERE and falls through to a normal new assignment below).
-        var existingAssignment = await db.ChannelCompanyAssignments
-            .FirstOrDefaultAsync(a => a.CompanyId == dto.CompanyId && a.Transport == channel.Transport);
-
-        if (existingAssignment is not null)
+        return new ContentResult
         {
-            if (existingAssignment.ChannelId == id)
-            {
-                // Idempotent re-assignment of the same company to the same channel — no-op 201.
-                var idleDaysSame = await PlatformIdleDaysAsync();
-                await transaction.CommitAsync();
-                return await BuildAssignedResponseAsync(channel, idleDaysSame);
-            }
-            return Conflict(company.Kind switch
-            {
-                CompanyKind.Orders => "Магазин уже привязан к другому номеру этого мессенджера",
-                CompanyKind.Stays => "Компания уже привязана к другому номеру этого мессенджера",
-                _ => "Салон уже привязан к другому номеру этого мессенджера"
-            });
-        }
-
-        var otherCompanyCount = await db.ChannelCompanyAssignments.CountAsync(a => a.ChannelId == id);
-        if (otherCompanyCount > 0 && !dto.WarningAcknowledged)
-            return Conflict("Требуется подтверждение: несколько салонов на одном номере");
-
-        db.ChannelCompanyAssignments.Add(new ChannelCompanyAssignment
-        {
-            Id = Guid.NewGuid(),
-            ChannelId = id,
-            CompanyId = dto.CompanyId,
-            BillingAccountId = channel.BillingAccountId!.Value,
-            // ARCHITECTURE_CYCLE9.md §104.3: the denormalized copy the composite FK pins to — MUST match
-            // channel.Transport exactly, or the FK on (ChannelId, BillingAccountId, Transport) rejects
-            // the insert outright.
-            Transport = channel.Transport,
-            AssignedByUserId = userId,
-        });
-        await db.SaveChangesAsync();
-        await transaction.CommitAsync();
-
-        var idleDays = await PlatformIdleDaysAsync();
-        return await BuildAssignedResponseAsync(channel, idleDays);
+            StatusCode = StatusCodes.Status410Gone,
+            Content = "Назначать компании больше не нужно: номер работает для всех ваших компаний",
+            ContentType = "text/plain; charset=utf-8",
+        };
     }
 
+    /// <summary>§40.28.5 — legacy route, kept idempotent: 404 for a foreign channel, otherwise 204; no data changes (the old assignment
+    /// rows are no longer read and the queue is not touched).</summary>
     [HttpDelete("{id:guid}/companies/{companyId:guid}")]
     public async Task<IActionResult> UnassignCompany(Guid id, Guid companyId)
     {
-        var channel = await LoadOwnedChannelAsync(id, forUpdate: true);
-        if (channel is null) return NotFound();
-
-        var assignment = await db.ChannelCompanyAssignments
-            .FirstOrDefaultAsync(a => a.ChannelId == id && a.CompanyId == companyId);
-        if (assignment is null) return NoContent(); // already gone — DELETE is idempotent
-
-        db.ChannelCompanyAssignments.Remove(assignment);
-
-        var pending = await db.OutboundNotifications
-            .Where(n => n.ChannelId == id && n.CompanyId == companyId && n.Status == NotificationStatus.Pending)
-            .ToListAsync();
-        foreach (var row in pending)
-        {
-            row.Status = NotificationStatus.Cancelled;
-            row.Reason = NotificationReason.BookingOrAssignmentCancelled;
-        }
-
-        await db.SaveChangesAsync();
-        return NoContent();
+        var channel = await LoadOwnedChannelAsync(id);
+        return channel is null ? NotFound() : NoContent();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
-    private async Task<ActionResult<ChannelDto>> BuildAssignedResponseAsync(NotificationChannel channel, int idleDays)
+    /// <summary>§40.4: the companies a number serves = all companies of its billing account.</summary>
+    private async Task<ILookup<Guid, ChannelCompanyDto>> AccountCompaniesAsync(IEnumerable<Guid?> accountIds, CancellationToken ct)
     {
-        // §375 F13: the assignments and their companies in one query, not one Company load per row.
-        await db.Entry(channel).Collection(c => c.Assignments).Query().Include(a => a.Company).LoadAsync();
-        var funding = await fundingReader.LoadAsync([channel]);
-        return StatusCode(201, MapToDto(channel, idleDays, funding));
+        var ids = accountIds.Where(a => a.HasValue).Select(a => a!.Value).Distinct().ToList();
+        if (ids.Count == 0) return Enumerable.Empty<ChannelCompanyDto>().ToLookup(_ => Guid.Empty);
+        var rows = await db.Companies.AsNoTracking().Where(c => c.BillingAccountId != null && ids.Contains(c.BillingAccountId.Value))
+            .OrderBy(c => c.CreatedAt).Select(c => new { AccountId = c.BillingAccountId!.Value, Dto = new ChannelCompanyDto(c.Id, c.Name, c.IsActive) }).ToListAsync(ct);
+        return rows.ToLookup(r => r.AccountId, r => r.Dto);
     }
+
+    private static IReadOnlyList<ChannelCompanyDto> CompaniesOf(ILookup<Guid, ChannelCompanyDto> lookup, NotificationChannel channel) =>
+        channel.BillingAccountId is { } accountId ? lookup[accountId].ToList() : [];
 
     private async Task DecommissionInstanceAsync(NotificationChannel channel, ChannelState targetState, ChannelStateReason reason)
     {
@@ -707,14 +631,8 @@ public class NotificationChannelsController(
         // I10: cancelling Pending rows moved INTO this DB-first step (was a second, separate SaveChanges
         // after this method returned) — one transaction, not two, so a crash in between can't leave a
         // decommissioned channel with a queue still full of rows it will never send.
-        var pending = await db.OutboundNotifications
-            .Where(n => n.ChannelId == channel.Id && n.Status == NotificationStatus.Pending)
-            .ToListAsync();
-        foreach (var row in pending)
-        {
-            row.Status = NotificationStatus.Cancelled;
-            row.Reason = NotificationReason.BookingOrAssignmentCancelled;
-        }
+        // Cycle 40 (§40.9, Р40-Ю3): the Pending rows are cancelled; moved to the other messenger only when the configuration flag says so.
+        await pendingRebinder.OnUnbindAsync(channel);
 
         await db.SaveChangesAsync();
 
@@ -782,7 +700,7 @@ public class NotificationChannelsController(
     private async Task<NotificationChannel?> LoadOwnedChannelAsync(Guid id, bool forUpdate = false)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var query = db.NotificationChannels.Include(c => c.Assignments).ThenInclude(a => a.Company).AsQueryable();
+        var query = db.NotificationChannels.AsQueryable();
         if (!forUpdate) query = query.AsNoTracking();
 
         var channel = await query.FirstOrDefaultAsync(c => c.Id == id);
@@ -795,7 +713,8 @@ public class NotificationChannelsController(
     // subscription-driven ranking). Cycle 22 (§379/§380, Р2/Р6): the channel's own PaidFromUtc/PaidUntilUtc
     // columns are dropped, and so is the always-null PaidFrom field.
     private static ChannelDto MapToDto(
-        NotificationChannel channel, int idleDays, IReadOnlyDictionary<Guid, ChannelFundingInfo> funding)
+        NotificationChannel channel, int idleDays, IReadOnlyDictionary<Guid, ChannelFundingInfo> funding,
+        IReadOnlyList<ChannelCompanyDto> companies)
     {
         var (fundingState, fundingText, subscriptionPaidUntil) = funding.TryGetValue(channel.Id, out var f)
             ? f
@@ -818,7 +737,7 @@ public class NotificationChannelsController(
             channel.RiskAcceptedAtUtc, channel.IdleSinceUtc,
             channel.IdleSinceUtc is not null ? channel.IdleSinceUtc.Value.AddDays(idleDays) : null,
             channel.ReplacedByChannelId,
-            channel.Assignments.Select(a => new ChannelCompanyDto(a.CompanyId, a.Company.Name, a.Company.IsActive)).ToList(),
+            companies,
             CanConnect: ChannelPresentation.CanConnect(channel.State, paymentState, riskAccepted),
             CanReplace: ChannelPresentation.CanReplace(channel.State),
             FundingState: fundingState,
