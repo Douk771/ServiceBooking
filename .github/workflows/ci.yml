@@ -216,7 +216,7 @@ jobs:
             ../contracts/cycle31/openapi.yaml \
             ../contracts/cycle32/openapi.yaml \
             ../contracts/cycle35/openapi.yaml \
-            ../contracts/cycle37/openapi.yaml
+            ../contracts/cycle37/openapi.yaml \
             ../contracts/cycle38/openapi.yaml
 
       # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
