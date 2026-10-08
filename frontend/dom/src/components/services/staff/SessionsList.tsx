@@ -12,7 +12,7 @@ import { getStayErrorMessage } from '../../../utils/stayError'
 const PAGE_SIZE = 20
 const POLL_MS = 15_000
 
-export const SESSION_PRESETS = [
+const SESSION_PRESETS = [
   { id: 'AwaitingPaymentCheck', label: 'Ожидают проверки оплаты', empty: 'Нет заказов услуг, ожидающих проверки оплаты' },
   { id: 'Held', label: 'Ждут оплаты', empty: 'Нет заказов услуг, которые ждут оплаты' },
   { id: 'Confirmed', label: 'Подтверждённые', empty: 'Нет подтверждённых заказов услуг' },

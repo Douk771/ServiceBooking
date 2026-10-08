@@ -1,4 +1,4 @@
-import type { ServiceManageDto, ServiceSetupInput, StaysServiceConflictCode } from '../types'
+import type { ServiceManageDto, ServiceSetupInput, StayServiceRequestBasis, StaysServiceConflictCode } from '../types'
 import { isServiceSlugValid, SERVICE_SLUG_FORMAT_TEXT } from './slug'
 
 /** Forms of the service cabinet: client checks (the server repeats them; its 400 text is shown), request bodies, texts of the 409 codes. */
@@ -109,3 +109,12 @@ export function setupFieldOfError(text: string): keyof SetupDraft | null {
 export function isSetupDirty(a: SetupDraft, b: SetupDraft): boolean {
   return JSON.stringify(a) !== JSON.stringify(b)
 }
+
+/** «Как гость попросил услугу» — the basis a session added by the staff must carry (ЮР39-6, 69-ФЗ). */
+export const BASIS_OPTIONS: { value: StayServiceRequestBasis; label: string }[] = [
+  { value: 'Phone', label: 'По телефону' },
+  { value: 'InPerson', label: 'Лично' },
+  { value: 'Messenger', label: 'В мессенджере' },
+]
+
+export const STAFF_ADD_NOTE = 'Гость получит сообщение, что услуга добавлена по его просьбе, и сможет отменить её на странице брони без последствий.'

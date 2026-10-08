@@ -14,7 +14,6 @@ import { getStayErrorMessage, readConflict } from '../../../utils/stayError'
 import { ErrorState, Skeleton } from '../../StatePanels'
 import { ServicePickDialog } from '../ServicePickDialog'
 import { BasisSelect } from './BasisSelect'
-import { loadStaffItems } from './StaffAddServiceDialog'
 
 const DAYS_AHEAD = 14
 
@@ -76,7 +75,7 @@ export function ManualServiceOrderDialog({ companyId, date, onCreated, onClose }
       staticDays={() => days}
       loadStarts={(id, d) => staysBoardApi.staffStarts(companyId, id, { date: d })}
       loadQuote={(id, sel) => staysBoardApi.sessionQuote(companyId, { serviceId: id, ...sel })}
-      loadItems={loadStaffItems(companyId)}
+      loadItems={(id) => staysServicesApi.staffPickItems(companyId, id)}
       confirmLabel="Создать заказ"
       showAddNotice={false}
       hint="Заказ сразу подтверждён, предоплаты нет. Сообщение в мессенджер гостю не отправляется."

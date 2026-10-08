@@ -1,4 +1,5 @@
 {
+  "_supersededBy": "contracts/cycle39/dom-routes.json",
   "_comment": "ЕДИНСТВЕННЫЙ источник карты маршрутов dom.ezbook.ru и политики адресов компании «Дома» и дома (ARCHITECTURE_CYCLE37.md §37.4, §37.14.5; API_CONTRACT_CYCLE37.md §37.37). Читают: бэкенд (Services/Stays/StaysSlugPolicy.cs — embedded resource, как contracts/cycle23/goods-routes.json), фронтенд dom (тест dom/src/domRoutes.test.ts против DomApp.tsx) и QA. Добавлять маршрут dom можно ТОЛЬКО вместе с новым словом в reservedSlugs — иначе он может совпасть с адресом уже существующей компании (пространство slug общее для всей платформы).",
 
   "slugPattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",

@@ -2,15 +2,16 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { staysBoardApi } from '../../../api/staysBoard'
 import { staysServicesApi } from '../../../api/staysServices'
-import type { AvailabilityDayDto, ServiceItemPublicDto, ServiceRefusalDto, StaffStayBookingCardWithServices, StayServiceRequestBasis } from '../../../types'
+import type { AvailabilityDayDto, ServiceRefusalDto, StaffStayBookingCardWithServices, StayServiceRequestBasis } from '../../../types'
 import { newIdempotencyKey } from '../../../utils/idempotency'
 import { chosenItems, isTimeGone } from '../../../utils/serviceSelection'
 import { nightDates } from '../../../utils/stayDates'
-import { getStayErrorMessage, httpStatus, readConflict } from '../../../utils/stayError'
+import { getStayErrorMessage, readConflict } from '../../../utils/stayError'
 import { ErrorState, Skeleton } from '../../StatePanels'
 import { ServicePickDialog } from '../ServicePickDialog'
 import { Modal } from '@/components/ui/Modal'
-import { BasisSelect, STAFF_ADD_NOTE } from './BasisSelect'
+import { STAFF_ADD_NOTE } from '../../../utils/serviceForms'
+import { BasisSelect } from './BasisSelect'
 
 /**
  * «Добавить услугу» on the booking card (US-39-15, ЮР39-6): the staff picks a service and a time inside the stay and MUST say how the
@@ -82,7 +83,7 @@ export function StaffAddServiceDialog({
       staticDays={() => days}
       loadStarts={(id, date) => staysBoardApi.staffStarts(companyId, id, { date, bookingId: card.id })}
       loadQuote={(id, sel) => staysBoardApi.sessionQuote(companyId, { serviceId: id, ...sel, bookingId: card.id })}
-      loadItems={loadStaffItems(companyId)}
+      loadItems={(id) => staysServicesApi.staffPickItems(companyId, id)}
       confirmLabel="Добавить к брони"
       showAddNotice={false}
       hint={STAFF_ADD_NOTE}
@@ -108,17 +109,3 @@ export function StaffAddServiceDialog({
     />
   )
 }
-
-/** Positions for the staff picker: the owner's route; a manager without `ManageServices` gets 403 and simply has no positions to add. */
-export function loadStaffItems(companyId: string) {
-  return async (serviceId: string): Promise<ServiceItemPublicDto[]> => {
-    try {
-      const items = await staysServicesApi.items(companyId, serviceId)
-      return items.filter((i) => i.isActive).map((i) => ({ id: i.id, name: i.name, priceRub: i.priceRub, maxPerSession: i.maxPerSession }))
-    } catch (err) {
-      if (httpStatus(err) === 403) return []
-      throw err
-    }
-  }
-}
-

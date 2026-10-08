@@ -1,12 +1,5 @@
 import type { StayServiceRequestBasis } from '../../../types'
-
-export const BASIS_OPTIONS: { value: StayServiceRequestBasis; label: string }[] = [
-  { value: 'Phone', label: 'По телефону' },
-  { value: 'InPerson', label: 'Лично' },
-  { value: 'Messenger', label: 'В мессенджере' },
-]
-
-export const STAFF_ADD_NOTE = 'Гость получит сообщение, что услуга добавлена по его просьбе, и сможет отменить её на странице брони без последствий.'
+import { BASIS_OPTIONS } from '../../../utils/serviceForms'
 
 /** «Как гость попросил услугу» — required for a session added by the staff (ЮР39-6, 69-ФЗ): without it the server answers 400. */
 export function BasisSelect({ value, onChange }: { value: StayServiceRequestBasis | ''; onChange: (v: StayServiceRequestBasis) => void }) {

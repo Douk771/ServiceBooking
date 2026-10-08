@@ -1,4 +1,5 @@
 import { api } from '@/api/client'
+import { httpStatus } from '../utils/stayError'
 import type {
   DateOverrideInput,
   PriceRuleInput,
@@ -6,6 +7,7 @@ import type {
   ScheduleSaveResultDto,
   ServiceItemDto,
   ServiceItemInput,
+  ServiceItemPublicDto,
   ServiceListItemDto,
   ServiceManageDto,
   ServiceMonthDto,
@@ -79,4 +81,18 @@ export const staysServicesApi = {
     api.put<ScheduleSaveResultDto>(`${svc(companyId, serviceId)}/date-overrides/${date}`, input).then((r) => r.data),
   resetDate: (companyId: string, serviceId: string, date: string) =>
     api.delete<ScheduleSaveResultDto>(`${svc(companyId, serviceId)}/date-overrides/${date}`).then((r) => r.data),
+
+  /**
+   * Positions for the staff picker: the owner's route. A manager without `ManageServices` gets 403 and simply has no positions to add
+   * (the contract has no manager-readable source of the positions — raised in the report of cycle 39).
+   */
+  staffPickItems: async (companyId: string, serviceId: string): Promise<ServiceItemPublicDto[]> => {
+    try {
+      const items = await api.get<ServiceItemDto[]>(`${svc(companyId, serviceId)}/items`).then((r) => r.data)
+      return items.filter((i) => i.isActive).map((i) => ({ id: i.id, name: i.name, priceRub: i.priceRub, maxPerSession: i.maxPerSession }))
+    } catch (err) {
+      if (httpStatus(err) === 403) return []
+      throw err
+    }
+  },
 }

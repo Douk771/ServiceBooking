@@ -98,7 +98,7 @@ export function ServicePickDialog({
         : { items: (await publicServicesApi.page(address!.companySlug, address!.serviceSlug)).items },
     enabled: loadItems ? !!serviceId : !!address,
   })
-  const items = page.data?.items ?? []
+  const items = useMemo(() => page.data?.items ?? [], [page.data])
   const order = useMemo(() => items.map((i) => i.id), [items])
 
   const selection = pick && service ? toSelectionInput(pick, order) : null
