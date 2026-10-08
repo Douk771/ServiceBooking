@@ -1,15 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { BuyersBlock } from './BuyersBlock'
-import { BusinessBlock } from './BusinessBlock'
+import { LandingClientsSection } from '@/components/landing/LandingClientsSection'
+import { LandingBusinessSection } from '@/components/landing/LandingBusinessSection'
+import { goodsLanding } from './goodsLanding'
 import { useAuthStore } from '@/store/authStore'
 import { statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 
 // QA-тесты цикла 30, написаны по SPEC.md (US-30-01..05, §6), независимо от реализации.
-const setup = (ui = <BuyersBlock />) => render(<MemoryRouter>{ui}</MemoryRouter>)
+const setup = (ui = <LandingClientsSection config={goodsLanding.clients} placeholder={false} />) => render(<MemoryRouter>{ui}</MemoryRouter>)
 beforeEach(() => useAuthStore.setState({ user: null, token: null }))
 afterEach(() => useAuthStore.setState({ user: null, token: null }))
 
@@ -84,7 +85,7 @@ describe('BuyersBlock QA (cycle 30)', () => {
 
 describe('BusinessBlock screenshot QA (cycle 30)', () => {
   it('QA30-09 board figure between top grid and steps panel; picture with md source; alt verbatim', () => {
-    const { container } = setup(<BusinessBlock />)
+    const { container } = setup(<LandingBusinessSection config={goodsLanding.business} placeholder={false} />)
     const img = container.querySelector('img') as HTMLImageElement
     expect(img.alt).toBe(
       'Экран заказов магазина: колонки „Новые“, „Принятые“ и „Готовы к выдаче“ с карточками заказов — номер, время получения, покупатель, состав и сумма',

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { formatMonthlyPrice, formatIncludedLimit, formatIncludedLimitLine, pickFeaturedPlanId } from './pricingFormat'
+import { formatMonthlyPrice, formatIncludedLimit, formatIncludedLimitLine } from './pricingFormat'
 
 describe('formatMonthlyPrice', () => {
   it('zero → "Бесплатно"', () => {
@@ -19,6 +19,9 @@ describe('formatMonthlyPrice', () => {
 })
 
 describe('formatIncludedLimit', () => {
+  it('groups thousands (T38-12)', () => {
+    expect(formatIncludedLimit(1500, 'заказа', 'заказов').replace(/\s/g, ' ')).toBe('до 1 500 заказов')
+  })
   it('null → "без ограничений"', () => {
     expect(formatIncludedLimit(null, 'компании', 'компаний')).toBe('без ограничений')
   })
@@ -53,30 +56,5 @@ describe('formatIncludedLimitLine (cycle 28, «Сеть»: null limits)', () => 
   it('a number reads as formatIncludedLimit does', () => {
     expect(formatIncludedLimitLine(3, 'компании', 'компании', 'компаний')).toBe('до 3 компаний')
     expect(formatIncludedLimitLine(1, 'компании', 'компании', 'компаний')).toBe('до 1 компании')
-  })
-})
-
-describe('pickFeaturedPlanId (cycle 28: the trial sits right after the free plan)', () => {
-  const plan = (id: string, sortOrder: number, o: { isFree?: boolean; isTrial?: boolean; price?: number } = {}) => ({
-    id,
-    sortOrder,
-    isFree: o.isFree ?? false,
-    isTrial: o.isTrial,
-    pricePerMonth: o.price ?? 1000,
-  })
-
-  it('skips the free plan AND the trial: the accent goes to the first plan that is actually paid', () => {
-    const plans = [
-      plan('network', 40, { price: 3900 }),
-      plan('trial', 10, { isTrial: true, price: 0 }),
-      plan('studio', 20, { price: 790 }),
-      plan('free', -1, { isFree: true, price: 0 }),
-      plan('salon', 30, { price: 1890 }),
-    ]
-    expect(pickFeaturedPlanId(plans)).toBe('studio')
-  })
-
-  it('no paid plans → nothing is accented', () => {
-    expect(pickFeaturedPlanId([plan('free', -1, { isFree: true, price: 0 }), plan('trial', 10, { isTrial: true, price: 0 })])).toBeUndefined()
   })
 })

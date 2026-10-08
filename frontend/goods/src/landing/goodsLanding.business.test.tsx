@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { BusinessBlock } from './BusinessBlock'
+import { LandingBusinessSection } from '@/components/landing/LandingBusinessSection'
+import { goodsLanding } from './goodsLanding'
 import { useAuthStore } from '@/store/authStore'
 
 const H2 = 'Магазин и кафе принимают заказы без звонков и переписок'
@@ -15,7 +16,7 @@ const BENEFITS = [
 ]
 const STEP_TITLES = ['Соберите каталог', 'Поделитесь ссылкой или QR', 'Принимайте и выдавайте']
 
-const setup = () => render(<MemoryRouter><BusinessBlock /></MemoryRouter>)
+const setup = () => render(<MemoryRouter><LandingBusinessSection config={goodsLanding.business} placeholder={false} /></MemoryRouter>)
 const signIn = () =>
   useAuthStore.setState({ user: { id: 'u', phone: '79001234567', firstName: 'И', lastName: 'П', roles: ['Client'] }, token: 't' })
 

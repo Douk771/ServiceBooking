@@ -11,6 +11,7 @@ import { MyBookingsPage } from './pages/MyBookingsPage'
 import { ClientBookingsPage } from './pages/ClientBookingsPage'
 import { EmbedPage } from './pages/EmbedPage'
 import { CabinetPage } from './pages/CabinetPage'
+import { CreateCompanyPage } from './pages/CreateCompanyPage'
 import { CompanyManagePage } from './pages/owner/CompanyManagePage'
 import { ProfilePage } from './pages/ProfilePage'
 import { ConsentsPage } from './pages/ConsentsPage'
@@ -28,16 +29,9 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { LegalGuard } from './components/legal/LegalGuard'
 import { NoticesPage } from './pages/NoticesPage'
 import { OwnerTermsGateModal } from './components/legal/OwnerTermsGateModal'
-import { useAuthStore } from './store/authStore'
+import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import { DemoBanner } from './components/demo/DemoBanner'
 import { DemoMaintenanceGate } from './components/demo/DemoMaintenanceGate'
-
-function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?: string[] }) {
-  const { isAuthenticated, hasRole } = useAuthStore()
-  if (!isAuthenticated()) return <Navigate to="/login" replace />
-  if (roles && !roles.some(hasRole)) return <Navigate to="/" replace />
-  return <>{children}</>
-}
 
 // Routes reachable while a "Material" change to a GLOBAL-gate document is pending acceptance
 // (API_CONTRACT_CYCLE5.md §41, §48.4) — the same set the backend allow-lists, minus the auth/health
@@ -127,9 +121,17 @@ export default function App() {
                           }
                         />
                         <Route
+                          path="/cabinet/new"
+                          element={
+                            <ProtectedRoute returnToPath="/cabinet/new">
+                              <CreateCompanyPage />
+                            </ProtectedRoute>
+                          }
+                        />
+                        <Route
                           path="/cabinet"
                           element={
-                            <ProtectedRoute roles={['Master', 'CompanyOwner', 'SuperAdmin']}>
+                            <ProtectedRoute roles={['Master', 'CompanyOwner', 'SuperAdmin']} returnToPath="/cabinet" deniedTo="/cabinet/new">
                               <CabinetPage />
                             </ProtectedRoute>
                           }

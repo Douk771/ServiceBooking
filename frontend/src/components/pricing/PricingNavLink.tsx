@@ -1,25 +1,19 @@
-import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { pricingApi } from '../../api/pricing'
+import { usePricingGrid, type PricingLine } from './pricingLine'
 
 interface Props {
   className: string
   onClick?: () => void
+  line: PricingLine
 }
 
 /**
- * Nav-bar link to `/pricing`. Renders nothing while the publication switch is off (404) — a link to
- * a page that then shows "not published yet" is worse than no link (API_CONTRACT_CYCLE7.md §39).
- * Shares the `['public-pricing']` query cache with PricingTeaser/PricingPage, so navigating in stays
- * instant.
+ * Nav-bar link to `/pricing`. Renders nothing while there is no grid (404 / loading / error) — a link to a page that
+ * then shows "not published yet" is worse than no link (API_CONTRACT_CYCLE7.md §39). Shares the line's query cache with
+ * LandingPricingSection/PricingPageBody (ARCHITECTURE_CYCLE38.md §38.7.2).
  */
-export function PricingNavLink({ className, onClick }: Props) {
-  const { data, isSuccess } = useQuery({
-    queryKey: ['public-pricing'],
-    queryFn: pricingApi.getPublicPricing,
-    retry: false,
-    staleTime: 20_000,
-  })
+export function PricingNavLink({ className, onClick, line }: Props) {
+  const { data, isSuccess } = usePricingGrid(line)
 
   if (!isSuccess || !data) return null
 

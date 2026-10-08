@@ -6,6 +6,7 @@ import { clearUserCache } from '../../utils/clearUserCache'
 import { unsubscribeCurrentDeviceOnLogout } from '../../hooks/useWebPush'
 import { Icon } from '../ui/Icon'
 import { PricingNavLink } from '../pricing/PricingNavLink'
+import { zapisPricingLine } from '../pricing/zapisPricingLine'
 
 export function Navbar() {
   const { user, logout, isAuthenticated, hasRole } = useAuthStore()
@@ -65,7 +66,7 @@ export function Navbar() {
 
         {/* Desktop nav */}
         <div className="hidden md:flex items-center gap-7">
-          <PricingNavLink className={navLinkClass} />
+          <PricingNavLink line={zapisPricingLine} className={navLinkClass} />
           {isAuthenticated() ? (
             <>
               {isMasterOrOwner && (
@@ -141,7 +142,7 @@ export function Navbar() {
       {/* Mobile dropdown */}
       {menuOpen && (
         <div className="md:hidden border-t border-line bg-cream px-4 py-3 flex flex-col gap-1">
-          <PricingNavLink className={mobileLinkClass} onClick={closeMenu} />
+          <PricingNavLink line={zapisPricingLine} className={mobileLinkClass} onClick={closeMenu} />
           {isAuthenticated() ? (
             <>
               {isMasterOrOwner && (

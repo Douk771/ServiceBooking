@@ -155,6 +155,22 @@ public class Cycle35DemoScenarioTests(Cycle35DemoScenarioFixture fixture) : Cycl
 {
     protected override DemoScenarioState State => fixture.State;
 
+    [Fact, TestCase("CY38-B06-01")]
+    public async Task Cycle38_OrdersPricing_AfterDemoReset_Is200_WithoutDemoTariff()
+    {
+        // The reset truncates SubscriptionPlanConfigs and re-applies the tariff catalog: the public Orders price list must exist right after it.
+        using (var scope = _factory.Services.CreateScope())
+            scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Billing.PricingCatalogCache>().Invalidate();
+        var response = await Client().GetAsync("/api/pricing/orders");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var body = await J(response);
+        OpenApiContract.Load("cycle38").AssertResponse("get", "/api/pricing/orders", 200, body);
+        var names = body.GetProperty("plans").EnumerateArray().Select(p => p.GetProperty("name").GetString()).ToList();
+        names.Should().Contain(["Лавка", "Магазин", "Сеть магазинов"]);
+        names.Should().NotContain(n => n!.Contains("Демо") || n.Contains("Витрина"));
+        body.GetProperty("plans").EnumerateArray().Select(p => p.GetProperty("id").GetGuid()).Should().NotContain(ShowcaseCatalog.OrdersShowcasePlanId);
+    }
+
     [Fact, TestCase("CY35-10")]
     public async Task FiveShops_AreInCatalog_WithLogoPhotosPhoneHours_AndAllCitiesShowsAllFive()
     {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { BusinessBlock } from './BusinessBlock'
+import { LandingBusinessSection } from '@/components/landing/LandingBusinessSection'
+import { goodsLanding } from './goodsLanding'
 import manifest from '../assets/screenshots/screenshots.json'
 
 const BOARD_ALT =
@@ -9,7 +10,7 @@ const BOARD_ALT =
 
 describe('BusinessBlock screenshot', () => {
   it('T30-14 board figure: picture with desktop source, phone img, caption, position', () => {
-    const { container } = render(<MemoryRouter><BusinessBlock /></MemoryRouter>)
+    const { container } = render(<MemoryRouter><LandingBusinessSection config={goodsLanding.business} placeholder={false} /></MemoryRouter>)
     expect(container.querySelectorAll('figure')).toHaveLength(1)
     const img = container.querySelector('figure picture > img') as HTMLImageElement
     expect(img.getAttribute('alt')).toBe(BOARD_ALT)
