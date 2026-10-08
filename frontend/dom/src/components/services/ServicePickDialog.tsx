@@ -81,7 +81,7 @@ export function ServicePickDialog({
   onConfirm,
   onClose,
 }: Props) {
-  const [serviceId, setServiceId] = useState<string | null>(services.length === 1 ? services[0].id : null)
+  const [serviceId, setServiceId] = useState<string | null>(null)
   const service = services.find((s) => s.id === serviceId) ?? null
   const [pick, setPick] = useState<SessionPick | null>(null)
 
@@ -116,7 +116,7 @@ export function ServicePickDialog({
   return (
     <Modal title={title} onClose={onClose} dismissible={!pending}>
       <div className="flex flex-col gap-5">
-        {services.length > 1 && (
+        {services.length > 0 && (
           <fieldset>
             <legend className="mb-2 text-[15px] font-semibold text-ink">Услуга</legend>
             <ul className="flex flex-col gap-2">
