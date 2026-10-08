@@ -678,6 +678,25 @@ public class Cycle39OrderTests(TestDatabaseFixture fixture) : Cycle39TestBase(fi
         ((int)(await c.GetAsync($"/api/stays/companies/{company.Id}/service-sessions?pageSize=100000&page=-5")).StatusCode).Should().BeLessThan(500);
     }
 
+    [Fact, TestCase("CY39-48")]
+    public async Task Board_AwaitingPaymentCounter_IncludesStandaloneOrders_NeedsActionOnCell()
+    {
+        var (company, svc) = await SceneAsync(prepay: 30);
+        var date = InDays(9);
+        var c = AuthedClient(company.OwnerToken);
+        var before = (await (await c.GetAsync($"/api/stays/companies/{company.Id}/board?from={D(date)}&days=3")).Content.ReadJsonAsync<StaysBoardDto>())!;
+        (before.AwaitingPaymentCount ?? 0).Should().Be(0);
+        var order = await OrderOkAsync(svc.Id, date, 720, 2);
+        await AttachOrderProofAsync(order.Token);
+        var after = (await (await c.GetAsync($"/api/stays/companies/{company.Id}/board?from={D(date)}&days=3")).Content.ReadJsonAsync<StaysBoardDto>())!;
+        after.AwaitingPaymentCount.Should().Be(1, "«Ожидают проверки оплаты» над шахматкой учитывает и отдельные сеансы");
+        after.ServiceCells.Should().ContainSingle(x => x.ServiceId == svc.Id && x.BusinessDate == date && x.Count == 1 && x.NeedsAction);
+        after.Revision.Should().BeGreaterThan(before.Revision, "ревизия растёт при заказе — опрос шахматки увидит изменение");
+        var poll = await c.GetAsync($"/api/stays/companies/{company.Id}/board?from={D(date)}&days=3&sinceRevision={after.Revision}");
+        poll.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await poll.Content.ReadJsonAsync<StaysBoardDto>())!.Changed.Should().BeFalse("при той же ревизии опрос отвечает «не менялось»");
+    }
+
     [Fact, TestCase("CY39-47")]
     public async Task ManualOrder_NeedsBasis_IsConfirmed_PhoneOptional_NoMessenger()
     {
