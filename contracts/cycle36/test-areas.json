@@ -93,6 +93,8 @@
         "src/utils/notificationError",
         "src/utils/channelBanner",
         "src/utils/channelRules",
+        "src/utils/messengerOptIn",
+        "src/hooks/useMessengerOptInDefault",
         "src/api/push",
         "src/pages/admin/NotificationsAdminTab",
         "goods/src/utils/goodsPush",

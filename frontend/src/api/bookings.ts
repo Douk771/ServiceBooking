@@ -24,6 +24,9 @@ interface CreateBookingPayload {
   bookedForOther?: boolean
   /** Required (400 otherwise) when `bookedForOther` is `true`. */
   guardianConfirmation?: { textVersion: string; confirmed: true }
+  /** API_CONTRACT_CYCLE40.md §40.30.4. Client: `true` consent / `false` declined / omitted `null` (old rule). Staff: `true` = the
+   *  «Клиент согласился…» tick; otherwise omitted. Never sent as `true` unless the offer is currently `offered`. */
+  notifyByMessenger?: boolean | null
 }
 
 /** API_CONTRACT_CYCLE6.md §41.2/§45.1 — server sends only these three; "past" is a client-side concept. */
