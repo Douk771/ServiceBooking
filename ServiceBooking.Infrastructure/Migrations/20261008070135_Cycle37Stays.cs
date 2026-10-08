@@ -888,7 +888,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                     ('0c37f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b01'::uuid, 'Один дом',        200, true,  true,  1, 1,    'Линейка «Дома»: один опубликованный дом.'),
                     ('0c37f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b02'::uuid, 'До 3 домов',      500, true,  true,  2, 3,    'Линейка «Дома»: до трёх опубликованных домов.'),
                     ('0c37f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b03'::uuid, 'Без ограничения', 1000, true, true,  3, NULL, 'Линейка «Дома»: без ограничения числа домов.'),
-                    ('0c37f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b04'::uuid, 'Пробный период',  0,   false, false, 0, NULL, 'Пробный тариф линейки «Дома».')
+                    ('0c37f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b04'::uuid, 'Пробный период «Дома»', 0, false, false, 0, NULL, 'Пробный тариф линейки «Дома».')
                 ) AS v(id, name, price, channel, pub, sort, houses, descr)
                 WHERE NOT EXISTS (SELECT 1 FROM "SubscriptionPlanConfigs" p WHERE p."Id" = v.id);
 
