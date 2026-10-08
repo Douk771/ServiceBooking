@@ -13,6 +13,10 @@ import { LegalDocumentPage } from '@/pages/LegalDocumentPage'
 import { DomNavbar } from './components/DomNavbar'
 import { DomFooter } from './components/DomFooter'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { CatalogPage } from './pages/CatalogPage'
+import { CompanyPage } from './pages/CompanyPage'
+import { HousePage } from './pages/HousePage'
+import { BookingPage } from './pages/BookingPage'
 
 /**
  * Routes reachable while a "Material" change to a GLOBAL-gate document is pending acceptance (same reasoning as ezbook's
@@ -60,8 +64,11 @@ export function DomApp() {
           <LegalGuard bypassPaths={CONSENT_GATE_BYPASS_PATHS}>
             <RouteErrorBoundary>
               <Routes>
+                <Route path="/" element={<CatalogPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
+                <Route path="/b/:token" element={<BookingPage />} />
+
                 <Route element={<RequireAuth />}>{null}</Route>
 
                 <Route path="/data-request" element={<SubjectRequestPage />} />
@@ -73,6 +80,9 @@ export function DomApp() {
                 <Route path="/offer-channel" element={<Navigate to="/terms-owner#offer-channel" replace />} />
                 <Route path="/payment-terms" element={<Navigate to="/terms-owner#payment-terms" replace />} />
 
+                {/* /:slug and /:slug/:houseSlug are the company and the house; static routes rank higher. */}
+                <Route path="/:slug" element={<CompanyPage />} />
+                <Route path="/:slug/:houseSlug" element={<HousePage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </RouteErrorBoundary>
