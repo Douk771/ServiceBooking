@@ -5,7 +5,7 @@ using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services.Stays;
 
-/// <summary><see cref="HoldExpired"/> — the guest acted on a held booking whose timer had already run out: the expiry was finished instead (only the guest's cancel).</summary>
+/// <summary><see cref="TransitionOutcome.HoldExpired"/> — the guest acted on a held booking whose timer had already run out: the expiry was finished instead (only the guest's cancel).</summary>
 public enum TransitionOutcome { Ok, NotFound, VersionMismatch, InvalidTransition, HoldExpired }
 
 public sealed record TransitionResult(TransitionOutcome Outcome, StayBooking? Booking);
