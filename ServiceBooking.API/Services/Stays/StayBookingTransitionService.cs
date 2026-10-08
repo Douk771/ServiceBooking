@@ -37,6 +37,7 @@ public class StayBookingTransitionService(
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         if (locksHouse) await occupancy.LockHouseAsync(houseId.Value);
+        await LockBookingRowAsync(bookingId, ct);
         // A fresh read AFTER the lock: the booking may have been changed by the hold-expiry task or another staff member while we waited.
         var booking = await db.StayBookings.FirstOrDefaultAsync(b => b.Id == bookingId && b.CompanyId == companyId, ct);
         if (booking is null) return new TransitionResult(TransitionOutcome.NotFound, null);
@@ -99,6 +100,7 @@ public class StayBookingTransitionService(
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await occupancy.LockHouseAsync(houseId.Value);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""SELECT 1 FROM "StayBookings" WHERE "PublicToken" = {token} FOR UPDATE""", ct);
         var booking = await db.StayBookings.FirstOrDefaultAsync(b => b.PublicToken == token, ct);
         if (booking is null) return new TransitionResult(TransitionOutcome.NotFound, null);
 
@@ -160,6 +162,13 @@ public class StayBookingTransitionService(
         await eventLog.AppendAsync(booking, StayBookingEventKind.HoldExpired, StayActor.System, StayBookingStatus.Held, StayBookingStatus.ExpiredUnpaid);
         return true;
     }
+
+    /// <summary>
+    /// Lock order of §37.5.1 for every path: house -> booking row -> occupancy -> board revision. The proof upload writes the booking first, so the staff
+    /// actions must take the row before they touch the occupancy and the revision counter (otherwise the two deadlock, 40P01).
+    /// </summary>
+    private Task LockBookingRowAsync(Guid bookingId, CancellationToken ct) =>
+        db.Database.ExecuteSqlInterpolatedAsync($"""SELECT 1 FROM "StayBookings" WHERE "Id" = {bookingId} FOR UPDATE""", ct);
 
     private StayBooking Detach(StayBooking booking)
     {
