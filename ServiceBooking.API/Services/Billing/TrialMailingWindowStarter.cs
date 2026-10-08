@@ -66,11 +66,17 @@ public static class TrialMailingWindowStarter
         // §336.3 — the option row itself (§333.3's materialization) carries its own PaidUntilUtc, the
         // mechanism IsOptionCurrentlyPaid already reads (§333.2); this keeps it in sync with the window
         // now that it actually has an end date instead of the null it was created with.
-        var trialOptions = await db.AccountSubscriptionOptions
+        var trialOptions = await db.AccountSubscriptionOptions.Include(o => o.Option)
             .Where(o => o.BillingAccountId == account.Id && o.GrantedByTrial && o.EndsAtUtc == null)
             .ToListAsync(ct);
         foreach (var option in trialOptions)
+        {
+            var oldPaidUntil = option.PaidUntilUtc;
             option.PaidUntilUtc = account.TrialMailingWindowEndsAtUtc;
+            // ARCHITECTURE_CYCLE40.md §40.13: every change of a channel option row is journaled.
+            ChannelOptionLog.Write(db, account.Id, option.Option.Code, ChannelOptionChangeSource.TrialWindowStart,
+                oldPaidUntil, option.PaidUntilUtc, option.EndsAtUtc, option.EndsAtUtc, TrialActors.System, clampedAuthorizedUtc);
+        }
 
         // §336.3 — one journal row when the window opens, same actor convention as trial-lifecycle's
         // own writes even though this particular row can also be written synchronously from the

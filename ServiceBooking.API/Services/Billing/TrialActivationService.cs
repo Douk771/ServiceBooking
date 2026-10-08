@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.API.Services.Notifications.Funding;
 using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.API.Services.Signals;
 using ServiceBooking.Core.Entities;
@@ -226,99 +227,79 @@ public class TrialActivationService(
             ReasonDetails = request.Mode == TrialGrantMode.SuperAdminOverride ? request.Reason : null,
         });
 
-        // §333.3/§336.1 п.6 — closes R3 ("included on the plan" != "counted as paid" in
-        // SubscriptionResolver, which only ever reads AccountSubscriptionOptions.Quantity). Materializes
-        // (or revives, EndsAtUtc = null) the notifications.whatsapp row so a trial owner who connects a
-        // channel actually has paid notification numbers, not just a channel the plan lets them connect.
-        // PaidUntilUtc is left null here — until the mailing window actually starts (Д5, no channel
-        // authorized yet) there is nothing to send with, and Н5 wires the eventual window end in here.
-        // Б... (code review, cycle 18 4th pass) — the actual GlitchTip network call is deferred until
-        // AFTER the transaction commits (see below); this only decides WHETHER one is owed and with what
-        // text, so nothing here holds the advisory lock/DB transaction open waiting on an external
-        // service (up to its own 10s timeout) before the grant itself can be committed.
+        // ARCHITECTURE_CYCLE40.md §40.3.5 (О6 with the Р40-Ю1 amendment) — the trial grants the OPEN messenger options and only them. For
+        // every channel option (WhatsApp, MAX) that is open at this moment a row is materialized or revived (Quantity = 1, GrantedByTrial = true);
+        // a closed option gets no row (it is not sold and not granted). The tariff's PlanOptionRule is NOT read any more: "included in
+        // the plan" is not a source of payment (§40.3.1). Opening WhatsApp later does not top up a trial already running. The row's
+        // PaidUntilUtc is left null here — until the mailing window actually starts (Д5, no channel authorized yet) the trial end
+        // (ChannelOptionFunding) pays, and the window start dates the row (TrialMailingWindowStarter). Each change is journaled
+        // (ChannelOptionLog, TrialGrant).
+        // The actual GlitchTip network call is deferred until AFTER the transaction commits (see below); this only decides WHETHER one
+        // is owed and with what text, so nothing here holds the advisory lock/DB transaction open waiting on an external service.
         string? misconfigurationSignal = null;
 
-        var whatsappOption = await db.SubscriptionOptions
-            .FirstOrDefaultAsync(o => o.Code == SubscriptionResolver.WhatsAppOptionCode, ct);
-        if (whatsappOption is null)
+        foreach (var optionCode in ChannelOptionCodes.All)
         {
-            // Symmetric with the Н2 gap below: the option CODE itself isn't in the catalog at all (not
-            // just missing/non-Included on this plan) — just as invisible a misconfiguration as the one
-            // Н2 was written to surface, so it gets the same log + signal treatment.
-            logger.LogError(
-                "trial-lifecycle: subscription option {OptionCode} does not exist in the catalog at all " +
-                "— account {AccountId} granted a trial with no paid notification numbers materialized",
-                SubscriptionResolver.WhatsAppOptionCode, account.Id);
-            misconfigurationSignal =
-                $"Опция {SubscriptionResolver.WhatsAppOptionCode} отсутствует в каталоге целиком " +
-                $"— у аккаунта {account.Id} рассылки не будут работать несмотря на активный триал.";
-        }
-        else
-        {
-            var rule = await db.PlanOptionRules
-                .FirstOrDefaultAsync(r => r.PlanConfigId == plan.Id && r.OptionId == whatsappOption.Id, ct);
-            // Extra or no rule at all → fail-closed, no row created (§333.3, §0.2 п.4): the trial plan's
-            // matrix must say Included for this to mean anything.
-            if (rule is { Availability: OptionAvailability.Included })
+            var transport = AccountMessagingReader.TransportOf(optionCode)!.Value;
+            if (TrialOptionGrantRule.Decide(await platformSettings.IsOptionOpenAsync(transport, ct), rowExists: false, rowGrantedByTrial: false)
+                == TrialOptionGrantAction.SkipClosed)
             {
-                var existingOption = await db.AccountSubscriptionOptions
-                    .FirstOrDefaultAsync(o => o.BillingAccountId == account.Id && o.OptionId == whatsappOption.Id, ct);
-                if (existingOption is null)
-                {
+                logger.LogInformation(
+                    "trial-lifecycle: option {OptionCode} is closed — account {AccountId} granted a trial without it",
+                    optionCode, account.Id);
+                continue;
+            }
+
+            var channelOption = await db.SubscriptionOptions.FirstOrDefaultAsync(o => o.Code == optionCode, ct);
+            if (channelOption is null)
+            {
+                // The option CODE is not in the catalog at all although it is open — an invisible misconfiguration: log + signal.
+                logger.LogError(
+                    "trial-lifecycle: subscription option {OptionCode} does not exist in the catalog at all " +
+                    "— account {AccountId} granted a trial without it",
+                    optionCode, account.Id);
+                misconfigurationSignal =
+                    (misconfigurationSignal is null ? string.Empty : misconfigurationSignal + " ") +
+                    $"Опция {optionCode} отсутствует в каталоге целиком — у аккаунта {account.Id} она не будет выдана в пробном периоде.";
+                continue;
+            }
+
+            var existingOption = await db.AccountSubscriptionOptions
+                .FirstOrDefaultAsync(o => o.BillingAccountId == account.Id && o.OptionId == channelOption.Id, ct);
+            switch (TrialOptionGrantRule.Decide(optionOpen: true, existingOption is not null, existingOption?.GrantedByTrial == true))
+            {
+                case TrialOptionGrantAction.Create:
                     db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
                     {
                         Id = Guid.NewGuid(),
                         BillingAccountId = account.Id,
-                        OptionId = whatsappOption.Id,
-                        Quantity = rule.IncludedQuantity ?? 1,
+                        OptionId = channelOption.Id,
+                        Quantity = 1,
                         PaidUntilUtc = account.TrialMailingWindowEndsAtUtc,
                         ActivatedAtUtc = now,
                         ActivatedByUserId = request.ActorUserId,
                         GrantedByTrial = true,
                     });
-                }
-                // B1 (code review, cycle 18 late delta) — a row that already exists for this option and
-                // is NOT one the trial itself created (GrantedByTrial == false, e.g. an admin's paid
-                // AssignSubscription grant whose own paid period has since lapsed) is left completely
-                // untouched here. The (BillingAccountId, OptionId) unique index means there is no way to
-                // hold both an admin grant and a trial grant as separate rows for the same option — and
-                // overwriting the admin's row would (a) silently discard whatever quantity/date it
-                // carried and (b) make it indistinguishable from a trial row, so TrialLifecycleTask's
-                // expiry phase would later date out a grant the trial never created. Only a row this
-                // service itself materialized before (GrantedByTrial == true, e.g. a second trial after
-                // an earlier one already ran its course and dated this same row out) is revived.
-                else if (existingOption.GrantedByTrial)
-                {
-                    existingOption.Quantity = rule.IncludedQuantity ?? 1;
+                    ChannelOptionLog.Write(db, account.Id, optionCode, ChannelOptionChangeSource.TrialGrant,
+                        null, account.TrialMailingWindowEndsAtUtc, null, null, request.ActorUserId, now);
+                    break;
+
+                // B1 (code review, cycle 18 late delta) — a row that already exists for this option and is NOT one the trial itself
+                // created (GrantedByTrial == false, e.g. an admin's paid grant whose own paid period has since lapsed) is left completely
+                // untouched (LeaveAsIs). The (BillingAccountId, OptionId) unique index means there is no way to hold both an admin grant
+                // and a trial grant as separate rows for the same option — overwriting the admin's row would silently discard its
+                // quantity/date and make it indistinguishable from a trial row, so TrialLifecycleTask's expiry phase would later date
+                // out a grant the trial never created. Only a row this service itself materialized before (Revive) is revived.
+                case TrialOptionGrantAction.Revive:
+                    var (oldOptionPaidUntil, oldOptionEndsAt) = (existingOption!.PaidUntilUtc, existingOption.EndsAtUtc);
+                    existingOption.Quantity = 1;
                     existingOption.EndsAtUtc = null;
                     existingOption.PaidUntilUtc = account.TrialMailingWindowEndsAtUtc;
                     existingOption.ActivatedAtUtc = now;
                     existingOption.ActivatedByUserId = request.ActorUserId;
-                }
-            }
-            else if (TrialMailingRulePolicy.IsMisconfiguration(plan))
-            {
-                // Н2 (code review, cycle 18 3rd pass) — no PlanOptionRule for notifications.whatsapp on
-                // the trial plan, or an Extra one: fail-closed per §333.3/§0.2 п.4, no row created, so the
-                // owner gets a "mailings included" terms text and a mailing-window countdown while every
-                // mailing attempt silently hits NotOnPaidPlan in NotificationGate. That misconfiguration
-                // must be visible to an operator, not just consistent with the contract on paper.
-                // Cycle 28 (§573.3): only when the plan itself is designed with mailings (AllowNotificationChannel).
-                logger.LogError(
-                    "trial-lifecycle: trial plan {PlanId} has no Included PlanOptionRule for {OptionCode} " +
-                    "— account {AccountId} granted a trial with no paid notification numbers materialized",
-                    plan.Id, SubscriptionResolver.WhatsAppOptionCode, account.Id);
-                misconfigurationSignal =
-                    $"Пробный тариф {plan.Id} не даёт правило Included на {SubscriptionResolver.WhatsAppOptionCode} " +
-                    $"— у аккаунта {account.Id} рассылки не будут работать несмотря на активный триал.";
-            }
-            else
-            {
-                // Cycle 28 (§573.3, Q28-4): the trial plan is intentionally without mailings — nothing to alert about.
-                logger.LogInformation(
-                    "trial-lifecycle: trial plan {PlanId} is intentionally without mailings ({OptionCode} not Included) " +
-                    "— account {AccountId} granted a trial without a mailing option row",
-                    plan.Id, SubscriptionResolver.WhatsAppOptionCode, account.Id);
+                    ChannelOptionLog.Write(db, account.Id, optionCode, ChannelOptionChangeSource.TrialGrant,
+                        oldOptionPaidUntil, existingOption.PaidUntilUtc, oldOptionEndsAt, null, request.ActorUserId, now);
+                    break;
             }
         }
 
