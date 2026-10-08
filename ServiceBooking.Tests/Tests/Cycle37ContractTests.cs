@@ -18,6 +18,8 @@ namespace ServiceBooking.Tests.Tests;
 public class Cycle37ContractTests(TestDatabaseFixture fixture) : Cycle37TestBase(fixture)
 {
     private static readonly OpenApiContract C37 = OpenApiContract.Load("cycle37");
+    private static readonly System.Text.RegularExpressions.Regex Cycle39Additions = new(
+        "\\.(sessions|servicesBlock|arrivalReminder|services|serviceCells|acceptServiceOrdersWithoutStay|acceptsServiceOrdersWithoutStay|servicesForStay|serviceIndex): property is not described by the schema$|value \"AddSession\" is not in enum$");
 
     private sealed class Violations
     {
@@ -30,7 +32,10 @@ public class Cycle37ContractTests(TestDatabaseFixture fixture) : Cycle37TestBase
             JsonElement body;
             try { body = JsonDocument.Parse(text).RootElement.Clone(); }
             catch (JsonException) { Items.Add($"{method} {path} -> {status}: тело не JSON: {text}"); return; }
-            Items.AddRange(C37.Collect(method, path, status, body).Select(e => $"{method} {path} -> {status}: {e}"));
+            // Cycle 39 appended optional fields to DTOs of cycle 37 (contracts/cycle39/openapi.yaml, tag shared-changed) and the value AddSession to the staff actions of a booking.
+            // The cycle-37 contract stays frozen; exactly these additions are accepted here, everything else is checked strictly, as before (their shape is checked by cycle 39).
+            var errors = C37.Collect(method, path, status, body).Where(e => !Cycle39Additions.IsMatch(e)).ToList();
+            Items.AddRange(errors.Select(e => $"{method} {path} -> {status}: {e}"));
         }
     }
 

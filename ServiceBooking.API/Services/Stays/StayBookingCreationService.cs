@@ -83,7 +83,7 @@ public class StayBookingCreationService(
         var eval = await EvaluateAsync(ctx, input, manual: !checkGate, now, ct);
         var gate = checkGate ? await companyService.EvaluateGateAsync(ctx.Company, ctx.Settings, ct) : GateResult.Ok;
         var quote = BuildQuoteDto(ctx, eval, gate);
-        if (services is not { Count: > 0 }) return quote;
+        if (services is not { Count: > 0 }) return quote with { Services = [] };
         return MergeServices(quote, await EvaluateServicesAsync(ctx, input, services, forWrite: false, gate, ct));
     }
 

@@ -147,6 +147,9 @@ public sealed class OpenApiContract
 
             switch (type)
             {
+                // A node that only composes (`allOf` + `type: object`, the form the redocly lint demands next to a nullable $ref) describes no properties of its own:
+                // the parts of allOf did the checking above.
+                case "object" when schema.TryGetProperty("allOf", out _) && !schema.TryGetProperty("properties", out _) && !schema.TryGetProperty("additionalProperties", out _): break;
                 case "object": CheckObject(schema, value, path, errors); break;
                 case "array": CheckArray(schema, value, path, errors); break;
                 case "string": CheckString(schema, value, path, errors); break;
