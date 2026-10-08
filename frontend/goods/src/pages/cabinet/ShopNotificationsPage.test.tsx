@@ -12,7 +12,7 @@ vi.mock('../../api/shopNotifications', () => ({ shopNotificationsApi: { get: (..
 vi.mock('@/api/notificationChannels', () => ({
   notificationChannelsApi: { list: () => Promise.resolve([]), offer: () => Promise.resolve({ pricePerMonth: 500, allowedByPlan: true, transports: [], riskVersion: 'v1', riskText: '' }) },
 }))
-vi.mock('@/pages/owner/NotificationsSection', () => ({ ChannelCard: () => null }))
+vi.mock('@/components/notifications/LegacyChannelCard', () => ({ ChannelCard: () => null }))
 vi.mock('@/components/notifications/ChannelRequestModal', () => ({ ChannelRequestModal: () => <div role="dialog">Подключить канал уведомлений</div> }))
 
 const settings = (over: Partial<ShopNotificationSettingsDto> = {}): ShopNotificationSettingsDto => ({

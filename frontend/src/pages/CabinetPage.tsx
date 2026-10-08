@@ -17,7 +17,7 @@ import { CityCombobox } from '../components/ui/CityCombobox'
 import { ScheduleTab } from './owner/ScheduleTab'
 import { DashboardTab } from './owner/DashboardTab'
 import { MailingTab } from './owner/MailingTab'
-import { NotificationsSection } from './owner/NotificationsSection'
+import { NumbersBlock } from '../components/notifications/NumbersBlock'
 import { MasterClientsPage } from './MasterClientsPage'
 import { notificationChannelsApi } from '../api/notificationChannels'
 import { ChannelBreachBanner } from '../components/notifications/ChannelBreachBanner'
@@ -675,7 +675,7 @@ export function CabinetPage() {
         {tab === 'clients' && <ClientsSection />}
         {tab === 'reports' && <ReportsTab />}
         {tab === 'mailing' && <MailingSection />}
-        {tab === 'notifications' && <NotificationsSection />}
+        {tab === 'notifications' && <NumbersBlock />}
       </ErrorBoundary>
     </div>
   )
