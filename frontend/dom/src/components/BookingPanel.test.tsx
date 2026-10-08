@@ -53,7 +53,7 @@ describe('BookingPanel', () => {
     expect(screen.getAllByText(/15\s000 ₽/).length).toBeGreaterThan(0)
     expect(screen.getByText('Предоплата 30 %')).toBeInTheDocument()
     expect(screen.getByText(/4\s500 ₽/)).toBeInTheDocument()
-    expect(screen.getByText(/Цена указана без туристического налога/)).toBeInTheDocument()
+    expect(screen.getByText(/Цена проживания указана без туристического налога/)).toBeInTheDocument()
     expect(api.quote).toHaveBeenCalledWith('house-1', { checkIn: '2027-01-05', checkOut: '2027-01-08', adults: 2, children: 0, dogs: 0, needCot: false })
   })
 

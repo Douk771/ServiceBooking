@@ -8,8 +8,8 @@ const KEYS = Object.keys(STAY_FALLBACKS) as StayTextKey[]
 const allText = (k: StayTextKey) => `${STAY_FALLBACKS[k].short} ${STAY_FALLBACKS[k].full ?? ''}`
 
 describe('StayTexts fallbacks', () => {
-  it('cover all thirteen keys of the vertical', () => {
-    expect(KEYS).toHaveLength(13)
+  it('cover all twenty-two keys of the vertical (13 of cycle 37 + 9 of cycle 39)', () => {
+    expect(KEYS).toHaveLength(22)
   })
 
   it.each(KEYS)('%s has no forbidden words (задаток, невозвратный, депозит) and no «чек» for the guest side', (k) => {
@@ -35,7 +35,7 @@ describe('StayTexts fallbacks', () => {
   })
 
   it('the tourist tax text says the price is without the tax and names no figure (the local rate is not verified)', () => {
-    expect(STAY_FALLBACKS.StayTouristTaxNotice.short).toContain('Цена указана без туристического налога')
+    expect(STAY_FALLBACKS.StayTouristTaxNotice.short).toContain('Цена проживания указана без туристического налога')
     expect(STAY_FALLBACKS.StayTouristTaxNotice.short).not.toMatch(/\d\s?%|₽/)
   })
 })
@@ -60,5 +60,40 @@ describe('resolveStayText', () => {
     const html = '<h2>Стандартный</h2><p>a</p><h2>Общее</h2><p>b</p>'
     expect(stayTextSection(html, 'Общее')).toBe('<p>b</p>')
     expect(stayTextSection(html, 'Гибкий')).toBeNull()
+  })
+})
+
+describe('StayTexts fallbacks of cycle 39', () => {
+  it('the new edition of the booking terms has the clause 3а about services added to a stay (Т39-08)', () => {
+    expect(STAY_FALLBACKS.StayBookingTerms.short).toContain('3а. <strong>Услуги к проживанию.</strong>')
+    expect(STAY_FALLBACKS.StayBookingNotice.full).toContain('заказанные услуги и их позиции')
+  })
+
+  it('the tourist tax text puts the tax on the stay only, services are outside it (Т39-15)', () => {
+    expect(STAY_FALLBACKS.StayTouristTaxNotice.short).toContain('на стоимость проживания (без бани, чана и других услуг)')
+  })
+
+  it('the cancellation terms never promise «не меньше 0 ₽» and never use the SPEC template «Стандартный» (ЮР39-1)', () => {
+    const t = allText('StayServiceCancellationTerms')
+    expect(t).not.toMatch(/не меньше 0/)
+    expect(t).not.toContain('Стандартный')
+    expect(t).toContain('только фактически понесённые расходы')
+  })
+
+  it('the guest texts of a session never say «бизнес-день» (ЮР39-8)', () => {
+    for (const k of KEYS) expect(allText(k).toLowerCase()).not.toContain('бизнес-день')
+  })
+
+  it('the push notice names what is dropped from the push and the 180-symbol limit (ЮР39-3)', () => {
+    const t = STAY_FALLBACKS.StayReminderPushOwnerNotice.short
+    expect(t).toContain('180 символов')
+    expect(t).toContain('выпадают')
+  })
+
+  it('the service booking notice links to the service conditions, the agreement and the policy', () => {
+    const t = STAY_FALLBACKS.StayServiceBookingNotice.short
+    expect(t).toContain('href="#service-terms"')
+    expect(t).toContain('href="/terms"')
+    expect(t).toContain('href="/privacy"')
   })
 })
