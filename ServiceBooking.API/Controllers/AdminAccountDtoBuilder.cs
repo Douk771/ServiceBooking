@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -18,7 +19,7 @@ internal static class AdminAccountDtoBuilder
 {
     internal static async Task<object> BuildAsync(
         AppDbContext db, SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
-        OwnerSubscriptionService ownerSubscriptionService, BillingAccount account)
+        OwnerSubscriptionService ownerSubscriptionService, AccountMessagingReader messagingReader, BillingAccount account)
     {
         var now = DateTime.UtcNow;
         var sub = await db.AccountSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == account.Id);
@@ -41,7 +42,7 @@ internal static class AdminAccountDtoBuilder
         var channels = await db.NotificationChannels.Include(c => c.Assignments)
             .Where(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced)
             .OrderBy(c => c.CreatedAt).ThenBy(c => c.Id).ToListAsync();
-        var funding = ChannelFunding.Rank(channels, plan.PaidNotificationNumbers);
+        var messaging = await messagingReader.ForAccountAsync(account.Id) ?? throw new InvalidOperationException("Messaging state of an existing account is missing.");
 
         var optionDtos = subscribedOptions.Select(o =>
         {
@@ -112,7 +113,7 @@ internal static class AdminAccountDtoBuilder
             companiesLimit = plan.AccountMaxCompanies,
             employeesUsed = usage.SeatsUsed,
             employeesLimit = plan.AccountMaxEmployees,
-            numbersPaid = plan.PaidNotificationNumbers,
+            numbersPaid = messaging.PaidTransportCount, // ARCHITECTURE_CYCLE40.md §40.3.4: the number of paid transports (0…2)
             numbersRegistered = channels.Count,
             grandfatheredEmployeeBonus = account.GrandfatheredEmployeeBonus,
             grandfatheredEmployeeBonusText = account.GrandfatheredEmployeeBonus > 0
@@ -130,7 +131,7 @@ internal static class AdminAccountDtoBuilder
                 channelId = c.Id,
                 phoneMasked = c.PhoneNumber is null ? null : PhoneDisplayMask.Mask(c.PhoneNumber),
                 state = c.State.ToString(),
-                fundingState = funding.GetValueOrDefault(c.Id, ChannelFundingState.NotPaid).ToString(),
+                fundingState = messaging.FundingOf(c).ToString(),
                 createdAt = c.CreatedAt,
                 assignedCompanies = c.Assignments.Count,
             }).ToList(),

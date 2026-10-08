@@ -84,48 +84,7 @@ public class OrdersPlanResolverTests
     [Fact]
     public void PlanFlags_AreCarried()
     {
-        var r = OrdersPlanResolver.Resolve(Sub(Plan(p => { p.AllowOrders = false; p.AllowNotificationChannel = false; })), Free(), Now);
-        (r.AllowOrders, r.AllowNotificationChannel).Should().Be((false, false));
-    }
-
-    // ── the paid-numbers rule (§457.4) ──────────────────────────────────────────────────────────────
-
-    private static int Paid(bool servicesUsable, OptionAvailability? servicesRule, bool hasShops, bool ordersUsable, OptionAvailability? ordersRule,
-        DateTime? optionPaidUntil = null, int quantity = 2) =>
-        SubscriptionResolver.PaidNumbers(quantity, optionPaidUntil, servicesUsable, servicesRule, hasShops, ordersUsable, ordersRule, Now);
-
-    [Fact]
-    public void PaidNumbers_AccountWithoutShops_IsExactlyTheCycle23Rule()
-    {
-        // Whatever the (irrelevant) Orders arguments are, an account with no shop is decided by the "Записи" side alone.
-        foreach (var ordersUsable in new[] { true, false })
-        foreach (OptionAvailability? ordersRule in new OptionAvailability?[] { null, OptionAvailability.Extra, OptionAvailability.Unavailable })
-        {
-            Paid(true, OptionAvailability.Extra, false, ordersUsable, ordersRule).Should().Be(2);
-            Paid(true, OptionAvailability.Included, false, ordersUsable, ordersRule).Should().Be(2);
-            Paid(true, OptionAvailability.Unavailable, false, ordersUsable, ordersRule).Should().Be(0);
-            Paid(true, null, false, ordersUsable, ordersRule).Should().Be(0);
-            Paid(false, OptionAvailability.Extra, false, ordersUsable, ordersRule).Should().Be(0);
-        }
-    }
-
-    [Fact]
-    public void PaidNumbers_AccountWithShop_EitherLineMayAllowTheOption()
-    {
-        // The salon plan refuses (or is expired) but the Orders plan allows it → paid.
-        Paid(true, OptionAvailability.Unavailable, true, true, OptionAvailability.Extra).Should().Be(2);
-        Paid(false, OptionAvailability.Extra, true, true, OptionAvailability.Extra).Should().Be(2);
-        // Neither allows.
-        Paid(true, OptionAvailability.Unavailable, true, true, OptionAvailability.Unavailable).Should().Be(0);
-        Paid(true, null, true, true, null).Should().Be(0);
-        // The Orders side counts only while its subscription is usable.
-        Paid(false, null, true, false, OptionAvailability.Extra).Should().Be(0);
-    }
-
-    [Fact]
-    public void PaidNumbers_TheOptionRowsOwnPeriodStillApplies_ToBothSides()
-    {
-        Paid(true, OptionAvailability.Extra, true, true, OptionAvailability.Extra, optionPaidUntil: Now.AddDays(-1)).Should().Be(0);
-        Paid(true, OptionAvailability.Extra, true, true, OptionAvailability.Extra, optionPaidUntil: Now.AddDays(1)).Should().Be(2);
+        var r = OrdersPlanResolver.Resolve(Sub(Plan(p => { p.AllowOrders = false; })), Free(), Now);
+        r.AllowOrders.Should().BeFalse();
     }
 }

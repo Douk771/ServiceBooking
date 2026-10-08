@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services.Notifications;
@@ -11,8 +12,15 @@ namespace ServiceBooking.API.Services.Notifications;
 /// every 15 minutes and an admin screen hit on every page load don't each turn into a query against a
 /// two-row table on every call.
 /// </summary>
-public sealed class PlatformSettings(AppDbContext db, IMemoryCache cache)
+public sealed class PlatformSettings(AppDbContext db, IMemoryCache cache, IConfiguration configuration)
 {
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.7.1, §40.12). The two availability switches and the global messaging switch are
+    // changed by a superadmin without a release; the configuration only supplies the default for an ABSENT key
+    // (Notifications:OptionAvailability:WhatsApp = false, :Max = true; no key for the global switch = on).
+    public const string OptionWhatsAppOpenKey = "notifications.option.whatsapp.open";
+    public const string OptionMaxOpenKey = "notifications.option.max.open";
+    public const string CustomerMessagingEnabledKey = "notifications.customer-messaging.enabled";
+
     public const string ChannelPricePerMonthKey = "notifications.channel.price-per-month";
     public const string ChannelIdleDaysKey = "notifications.channel.idle-days";
     // T5-B12 (ARCHITECTURE_CYCLE5.md §51.2, US-70 п. 1) — comma-separated, edited by SuperAdmin without a
@@ -68,6 +76,33 @@ public sealed class PlatformSettings(AppDbContext db, IMemoryCache cache)
         var markers = raw.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         return markers.Length > 0 ? markers : DefaultAdMarkers;
     }
+
+    /// <summary>Platform-setting key of a transport's availability switch (§40.7.1).</summary>
+    public static string OptionOpenKey(NotificationTransport transport) => transport switch
+    {
+        NotificationTransport.WhatsApp => OptionWhatsAppOpenKey,
+        NotificationTransport.Max => OptionMaxOpenKey,
+        _ => throw new ArgumentOutOfRangeException(nameof(transport), transport, null),
+    };
+
+    /// <summary>Configuration default of a transport's availability (§40.7.1): WhatsApp closed, MAX open — applies only
+    /// while the platform-setting key is absent or holds something other than <c>true</c>/<c>false</c>.</summary>
+    public bool OptionOpenDefault(NotificationTransport transport) => transport switch
+    {
+        NotificationTransport.WhatsApp => configuration.GetValue("Notifications:OptionAvailability:WhatsApp", false),
+        NotificationTransport.Max => configuration.GetValue("Notifications:OptionAvailability:Max", true),
+        _ => throw new ArgumentOutOfRangeException(nameof(transport), transport, null),
+    };
+
+    /// <summary><c>open(X)</c> of §40.7.1: the platform setting, else the configuration default. Open does NOT mean
+    /// "can be sold" (price, active flag and the published offer are checked by <c>ChannelOptionAvailability.Sellable</c>)
+    /// and never switches off what has already been paid for.</summary>
+    public async Task<bool> IsOptionOpenAsync(NotificationTransport transport, CancellationToken ct = default) =>
+        Funding.ChannelOptionAvailability.IsOpen(await GetRawAsync(OptionOpenKey(transport), ct), OptionOpenDefault(transport));
+
+    /// <summary>The global switch of customer messaging (§40.12): an absent key (or garbage) means ON.</summary>
+    public async Task<bool> IsCustomerMessagingEnabledAsync(CancellationToken ct = default) =>
+        !string.Equals((await GetRawAsync(CustomerMessagingEnabledKey, ct))?.Trim(), "false", StringComparison.OrdinalIgnoreCase);
 
     private async Task<string?> GetRawAsync(string key, CancellationToken ct)
     {

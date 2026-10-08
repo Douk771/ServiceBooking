@@ -53,17 +53,4 @@ public class StaysPlanTests
         over.Level.Should().Be("OverLimit");
         over.Text.Should().Contain("Опубликовано 3 дома при лимите 1");
     }
-
-    [Fact]
-    public void A_number_is_paid_through_the_stays_line_only_when_the_account_has_stays_and_its_tariff_allows()
-    {
-        var now = DateTime.UtcNow;
-        // salons say no, shops absent, stays yes
-        SubscriptionResolver.PaidNumbers(1, null, false, null, false, false, null, now, accountHasStays: true, staysUsable: true, staysRule: OptionAvailability.Included).Should().Be(1);
-        SubscriptionResolver.PaidNumbers(1, null, false, null, false, false, null, now, accountHasStays: false, staysUsable: true, staysRule: OptionAvailability.Included).Should().Be(0);
-        SubscriptionResolver.PaidNumbers(1, null, false, null, false, false, null, now, accountHasStays: true, staysUsable: false, staysRule: OptionAvailability.Included).Should().Be(0);
-        SubscriptionResolver.PaidNumbers(1, null, false, null, false, false, null, now, accountHasStays: true, staysUsable: true, staysRule: OptionAvailability.Unavailable).Should().Be(0);
-        // the cycle-24 behaviour is untouched
-        SubscriptionResolver.PaidNumbers(2, null, true, OptionAvailability.Extra, false, false, null, now).Should().Be(2);
-    }
 }

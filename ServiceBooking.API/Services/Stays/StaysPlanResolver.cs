@@ -7,9 +7,9 @@ namespace ServiceBooking.API.Services.Stays;
 
 /// <summary>The "Дома" tariff in force for a billing account. No row / expired / inactive = <see cref="HasActivePlan"/> false (no free tier, Q2).</summary>
 public sealed record StaysPlan(
-    Guid? PlanId, string? PlanName, bool HasActivePlan, bool IsTrial, DateTime? PaidUntilUtc, int? MaxHouses, bool AllowNotificationChannel, bool WasEverSubscribed)
+    Guid? PlanId, string? PlanName, bool HasActivePlan, bool IsTrial, DateTime? PaidUntilUtc, int? MaxHouses, bool WasEverSubscribed)
 {
-    public static StaysPlan None { get; } = new(null, null, false, false, null, null, false, false);
+    public static StaysPlan None { get; } = new(null, null, false, false, null, null, false);
 }
 
 /// <summary>ARCHITECTURE_CYCLE37.md §37.10 — the plan of the line, the count of published houses, and the warning level for the owner's banners.</summary>
@@ -20,7 +20,7 @@ public class StaysPlanResolver(AppDbContext db)
         var plan = sub?.PlanConfig;
         if (sub is null || plan is null) return StaysPlan.None;
         var live = sub.IsActive && (sub.PaidUntil is null || sub.PaidUntil >= nowUtc) && plan is { IsActive: true, Line: CompanyKind.Stays };
-        return new StaysPlan(plan.Id, plan.Name, live, plan.Id == StaysPlans.TrialSeedId, sub.PaidUntil, plan.MaxHouses, plan.AllowNotificationChannel, WasEverSubscribed: true);
+        return new StaysPlan(plan.Id, plan.Name, live, plan.Id == StaysPlans.TrialSeedId, sub.PaidUntil, plan.MaxHouses, WasEverSubscribed: true);
     }
 
     public async Task<StaysPlan> GetForAccountAsync(Guid accountId, DateTime? nowUtc = null, CancellationToken ct = default)

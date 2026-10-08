@@ -331,9 +331,8 @@ public sealed class BookingCreationService(
         // the notification), so it's caught and logged, never rethrown.
         try
         {
-            // §375 F17: the plan resolved above is handed over — the scheduler doesn't resolve it again.
             await notificationScheduler.OnBookingCreatedAsync(
-                booking, orderedServices.Select(s => s.Name).ToList(), requestAborted, effectivePlan);
+                booking, orderedServices.Select(s => s.Name).ToList(), requestAborted);
         }
         catch (Exception ex)
         {

@@ -5,8 +5,8 @@ namespace ServiceBooking.API.Services.Billing;
 
 /// <summary>
 /// Code -&gt; required-document map for options whose public sale depends on a legal document being
-/// published (ARCHITECTURE_CYCLE11.md §102.10, Q11). Today this holds exactly one entry —
-/// <c>notifications.whatsapp</c> requires <c>TermsOwner</c> (the channel offer, D9, is an appendix to
+/// published (ARCHITECTURE_CYCLE11.md §102.10, Q11). Today this holds two entries —
+/// <c>notifications.whatsapp</c> and (cycle 40) <c>notifications.max</c> require <c>TermsOwner</c> (the channel offer, D9, is an appendix to
 /// it, ARCHITECTURE_CYCLE11.md §102.2) — because that option can't legally be sold to the public until
 /// the operator has published the offer it's contingent on.
 ///
@@ -20,6 +20,8 @@ public static class LegalOptionGuards
         new Dictionary<string, LegalDocumentType>(StringComparer.OrdinalIgnoreCase)
         {
             ["notifications.whatsapp"] = LegalDocumentType.TermsOwner,
+            // ARCHITECTURE_CYCLE40.md §40.7.1 (Т40-L-04): MAX is sold on the same offer (an appendix to TermsOwner, D3) — no published offer, no sale.
+            ["notifications.max"] = LegalDocumentType.TermsOwner,
         };
 
     /// <summary>True when the option's public-sale legal condition is satisfied — either the option has

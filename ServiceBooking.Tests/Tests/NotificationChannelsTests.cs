@@ -47,28 +47,31 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
     }
 
     [Fact, TestCase("NTF-C003")]
-    public async Task Offer_PlanDoesNotAllowChannel_PlanAllowsFalse()
+    public async Task Offer_NoTariffFlag_AllowedByPlanIsAlwaysTrue()
     {
-        // A freshly-registered owner has no plan at all → SubscriptionResolver's baseline default,
-        // AllowNotificationChannel = false (SPEC "ожидаемое состояние сразу после выката").
+        // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.4, A2): the tariff flag is gone, so even a freshly-registered owner with no plan at
+        // all gets allowedByPlan = true (the field stays in the contract for the old screens). Was: false for such an owner.
         var (owner, _) = await CreateOwnerWithCompanyAsync();
         await SetChannelPriceAsync(990);
 
         var response = await AuthedClient(owner.Token).GetAsync("/api/notification-channels/offer");
         var offer = (await response.Content.ReadJsonAsync<ChannelOfferDto>())!;
         // API_CONTRACT_CYCLE9.md §114.1: PlanAllows renamed to AllowedByPlan.
-        offer.AllowedByPlan.Should().BeFalse();
+        offer.AllowedByPlan.Should().BeTrue();
     }
 
     [Fact, TestCase("NTF-C004")]
-    public async Task CreateChannel_PlanDisallows_Returns402()
+    public async Task CreateChannel_NoTariffFlag_NeverAnswers402OnTariff()
     {
+        // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.4): the 402 «Подключение канала недоступно на вашем тарифе» is removed — an owner without any
+        // plan is no longer refused by the tariff (the gate of the request is the option's availability, §40.7.1, added with the wizard).
+        // Was: 402.
         var (owner, _) = await CreateOwnerWithCompanyAsync();
         await SetChannelPriceAsync(990);
 
         var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest());
-        response.StatusCode.Should().Be((HttpStatusCode)402);
-        (await response.Content.ReadAsStringAsync()).Should().NotBeNullOrWhiteSpace();
+        response.StatusCode.Should().NotBe((HttpStatusCode)402);
+        response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
     }
 
     [Fact, TestCase("NTF-C005")]

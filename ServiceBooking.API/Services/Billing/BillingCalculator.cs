@@ -5,7 +5,7 @@ namespace ServiceBooking.API.Services.Billing;
 /// <summary>Cycle 7, stage 5 (ARCHITECTURE_CYCLE7.md §44.3) — pure, DB-free arithmetic and status
 /// rules shared by the owner subscription screen and the admin billing-account screen. Kept separate
 /// from any controller/DbContext-bound service so it is unit-testable without a database, the same
-/// convention as <see cref="CompanyTransferCalculator"/> and <see cref="ChannelFunding"/>.</summary>
+/// convention as <see cref="CompanyTransferCalculator"/>.</summary>
 public static class BillingCalculator
 {
     /// <summary>§44.3 п. 4: an <see cref="OptionAvailability.Included"/> option costs 0 up to

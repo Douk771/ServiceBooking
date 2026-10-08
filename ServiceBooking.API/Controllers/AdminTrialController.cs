@@ -19,7 +19,8 @@ namespace ServiceBooking.API.Controllers;
 public class AdminTrialController(
     AppDbContext db,
     SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
-    OwnerSubscriptionService ownerSubscriptionService, Services.Billing.TrialActivationService trialActivationService) : ControllerBase
+    OwnerSubscriptionService ownerSubscriptionService, Services.Billing.TrialActivationService trialActivationService,
+    Services.Notifications.AccountMessagingReader messagingReader) : ControllerBase
 {
     // ── Cycle 18 (API_CONTRACT_CYCLE18.md §368) — superadmin trial grant/regrant ──────────────────
 
@@ -87,7 +88,7 @@ public class AdminTrialController(
     // Cycle 22 P5 (§385): shared with the other half of the former AdminBillingController — the body lives
     // in AdminAccountDtoBuilder, unchanged.
     private Task<object> BuildAdminAccountDtoAsync(BillingAccount account) =>
-        AdminAccountDtoBuilder.BuildAsync(db, subscriptionResolver, usageReader, ownerSubscriptionService, account);
+        AdminAccountDtoBuilder.BuildAsync(db, subscriptionResolver, usageReader, ownerSubscriptionService, messagingReader, account);
 }
 
 public record RegrantTrialInput(string Reason);

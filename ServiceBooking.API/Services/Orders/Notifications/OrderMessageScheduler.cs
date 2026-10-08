@@ -19,7 +19,7 @@ namespace ServiceBooking.API.Services.Orders.Notifications;
 /// rows to the caller's transaction — a queueing failure must not undo the action on the order, and there are no network calls here.
 /// </summary>
 public sealed class OrderMessageScheduler(
-    AppDbContext db, SubscriptionResolver subscriptionResolver, ConsentLedger consentLedger, PublicSiteLinks links,
+    AppDbContext db, AccountMessagingReader messagingReader, ConsentLedger consentLedger, PublicSiteLinks links,
     IOptions<NotificationOptions> notificationOptions, IOptions<OrdersOptions> ordersOptions)
 {
     public async Task QueueAsync(
@@ -35,7 +35,7 @@ public sealed class OrderMessageScheduler(
         var channels = await db.ChannelCompanyAssignments.AsNoTracking().Include(a => a.Channel)
             .Where(a => a.CompanyId == shop.Id).OrderBy(a => a.Transport).Select(a => a.Channel).ToListAsync(ct);
         var settings = await db.CompanyNotificationSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == shop.Id, ct);
-        var plan = await subscriptionResolver.GetEffectivePlanAsync(shop.Id);
+        var messaging = await messagingReader.ForCompanyAsync(shop.Id, ct: ct);
         var optedOut = await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == phone, ct);  // SUBJECT-PHONE-GATE: not-account-scoped — dispatch-time check against the message's own recipient phone (the order's), not an account reading another subject's data
 
         bool? hasConsent = null;
@@ -48,7 +48,7 @@ public sealed class OrderMessageScheduler(
 
         // Channel-independent checks first, exactly like the salon queueing: funding per channel is the router's job below.
         var gate = NotificationGate.Evaluate(
-            plan, type, companyHasAssignment: channels.Count > 0, channel: channels.Count > 0 ? channels[0] : null, settings, optedOut,
+            messaging.AnyPaid, type, companyHasAssignment: channels.Count > 0, channel: channels.Count > 0 ? channels[0] : null, settings, optedOut,
             now, outdatedAtUtc, channelIsFunded: true,
             Enum.TryParse<ProviderDeliveryConsentMode>(notificationOptions.Value.ProviderDeliveryConsent, ignoreCase: true, out var consentMode)
                 ? consentMode : ProviderDeliveryConsentMode.AccountsOnly,
@@ -60,7 +60,7 @@ public sealed class OrderMessageScheduler(
             return;
         }
 
-        var funding = await FundingAsync(channels, plan, ct);
+        var funding = channels.ToDictionary(c => c.Id, c => messaging.FundingOf(c) == ChannelFundingState.Funded);
         var candidates = channels.Select(c => new NotificationRouting.Candidate(c.Id, c.Transport, funding.GetValueOrDefault(c.Id))).ToList();
         var routing = NotificationRouting.SelectTargets(
             settings?.DeliveryMode ?? new CompanyNotificationSettings().DeliveryMode, priorityTransport, candidates);
@@ -109,19 +109,5 @@ public sealed class OrderMessageScheduler(
             Generation = 0,
             IdempotencyKey = key,
         });
-    }
-
-    /// <summary>The funding of every channel of the accounts behind <paramref name="channels"/>, ranked once per account (the salon N10 rule).</summary>
-    private async Task<Dictionary<Guid, bool>> FundingAsync(IReadOnlyList<NotificationChannel> channels, EffectivePlan plan, CancellationToken ct)
-    {
-        var result = new Dictionary<Guid, bool>();
-        var accountIds = channels.Where(c => c.BillingAccountId is not null).Select(c => c.BillingAccountId!.Value).Distinct().ToList();
-        if (accountIds.Count == 0) return result;
-        var siblings = await db.NotificationChannels.AsNoTracking()
-            .Where(c => c.BillingAccountId != null && accountIds.Contains(c.BillingAccountId!.Value)).ToListAsync(ct);
-        foreach (var accountId in accountIds)
-            foreach (var (channelId, state) in ChannelFunding.Rank(siblings.Where(c => c.BillingAccountId == accountId).ToList(), plan.PaidNotificationNumbers))
-                result[channelId] = state == ChannelFundingState.Funded;
-        return result;
     }
 }

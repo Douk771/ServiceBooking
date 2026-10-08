@@ -14,6 +14,7 @@ public static class OptionCapabilityCatalog
     public static readonly IReadOnlyList<Capability> Known =
     [
         new(CapabilityKeys.NotificationsWhatsApp, "Numeric", "Номера для рассылок WhatsApp"),
+        new(CapabilityKeys.NotificationsMax, "Numeric", "Номера для рассылок MAX"),
         new("analytics", "Boolean", "Аналитика"),
         new("online-payment", "Boolean", "Онлайн-оплата"),
     ];

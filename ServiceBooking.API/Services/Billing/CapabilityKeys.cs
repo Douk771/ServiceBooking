@@ -20,4 +20,8 @@ public static class CapabilityKeys
     /// own constant here because §44.2 lists it as a capability key in its own right, not because the
     /// value differs.</summary>
     public const string NotificationsWhatsApp = SubscriptionResolver.WhatsAppOptionCode;
+
+    /// <summary>ARCHITECTURE_CYCLE40.md §40.2.1 — the capability key of the MAX option row inserted by the Cycle40ChannelOptions migration
+    /// (the same literal as its option code).</summary>
+    public const string NotificationsMax = Notifications.Funding.ChannelOptionCodes.Max;
 }

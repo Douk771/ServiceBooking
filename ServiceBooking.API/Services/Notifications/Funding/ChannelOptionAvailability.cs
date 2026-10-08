@@ -30,12 +30,7 @@ public static class ChannelOptionAvailability
     }
 
     /// <summary>Platform-setting key of a transport's availability switch (§40.7.1).</summary>
-    public static string SettingKey(NotificationTransport transport) => transport switch
-    {
-        NotificationTransport.WhatsApp => "notifications.option.whatsapp.open",
-        NotificationTransport.Max => "notifications.option.max.open",
-        _ => throw new ArgumentOutOfRangeException(nameof(transport), transport, null),
-    };
+    public static string SettingKey(NotificationTransport transport) => PlatformSettings.OptionOpenKey(transport);
 }
 
 public readonly record struct OptionAvailability(bool Open, bool Sellable);

@@ -58,7 +58,7 @@ public class SubscriptionDiagnosticsTests
     public void BlockingReasonFor_PlanDisallowsOnlineBooking_DistinctFromOwnerDisabled()
     {
         var sub = new AccountSubscription { IsActive = true, PlanConfig = ActivePlan(allowOnlineBooking: false), PaidUntil = Now.AddDays(1) };
-        var effective = SubscriptionResolver.Resolve(sub, 0, 0, Now);
+        var effective = SubscriptionResolver.Resolve(sub, 0, Now);
         SubscriptionDiagnostics.BlockingReasonFor(sub, effective, allowSelfBooking: true, Now)
             .Should().Be(PlanNotAppliedReason.PlanDisallowsOnlineBooking);
     }
@@ -67,7 +67,7 @@ public class SubscriptionDiagnosticsTests
     public void BlockingReasonFor_OwnerDisabledSelfBooking_ReturnsSelfBookingDisabledByOwner()
     {
         var sub = new AccountSubscription { IsActive = true, PlanConfig = ActivePlan(), PaidUntil = Now.AddDays(1) };
-        var effective = SubscriptionResolver.Resolve(sub, 0, 0, Now);
+        var effective = SubscriptionResolver.Resolve(sub, 0, Now);
         SubscriptionDiagnostics.BlockingReasonFor(sub, effective, allowSelfBooking: false, Now)
             .Should().Be(PlanNotAppliedReason.SelfBookingDisabledByOwner);
     }
@@ -76,7 +76,7 @@ public class SubscriptionDiagnosticsTests
     public void BlockingReasonFor_EverythingOk_ReturnsNone()
     {
         var sub = new AccountSubscription { IsActive = true, PlanConfig = ActivePlan(), PaidUntil = Now.AddDays(1) };
-        var effective = SubscriptionResolver.Resolve(sub, 0, 0, Now);
+        var effective = SubscriptionResolver.Resolve(sub, 0, Now);
         SubscriptionDiagnostics.BlockingReasonFor(sub, effective, allowSelfBooking: true, Now)
             .Should().Be(PlanNotAppliedReason.None);
     }

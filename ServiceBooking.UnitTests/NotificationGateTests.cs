@@ -10,26 +10,23 @@ namespace ServiceBooking.UnitTests;
 public class NotificationGateTests
 {
     private static readonly DateTime Now = new(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
-    // Cycle 5 (§47.2): the gate's first check is now PaidNotificationNumbers == 0, not
-    // AllowNotificationChannel — AllowingPlan/DenyingPlan set both together so existing scenarios below
-    // keep meaning "this account currently has the option funded" / "does not".
-    private static readonly EffectivePlan AllowingPlan =
-        EffectivePlan.Free with { AllowNotificationChannel = true, PaidNotificationNumbers = 1 };
-    private static readonly EffectivePlan DenyingPlan =
-        EffectivePlan.Free with { AllowNotificationChannel = false, PaidNotificationNumbers = 0 };
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.4): the gate's account-level question is "does the account have a paid transport" (a bool
+    // from AccountMessagingState.AnyPaid) — there is no plan and no paid-numbers count in it any more.
+    private const bool AllowingPlan = true;
+    private const bool DenyingPlan = false;
 
     private static NotificationChannel PaidChannel() => new();
     private static CompanyNotificationSettings DefaultSettings() => new();
 
     private static NotificationGateResult Evaluate(
-        EffectivePlan? plan = null, NotificationType type = NotificationType.Reminder,
+        bool? accountHasPaidTransport = null, NotificationType type = NotificationType.Reminder,
         bool hasAssignment = true, NotificationChannel? channel = null,
         CompanyNotificationSettings? settings = null, bool optedOut = false,
         DateTime? visitStart = null, bool channelIsFunded = true,
         ProviderDeliveryConsentMode providerDeliveryConsentMode = ProviderDeliveryConsentMode.AccountsOnly,
         bool? recipientHasProviderDeliveryConsent = null) =>
         NotificationGate.Evaluate(
-            plan ?? AllowingPlan, type, hasAssignment, channel ?? PaidChannel(), settings ?? DefaultSettings(),
+            accountHasPaidTransport ?? AllowingPlan, type, hasAssignment, channel ?? PaidChannel(), settings ?? DefaultSettings(),
             optedOut, Now, visitStart ?? Now.AddDays(1), channelIsFunded,
             providerDeliveryConsentMode, recipientHasProviderDeliveryConsent);
 
@@ -50,7 +47,7 @@ public class NotificationGateTests
     [Fact]
     public void Evaluate_PlanDoesNotAllowChannel_Blocked()
     {
-        var result = Evaluate(plan: DenyingPlan);
+        var result = Evaluate(accountHasPaidTransport: DenyingPlan);
         result.Reason.Should().Be(NotificationReason.NotOnPaidPlan);
     }
 
