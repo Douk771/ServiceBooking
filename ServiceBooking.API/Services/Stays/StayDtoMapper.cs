@@ -15,7 +15,7 @@ namespace ServiceBooking.API.Services.Stays;
 /// assembled HERE (the frontend only prints). The guest sees the requisites and the executor's full details only from their own link.
 /// </summary>
 public class StayDtoMapper(
-    AppDbContext db, IOptions<StaysOptions> options, IOptions<WebPushOptions> webPush, PublicSiteLinks links, IStaysClock clock)
+    AppDbContext db, IOptions<StaysOptions> options, IOptions<WebPushOptions> webPush, PublicSiteLinks links, IStaysClock clock, ServiceDtoMapper serviceMapper)
 {
     public const string ProofMediaPdf = "application/pdf";
     public static readonly string[] AcceptedProofTypes = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
@@ -87,7 +87,8 @@ public class StayDtoMapper(
                 new StayRefundViewDto(refund.Kind, refund.RefundAtLeastRub, refund.MaxDeductionRub, refund.Text),
                 !canCancel && active ? (holdExpired ? StaysTexts.HoldExpiredMessage(phone) : StaysTexts.CannotCancel(phone)) : null),
             b.StatusReason, StayStateMachine.IsTerminal(b.Status) ? StaysTexts.OutcomeText(b.Status, b.StatusReason, phone) is { Length: > 0 } t ? t : null : null,
-            info, new BookingNotificationsDto(new WebPushInfoDto(pushOn, pushOn ? webPush.Value.VapidPublicKey : null), b.NotifyByMessenger), actions);
+            info, new BookingNotificationsDto(new WebPushInfoDto(pushOn, pushOn ? webPush.Value.VapidPublicKey : null), b.NotifyByMessenger), actions,
+            await serviceMapper.PublicSessionsOfAsync(b, company, ct), await serviceMapper.ServicesBlockAsync(b, company, settings, ct), await serviceMapper.ReminderSnapshotOf(b));
     }
 
     // ── the staff's card ──
@@ -118,8 +119,16 @@ public class StayDtoMapper(
             charges.Select(ToLine).ToList(), NightPricesOf(b), b.TotalRub, b.PrepayPercentSnapshot, b.PrepayRub, b.DueAtCheckInRub, b.CancellationPolicySnapshot,
             ownerRefund, proofs.Select(ToProof).ToList(),
             b.PaymentConfirmedAtUtc is { } at ? new PaymentConfirmedDto(at, b.PaymentConfirmedByNameSnapshot ?? string.Empty) : null,
-            b.PaymentProofsPurgedAtUtc, b.StatusReason, b.IsManual, StayStateMachine.StaffActions(b.Status).ToList(),
-            events.Select(e => new StayBookingEventDto(e.OccurredAtUtc, e.Kind.ToString(), StaysTexts.EventText(e.Kind), ActorText(e), e.Reason)).ToList(), messages);
+            b.PaymentProofsPurgedAtUtc, b.StatusReason, b.IsManual, StaffActionsWithSession(b),
+            events.Select(e => new StayBookingEventDto(e.OccurredAtUtc, e.Kind.ToString(), StaysTexts.EventText(e.Kind), ActorText(e), e.Reason)).ToList(), messages,
+            await serviceMapper.StaffSessionsOfAsync(b, ct));
+    }
+
+    private static List<string> StaffActionsWithSession(StayBooking b)
+    {
+        var list = StayStateMachine.StaffActions(b.Status).ToList();
+        if (!StayStateMachine.IsTerminal(b.Status)) list.Add("AddSession");
+        return list;
     }
 
     public static string ActorText(StayBookingEvent e) => e.ActorKind switch

@@ -54,7 +54,7 @@ public record StaysServiceConflictDto(
 // ── anonymous: pages, dates, starts, quote ──
 public record PublicServiceSummaryDto(
     Guid Id, string Slug, string Name, string Url, string? CoverUrl, string? CoverThumbUrl, int? PriceFromRub, int MinHours, bool CanOrderWithoutStay,
-    bool AvailableForHouseBookings);
+    bool AvailableForHouseBookings, Guid ServiceId = default, List<ServiceItemPublicDto>? Items = null);
 
 public record ServicePhotoDto(Guid Id, string Url, string ThumbnailUrl, int Position);
 
@@ -81,7 +81,8 @@ public record HoursOptionDto(int Hours, string EndLabel);
 public record StartDto(int StartMinute, DateTime StartUtc, string Label, int MaxHours, List<HoursOptionDto> Options);
 
 public record ServiceStartsDto(
-    Guid ServiceId, DateOnly BusinessDate, string DateLabel, int MinHours, int MaxHours, List<StartDto> Starts, StartsReason? Reason, string? NoStartsText);
+    Guid ServiceId, DateOnly BusinessDate, string DateLabel, int MinHours, int MaxHours, List<StartDto> Starts, StartsReason? Reason, string? NoStartsText,
+    List<ServiceItemPublicDto>? Items = null);
 
 public record PublicServiceQuoteInput(DateOnly? BusinessDate, int? StartMinute, int? Hours, List<ItemSelectionInput>? Items, Guid? HouseId, DateOnly? CheckIn, DateOnly? CheckOut);
 
@@ -114,7 +115,8 @@ public record PublicServiceOrderDto(
     List<string> AvailableActions);
 
 // ── services of a stay (the booking page) ──
-public record BookingServiceOptionDto(Guid Id, string Name, string Url, string? CoverThumbUrl, int? PriceFromRub, int MinHours, List<AvailabilityDayDto> Dates);
+public record BookingServiceOptionDto(Guid Id, string Name, string Url, string? CoverThumbUrl, int? PriceFromRub, int MinHours, List<AvailabilityDayDto> Dates,
+    Guid ServiceId = default, List<ServiceItemPublicDto>? Items = null);
 
 public record BookingServicesDto(bool CanAdd, string? CannotAddText, string? Hint, List<BookingServiceOptionDto> Services);
 
@@ -258,7 +260,7 @@ public record ArrivalReminderChangeDto(
     bool NewPushText, bool CodeMarkersConfirmed, string? CodeMarkersHit);
 
 // ── changed DTOs of cycle 37 (new appended parts) ──
-public record ServiceLinkDto(string Name, string Url);
+public record ServiceLinkDto(string Name, string Url, Guid ServiceId = default);
 
 public record StayQuoteServiceDto(int Index, Guid ServiceId, bool Ok, ServiceQuoteDto Quote);
 

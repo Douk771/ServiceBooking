@@ -115,7 +115,7 @@ public class HouseService(AppDbContext db, PublicSiteLinks links, IStaysClock cl
     {
         var baseSlug = Shops.SlugTransliterator.ToBase(name, 50, 2, new HashSet<string>());
         var candidates = Shops.SlugTransliterator.Candidates(baseSlug, () => Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(2)).ToLowerInvariant()).ToList();
-        var taken = (await db.Houses.AsNoTracking().Where(h => h.CompanyId == companyId && candidates.Contains(h.Slug)).Select(h => h.Slug).ToListAsync(ct)).ToHashSet();
+        var taken = StaysSlugPolicy.ReservedHouseSlugs.Concat((await db.Houses.AsNoTracking().Where(h => h.CompanyId == companyId && candidates.Contains(h.Slug)).Select(h => h.Slug).ToListAsync(ct))).ToHashSet();
         return candidates.FirstOrDefault(c => !taken.Contains(c)) ?? candidates[^1];
     }
 }

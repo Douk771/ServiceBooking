@@ -136,6 +136,7 @@ public class StaysHousesController(
         if (input.ExtraBedsEnabled && input.ExtraBedsMax is < 1 or > 10) return BadRequest("Доп. мест — от 1 до 10");
         if (input.ExtraBedPriceRub is < 0 or > 100_000) return BadRequest("Сумма — от 0 до 100 000 ₽");
 
+        if (StaysSlugPolicy.IsReservedHouseSlug(slug)) return Conflict(new StaysConflictDto("SlugReserved", "Этот адрес зарезервирован — выберите другой"));
         if (slug != house.Slug)
         {
             await using var tx = await db.Database.BeginTransactionAsync(ct);
