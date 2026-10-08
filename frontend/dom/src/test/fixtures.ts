@@ -1,4 +1,4 @@
-import type { HouseCalendarDto, HouseManageDto, PublicHouseDto, PublicStayBookingDto, StayQuoteDto, StaysCompanyManageDto } from '../types'
+import type { HouseCalendarDto, HouseManageDto, PublicHouseDto, PublicStayBookingDto, StaffStayBookingCardDto, StayQuoteDto, StaysCompanyManageDto } from '../types'
 import { addDays, nightDates } from '../utils/stayDates'
 
 /** Test data shaped like the cycle-37 contract (never imported by app code). */
@@ -226,6 +226,51 @@ export function companyFixture(over: Partial<StaysCompanyManageDto> = {}): Stays
     checklist: [],
     plan: { planName: 'Старт', isTrial: false, paidUntilUtc: null, maxHouses: 5, housesPublished: 1, warningLevel: 'None', text: null },
     awaitingPaymentCount: 0,
+    ...over,
+  }
+}
+
+
+export function staffCardFixture(over: Partial<StaffStayBookingCardDto> = {}): StaffStayBookingCardDto {
+  return {
+    id: 'bk-1',
+    version: 3,
+    status: 'AwaitingPaymentCheck',
+    displayStatus: 'AwaitingPaymentCheck',
+    statusText: 'Ожидает проверки оплаты',
+    holdExpiresAtUtc: null,
+    house: { id: 'house-1', name: 'Дом у склона' },
+    checkInDate: '2027-01-05',
+    checkOutDate: '2027-01-08',
+    checkInTime: '14:00',
+    checkOutTime: '12:00',
+    nights: 3,
+    adults: 2,
+    children: 0,
+    dogs: 0,
+    needCot: false,
+    extraBeds: 0,
+    arrivalTime: '18:00',
+    guestName: 'Анна Петрова',
+    guestPhone: '79001234567',
+    guestKind: 'Guest',
+    comment: null,
+    lines: [{ kind: 'Nights', label: 'Проживание, 3 ночи', quantity: 3, unitPriceRub: 5000, nights: 3, amountRub: 15000, prepayEligible: true }],
+    nightPrices: [],
+    totalRub: 15000,
+    prepayPercent: 30,
+    prepayRub: 4500,
+    dueAtCheckInRub: 10500,
+    cancellationPolicy: 'Standard',
+    ownerCancelRefundText: 'Гостю нужно вернуть предоплату полностью: 4 500 ₽',
+    paymentProofs: [{ id: 'pr1', contentType: 'image/png', sizeBytes: 2048, uploadedAtUtc: '2027-01-02T10:05:00Z', purged: false }],
+    paymentConfirmed: null,
+    paymentProofsPurgedAtUtc: null,
+    statusReason: null,
+    isManual: false,
+    availableActions: ['ConfirmPayment', 'RejectPayment', 'Cancel'],
+    events: [{ occurredAtUtc: '2027-01-02T10:00:00Z', kind: 'Created', text: 'Бронь создана гостем', actorText: 'Гость' }],
+    messages: [],
     ...over,
   }
 }

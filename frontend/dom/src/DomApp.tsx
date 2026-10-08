@@ -28,6 +28,10 @@ import { SubscriptionPage } from './pages/cabinet/SubscriptionPage'
 import { HousesPage } from './pages/cabinet/HousesPage'
 import { HouseCreatePage } from './pages/cabinet/HouseCreatePage'
 import { HouseEditPage } from './pages/cabinet/HouseEditPage'
+import { BoardPage } from './pages/cabinet/BoardPage'
+import { BookingsPage } from './pages/cabinet/BookingsPage'
+import { BookingCardPage } from './pages/cabinet/BookingCardPage'
+import { SchedulePage } from './pages/cabinet/SchedulePage'
 
 /**
  * Routes reachable while a "Material" change to a GLOBAL-gate document is pending acceptance (same reasoning as ezbook's
@@ -86,6 +90,10 @@ export function DomApp() {
                   <Route path="/cabinet/subscription" element={<SubscriptionPage />} />
                   <Route element={<CompanyLayout />}>
                     <Route path="/cabinet/:companyId" element={<CompanyIndexRedirect />} />
+                    <Route path="/cabinet/:companyId/board" element={<BoardPage />} />
+                    <Route path="/cabinet/:companyId/bookings" element={<BookingsPage />} />
+                    <Route path="/cabinet/:companyId/bookings/:bookingId" element={<BookingCardPage />} />
+                    <Route path="/cabinet/:companyId/schedule" element={<SchedulePage />} />
                     <Route path="/cabinet/:companyId/houses" element={<HousesPage />} />
                     <Route path="/cabinet/:companyId/houses/new" element={<HouseCreatePage />} />
                     <Route path="/cabinet/:companyId/houses/:houseId" element={<HouseEditPage />} />
