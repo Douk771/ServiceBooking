@@ -100,6 +100,9 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysCatalogService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysHousePageService>();
     builder.Services.AddSingleton<ServiceBooking.API.Services.Stays.StayProofIpLimiter>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.HouseBlockWriter>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysBoardService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysScheduleService>();
 
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopManageMapper>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.CatalogMapper>();
