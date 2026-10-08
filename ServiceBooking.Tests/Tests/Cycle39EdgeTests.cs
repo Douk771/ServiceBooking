@@ -236,4 +236,67 @@ public class Cycle39EdgeTests(TestDatabaseFixture fixture) : Cycle39TestBase(fix
         (await GetOrderAsync(order.Token)).Status.Should().Be(StayBookingStatus.Confirmed, "страница существующего заказа открывается");
         (await CancelOrderAsync(order.Token)).StatusCode.Should().Be(HttpStatusCode.OK, "гость может отменить свой заказ и у заблокированной компании");
     }
+
+    [Fact, TestCase("CY39-179")]
+    public async Task SessionAdditions_RateLimits_PerBookingLink_AndPerIp_429WithText()
+    {
+        await using var perToken = new StaysTestFactory(ConnectionString, settings: new Dictionary<string, string> { ["RateLimits:stay-session-add:PermitLimit"] = "3" });
+        var (company, svc) = await SceneAsync();
+        var house = await CreateHouseAsync(company, price: 1000);
+        var ci = InDays(12);
+        var booked = await BookOkAsync(house.Id, ci, ci.AddDays(4));
+        var statuses = new List<HttpStatusCode>();
+        string? text = null;
+        for (var i = 0; i < 5; i++)
+        {
+            var r = await AddSessionAsync(booked.Token, SessionInput(svc.Id, ci.AddDays(1 + i % 3), 480 + 180 * (i / 3), 2, 4000), perToken.Client());
+            statuses.Add(r.StatusCode);
+            if (r.StatusCode == (HttpStatusCode)429) text = await r.Content.ReadAsStringAsync();
+        }
+        statuses.Count(x => x == (HttpStatusCode)429).Should().BeGreaterOrEqualTo(1, "не больше N добавлений в окно на ссылку брони: " + string.Join(",", statuses));
+        text.Should().Be("Слишком много попыток. Попробуйте позже");
+
+        await using var perIp = new StaysTestFactory(ConnectionString, settings: new Dictionary<string, string> { ["RateLimits:stay-session-ip:PermitLimit"] = "2" });
+        var other = await BookOkAsync(house.Id, ci.AddDays(10), ci.AddDays(14));
+        var ipStatuses = new List<HttpStatusCode>();
+        for (var i = 0; i < 4; i++)
+            ipStatuses.Add((await AddSessionAsync(other.Token, SessionInput(svc.Id, ci.AddDays(11 + i % 3), 480 + 180 * (i / 3), 2, 4000), perIp.Client())).StatusCode);
+        ipStatuses.Should().Contain((HttpStatusCode)429, "второе звено цепочки: не больше N добавлений в окно с одного адреса: " + string.Join(",", ipStatuses));
+    }
+
+    [Fact, TestCase("CY39-180")]
+    public async Task UnpublishedService_UsableByStaffOnly_ArchivedKeepsSessionsOnBoard_CatalogHasNoServices()
+    {
+        var (company, svc) = await SceneAsync();
+        var house = await CreateHouseAsync(company, price: 2000);
+        var date = InDays(9);
+        var c = AuthedClient(company.OwnerToken);
+        var order = await OrderOkAsync(svc.Id, date, 720, 2);
+        await c.PostJsonAsync($"/api/stays/companies/{company.Id}/services/{svc.Id}/unpublish", new EmptyInput());
+
+        // гостю — нет, персоналу — да (ручной сеанс по неопубликованной услуге)
+        (await PostOrderAsync(svc.Id, OrderInput(date, 1080, 2, 4000, UniquePhone()))).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var staffStarts = await c.GetAsync($"/api/stays/companies/{company.Id}/services/{svc.Id}/starts?date={D(date)}");
+        staffStarts.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await staffStarts.Content.ReadJsonAsync<ServiceStartsDto>())!.Starts.Should().NotBeEmpty();
+        var manual = await c.PostJsonAsync($"/api/stays/companies/{company.Id}/service-sessions",
+            new ManualServiceOrderInput(svc.Id, date, 1080, 2, [], "Свои", null, null, StayServiceRequestBasis.Phone, Guid.NewGuid()));
+        manual.StatusCode.Should().Be(HttpStatusCode.Created, await manual.Content.ReadAsStringAsync());
+
+        // архив: сеансы остаются в «Дне услуг» и в шахматке
+        await c.PostJsonAsync($"/api/stays/companies/{company.Id}/services/{svc.Id}/archive", new EmptyInput());
+        (await c.GetAsync($"/api/stays/companies/{company.Id}/services/{svc.Id}/starts?date={D(date)}")).StatusCode.Should().Be(HttpStatusCode.NotFound, "архивной услуге новый сеанс не добавить");
+        var board = (await (await c.GetAsync($"/api/stays/companies/{company.Id}/board?from={D(date)}&days=3")).Content.ReadJsonAsync<StaysBoardDto>())!;
+        board.Services.Should().ContainSingle(x => x.Id == svc.Id && x.IsArchived, "архивные с сеансами в окне остаются в группе «Услуги»");
+        var day = (await (await c.GetAsync($"/api/stays/companies/{company.Id}/service-day?date={D(date)}")).Content.ReadJsonAsync<ServiceDayDto>())!;
+        day.Services.Should().ContainSingle(x => x.Id == svc.Id).Which.Bars.Count(b => b.Kind == ServiceDayBarKind.Session).Should().Be(2);
+        (await GetOrderAsync(order.Token)).Status.Should().Be(StayBookingStatus.Confirmed);
+
+        // каталог остаётся каталогом домов
+        InvalidateCatalog();
+        var catalog = await AnonymousClient().GetAsync("/api/stays/public/catalog?pageSize=50");
+        var raw = await catalog.Content.ReadAsStringAsync();
+        raw.Should().NotContain("Баня").And.NotContain("uslugi").And.NotContain(svc.Slug);
+        _ = house;
+    }
 }
