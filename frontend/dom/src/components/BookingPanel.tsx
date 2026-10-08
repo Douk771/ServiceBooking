@@ -10,7 +10,10 @@ import { useAuthStore } from '@/store/authStore'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { formatPhone } from '@/utils/phone'
 import { formatRub } from '@/utils/money'
+import { MessengerOptIn } from '@/components/notifications/MessengerOptIn'
+import { useMessengerOptInDefault } from '@/hooks/useMessengerOptInDefault'
 import { publicStaysApi } from '../api/publicStays'
+import { staysCompaniesApi } from '../api/staysCompanies'
 import type { PublicHouseDto, StayQuoteDto, StayRefusalDto } from '../types'
 import {
   COMMENT_MAX,
@@ -116,6 +119,12 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
   const q: StayQuoteDto | undefined = quote.data
   const quoteFresh = !!q && !quote.isPlaceholderData && !quote.isFetching && settled
 
+  // Cycle 40 (§40.11.4, §40.30.3): the checkbox appears only when the server offers it; the default comes from the signed-in guest's profile.
+  const messengerOffer = house.messenger ?? null
+  const optIn = useMessengerOptInDefault(authed)
+  const kinds = useQuery({ queryKey: ['kinds-summary'], queryFn: staysCompaniesApi.kindsSummary, enabled: authed && optIn.optedOut, retry: false })
+  const ezbookProfileHref = kinds.data?.services.siteUrl ? `${kinds.data.services.siteUrl}/profile` : null
+
   const idempotencyKey = useMemo(() => bookingKeyFor(house.id), [house.id])
   const anonymous = !authed
 
@@ -127,7 +136,8 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
           checkIn: range.checkIn!,
           checkOut: range.checkOut!,
           counts,
-          guest,
+          // The stay API takes a plain bool: not offered or opted out in the profile = false.
+          guest: { ...guest, notifyByMessenger: optIn.payload(!!messengerOffer?.offered) ?? false },
           anonymous,
           expectedTotalRub: q!.totalRub,
           idempotencyKey,
@@ -405,16 +415,8 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
           <StayNotice textKey="StayGuestCommentNotice" id="comment-notice" />
         </div>
 
-        {/* A separate box, off by default, never merged with accepting the conditions (Т37-12). */}
-        <label className="flex cursor-pointer items-start gap-3 text-sm text-ink">
-          <input
-            type="checkbox"
-            checked={guest.notifyByMessenger}
-            onChange={(e) => setGuest((g) => ({ ...g, notifyByMessenger: e.target.checked }))}
-            className="mt-0.5 h-5 w-5 shrink-0 accent-gold"
-          />
-          <MessengerConsentText />
-        </label>
+        {/* A separate element, never merged with accepting the conditions (Т37-12, Т40-L-10). */}
+        <MessengerOptIn kind="stay" offer={messengerOffer} state={optIn} companyName={house.company.name} profileHref={ezbookProfileHref} />
 
         {anonymous && smartCaptchaEnabled && (
           <div>
@@ -438,9 +440,4 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
       </p>
     </section>
   )
-}
-
-/** The consent text, short form only: it sits next to a checkbox. */
-function MessengerConsentText() {
-  return <StayNotice textKey="StayMessengerConsent" variant="plain" className="text-xs text-ink-soft" />
 }
