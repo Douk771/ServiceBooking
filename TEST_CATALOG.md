@@ -7563,6 +7563,166 @@ Vitest разработчиков (не пересобирались QA): раз
 
 Контрактная проверка цикла 38: `@redocly/cli lint` по `contracts/cycle38/openapi.yaml` без ошибок; `types:api:cycle38` и `contracts:json` не дают диффа; живые ответы проверяются `AssertResponse` в `CY38-B05-02` и `CY38-B06-01`.
 
+## Цикл 39 — «Дома»: услуги-слоты, напоминание накануне заезда (`CY39-`, `ServiceBooking.Tests/Tests/Cycle39*.cs`)
+
+Функциональные кейсы написаны QA по `SPEC_CYCLE39_STAYS_SLOTS_ICAL.md` (US-39-xx), `ARCHITECTURE_CYCLE39.md` (§39.0a ЮР39-1…10, §39.5.4 параллельные сценарии), `LEGAL_REVIEW_CYCLE39.md` (Т39-xx) и `contracts/cycle39/openapi.yaml`, не по реализации. Помощники — `Infrastructure/Cycle39TestBase.cs` (услуга «одной строкой», старты, заказ, сеанс в брони; время суток услуги — минуты от 00:00 бизнес-даты) и `StaysTestFactory` (поддельные часы `IStaysClock`, ручной запуск задач, произвольные настройки хоста). Статус iCal — цикл 40, в этом разделе его нет.
+
+| Группа | Кейсы | Критерии |
+|---|---|---|
+| Услуги: карточка, расписание, цены, позиции, публикация, права, изоляция, публичные страницы | CY39-01…16 | US-39-01…07, 26; ЮР39-10; L39-9 |
+| Заказ без проживания: старты, настройка компании, исполнитель всегда (ЮР39-2), предоплата и округление, 400/409, идемпотентность, SlotTaken и зазор, капча, лимиты 429, оплата, таймер ±1 с, «осталось 10 минут», отмена и возврат (ЮР39-1), кабинет, ручной сеанс | CY39-20…48 | US-39-08, 11…13, 15, 18; Т39-01…03, 09 |
+| Сеансы в брони дома: гость и персонал (ЮР39-6), деньги «оплата на месте», проживание, лимит 5, каскад, бесплатная отмена, форма брони «всё или ничего», шахматка, День услуг, график | CY39-50…64 | US-39-09, 10, 14…16, 18; Т39-05, 06 |
+| Через полночь и граница 06:00 | CY39-70…81 | Р39-16, SPEC §4.1…4.4, 4.9; ЮР39-8; Т39-04 |
+| Параллельные сценарии §39.5.4 | CY39-90…104 | SPEC §6 «Целостность»; A39-3 |
+| Напоминание накануне заезда: время, шаблон, фильтры, диалог кодов, push, снимок, дефолт | CY39-110…126 | US-39-19, 20; ЮР39-3…5; Т39-11…13 |
+| Контрактная проверка cycle39 | CY39-130…135 | A39-11; Cycle37ContractTests сужен до конкретных операций |
+| Миграция Cycle39StaysServices (накат → откат → накат) | CY39-140 | DEPLOY.md §28а |
+| ПДн: выгрузка, удаление, отзыв согласия, retention, график | CY39-150…158 | US-39-27; ЮР39-5, 9; Т39-10, 11 |
+| Уведомления: 12 типов, персонал, гость без ПДн | CY39-160…164 | US-39-17; A39-5; Т37-08 |
+| Граничные случаи и злоупотребления | CY39-170…180 | US-39-05, 12, 13; §4.5, 4.6 |
+
+Изменённое требование (запись реестра QA): `CY37-43` дополнен случаем «предоплата 0 % без сведений об исполнителе → `NoProviderInfo`» (ЮР39-2, закрывает §37.19 п. 5). Фронтенд: `frontend/dom/src/components/services/guestServicesQa.test.tsx`, `frontend/dom/src/guestCopy.guard.test.ts` (область `stays`). Юнит-стражи: `ServiceBooking.UnitTests/StayBookingReleaserGuardTests.cs` (`ReleaseBookingAsync` зовётся только из `StayBookingReleaser`), `ServiceVectorsTests`, `ArrivalReminderTemplateTests` (вектор `RT17` добавлен QA).
+
+| Кейс | Класс | Метод |
+|---|---|---|
+| CY39-01 | `Cycle39ServicesTests` | `Create_List_Setup_Validation_And_Defaults` |
+| CY39-02 | `Cycle39ServicesTests` | `SlugTaken_Conflict_And_DescriptionLimit` |
+| CY39-03 | `Cycle39ServicesTests` | `ServiceLimit_TwentyPerCompany_AndDeleteVsArchive` |
+| CY39-04 | `Cycle39ServicesTests` | `Publish_Requires_PriceRule_And_Windows_WithReasons_And_Unpublish_HidesFromGuests` |
+| CY39-05 | `Cycle39ServicesTests` | `WeeklySchedule_Windows_Validation_And_MidnightWindow` |
+| CY39-06 | `Cycle39ServicesTests` | `WeeklyTemplate_AppliesToFutureDaysAtOnce_And_ManualDateReplacesTemplate` |
+| CY39-07 | `Cycle39ServicesTests` | `ScheduleChange_DoesNotCancelSessions_ButWarnsAboutSessionsOutsideNewWindows` |
+| CY39-08 | `Cycle39ServicesTests` | `PriceRules_Validation_Overlap_And_Matrix` |
+| CY39-09 | `Cycle39ServicesTests` | `PriceChange_DoesNotChangeExistingSessionSnapshot` |
+| CY39-10 | `Cycle39ServicesTests` | `Items_Validation_Limit_Order_And_InactiveHiddenFromGuests` |
+| CY39-11 | `Cycle39ServicesTests` | `DeletedOrDisabledItem_KeepsSnapshotInCreatedSession` |
+| CY39-12 | `Cycle39ServicesTests` | `Permissions_Owner_Manager_Housekeeper_Stranger_Anonymous` |
+| CY39-13 | `Cycle39ServicesTests` | `Permissions_OnlyOwner_CanSwitchServiceOrders_And_ReminderSettings` |
+| CY39-14 | `Cycle39ServicesTests` | `Isolation_OtherKinds_OtherStaysCompany_Idor` |
+| CY39-15 | `Cycle39ServicesTests` | `PublicPages_CompanyBlock_ServicePage_NoBufferUnlessShown_NoTouristTax` |
+| CY39-16 | `Cycle39ServicesTests` | `BlockedCompany_And_ExpiredPlan_PagesVisible_BookingUnavailable` |
+| CY39-20 | `Cycle39OrderTests` | `Starts_ShowOnlyAvailable_WithMaxHours_NightStartsLabelled_NoInternalWords` |
+| CY39-21 | `Cycle39OrderTests` | `Starts_PastDate_BeyondHorizon_And_MinLead_AreEmptyWithReason` |
+| CY39-22 | `Cycle39OrderTests` | `OrderWithoutStay_Disabled_ByDefault_409_ServiceOrdersDisabled` |
+| CY39-23 | `Cycle39OrderTests` | `ProviderInfo_IsMandatory_EvenWithZeroPrepay_ЮР39_2` |
+| CY39-24 | `Cycle39OrderTests` | `HouseBooking_ZeroPrepay_AlsoRequiresProvider_ЮР39_2` |
+| CY39-25 | `Cycle39OrderTests` | `Order_NoPrepay_IsConfirmedAtOnce_PageHasTextualStatus_AndPayOnSite` |
+| CY39-27 | `Cycle39OrderTests` | `Order_WithPrepay_WithoutPaymentDetails_409_NoPaymentDetails` |
+| CY39-28 | `Cycle39OrderTests` | `Order_FormValidation_400WithRussianText_NothingCreated` |
+| CY39-29 | `Cycle39OrderTests` | `Order_BusinessRefusals_ReturnJson409WithStableCodes` |
+| CY39-30 | `Cycle39OrderTests` | `Order_Idempotency_SameKeyReturnsExisting_Parallel` |
+| CY39-31 | `Cycle39OrderTests` | `Order_SlotTaken_Buffer_AdjacentAllowed_CancelFreesTime` |
+| CY39-32 | `Cycle39OrderTests` | `Order_ZeroBuffer_BackToBackAllowed` |
+| CY39-33 | `Cycle39OrderTests` | `Order_SignedInGuest_UsesAccountPhone_NotTheTypedOne` |
+| CY39-34 | `Cycle39OrderTests` | `Order_Captcha_Enforced_ForAnonymous_NotForSignedIn` |
+| CY39-35 | `Cycle39OrderTests` | `Order_PhoneLimits_OneHeldPerCompany_TwoOnPlatform_PerDay_429WithText` |
+| CY39-36 | `Cycle39OrderTests` | `Order_IpRateLimit_AnonymousCreation_429` |
+| CY39-37 | `Cycle39OrderTests` | `Order_ProofThenStaffConfirm_Reject_Cancel_WithVersions` |
+| CY39-38 | `Cycle39OrderTests` | `Order_StaffReject_NeedsReason_FreesTime_ProofsAfterwardsRefused` |
+| CY39-39 | `Cycle39OrderTests` | `Order_HoldTimer_ExpiresExactly_BoundaryPlusMinusOneSecond` |
+| CY39-40 | `Cycle39OrderTests` | `Order_ExpiredUnreleasedHold_IsFreeForNewOrder_ByLazyRelease` |
+| CY39-41 | `Cycle39OrderTests` | `Order_TenMinutesLeftReminder_QueuedOnce_NotBeforeTime` |
+| CY39-42 | `Cycle39OrderTests` | `Cancel_ByGuest_BeforeStart_Ok_AfterStart_409_WithCompanyPhone` |
+| CY39-43 | `Cycle39OrderTests` | `Refund_PreparationCosts_BoundaryAndTexts_NeverAtLeastZero` |
+| CY39-44 | `Cycle39OrderTests` | `Refund_ZeroRest_NeverSaysAtLeastZeroRub` |
+| CY39-45 | `Cycle39OrderTests` | `Refund_NoDeductions_FullAnyTimeBeforeStart_NothingPaidWhenHeld` |
+| CY39-46 | `Cycle39OrderTests` | `Staff_SessionList_FiltersPagingAndNoPhoneForNonStaff` |
+| CY39-47 | `Cycle39OrderTests` | `ManualOrder_NeedsBasis_IsConfirmed_PhoneOptional_NoMessenger` |
+| CY39-48 | `Cycle39OrderTests` | `Board_AwaitingPaymentCounter_IncludesStandaloneOrders_NeedsActionOnCell` |
+| CY39-50 | `Cycle39SessionTests` | `GuestAddsSession_MoneyOnSite_PrepayUnchanged_LinesAndBlock` |
+| CY39-51 | `Cycle39SessionTests` | `Session_MustFitInsideStay_RealTime_LastNightPastMidnightAllowed` |
+| CY39-52 | `Cycle39SessionTests` | `Session_LimitFivePerBooking_CancelFreesOne_Idempotency_PriceChanged` |
+| CY39-53 | `Cycle39SessionTests` | `Session_ServiceNotAllowed_Unpublished_OtherCompany_Foreign_Booking` |
+| CY39-54 | `Cycle39SessionTests` | `GuestCancelsSession_FreeAndImmediately_TotalsRollBack_AfterStart409` |
+| CY39-55 | `Cycle39SessionTests` | `AddSession_ToInactiveBooking_409_BookingNotActive_IncludingExpiredHold` |
+| CY39-56 | `Cycle39SessionTests` | `HeldBooking_SessionRelativeToBooking_ReleasedAtTimerWithBooking_SameTransaction` |
+| CY39-57 | `Cycle39SessionTests` | `EveryTerminalPathOfBooking_ReleasesItsSessions` |
+| CY39-58 | `Cycle39SessionTests` | `StaffAddsSession_BasisRequired_NoMinLead_Unpublished_GuestSeesNoteAndCancelsFree` |
+| CY39-59 | `Cycle39SessionTests` | `StaffAddSession_Permissions_ManagerAllowed_HousekeeperForbidden_ArchivedAnd404` |
+| CY39-60 | `Cycle39SessionTests` | `BookingForm_NothingPreselected_ServicesQuoted_And_CreatedAtomically` |
+| CY39-61 | `Cycle39SessionTests` | `BookingForm_TakenSlot_RefusesWholeBooking_NoBookingNoNights_ServiceIndex` |
+| CY39-62 | `Cycle39SessionTests` | `BookingForm_MoreThanThree_OutsideStay_SameSlotTwice_Refused` |
+| CY39-63 | `Cycle39SessionTests` | `Board_ServiceGroup_ServiceDay_And_Schedule_HousekeeperSeesNoPhoneNoMoney` |
+| CY39-64 | `Cycle39SessionTests` | `Schedule_HeldStandaloneSessions_NotInScheduleUntilPaid_NoDuplicatesOnStaffSide` |
+| CY39-70 | `Cycle39MidnightTests` | `Friday_22to01_PricedByStartBusinessDay_FridayRules_NotSaturdays` |
+| CY39-71 | `Cycle39MidnightTests` | `GuestSeesTwoCalendarDates_NeverBusinessDayWords_StaffSeesSpecForm` |
+| CY39-72 | `Cycle39MidnightTests` | `OnlyFridayRuleToMidnight_Session23to01_IsUnavailable_NoPriceForHour0` |
+| CY39-73 | `Cycle39MidnightTests` | `OnlyFridayRuleToMidnight_ShorterSessionBeforeMidnight_StillAvailable_MaxHoursStopsAtMidnight` |
+| CY39-74 | `Cycle39MidnightTests` | `BufferCrossesBusinessDayBorder_Friday04to06_BlocksSaturday0600` |
+| CY39-75 | `Cycle39MidnightTests` | `BufferEndsExactlyAtNextStart_HalfOpenInterval_Allowed` |
+| CY39-76 | `Cycle39MidnightTests` | `Fri2300to0100_And_Fri0030Night_AreSameRealTime_SecondRefused` |
+| CY39-77 | `Cycle39MidnightTests` | `WindowCrossingMidnight_SecondWindowOfNextBusinessDay_DoesNotOverlap_ByConstruction` |
+| CY39-78 | `Cycle39MidnightTests` | `MonthBorder_SessionAcrossMonthEnd_BelongsToLastDayOfMonth_TwoDatesToGuest` |
+| CY39-79 | `Cycle39MidnightTests` | `TodayAfterMidnight_IsStillYesterdaysBusinessDay_Until0600` |
+| CY39-80 | `Cycle39MidnightTests` | `ServiceDay_CarryOverBuffer_ShownOnNextBusinessDay_FirstBar` |
+| CY39-81 | `Cycle39MidnightTests` | `Housekeeper_ScheduleShowsNightSession_OnBusinessDayOfStart_WithEndMarker` |
+| CY39-90 | `Cycle39ConcurrencyTests` | `TwentyParallelOrders_SameStart_ExactlyOneCreated_OthersSlotTaken` |
+| CY39-91 | `Cycle39ConcurrencyTests` | `ParallelOverlappingOrders_ShiftedStarts_NeverShareTime_BufferIncluded` |
+| CY39-92 | `Cycle39ConcurrencyTests` | `ParallelOrderAndHouseAddition_SameMidnightTime_ExactlyOneWins_ManyRounds` |
+| CY39-93 | `Cycle39ConcurrencyTests` | `DatabaseConstraint_Stops_Friday0400to0600_PlusBuffer_And_Saturday0600_WithoutAppLocks` |
+| CY39-94 | `Cycle39ConcurrencyTests` | `BookingsWithSeveralServices_InReverseOrder_NoDeadlock_NoServerErrors_ManyRounds` |
+| CY39-95 | `Cycle39ConcurrencyTests` | `ParallelAddSessions_ToDifferentBookings_OrdersAndTransitions_NoDeadlock` |
+| CY39-96 | `Cycle39ConcurrencyTests` | `ExpiredUnreleasedHouseHold_ThenOrderOfSameService_LazyReleaseUnderServiceLock` |
+| CY39-97 | `Cycle39ConcurrencyTests` | `ExpiredHouseHold_WhoseHouseIsLockedByAnother_OrderGets409SlotTaken_WithoutWaiting` |
+| CY39-98 | `Cycle39ConcurrencyTests` | `TimerVsProofUpload_AroundDeadline_OneOutcome_ManyRounds` |
+| CY39-99 | `Cycle39ConcurrencyTests` | `ConfirmPayment_VsTimerAfterDeadline_AwaitingOrderIsNeverExpired` |
+| CY39-100 | `Cycle39ConcurrencyTests` | `StaffConfirmVsGuestProofUpload_ManyRounds_NoServerErrors_NoDeadlock` |
+| CY39-101 | `Cycle39ConcurrencyTests` | `GuestCancelVsStaffConfirmOrReject_FinalStateConsistent_ManyRounds` |
+| CY39-102 | `Cycle39ConcurrencyTests` | `BookingCancelVsAddSession_NoActiveSessionOfInactiveBooking_ManyRounds` |
+| CY39-103 | `Cycle39ConcurrencyTests` | `EightParallelAdditions_ToOneBooking_LimitFiveHolds_ExactlyFiveCreated` |
+| CY39-104 | `Cycle39ConcurrencyTests` | `ParallelSamePhone_HeldOrders_PhoneLockMakesLimitExact` |
+| CY39-110 | `Cycle39ReminderTests` | `Defaults_Time1800_DefaultTemplate_PushOff_PlaceholderTable` |
+| CY39-111 | `Cycle39ReminderTests` | `Time_Between0800And2200_HalfHourStep` |
+| CY39-112 | `Cycle39ReminderTests` | `Template_Validation_UnknownPlaceholder_Length_ForbiddenWords_AllowedPhrases` |
+| CY39-113 | `Cycle39ReminderTests` | `CodeMarkers_AskForConfirmation_409_ThenSavedWithHistoryMark` |
+| CY39-114 | `Cycle39ReminderTests` | `SoftWarnings_PassportCardCancellationTerms_AreWarningsNotErrors` |
+| CY39-115 | `Cycle39ReminderTests` | `Preview_ThreeChannels_Lengths_LinkLineOnlyInMessenger_AppendedWhenMissing` |
+| CY39-116 | `Cycle39ReminderTests` | `PushFilter_DropsRiskyOwnerLines_ButKeepsTheRest` |
+| CY39-117 | `Cycle39ReminderTests` | `PushFilter_KeepsHarmlessLines` |
+| CY39-118 | `Cycle39ReminderTests` | `Push_CutTo180_WithEllipsis_NoSurrogateSplit_EmptyAfterFilter_FallsBackToFixed` |
+| CY39-119 | `Cycle39ReminderTests` | `Preview_OnRealBooking_UsesItsFacts_ForeignBooking404_ServicesPlaceholder` |
+| CY39-120 | `Cycle39ReminderTests` | `OnlyOwner_ChangesReminder_PushToggleNeedsNoticeVersion_And_IsRecorded` |
+| CY39-121 | `Cycle39ReminderTests` | `Send_AtCompanyTime_PageSnapshotWithoutChannels_PushWithoutPersonalData_OnceOnly` |
+| CY39-122 | `Cycle39ReminderTests` | `Send_DefaultTemplate_PushIsOldFixedText_PageHasDefaultWithoutLink` |
+| CY39-123 | `Cycle39ReminderTests` | `Send_NewTimeAppliesToUnsentBookings_OnceOnly_LateCreatedGoesImmediately` |
+| CY39-124 | `Cycle39ReminderTests` | `Send_ReminderOff_NoSnapshot_NoMessage_ButMarkedOnce` |
+| CY39-130 | `Cycle39ContractTests` | `PublicServiceRoutes_MatchContract` |
+| CY39-131 | `Cycle39ContractTests` | `OrderRoutes_MatchContract_IncludingJson409` |
+| CY39-132 | `Cycle39ContractTests` | `BookingSessionRoutes_MatchContract` |
+| CY39-133 | `Cycle39ContractTests` | `CabinetServiceRoutes_MatchContract` |
+| CY39-134 | `Cycle39ContractTests` | `CabinetSessionRoutes_ServiceDay_BoardSchedule_MatchContract` |
+| CY39-135 | `Cycle39ContractTests` | `ArrivalReminderRoutes_MatchContract` |
+| CY39-140 | `Cycle39MigrationRollbackTests` | `Cycle39StaysServicesMigration_UpDownUp_OnScratchDatabase_KeepsCycle37Rows` |
+| CY39-150 | `Cycle39PrivacyTests` | `Export_ContainsServiceOrders_AndSessionsOfBookings_GuestOrdersOnlyForVerifiedPhone` |
+| CY39-151 | `Cycle39PrivacyTests` | `DeleteAccount_ErasesServiceOrders_KeepsOwnersScheduleAndMoney_RemovesProofFilesAndPush` |
+| CY39-152 | `Cycle39PrivacyTests` | `DeleteAccount_ErasesSessionsAuthor_BookingReminderSnapshot_AndPageStaysConsistentForOwner` |
+| CY39-153 | `Cycle39PrivacyTests` | `RevokeConsent_SwitchesOffMessengerOfActiveServiceOrders_PreviewAgrees` |
+| CY39-154 | `Cycle39PrivacyTests` | `Retention_OrderPaymentProofs_After90DaysFromLaterOfSessionEndAndFinalStatus_DryRunChangesNothing` |
+| CY39-155 | `Cycle39PrivacyTests` | `Retention_UnpaidOrders_Depersonalised30Days_ConfirmedAfter3Years_OthersUntouched` |
+| CY39-156 | `Cycle39PrivacyTests` | `Retention_EventsAndScheduleJournal_After3Years_RulesRegisteredByName` |
+| CY39-157 | `Cycle39PrivacyTests` | `Retention_BookingUnpaidAndPersonalization_EraseReminderSnapshot` |
+| CY39-158 | `Cycle39PrivacyTests` | `Schedule_Housekeeper_SessionShape_HasNoPhoneSumsOrPayments_CommentOnlyWhenOwnerAllows` |
+| CY39-160 | `Cycle39NotificationsTests` | `StaffPush_ForOrders_ToOwnerAndManagerOnly_NoGuestPersonalData_CabinetLink` |
+| CY39-161 | `Cycle39NotificationsTests` | `StaffPush_ForSessionsInBookings_AddedByGuest_AndNewBookingWithServices_TextOnlyWithServicesCount` |
+| CY39-162 | `Cycle39NotificationsTests` | `GuestPush_ForOrder_NoPersonalDataAddressesOrAmounts_Lifecycle` |
+| CY39-163 | `Cycle39NotificationsTests` | `GuestPush_ForSessionInBooking_OnlyWhenStaffAdded_AndWhenOwnerCancels_NoPersonalData` |
+| CY39-164 | `Cycle39NotificationsTests` | `EveryNewNotificationType_HasText_IsStayType_AndHasNoBitInSalonMask` |
+| CY39-170 | `Cycle39EdgeTests` | `Items_SameItemTwiceInOneRequest_CannotExceedMaxPerSession` |
+| CY39-171 | `Cycle39EdgeTests` | `Items_ZeroQuantity_IsIgnored_NegativeAndHuge_400` |
+| CY39-172 | `Cycle39EdgeTests` | `Proofs_TypesCountAndForeignFile_AreRefusedLikeForHouses` |
+| CY39-173 | `Cycle39EdgeTests` | `OrderPage_UnknownOrMalformedTokens_404_WithoutOracle` |
+| CY39-174 | `Cycle39EdgeTests` | `ChangingBuffer_AffectsOnlyNewSessions_ExistingKeepTheirSnapshot` |
+| CY39-175 | `Cycle39EdgeTests` | `ScheduleEdits_PastDate_Rejected_FutureAccepted_AndJournalRecordsWho` |
+| CY39-176 | `Cycle39EdgeTests` | `Slugs_HouseCannotTakeServiceWord_ServiceSlugRules` |
+| CY39-177 | `Cycle39EdgeTests` | `ServicePhotos_UploadLimitOrderDelete_ForeignServiceAndBadFiles` |
+| CY39-178 | `Cycle39EdgeTests` | `BlockedCompany_RefusesNewOrdersAndSessions_ExistingStayVisible` |
+| CY39-179 | `Cycle39EdgeTests` | `SessionAdditions_RateLimits_PerBookingLink_AndPerIp_429WithText` |
+| CY39-180 | `Cycle39EdgeTests` | `UnpublishedService_UsableByStaffOnly_ArchivedKeepsSessionsOnBoard_CatalogHasNoServices` |
+
+Прогон: `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle39"` (нужны `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` и `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`).
+
+Найденное QA и исправленное в ходе цикла: фильтр push напоминания пропускал телефон с типографскими тире, точками и косыми и ссылку `tg://` (вектор `RT17`); `AddedByNameSnapshot` и `AddedByUserId` сеанса, добавленного гостем, переживали обезличивание брони/заказа (удаление аккаунта и retention); одна позиция двумя записями списка обходила «максимум на сеанс».
+
 ## Цикл 41 — главная «Домов» на едином шаблоне, шапка с панелью (FE, vitest, T41-01…05)
 
 Написано по `ARCHITECTURE_CYCLE41.md` §41.10.1 и SPEC_CYCLE41 (US-41-01…09). Только vitest (jsdom), функциональных тестов бэкенда цикл не добавлял — API не менялся. ID стоят в названиях `describe`/`it`; поиск — `grep -rn "T41-0" frontend/src frontend/dom/src`. Все файлы входят в область `stays` (`npm run test:area -- stays`; тесты шаблона — ещё и в `companies`). Регрессия без правки тестов — §41.10.2 (тесты шаблона T38, главных «Записи» и «Заказов», guard-тесты приложений, весь dom).
