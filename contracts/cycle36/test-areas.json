@@ -98,6 +98,8 @@
         "goods/src/utils/serviceWorkerRouting",
         "goods/src/components/order/OrderPushCard",
         "goods/src/components/staffMax/",
+        "src/components/staffMax/",
+        "src/api/staffMax",
         "goods/src/pages/cabinet/ShopNotificationsPage",
         "goods/src/cabinetDevicesRedirect",
         "src/pages/owner/NotificationLogTab",

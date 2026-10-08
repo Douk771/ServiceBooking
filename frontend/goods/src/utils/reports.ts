@@ -202,9 +202,5 @@ export function noteLength(text: string): number {
   return text.trim().length
 }
 
-/** MAX linking is polled only while a link is pending and not yet expired (§523.2, §538). */
-export function shouldPollStaffMax(status: string | undefined, expiresAtUtc: string | null | undefined, nowMs: number): boolean {
-  if (status !== 'Pending') return false
-  if (!expiresAtUtc) return true
-  return new Date(expiresAtUtc).getTime() > nowMs
-}
+/** Moved to the shared card (ARCHITECTURE_CYCLE39.md §39.15.1); kept here so goods code and tests keep their import. */
+export { shouldPollStaffMax } from '@/components/staffMax/staffMaxPolling'

@@ -56,6 +56,16 @@ describe('StaffMaxCard', () => {
     expect(screen.getByRole('button', { name: /Получить новую/ })).toBeEnabled()
   })
 
+  it('uses the error mapping and the state panels the app passes in (goods and dom each bring their own)', async () => {
+    status.mockRejectedValue({ response: { status: 500 } })
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <StaffMaxCard getErrorMessage={(_e, fallback) => `app: ${fallback}`} slots={{ ErrorState: ({ message }) => <p data-testid="app-error">{message}</p> }} />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByTestId('app-error')).toHaveTextContent('app: Не удалось загрузить состояние MAX.')
+  })
+
   it('shows the server text when the link is refused and lets a linked user disconnect', async () => {
     status.mockResolvedValue(dto({ status: 'Linked', statusText: 'Подключено 30.09.2026' }))
     unlink.mockResolvedValue(undefined)
