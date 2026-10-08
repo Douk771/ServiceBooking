@@ -24,7 +24,7 @@ namespace ServiceBooking.API.Controllers.Stays;
 public class StaysServiceSessionsController(
     AppDbContext db, StaysAccessResolver access, ServiceDayService day, ServiceDtoMapper mapper, StayDtoMapper bookingMapper, ServiceSlotService slots,
     ServiceOrderTransitionService transitions, ServiceSessionAddService sessionAdd, ServiceOrderCreationService orderCreation, ServiceOrderProofService proofs,
-    StayServiceOrderEventLog orderLog, StayActorResolver actors, StaysCompanyService companyService, IStaysClock clock, IOptions<StaysOptions> options) : ControllerBase
+    StayServiceOrderEventLog orderLog, StayActorResolver actors, IStaysClock clock, IOptions<StaysOptions> options) : ControllerBase
 {
     [HttpGet("service-day")]
     [EnableRateLimiting("stays-board")]

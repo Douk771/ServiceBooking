@@ -15,7 +15,7 @@ namespace ServiceBooking.API.Services.Stays;
 /// the staff's card is the only place with a full phone number.
 /// </summary>
 public class ServiceDtoMapper(
-    AppDbContext db, IOptions<StaysOptions> options, IOptions<WebPushOptions> webPush, PublicSiteLinks links, IStaysClock clock, StaysCompanyService companyService)
+    AppDbContext db, IOptions<StaysOptions> options, IOptions<WebPushOptions> webPush, IStaysClock clock, StaysCompanyService companyService)
 {
     // ── shared pieces ──
 

@@ -9,6 +9,10 @@ namespace ServiceBooking.API.Services.Stays;
 /// </summary>
 public static class ServiceQuoteBuilder
 {
+    /// <param name="scope">The service with its company and settings.</param>
+    /// <param name="e">The evaluation of the choice.</param>
+    /// <param name="gate">The verdict of the company gate.</param>
+    /// <param name="holdMinutes">The time to pay of an order.</param>
     /// <param name="prepayPercent">The percent of a stand-alone order (null — none, and always null for a session added to a booking: it is paid on site).</param>
     public static ServiceQuoteDto Build(
         ServiceScope scope, ServiceEvaluation e, int? prepayPercent, GateResult gate, int holdMinutes)
