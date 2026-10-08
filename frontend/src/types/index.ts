@@ -4,6 +4,7 @@ import type { components as Cycle14Components } from './api-cycle14.generated'
 import type { components as Cycle23Components } from './api-cycle23.generated'
 import type { components as Cycle31Components } from './api-cycle31.generated'
 import type { components as Cycle33Components } from './api-cycle33.generated'
+import type { components as Cycle37Components } from './api-cycle37.generated'
 
 // ── Cycle 19 (ARCHITECTURE_CYCLE19.md §388.5, API_CONTRACT_CYCLE19.md §413): automatic address checking removed,
 // only the notice-acknowledgement result survives from cycle 13's address types. Read straight off
@@ -22,10 +23,17 @@ export type TransportOffer = Cycle9Components['schemas']['TransportOfferDto']
 
 // API_CONTRACT_CYCLE9.md §115 — staff Web Push. Read straight off the generated schema (§118 п. 1).
 // ARCHITECTURE_CYCLE33.md §33.9.3 — config/devices moved to the cycle 33 schema (kind, siteUrls, site).
-export type PushConfig = Cycle33Components['schemas']['PushConfigDtoCycle33']
-export type PushConfigCompany = Cycle33Components['schemas']['PushConfigCompanyDtoCycle33']
-export type PushSiteUrls = Cycle33Components['schemas']['PushSiteUrlsDto']
-export type PushSubscriptionDevice = Cycle33Components['schemas']['PushSubscriptionDtoCycle33']
+// ARCHITECTURE_CYCLE37.md §37.3.2, API_CONTRACT_CYCLE37.md §37.21.5 — a third site: `kind`/`site` may be `Stays`, `siteUrls` gets
+// `stays`. The cycle-37 schema has no push routes (they only changed), so the additions are layered over the cycle-33 types.
+type StaysCompanyKind = Cycle37Components['schemas']['CompanyKind']
+export type PushSiteUrls = Cycle33Components['schemas']['PushSiteUrlsDto'] & { stays?: string }
+export type PushConfigCompany = Omit<Cycle33Components['schemas']['PushConfigCompanyDtoCycle33'], 'kind'> & { kind: StaysCompanyKind }
+export type PushSubscriptionDevice = Omit<Cycle33Components['schemas']['PushSubscriptionDtoCycle33'], 'site'> & { site: StaysCompanyKind }
+export type PushConfig = Omit<Cycle33Components['schemas']['PushConfigDtoCycle33'], 'companies' | 'site' | 'siteUrls'> & {
+  companies: PushConfigCompany[]
+  site: StaysCompanyKind
+  siteUrls: PushSiteUrls
+}
 export type StaffPushSettings = Cycle9Components['schemas']['StaffPushSettingsDto']
 
 // API_CONTRACT_CYCLE14.md §162-§166 — platform-wide phone verification (MAX bot). Read straight off
