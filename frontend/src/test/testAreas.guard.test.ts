@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest'
 import testAreas from '../../../contracts/cycle36/test-areas.json'
 
-const modules = import.meta.glob(['../**/*.test.{ts,tsx}', '../../goods/src/**/*.test.{ts,tsx}'])
+const modules = import.meta.glob(['../**/*.test.{ts,tsx}', '../../goods/src/**/*.test.{ts,tsx}', '../../dom/src/**/*.test.{ts,tsx}'])
 
 // Keys are relative to this file (`./x.test.ts`, `../pages/X.test.tsx`, `../../goods/src/…`); resolve them against the frontend root.
 const frontendRoot = new URL('../../', import.meta.url).pathname

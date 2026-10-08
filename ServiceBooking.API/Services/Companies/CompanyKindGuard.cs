@@ -39,17 +39,33 @@ public static class CompanyKindGuard
         return Evaluate(kind, expected);
     }
 
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.3.1 — the same refusal for a "Дома" company.</summary>
+    public const string StaysRefusalText = Stays.StaysTexts.StaysRefusalText;
+
+    /// <summary>The refusal text for a company that is not a salon, by its kind (a salon has none).</summary>
+    public static string? RefusalTextFor(CompanyKind kind) => kind switch
+    {
+        CompanyKind.Services => null,
+        CompanyKind.Orders => ShopRefusalText,
+        CompanyKind.Stays => StaysRefusalText,
+        _ => throw new System.Diagnostics.UnreachableException()
+    };
+
     /// <summary>
-    /// For booking/salon routes: 409 with <see cref="ShopRefusalText"/> when the company is a shop; null when
+    /// For booking/salon routes: 409 with the text of the company's kind (shop or "Дома") when the company is NOT a salon; null when
     /// it is a salon or does not exist (the caller's own "not found" handling stays in charge of that case).
+    /// Cycle 37 generalised the former RejectShop*: one change closes the whole closed list of §389.2 for the third kind.
     /// </summary>
-    public static async Task<ConflictObjectResult?> RejectShopAsync(
-        AppDbContext db, Guid companyId, CancellationToken ct = default) =>
-        await CheckAsync(db, companyId, CompanyKind.Services, ct) == CompanyKindCheck.WrongKind
-            ? new ConflictObjectResult(ShopRefusalText)
-            : null;
+    public static async Task<ConflictObjectResult?> RejectNonSalonAsync(
+        AppDbContext db, Guid companyId, CancellationToken ct = default)
+    {
+        var kind = await db.Companies.AsNoTracking().Where(c => c.Id == companyId)
+            .Select(c => (CompanyKind?)c.Kind).FirstOrDefaultAsync(ct);
+        return kind is { } k ? RejectNonSalon(k) : null;
+    }
 
     /// <summary>Same, when the company kind is already known (entity already loaded).</summary>
-    public static ConflictObjectResult? RejectShop(CompanyKind kind) =>
-        kind == CompanyKind.Orders ? new ConflictObjectResult(ShopRefusalText) : null;
+    public static ConflictObjectResult? RejectNonSalon(CompanyKind kind) =>
+        RefusalTextFor(kind) is { } text ? new ConflictObjectResult(text) : null;
 }
+

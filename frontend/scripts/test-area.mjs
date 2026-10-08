@@ -29,7 +29,7 @@ if (wanted.length === 0 || unknown.length > 0) {
 }
 
 const prefixes = config.areas.filter((a) => wanted.includes(a.id)).flatMap((a) => a.frontendPathPrefixes)
-const files = [...walk(path.join(root, 'src'), []), ...walk(path.join(root, 'goods/src'), [])].filter((f) =>
+const files = [...walk(path.join(root, 'src'), []), ...walk(path.join(root, 'goods/src'), []), ...walk(path.join(root, 'dom/src'), [])].filter((f) =>
   prefixes.some((p) => f.startsWith(p)),
 )
 if (files.length === 0) {

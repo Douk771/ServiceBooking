@@ -12,11 +12,11 @@ public class NotificationTypeCatalogTests
     private static readonly DateTime Now = new(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public void EveryMember_IsExactlyOneOfBookingOrOrder()
+    public void EveryMember_IsExactlyOneOfBookingOrOrderOrStay()
     {
         foreach (var type in Enum.GetValues<NotificationType>())
-            (NotificationTypeCatalog.IsBookingType(type) ^ NotificationTypeCatalog.IsOrderType(type))
-                .Should().BeTrue($"{type} must be a booking type or an order type, never both or neither");
+            new[] { NotificationTypeCatalog.IsBookingType(type), NotificationTypeCatalog.IsOrderType(type), NotificationTypeCatalog.IsStayType(type) }
+                .Count(x => x).Should().Be(1, $"{type} must be a booking, an order or a stay type, never several or none");
     }
 
     [Fact]

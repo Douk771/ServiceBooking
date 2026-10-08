@@ -23,6 +23,12 @@ interface Options {
   onUploaded: (photo: CompanyPhoto) => void
   /** Once per batch: invalidate caches, notify the host. */
   onBatchSettled: () => void
+  /** Cycle 37 (ARCHITECTURE_CYCLE37.md §37.14.2): another upload route (a house's photos). Default — the company gallery. */
+  upload?: (file: File, onProgress: (percent: number) => void) => Promise<CompanyPhoto>
+  /** Text of a failed upload. Default — `getUploadErrorMessage`. */
+  errorMessage?: (err: unknown) => string
+  /** Gallery limit named in the «does not fit» message. Default — `PHOTO_MAX_PHOTOS`. */
+  maxPhotos?: number
 }
 
 /**
@@ -75,11 +81,14 @@ export function usePhotoBatchUpload(companyId: string, opts: Options) {
           attempted = true
           patch(key, { status: 'uploading', progress: 0, error: undefined, transient: false })
           try {
-            const photo = await companyPhotosApi.upload(companyId, file, (progress) => patch(key, { progress }))
+            const onProgress = (progress: number) => patch(key, { progress })
+            const photo = await (optsRef.current.upload
+              ? optsRef.current.upload(file, onProgress)
+              : companyPhotosApi.upload(companyId, file, onProgress))
             optsRef.current.onUploaded(photo)
             patch(key, { status: 'done', progress: 100 })
           } catch (err) {
-            patch(key, { status: 'error', error: getUploadErrorMessage(err), transient: isTransientUploadError(err) })
+            patch(key, { status: 'error', error: (optsRef.current.errorMessage ?? getUploadErrorMessage)(err), transient: isTransientUploadError(err) })
           }
         }
       } finally {
@@ -113,7 +122,7 @@ export function usePhotoBatchUpload(companyId: string, opts: Options) {
         }
       })
       commit(next)
-      setOverLimitMessage(plan.overLimit.length > 0 ? overLimitText(plan.overLimit) : null)
+      setOverLimitMessage(plan.overLimit.length > 0 ? overLimitText(plan.overLimit, optsRef.current.maxPhotos) : null)
       void run(queue)
     },
     [commit, run],

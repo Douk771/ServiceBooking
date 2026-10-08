@@ -5,7 +5,7 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import globals from 'globals'
 import prettierConfig from 'eslint-config-prettier'
-import { GOODS_SHARED_EZBOOK_PAGES, goodsAllowedPagesRegex } from './goods-shared-sources.js'
+import { SHARED_EZBOOK_PAGES, appAllowedPagesRegex } from './shared-sources.js'
 
 // US-50 (T-F6). Rules are picked to describe the codebase's already-established conventions
 // (CURRENT_STATE.md §6) rather than to introduce a new style: named exports (only App.tsx has a
@@ -14,7 +14,7 @@ import { GOODS_SHARED_EZBOOK_PAGES, goodsAllowedPagesRegex } from './goods-share
 // is last in the array so it can turn off any formatting rule that would otherwise fight Prettier.
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'dist-goods/**', 'coverage/**', 'node_modules/**'],
+    ignores: ['dist/**', 'dist-goods/**', 'dist-dom/**', 'coverage/**', 'node_modules/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -59,9 +59,29 @@ export default tseslint.config(
           patterns: [
             { group: ['@/App', '**/src/App', '../../src/App', '../src/App'], message: 'goods must not import the ezbook app shell.' },
             {
-              regex: goodsAllowedPagesRegex(),
-              message: `goods may import only these ezbook pages: ${GOODS_SHARED_EZBOOK_PAGES.join(', ')} (single list: goods-shared-sources.js, ARCHITECTURE_CYCLE31.md §31.7). Shared components live in src/components/.`,
+              regex: appAllowedPagesRegex(),
+              message: `goods may import only these ezbook pages: ${SHARED_EZBOOK_PAGES.join(', ')} (single list: shared-sources.js, ARCHITECTURE_CYCLE31.md §31.7, ARCHITECTURE_CYCLE37.md §37.14.1). Shared components live in src/components/.`,
             },
+            { regex: '(^@dom/)|(/dom/)|(^dom/)', message: 'goods must not import from dom/ (ARCHITECTURE_CYCLE37.md §37.14.4).' },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // ARCHITECTURE_CYCLE37.md §37.14.4 — dom.ezbook.ru: same boundaries as goods, and goods itself is off limits.
+    files: ['dom/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            { group: ['@/App', '**/src/App', '../../src/App', '../src/App'], message: 'dom must not import the ezbook app shell.' },
+            {
+              regex: appAllowedPagesRegex(),
+              message: `dom may import only these ezbook pages: ${SHARED_EZBOOK_PAGES.join(', ')} (single list: shared-sources.js, ARCHITECTURE_CYCLE37.md §37.14.4). Shared components live in src/components/.`,
+            },
+            { regex: '(^@goods/)|(/goods/)|(^goods/)', message: 'dom must not import from goods/ (ARCHITECTURE_CYCLE37.md §37.14.4).' },
           ],
         },
       ],
@@ -72,7 +92,12 @@ export default tseslint.config(
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [{ regex: '(^@goods/)|(/goods/)|(^goods/)', message: 'ezbook (src/) must not import from goods/.' }] },
+        {
+          patterns: [
+            { regex: '(^@goods/)|(/goods/)|(^goods/)', message: 'ezbook (src/) must not import from goods/.' },
+            { regex: '(^@dom/)|(/dom/)|(^dom/)', message: 'ezbook (src/) must not import from dom/ (ARCHITECTURE_CYCLE37.md §37.14.4).' },
+          ],
+        },
       ],
     },
   },
@@ -88,7 +113,7 @@ export default tseslint.config(
   {
     // ARCHITECTURE_CYCLE9.md §105.9 — plain JS served verbatim from public/, not built by Vite, so it
     // needs the service-worker global scope (`self`, `caches`, `clients`) instead of the browser one.
-    files: ['public/sw.js', 'goods/public/sw.js'], // goods: ARCHITECTURE_CYCLE24.md §454
+    files: ['public/sw.js', 'goods/public/sw.js', 'dom/public/sw.js'], // goods: ARCHITECTURE_CYCLE24.md §454; dom: ARCHITECTURE_CYCLE37.md §37.14.6
     languageOptions: { globals: globals.serviceworker },
   },
   prettierConfig,

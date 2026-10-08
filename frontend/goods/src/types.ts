@@ -3,6 +3,7 @@ import type { components as C24 } from '@/types/api-cycle24.generated'
 import type { components as C25 } from '@/types/api-cycle25.generated'
 import type { components as C26 } from '@/types/api-cycle26.generated'
 import type { components as C29 } from '@/types/api-cycle29.generated'
+import type { components as C37 } from '@/types/api-cycle37.generated'
 
 /**
  * goods types are read straight off the generated cycle-23 schema (ARCHITECTURE_CYCLE23.md §399.2) —
@@ -34,7 +35,7 @@ export type CatalogConflictCode = M['CatalogConflictCode']
 
 /** Cycle-24 shape (keeps `conflictingOrders`) with the cycle-25 code list (+ `CatalogListingNotAllowedByPlan`). */
 export type CatalogConflictDto = Omit<N['CatalogConflictDto'], 'code'> & { code: M['CatalogConflictCode'] }
-export type CompanyKindsSummaryDto = S['CompanyKindsSummaryDto']
+export type CompanyKindsSummaryDto = C37['schemas']['CompanyKindsSummaryDto']
 export type CreateShopInput = S['CreateShopInput']
 export type CreateShopResponse = S['CreateShopResponse']
 export type SlugCheckDto = S['SlugCheckDto']

@@ -23,7 +23,7 @@
           "frontendPathPrefixes": {
             "type": "array",
             "uniqueItems": true,
-            "items": { "type": "string", "pattern": "^(src|goods/src)/[A-Za-z0-9_./-]*$" },
+            "items": { "type": "string", "pattern": "^(src|goods/src|dom/src)/[A-Za-z0-9_./-]*$" },
             "description": "Файл *.test.ts(x) относится к области, если его путь от frontend/ начинается с одного из префиксов (String.startsWith, без glob). Файл может попасть в несколько областей."
           }
         }

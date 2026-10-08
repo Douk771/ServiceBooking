@@ -92,6 +92,26 @@ public sealed class RetentionPeriods
     /// <summary>§456.4 [legal L16]. Age of a <see cref="Core.Entities.CustomerOrderPushNotification"/> row since it was created. Default 90.</summary>
     public int CustomerOrderPushNotificationDays { get; set; } = 90;
 
+    // ── Cycle 37 (ARCHITECTURE_CYCLE37.md §37.13.3, ЮР-6) — «Дома» ──
+
+    /// <summary>Payment-proof files are deleted this many days after the LATER of the check-out moment and the final status. Default 90.</summary>
+    public int StayPaymentProofDays { get; set; } = 90;
+
+    /// <summary>A booking "Снята: не оплачена" is depersonalised this many days after it was removed. Default 30.</summary>
+    public int StayUnpaidBookingDays { get; set; } = 30;
+
+    /// <summary>Other bookings are depersonalised this many days after the later of check-out and final status. Default 1095 (3 years).</summary>
+    public int StayBookingPersonalDataDays { get; set; } = 1095;
+
+    /// <summary>Journal events of a booking are deleted this many days after they happened. Default 1095.</summary>
+    public int StayBookingEventDays { get; set; } = 1095;
+
+    /// <summary>A guest's web-push subscriptions go this many days after the booking ended. Default 7.</summary>
+    public int StayGuestPushSubscriptionDays { get; set; } = 7;
+
+    /// <summary>Rows of the guest web-push queue are deleted this many days after creation. Default 90.</summary>
+    public int StayGuestPushNotificationDays { get; set; } = 90;
+
     /// <summary>ARCHITECTURE_CYCLE25.md §508 [legal L20]. Days a staff MAX link stays after the bot was stopped (so the cabinet can say so), then it is deleted. Default 30.</summary>
     public int StaffMaxStoppedLinkDays { get; set; } = 30;
 

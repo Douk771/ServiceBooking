@@ -27,7 +27,7 @@ public class ReportsController(AppDbContext db, SubscriptionResolver subscriptio
         if (!User.IsInRole("SuperAdmin") && !await CompanyMembership.IsOwnerAsync(db, companyId, userId))
             return Forbid();
         // §389.2: salon-only route (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, companyId, ct) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, companyId, ct) is { } shopRefusal) return shopRefusal;
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(companyId);
         if (!plan.AllowAnalytics) return StatusCode(402, "Analytics requires a tariff plan that includes it.");

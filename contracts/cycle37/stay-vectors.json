@@ -1,0 +1,114 @@
+{
+  "_comment": "Эталон расчётов вертикали «Дома» (ARCHITECTURE_CYCLE37.md §37.6, API_CONTRACT_CYCLE37.md §37.38). ОДИН файл читают юнит-тесты бэкенда (ServiceBooking.UnitTests: StayMoneyTests, HousePricingTests, StayRefundTests, StayRulesTests) и vitest фронта dom (dom/src/utils/*.test.ts). Деньги — целые рубли. Даты ночей — YYYY-MM-DD; ночь D начинается в дату D; период занятости [startDate, endDate) — endDate это дата выезда. Правка правила = правка векторов в том же коммите.",
+  "schemaVersion": 1,
+
+  "money": {
+    "_rule": "nights = Σ nightPrices; extraBeds = max(0, adults+children−capacity) (если доп. места выключены и гостей больше вместимости — TooManyGuests; если включены и extraBeds > max — TooManyGuests); extraBedsAmount = extraBeds × priceRub × nights; dogsAmount = dogs × dogFeeRub × nights; cotAmount = needCot ? cotFeeRub × nights : 0 (строка есть и при 0); total = Σ; prepay = floor((Σ prepayEligible × prepayPercent + 50) / 100), eligible — только строка Nights; due = total − prepay; averageNightRub = floor((nightsSum + floor(n/2)) / n); firstNightRub = nightPrices[0]. Порядок ошибок: TooManyGuests → DogsNotAllowed → CotNotAvailable.",
+    "cases": [
+      { "id": "M01", "input": { "nightPrices": [5000, 5000], "capacity": 4, "extraBeds": { "enabled": false, "max": 0, "priceRub": 0 }, "dogsForbidden": false, "hasCot": false, "dogFeeRub": 0, "cotFeeRub": 0, "prepayPercent": 30, "adults": 4, "children": 0, "dogs": 0, "needCot": false },
+        "expected": { "extraBeds": 0, "lines": [ { "kind": "Nights", "amountRub": 10000, "prepayEligible": true } ], "totalRub": 10000, "prepayRub": 3000, "dueAtCheckInRub": 7000, "averageNightRub": 5000, "firstNightRub": 5000 } },
+      { "id": "M02", "input": { "nightPrices": [4500, 6000, 6000], "capacity": 4, "extraBeds": { "enabled": false, "max": 0, "priceRub": 0 }, "dogsForbidden": false, "hasCot": false, "dogFeeRub": 0, "cotFeeRub": 0, "prepayPercent": 30, "adults": 2, "children": 0, "dogs": 0, "needCot": false },
+        "expected": { "extraBeds": 0, "lines": [ { "kind": "Nights", "amountRub": 16500, "prepayEligible": true } ], "totalRub": 16500, "prepayRub": 4950, "dueAtCheckInRub": 11550, "averageNightRub": 5500, "firstNightRub": 4500 } },
+      { "id": "M03", "_note": "округление предоплаты вниз: 3333 × 15 % = 499,95 → 500", "input": { "nightPrices": [3333], "capacity": 2, "extraBeds": { "enabled": false, "max": 0, "priceRub": 0 }, "dogsForbidden": false, "hasCot": false, "dogFeeRub": 0, "cotFeeRub": 0, "prepayPercent": 15, "adults": 1, "children": 0, "dogs": 0, "needCot": false },
+        "expected": { "extraBeds": 0, "lines": [ { "kind": "Nights", "amountRub": 3333, "prepayEligible": true } ], "totalRub": 3333, "prepayRub": 500, "dueAtCheckInRub": 2833, "averageNightRub": 3333, "firstNightRub": 3333 } },
+      { "id": "M04", "_note": "половина — вверх: 1010 × 5 % = 50,5 → 51", "input": { "nightPrices": [1010], "capacity": 2, "extraBeds": { "enabled": false, "max": 0, "priceRub": 0 }, "dogsForbidden": false, "hasCot": false, "dogFeeRub": 0, "cotFeeRub": 0, "prepayPercent": 5, "adults": 1, "children": 0, "dogs": 0, "needCot": false },
+        "expected": { "extraBeds": 0, "lines": [ { "kind": "Nights", "amountRub": 1010, "prepayEligible": true } ], "totalRub": 1010, "prepayRub": 51, "dueAtCheckInRub": 959, "averageNightRub": 1010, "firstNightRub": 1010 } },
+      { "id": "M05", "_note": "доп. места, собака, манеж — не входят в предоплату", "input": { "nightPrices": [7000, 7000], "capacity": 4, "extraBeds": { "enabled": true, "max": 2, "priceRub": 800 }, "dogsForbidden": false, "hasCot": true, "dogFeeRub": 500, "cotFeeRub": 300, "prepayPercent": 50, "adults": 4, "children": 2, "dogs": 1, "needCot": true },
+        "expected": { "extraBeds": 2, "lines": [ { "kind": "Nights", "amountRub": 14000, "prepayEligible": true }, { "kind": "ExtraBeds", "quantity": 2, "unitPriceRub": 800, "nights": 2, "amountRub": 3200, "prepayEligible": false }, { "kind": "Dogs", "quantity": 1, "unitPriceRub": 500, "nights": 2, "amountRub": 1000, "prepayEligible": false }, { "kind": "Cot", "quantity": 1, "unitPriceRub": 300, "nights": 2, "amountRub": 600, "prepayEligible": false } ], "totalRub": 18800, "prepayRub": 7000, "dueAtCheckInRub": 11800, "averageNightRub": 7000, "firstNightRub": 7000 } },
+      { "id": "M06", "_note": "предоплата 0 % (Q3: бронь сразу «Подтверждена»)", "input": { "nightPrices": [4000, 4000, 4000], "capacity": 6, "extraBeds": { "enabled": false, "max": 0, "priceRub": 0 }, "dogsForbidden": false, "hasCot": false, "dogFeeRub": 0, "cotFeeRub": 0, "prepayPercent": 0, "adults": 3, "children": 1, "dogs": 0, "needCot": false },
+        "expected": { "extraBeds": 0, "lines": [ { "kind": "Nights", "amountRub": 12000, "prepayEligible": true } ], "totalRub": 12000, "prepayRub": 0, "dueAtCheckInRub": 12000, "averageNightRub": 4000, "firstNightRub": 4000 } },
+      { "id": "M07", "input": { "nightPrices": [9000], "capacity": 2, "extraBeds": { "enabled": false, "max": 0, "priceRub": 0 }, "dogsForbidden": false, "hasCot": false, "dogFeeRub": 0, "cotFeeRub": 0, "prepayPercent": 100, "adults": 2, "children": 0, "dogs": 0, "needCot": false },
+        "expected": { "extraBeds": 0, "lines": [ { "kind": "Nights", "amountRub": 9000, "prepayEligible": true } ], "totalRub": 9000, "prepayRub": 9000, "dueAtCheckInRub": 0, "averageNightRub": 9000, "firstNightRub": 9000 } },
+      { "id": "M08", "_note": "гостей больше, чем вместимость + лимит доп. мест", "input": { "nightPrices": [5000], "capacity": 4, "extraBeds": { "enabled": true, "max": 1, "priceRub": 500 }, "dogsForbidden": false, "hasCot": false, "dogFeeRub": 0, "cotFeeRub": 0, "prepayPercent": 30, "adults": 4, "children": 2, "dogs": 0, "needCot": false },
+        "expected": { "error": "TooManyGuests" } },
+      { "id": "M09", "input": { "nightPrices": [5000], "capacity": 4, "extraBeds": { "enabled": false, "max": 0, "priceRub": 0 }, "dogsForbidden": false, "hasCot": false, "dogFeeRub": 0, "cotFeeRub": 0, "prepayPercent": 30, "adults": 5, "children": 0, "dogs": 0, "needCot": false },
+        "expected": { "error": "TooManyGuests" } },
+      { "id": "M10", "_note": "бесплатный манеж — строка есть, сумма 0", "input": { "nightPrices": [5000], "capacity": 4, "extraBeds": { "enabled": false, "max": 0, "priceRub": 0 }, "dogsForbidden": false, "hasCot": true, "dogFeeRub": 0, "cotFeeRub": 0, "prepayPercent": 30, "adults": 2, "children": 1, "dogs": 0, "needCot": true },
+        "expected": { "extraBeds": 0, "lines": [ { "kind": "Nights", "amountRub": 5000, "prepayEligible": true }, { "kind": "Cot", "quantity": 1, "unitPriceRub": 0, "nights": 1, "amountRub": 0, "prepayEligible": false } ], "totalRub": 5000, "prepayRub": 1500, "dueAtCheckInRub": 3500, "averageNightRub": 5000, "firstNightRub": 5000 } },
+      { "id": "M11", "_note": "средняя цена ночи — половина вверх: 10501 / 2 = 5250,5 → 5251", "input": { "nightPrices": [4500, 6001], "capacity": 2, "extraBeds": { "enabled": false, "max": 0, "priceRub": 0 }, "dogsForbidden": false, "hasCot": false, "dogFeeRub": 0, "cotFeeRub": 0, "prepayPercent": 30, "adults": 2, "children": 0, "dogs": 0, "needCot": false },
+        "expected": { "extraBeds": 0, "lines": [ { "kind": "Nights", "amountRub": 10501, "prepayEligible": true } ], "totalRub": 10501, "prepayRub": 3150, "dueAtCheckInRub": 7351, "averageNightRub": 5251, "firstNightRub": 4500 } },
+      { "id": "M12", "input": { "nightPrices": [5000], "capacity": 4, "extraBeds": { "enabled": false, "max": 0, "priceRub": 0 }, "dogsForbidden": true, "hasCot": false, "dogFeeRub": 500, "cotFeeRub": 0, "prepayPercent": 30, "adults": 2, "children": 0, "dogs": 1, "needCot": false },
+        "expected": { "error": "DogsNotAllowed" } },
+      { "id": "M13", "input": { "nightPrices": [5000], "capacity": 4, "extraBeds": { "enabled": false, "max": 0, "priceRub": 0 }, "dogsForbidden": false, "hasCot": false, "dogFeeRub": 0, "cotFeeRub": 0, "prepayPercent": 30, "adults": 2, "children": 1, "dogs": 0, "needCot": true },
+        "expected": { "error": "CotNotAvailable" } }
+    ]
+  },
+
+  "nightPrice": {
+    "_rule": "Constant → constantPriceRub. ByDates → однодневный период на дату, иначе длинный период, содержащий дату (endDate включительно), иначе null. constantPriceRub в режиме ByDates игнорируется.",
+    "houses": {
+      "H-const": { "mode": "Constant", "constantPriceRub": 5000, "periods": [] },
+      "H-dates": { "mode": "ByDates", "constantPriceRub": 5000, "periods": [
+        { "startDate": "2026-12-20", "endDate": "2027-01-10", "priceRub": 6000 },
+        { "startDate": "2026-12-31", "endDate": "2026-12-31", "priceRub": 12000 },
+        { "startDate": "2027-01-11", "endDate": "2027-03-31", "priceRub": 5000 }
+      ] }
+    },
+    "cases": [
+      { "id": "P01", "house": "H-const", "date": "2027-07-01", "expectedPriceRub": 5000 },
+      { "id": "P02", "house": "H-dates", "date": "2026-12-19", "expectedPriceRub": null },
+      { "id": "P03", "house": "H-dates", "date": "2026-12-20", "expectedPriceRub": 6000 },
+      { "id": "P04", "house": "H-dates", "date": "2026-12-31", "expectedPriceRub": 12000 },
+      { "id": "P05", "house": "H-dates", "date": "2027-01-10", "expectedPriceRub": 6000 },
+      { "id": "P06", "house": "H-dates", "date": "2027-01-11", "expectedPriceRub": 5000 },
+      { "id": "P07", "house": "H-dates", "date": "2027-04-01", "expectedPriceRub": null }
+    ]
+  },
+
+  "refund": {
+    "_rule": "ЮР-1 (LEGAL_REVIEW_CYCLE37.md §6.2). prepay = 0 или статус Held → NothingPaid, 0. Отменяет владелец → Full. NoDeductions → Full. Standard: момент < 00:00 даты заезда (пояс брони) → Full, иначе Partial: refundAtLeast = prepay − min(prepay, firstNight). Flexible: момент < (дата заезда + время заезда) → Full, иначе Partial по той же формуле. AwaitingPaymentCheck и Confirmed считаются оплаченными. Конечный статус (ExpiredUnpaid, PaymentRejected, CancelledByGuest, CancelledByOwner) → NothingPaid, 0 при любой предоплате: отменить уже нечего.",
+    "common": { "timeZoneId": "Asia/Novokuznetsk", "checkInDate": "2026-12-30", "checkInTime": "14:00", "_utc": "00:00 30.12 по Новокузнецку = 2026-12-29T17:00:00Z; 14:00 30.12 = 2026-12-30T07:00:00Z" },
+    "cases": [
+      { "id": "R01", "policy": "Standard", "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-29T16:59:59Z", "expected": { "kind": "Full", "refundAtLeastRub": 4950, "maxDeductionRub": 0 } },
+      { "id": "R02", "policy": "Standard", "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-29T17:00:00Z", "expected": { "kind": "Partial", "refundAtLeastRub": 450, "maxDeductionRub": 4500 } },
+      { "id": "R03", "policy": "Standard", "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 3000, "firstNightRub": 4500, "atUtc": "2026-12-30T03:00:00Z", "expected": { "kind": "Partial", "refundAtLeastRub": 0, "maxDeductionRub": 3000 } },
+      { "id": "R04", "policy": "Flexible", "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-30T06:59:59Z", "expected": { "kind": "Full", "refundAtLeastRub": 4950, "maxDeductionRub": 0 } },
+      { "id": "R05", "policy": "Flexible", "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-30T07:00:00Z", "expected": { "kind": "Partial", "refundAtLeastRub": 450, "maxDeductionRub": 4500 } },
+      { "id": "R06", "policy": "NoDeductions", "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-30T05:00:00Z", "expected": { "kind": "Full", "refundAtLeastRub": 4950, "maxDeductionRub": 0 } },
+      { "id": "R07", "policy": "Standard", "status": "Held", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-30T05:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } },
+      { "id": "R08", "policy": "Standard", "status": "Confirmed", "cancelledBy": "Owner", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-30T05:00:00Z", "expected": { "kind": "Full", "refundAtLeastRub": 4950, "maxDeductionRub": 0 } },
+      { "id": "R09", "policy": "Standard", "status": "AwaitingPaymentCheck", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-28T10:00:00Z", "expected": { "kind": "Full", "refundAtLeastRub": 4950, "maxDeductionRub": 0 } },
+      { "id": "R10", "policy": "Standard", "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 0, "firstNightRub": 4500, "atUtc": "2026-12-30T05:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } },
+      { "id": "R11", "policy": "Standard", "status": "ExpiredUnpaid", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-28T10:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } },
+      { "id": "R12", "policy": "Standard", "status": "CancelledByGuest", "cancelledBy": "Guest", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-28T10:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } },
+      { "id": "R13", "policy": "Standard", "status": "CancelledByOwner", "cancelledBy": "Owner", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-28T10:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } },
+      { "id": "R14", "policy": "Standard", "status": "PaymentRejected", "cancelledBy": "Owner", "prepayRub": 4950, "firstNightRub": 4500, "atUtc": "2026-12-28T10:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } }
+    ]
+  },
+
+  "stay": {
+    "_rule": "StayRules.CheckStay. Порядок: InvalidDates → CheckInInPast → SameDayNotAllowed → BeyondHorizon (последняя ночь = checkOut−1 > today + horizonDays − 1) → MaxNightsExceeded → DatesUnavailable (пересечение с неосвобождённым периодом; период с holdExpiresAtUtc ≤ now — свободен) → MinNightsNotMet (если nights < minNights: допустимо только при allowGapFill и наличии периода, оканчивающегося ровно в checkIn, и периода, начинающегося ровно в checkOut). Ручная бронь (manual) пропускает BeyondHorizon, MaxNightsExceeded, MinNightsNotMet.",
+    "base": {
+      "today": "2027-01-01", "nowUtc": "2027-01-01T06:00:00Z",
+      "settings": { "minNights": 3, "maxNights": 30, "horizonDays": 365, "allowGapFill": true, "allowSameDayCheckIn": true },
+      "occupancies": [
+        { "startDate": "2027-01-10", "endDate": "2027-01-14" },
+        { "startDate": "2027-01-16", "endDate": "2027-01-20" },
+        { "startDate": "2027-02-10", "endDate": "2027-02-13", "holdExpiresAtUtc": "2027-01-01T05:00:00Z" },
+        { "startDate": "2027-03-10", "endDate": "2027-03-13", "holdExpiresAtUtc": "2027-01-01T07:00:00Z" }
+      ]
+    },
+    "cases": [
+      { "id": "S01", "checkIn": "2027-01-05", "checkOut": "2027-01-08", "expected": "Ok" },
+      { "id": "S02", "checkIn": "2027-01-05", "checkOut": "2027-01-07", "expected": "MinNightsNotMet" },
+      { "id": "S03", "_note": "закрывает разрыв 14→16", "checkIn": "2027-01-14", "checkOut": "2027-01-16", "expected": "Ok" },
+      { "id": "S04", "checkIn": "2027-01-14", "checkOut": "2027-01-16", "settings": { "allowGapFill": false }, "expected": "MinNightsNotMet" },
+      { "id": "S05", "_note": "1 ночь в разрыве — разрыв не закрыт", "checkIn": "2027-01-14", "checkOut": "2027-01-15", "expected": "MinNightsNotMet" },
+      { "id": "S06", "checkIn": "2027-01-13", "checkOut": "2027-01-16", "expected": "DatesUnavailable" },
+      { "id": "S07", "_note": "заезд в день выезда предыдущей брони", "checkIn": "2027-01-20", "checkOut": "2027-01-23", "expected": "Ok" },
+      { "id": "S08", "checkIn": "2026-12-31", "checkOut": "2027-01-04", "expected": "CheckInInPast" },
+      { "id": "S09", "checkIn": "2027-01-01", "checkOut": "2027-01-04", "settings": { "allowSameDayCheckIn": false }, "expected": "SameDayNotAllowed" },
+      { "id": "S10", "checkIn": "2027-01-01", "checkOut": "2027-01-04", "expected": "Ok" },
+      { "id": "S11", "_note": "последняя ночь 2028-01-01 > 2027-12-31", "checkIn": "2027-12-30", "checkOut": "2028-01-02", "expected": "BeyondHorizon" },
+      { "id": "S12", "checkIn": "2027-12-29", "checkOut": "2028-01-01", "expected": "Ok" },
+      { "id": "S13", "checkIn": "2027-04-01", "checkOut": "2027-05-03", "expected": "MaxNightsExceeded" },
+      { "id": "S14", "checkIn": "2027-01-05", "checkOut": "2027-01-05", "expected": "InvalidDates" },
+      { "id": "S15", "_note": "истёкшее удержание — свободно", "checkIn": "2027-02-10", "checkOut": "2027-02-13", "expected": "Ok" },
+      { "id": "S16", "_note": "действующее удержание — занято", "checkIn": "2027-03-10", "checkOut": "2027-03-13", "expected": "DatesUnavailable" },
+      { "id": "S17", "_note": "ручная бронь: минимум не действует", "checkIn": "2027-01-05", "checkOut": "2027-01-06", "manual": true, "expected": "Ok" },
+      { "id": "S18", "_note": "ручная бронь: горизонт не действует, пересечение — действует", "checkIn": "2028-02-01", "checkOut": "2028-02-03", "manual": true, "expected": "Ok" },
+      { "id": "S19", "checkIn": "2027-01-12", "checkOut": "2027-01-13", "manual": true, "expected": "DatesUnavailable" },
+      { "id": "S20", "_note": "промежуток у «сегодня» разрывом не считается", "checkIn": "2027-01-01", "checkOut": "2027-01-02", "occupancies": [ { "startDate": "2027-01-02", "endDate": "2027-01-05" } ], "expected": "MinNightsNotMet" }
+    ]
+  }
+}

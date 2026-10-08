@@ -71,7 +71,7 @@ public class BookingAvailabilityController(
         CancellationToken ct = default)
     {
         // §389.2: anonymous public route — no rights to check first, the shop refusal comes straight away.
-        if (await CompanyKindGuard.RejectShopAsync(db, companyId, ct) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, companyId, ct) is { } shopRefusal) return shopRefusal;
 
         // `manual` is client-supplied, so only honor it once we've independently verified the caller
         // actually works in THIS company — same trust bar BookingsController.Create uses for
@@ -182,7 +182,7 @@ public class BookingAvailabilityController(
 
         var company = await db.Companies.FindAsync([companyId], ct);
         if (company is null) return NotFound("Company not found");
-        if (CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
+        if (CompanyKindGuard.RejectNonSalon(company.Kind) is { } shopRefusal) return shopRefusal;
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         var isStaff = userId is not null &&

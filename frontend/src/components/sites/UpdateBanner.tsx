@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/Button'
-import { useAppUpdate } from '../hooks/useAppUpdate'
+import { useAppUpdate } from './useAppUpdate'
 
 /** Offers a reload when a newer build is deployed; never reloads by itself, so a half-filled form is not lost. */
 export function UpdateBanner() {

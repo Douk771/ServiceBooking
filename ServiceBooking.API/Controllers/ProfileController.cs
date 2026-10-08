@@ -400,7 +400,7 @@ public record DeleteAccountDto(string CurrentPassword);
 
 /// <summary>Cycle 18 (§377) — object, not a bare string, on purpose: future cycles are expected to add
 /// more pre-deletion notices of the same kind, and adding a field here is not a breaking change.</summary>
-public record AccountDeletionPreviewDto(string? TrialRegistryNotice);
+public record AccountDeletionPreviewDto(string? TrialRegistryNotice, int StayBookings = 0);
 
 // US-38 export DTOs (API_CONTRACT.md §8) — deliberately their own shape, not a reuse of ProfileDto/
 // BookingDto/etc.: the export is a legal artifact with its own contract (no ids of other people's
@@ -426,7 +426,18 @@ public record ProfileExportDto(
     List<ServiceBooking.API.DTOs.Orders.ExportOrderDto> Orders,
     // ARCHITECTURE_CYCLE25.md §504.4, API_CONTRACT_CYCLE25.md §535 — additive, at the end: the MAX link (status and dates, NEVER the chat id) and the FACT of shop notes
     // about the subject's verified number (no text) [legal L17].
-    ExportStaffMaxLinkDto? StaffMaxLink = null, List<ExportShopCustomerNoteDto>? ShopCustomerNotes = null);
+    ExportStaffMaxLinkDto? StaffMaxLink = null, List<ExportShopCustomerNoteDto>? ShopCustomerNotes = null,
+    // ARCHITECTURE_CYCLE37.md §37.13.1, API_CONTRACT_CYCLE37.md §37.34 — additive, at the end: house bookings of the account (+ guest bookings on the VERIFIED number).
+    List<ExportStayBookingDto>? StayBookings = null);
+
+public record ExportStayPaymentProofDto(DateTime UploadedAtUtc, string ContentType, int SizeBytes, bool Purged);
+
+public record ExportStayEventDto(DateTime OccurredAtUtc, string Text);
+
+public record ExportStayBookingDto(
+    string CompanyName, string HouseName, DateOnly CheckInDate, DateOnly CheckOutDate, string Status, int Adults, int Children, int Dogs, bool NeedCot,
+    string? ArrivalTime, string? GuestName, string? GuestPhone, string? Comment, int TotalRub, int PrepayRub, string? StatusReason, string BookingUrl,
+    List<ExportStayPaymentProofDto> PaymentProofs, List<ExportStayEventDto> Events);
 
 public record ExportStaffMaxLinkDto(string Status, DateTime LinkedAtUtc, DateTime? StoppedAtUtc);
 

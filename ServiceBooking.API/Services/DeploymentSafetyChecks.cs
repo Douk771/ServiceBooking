@@ -547,7 +547,7 @@ public static class DeploymentSafetyChecks
     public static void ValidatePublicSites(IConfiguration configuration, string environmentName)
     {
         var developer = IsDeveloperEnvironment(environmentName);
-        foreach (var key in new[] { "ServicesBaseUrl", "OrdersBaseUrl" })
+        foreach (var key in new[] { "ServicesBaseUrl", "OrdersBaseUrl", "StaysBaseUrl" })
         {
             var value = configuration[$"{PublicSites.PublicSitesOptions.SectionName}:{key}"];
             // Not configured (no appsettings.json at all, or a blank value): PublicSitesOptions/PublicSiteLinks fall back to the
@@ -563,6 +563,18 @@ public static class DeploymentSafetyChecks
                     $"PublicSites:{key} is '{value}' — expected an absolute {(developer ? "http(s)" : "https")}:// origin " +
                     "without a path or a trailing slash (for example https://goods.ezbook.ru).");
         }
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE37.md §37.6.4, R37-11 — the cancellation templates of «Дома» are configuration, but the law caps them: a deduction of more than
+    /// one night or a boundary earlier than the check-in day never starts (ЮР-1). The draft templates of the SPEC (50 % / 0 %) cannot be enabled by config.
+    /// </summary>
+    public static void ValidateStaysPolicies(IConfiguration configuration)
+    {
+        var options = configuration.GetSection(Stays.StaysOptions.SectionName).Get<Stays.StaysOptions>() ?? new Stays.StaysOptions();
+        var errors = options.ConfigurationErrors();
+        if (errors.Count > 0)
+            throw new InvalidOperationException("Invalid Stays cancellation configuration: " + string.Join(" ", errors));
     }
 
     // ARCHITECTURE_CYCLE19.md §388.1/§388.4 — ValidateAddressVerification (the geocoder's own startup

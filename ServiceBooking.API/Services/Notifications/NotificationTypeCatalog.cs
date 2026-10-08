@@ -23,6 +23,17 @@ public static class NotificationTypeCatalog
         NotificationType.OrderEditedByShop, NotificationType.OrderPickupChanged, NotificationType.OwnerOrderLimitWarning
     ];
 
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.12.1 — the "Дома" types (16..26). They never use the salon bitmask.</summary>
+    public static readonly IReadOnlyList<NotificationType> StayTypes =
+    [
+        NotificationType.StaffStayCreated, NotificationType.StaffStayPaymentProofUploaded, NotificationType.StaffStayCancelledByGuest,
+        NotificationType.StayGuestCreated, NotificationType.StayGuestHoldExpiring, NotificationType.StayGuestHoldExpired,
+        NotificationType.StayGuestConfirmed, NotificationType.StayGuestPaymentRejected, NotificationType.StayGuestCancelledByOwner,
+        NotificationType.StayGuestArrivalReminder, NotificationType.StayGuestCheckInInfo
+    ];
+
+    public static bool IsStayType(NotificationType type) => StayTypes.Contains(type);
+
     public static bool IsBookingType(NotificationType type) => BookingTypes.Contains(type);
 
     public static bool IsOrderType(NotificationType type) => OrderTypes.Contains(type);

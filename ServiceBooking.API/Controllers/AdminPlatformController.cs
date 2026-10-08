@@ -257,7 +257,9 @@ public class AdminPlatformController(
             p.PhoneVerificationSessionDays, p.VerifiedPhoneOrphanDays, p.TrialPhoneRegistrationDays,
             p.BookingEventDays, p.GuestDataGateEventDays, p.PlatformNoticeDays,
             p.OrderPushSubscriptionDays, p.CustomerOrderPushNotificationDays,
-            p.StaffMaxStoppedLinkDays, p.StaffMaxLinkSessionDays, p.StaffMaxMessageDays));
+            p.StaffMaxStoppedLinkDays, p.StaffMaxLinkSessionDays, p.StaffMaxMessageDays,
+            p.StayPaymentProofDays, p.StayUnpaidBookingDays, p.StayBookingPersonalDataDays,
+            p.StayBookingEventDays, p.StayGuestPushSubscriptionDays, p.StayGuestPushNotificationDays));
     }
 
     // ARCHITECTURE_CYCLE20.md §406.2, API_CONTRACT_CYCLE20.md §436.2 (US-20-05, Т20-06) — the journal's
@@ -319,7 +321,10 @@ public record RetentionPolicyDto(
     // ARCHITECTURE_CYCLE24.md §456.4, API_CONTRACT_CYCLE24.md §488 [legal L16] — the two rules of order web-push, appended at the end.
     int OrderPushSubscriptionDays = 0, int CustomerOrderPushNotificationDays = 0,
     // ARCHITECTURE_CYCLE25.md §508, API_CONTRACT_CYCLE25.md §535 [legal L20] — the three periods of MAX for staff (the notes rule has no period of its own).
-    int StaffMaxStoppedLinkDays = 0, int StaffMaxLinkSessionDays = 0, int StaffMaxMessageDays = 0);
+    int StaffMaxStoppedLinkDays = 0, int StaffMaxLinkSessionDays = 0, int StaffMaxMessageDays = 0,
+    // ARCHITECTURE_CYCLE37.md §37.13.3 (ЮР-6) — the six periods of «Дома», appended at the end (§49.5: the policy is read from the running configuration).
+    int StayPaymentProofDays = 0, int StayUnpaidBookingDays = 0, int StayBookingPersonalDataDays = 0,
+    int StayBookingEventDays = 0, int StayGuestPushSubscriptionDays = 0, int StayGuestPushNotificationDays = 0);
 
 // ARCHITECTURE_CYCLE20.md §406.2, API_CONTRACT_CYCLE20.md §436.2 (US-20-05, Т20-06). 🔴 No IP, no
 // User-Agent, no phone in any form, no counts — the schema behind this DTO has no such columns

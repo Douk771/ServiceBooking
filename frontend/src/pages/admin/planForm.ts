@@ -44,6 +44,8 @@ export interface PlanForm {
   maxProductsPerShop: string
   maxOrdersPerMonth: string
   allowOrders: boolean
+  /** Cycle 37: «Макс. домов» of a «Дома» plan; empty = no limit. */
+  maxHouses: string
 }
 
 export const defaultForm: PlanForm = {
@@ -70,6 +72,7 @@ export const defaultForm: PlanForm = {
   maxProductsPerShop: '',
   maxOrdersPerMonth: '',
   allowOrders: true,
+  maxHouses: '',
 }
 
 export function optionRulesToForm(rules: PlanOptionRuleDto[]): PlanForm['optionRules'] {
@@ -113,5 +116,19 @@ export function ordersPlanPayload(form: Pick<PlanForm, 'line' | 'maxProductsPerS
     maxProductsPerShop: form.maxProductsPerShop.trim() === '' ? null : parseInt(form.maxProductsPerShop),
     maxOrdersPerMonth: form.maxOrdersPerMonth.trim() === '' ? null : parseInt(form.maxOrdersPerMonth),
     allowOrders: form.allowOrders,
+  }
+}
+
+/** Cycle 37 (API_CONTRACT_CYCLE37.md §37.21.4): the field of a plan of the «Дома» line — «Макс. домов» (empty = no limit). Other lines send nothing. */
+export function staysPlanLimitError(form: Pick<PlanForm, 'line' | 'maxHouses'>): string | null {
+  if (form.line !== 'Stays') return null
+  return form.maxHouses.trim() !== '' && !/^\d+$/.test(form.maxHouses.trim()) ? 'Лимит домов: введите целое число или оставьте поле пустым.' : null
+}
+
+export function staysPlanPayload(form: Pick<PlanForm, 'line' | 'maxHouses'>, isEditing: boolean) {
+  if (form.line !== 'Stays') return {}
+  return {
+    ...(isEditing ? {} : { line: 'Stays' as const }),
+    maxHouses: form.maxHouses.trim() === '' ? null : parseInt(form.maxHouses),
   }
 }

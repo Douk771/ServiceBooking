@@ -11,5 +11,10 @@ public static class CompanyPhotoTexts
     public static string ReorderMismatch(CompanyKind kind) =>
         $"Список должен содержать все фотографии {Noun(kind)} ровно по одному разу";
 
-    private static string Noun(CompanyKind kind) => kind == CompanyKind.Orders ? "магазина" : "салона";
+    private static string Noun(CompanyKind kind) => kind switch
+    {
+        CompanyKind.Orders => "магазина",
+        CompanyKind.Stays => "компании «Дома»",
+        _ => "салона"
+    };
 }

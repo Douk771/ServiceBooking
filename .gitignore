@@ -23,6 +23,7 @@ TestResults/
 # Node / Frontend
 frontend/node_modules/
 frontend/goods/node_modules/
+frontend/dom/node_modules/
 frontend/dist/
 frontend/.env
 frontend/.env.local
@@ -78,6 +79,7 @@ ServiceBooking.API/logs/
 # запускается по месту через pipx/npx, и его локальный вывод в репозитории не нужен.
 .schemathesis/
 frontend/dist-goods/
+frontend/dist-dom/
 
 # Демо-стенд (цикл 28, DEPLOY.md §25): локальные секреты и данные машины
 .env.demo

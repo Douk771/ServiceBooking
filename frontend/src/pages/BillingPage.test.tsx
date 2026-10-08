@@ -232,3 +232,48 @@ describe('BillingPage — line (cycle 24)', () => {
     expect(await screen.findByText(/У вас уже есть заявка на смену тарифа «Записи»/)).toBeInTheDocument()
   })
 })
+
+// Cycle 37 (ARCHITECTURE_CYCLE37.md §37.10.4, API_CONTRACT_CYCLE37.md §37.21.4) — dom mounts the same screen with line="Stays".
+describe('BillingPage — line Stays (cycle 37)', () => {
+  const staysSub = (stays: Record<string, unknown> | null, over: Record<string, unknown> = {}) =>
+    makeSubscription({
+      plan: { id: 'p1', name: 'Дома · Старт', pricePerMonth: 1990 },
+      usage: { companiesText: '1 компания', employeesText: '3 сотрудника', numbersText: '0 номеров' },
+      ...({
+        line: 'Stays',
+        stays,
+        availablePlans: [{ planId: 'ps1', name: 'Дома · Старт', pricePerMonth: 1990, description: null, highlights: null, limitsText: 'до 5 домов' }],
+      } as object),
+      ...over,
+    } as Partial<OwnerSubscriptionDto>)
+
+  it('asks for the Stays line, prints the houses counter and the plan warning, hides salon-only blocks', async () => {
+    getSubscription.mockResolvedValueOnce(
+      staysSub({ housesPublished: 6, maxHouses: 5, isTrial: false, warningLevel: 'OverLimit', text: 'Опубликовано 6 домов при лимите 5: гости не могут бронировать. Снимите лишние дома с публикации или смените тариф' }),
+    )
+    renderWithProviders(<BillingPage line="Stays" />)
+    expect(await screen.findByTestId('stays-plan-banner')).toHaveTextContent('Опубликовано 6 домов при лимите 5')
+    expect(getSubscription).toHaveBeenCalledWith('Stays')
+    expect(screen.getByTestId('stays-usage')).toHaveTextContent('Опубликовано домов: 6 из 5')
+    expect(screen.queryByText(/Смотрите страницу тарифов/)).toBeNull()
+    expect(screen.getByText(/ограничивает число опубликованных домов/)).toBeInTheDocument()
+  })
+
+  it('a trial is named, and a warning-free state shows no banner', async () => {
+    getSubscription.mockResolvedValueOnce(staysSub({ housesPublished: 1, maxHouses: 3, isTrial: true, trialEndsAtUtc: '2027-02-01T00:00:00Z', warningLevel: 'None', text: null }))
+    renderWithProviders(<BillingPage line="Stays" />)
+    expect(await screen.findByTestId('stays-usage')).toHaveTextContent('пробный период')
+    expect(screen.queryByTestId('stays-plan-banner')).toBeNull()
+  })
+
+  it('requests a plan of the Stays line', async () => {
+    getSubscription.mockResolvedValue(staysSub({ housesPublished: 0, maxHouses: null, isTrial: false, warningLevel: 'NoPlan', text: 'Тариф не выбран: гости не могут бронировать' }))
+    submitRequest.mockResolvedValue({ line: 'Stays' })
+    const user = userEvent.setup()
+    renderWithProviders(<BillingPage line="Stays" />)
+    const plans = await screen.findByTestId('available-plans')
+    expect(screen.getByText('Тарифы «Домов»')).toBeInTheDocument()
+    await user.click(within(plans).getByRole('button', { name: 'Запросить тариф «Дома · Старт»' }))
+    expect(submitRequest).toHaveBeenCalledWith({ line: 'Stays', planId: 'ps1', options: [] })
+  })
+})

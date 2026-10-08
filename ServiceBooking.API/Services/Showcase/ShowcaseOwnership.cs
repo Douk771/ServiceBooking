@@ -105,6 +105,21 @@ public static class ShowcaseOwnership
     public static readonly IReadOnlyDictionary<string, string> NeverWritten = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["NotificationChannels"] = "showcase accounts own no notification numbers (mixing with real accounts is forbidden, sending is suppressed)",
+        ["StaysSettings"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["Houses"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["HousePhotos"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["HousePricePeriods"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["HouseRegistryAttestations"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["HouseBlocks"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["HouseBlockEvents"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["HouseOccupancies"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["StayBookings"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["StayBookingCharges"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["StayBookingEvents"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["StayPaymentProofs"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["StayGuestPushSubscriptions"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["StayGuestPushNotifications"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["StaysSubscriptions"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
     };
 
     /// <summary>All tables the eraser touches, for the model coverage test.</summary>

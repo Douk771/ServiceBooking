@@ -184,6 +184,10 @@ public sealed class StaffPushDispatchTask(
         if (!isStaff)
             return await SkipAsync(scopedDb, row, NotificationReason.MasterNoLongerInCompany, runnerCt);
 
+        // ARCHITECTURE_CYCLE37.md §37.12.2: booking messages go to the owner and managers only — a demoted member (housekeeper) is held.
+        if (row.StayBookingId != null && !await Stays.StayStaffRecipients.IsRecipientAsync(scopedDb, row.CompanyId, row.UserId, runnerCt))
+            return await SkipAsync(scopedDb, row, NotificationReason.MasterNoLongerInCompany, runnerCt);
+
         var settings = await scopedDb.CompanyNotificationSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.CompanyId == row.CompanyId, runnerCt);
         var staffPushEnabled = settings?.StaffPushEnabled ?? new CompanyNotificationSettings().StaffPushEnabled;

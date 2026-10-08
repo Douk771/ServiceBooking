@@ -6,17 +6,23 @@ import type { PushSite } from '../api/push'
 // Which reason applies is still decided by getPushUnavailableReason(); this module only holds the words.
 
 /** `short_name` of the site's web manifest = the name of the icon on the iPhone Home Screen. */
-export type PushAppName = 'Запись' | 'Заказы'
+export type PushAppName = 'Запись' | 'Заказы' | 'Дома'
 
 export interface StaffKinds {
   hasServices: boolean
   hasOrders: boolean
+  /** Cycle 37 (dom.ezbook.ru): staff of a «Дома» company. Absent = false, so the two-site callers are unchanged. */
+  hasStays?: boolean
 }
 
-function noun({ hasServices, hasOrders }: StaffKinds): string {
-  if (hasServices && hasOrders) return 'записях и заказах'
-  if (hasOrders) return 'заказах'
-  return 'записях'
+function noun({ hasServices, hasOrders, hasStays = false }: StaffKinds): string {
+  const parts: string[] = []
+  if (hasServices) parts.push('записях')
+  if (hasOrders) parts.push('заказах')
+  if (hasStays) parts.push('бронях домов')
+  if (parts.length === 0) return 'записях'
+  if (parts.length === 1) return parts[0]
+  return `${parts.slice(0, -1).join(', ')} и ${parts[parts.length - 1]}`
 }
 
 export function staffPushIntro(kinds: StaffKinds, site: PushSite): string {
@@ -34,11 +40,18 @@ export const ONE_DEVICE_ENOUGH_TEXT =
 export const ONE_SITE_ENOUGH_TEXT = 'Достаточно сделать это для одного из сайтов — ezbook.ru или goods.ezbook.ru.'
 
 export function deviceSiteLabel(site: PushSite): string {
-  return site === 'Services' ? 'через ezbook.ru' : 'через goods.ezbook.ru'
+  return `через ${siteHost(site)}`
 }
 
 function siteHost(site: PushSite): string {
-  return site === 'Services' ? 'ezbook.ru' : 'goods.ezbook.ru'
+  switch (site) {
+    case 'Services':
+      return 'ezbook.ru'
+    case 'Orders':
+      return 'goods.ezbook.ru'
+    case 'Stays':
+      return 'dom.ezbook.ru'
+  }
 }
 
 export function staffPushUnavailableMessage(reason: PushUnavailableReason, appName: PushAppName): string {

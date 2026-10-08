@@ -76,6 +76,42 @@ internal static class ApplicationServicesExtensions
         builder.Configuration.GetSection(ServiceBooking.API.Services.Orders.OrdersOptions.SectionName));
     builder.Services.AddSingleton<ServiceBooking.API.Services.Shops.PhoneVerificationAvailability>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopAccessResolver>();
+
+    // Cycle 37 (ARCHITECTURE_CYCLE37.md §37.16): "Дома".
+    builder.Services.Configure<ServiceBooking.API.Services.Stays.StaysOptions>(
+        builder.Configuration.GetSection(ServiceBooking.API.Services.Stays.StaysOptions.SectionName));
+    builder.Services.AddSingleton<ServiceBooking.API.Services.Stays.IStaysClock, ServiceBooking.API.Services.Stays.SystemStaysClock>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysAccessResolver>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysPlanResolver>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysCompanyService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysTrialService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.HouseService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.HouseOccupancyWriter>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayPhoneThrottle>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayActorResolver>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayNotificationPlanner>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayBookingEventLog>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.CheckInInfoReleaser>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayBookingTransitionService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayHoldExpirer>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayPaymentProofService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayBookingCreationService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayDtoMapper>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysCatalogService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysHousePageService>();
+    builder.Services.AddSingleton<ServiceBooking.API.Services.Stays.StayProofIpLimiter>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.HouseBlockWriter>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayStaffPushQueue>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayStaffMaxQueue>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayGuestPushQueue>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayMessageScheduler>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.StayGuestPushSubscriptionWriter>();
+    builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaysHoldExpiryTask>();
+    builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaysScheduledMessagesTask>();
+    builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaysGuestPushDispatchTask>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysBoardService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysScheduleService>();
+
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopManageMapper>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.CatalogMapper>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.StockLedger>();
@@ -316,6 +352,19 @@ internal static class ApplicationServicesExtensions
         ServiceBooking.API.Services.Retention.Rules.ClientNotePhotoRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.BookingEventRule>();
+    // ARCHITECTURE_CYCLE37.md §37.13.3 (ЮР-6) — retention of «Дома».
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayPaymentProofRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayUnpaidPersonalizationRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayBookingPersonalizationRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayBookingEventRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayGuestPushSubscriptionRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayGuestPushNotificationRule>();
     // ARCHITECTURE_CYCLE23.md §398.5 — order-personalization (does nothing while Retention:OrderPersonalDataDays is 0).
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.OrderPersonalizationRule>();

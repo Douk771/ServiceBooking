@@ -620,9 +620,12 @@ public class NotificationChannelsController(
                 await transaction.CommitAsync();
                 return await BuildAssignedResponseAsync(channel, idleDaysSame);
             }
-            return Conflict(company.Kind == CompanyKind.Orders
-                ? "Магазин уже привязан к другому номеру этого мессенджера"
-                : "Салон уже привязан к другому номеру этого мессенджера");
+            return Conflict(company.Kind switch
+            {
+                CompanyKind.Orders => "Магазин уже привязан к другому номеру этого мессенджера",
+                CompanyKind.Stays => "Компания уже привязана к другому номеру этого мессенджера",
+                _ => "Салон уже привязан к другому номеру этого мессенджера"
+            });
         }
 
         var otherCompanyCount = await db.ChannelCompanyAssignments.CountAsync(a => a.ChannelId == id);

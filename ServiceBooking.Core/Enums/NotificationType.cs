@@ -31,4 +31,18 @@ public enum NotificationType
     OrderEditedByShop = 13,
     OrderPickupChanged = 14,
     OwnerOrderLimitWarning = 15,
+
+    // ARCHITECTURE_CYCLE37.md §37.12.1 — "Дома". Bit positions 16..26 are NOT used by the salon mask:
+    // NotificationTypeCatalog.IsBookingType does not include them. Free values left after this cycle: 27..30.
+    StaffStayCreated = 16,
+    StaffStayPaymentProofUploaded = 17,
+    StaffStayCancelledByGuest = 18,
+    StayGuestCreated = 19,
+    StayGuestHoldExpiring = 20,
+    StayGuestHoldExpired = 21,
+    StayGuestConfirmed = 22,
+    StayGuestPaymentRejected = 23,
+    StayGuestCancelledByOwner = 24,
+    StayGuestArrivalReminder = 25,
+    StayGuestCheckInInfo = 26,
 }

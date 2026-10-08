@@ -15,6 +15,28 @@ import { useAuthStore } from '../../store/authStore'
 
 const MAX_PHOTOS = PHOTO_MAX_PHOTOS
 
+/**
+ * Cycle 37 (ARCHITECTURE_CYCLE37.md §37.14.2): the section serves a house's photos too. The adapter carries the four routes and the
+ * words that differ; without it everything below is the company gallery, byte for byte as before.
+ */
+export interface PhotosAdapter {
+  /** react-query key of the list, e.g. `['house-photos', houseId]`. */
+  queryKey: readonly unknown[]
+  list: () => Promise<CompanyPhoto[]>
+  upload: (file: File, onProgress: (percent: number) => void) => Promise<CompanyPhoto>
+  remove: (photoId: string, reason?: 'DepictedPersonRequest') => Promise<unknown>
+  reorder: (photoIds: string[]) => Promise<CompanyPhoto[]>
+  title: string
+  emptyText: string
+  maxPhotos: number
+  /** Text of a failed route (default — `getUploadErrorMessage`). */
+  errorMessage?: (err: unknown) => string
+  /** Cache keys to invalidate after a change, besides `queryKey`. */
+  invalidateKeys?: readonly (readonly unknown[])[]
+  /** The «by request of the person in the photo» reason dialog of SuperAdmin exists only for the company gallery. */
+  removalReason?: boolean
+}
+
 /** ARCHITECTURE_CYCLE31.md §31.9.3 — a repeated answer (200 for a file that already exists) never adds a second tile. */
 function upsertById(old: CompanyPhoto[] | undefined, photo: CompanyPhoto): CompanyPhoto[] {
   const rest = (old ?? []).filter((p) => p.id !== photo.id)
@@ -115,6 +137,7 @@ export function CompanyPhotosSection({
   onChanged,
   headingAs: Heading = 'h3',
   headingClassName = 'text-lg font-semibold text-ink',
+  adapter,
 }: {
   companyId: string
   /** ARCHITECTURE_CYCLE32.md §32.9.2 — level and class of the card title; defaults keep the goods gallery as it was. */
@@ -124,9 +147,14 @@ export function CompanyPhotosSection({
   kind?: 'salon' | 'shop'
   /** Called after the existing cache resets (goods drops its `['storefront']` cache here). */
   onChanged?: () => void
+  /** A house (cycle 37) instead of the company gallery; `companyId` is then only an owner label. */
+  adapter?: PhotosAdapter
 }) {
   const qc = useQueryClient()
-  const isSuperAdmin = useAuthStore((s) => s.hasRole('SuperAdmin'))
+  const isSuperAdmin = useAuthStore((s) => s.hasRole('SuperAdmin')) && adapter?.removalReason !== false
+  const limit = adapter?.maxPhotos ?? MAX_PHOTOS
+  const errorText = adapter?.errorMessage ?? getUploadErrorMessage
+  const listKey = adapter?.queryKey ?? ['company-photos', companyId]
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState('')
   const [reordering, setReordering] = useState(false)
@@ -134,12 +162,17 @@ export function CompanyPhotosSection({
   const [confirmingRemoval, setConfirmingRemoval] = useState<string | null>(null)
 
   const { data: photos, isLoading } = useQuery({
-    queryKey: ['company-photos', companyId],
-    queryFn: () => companyPhotosApi.list(companyId),
+    queryKey: listKey,
+    queryFn: () => (adapter ? adapter.list() : companyPhotosApi.list(companyId)),
   })
 
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['company-photos', companyId] })
+    qc.invalidateQueries({ queryKey: listKey })
+    for (const k of adapter?.invalidateKeys ?? []) qc.invalidateQueries({ queryKey: k })
+    if (adapter) {
+      onChanged?.()
+      return
+    }
     // Review finding — `CompanyPage.tsx` reads `photos`/`coverPhotoUrl` off `['company', slug]`
     // (§109.3, `CompanyDto`), a DIFFERENT cache entry from this section's own `company-photos`
     // list. Without this the public company card kept showing the gallery as it was before the
@@ -150,36 +183,36 @@ export function CompanyPhotosSection({
   }
 
   const batch = usePhotoBatchUpload(companyId, {
-    onUploaded: (photo) =>
-      qc.setQueryData<CompanyPhoto[]>(['company-photos', companyId], (old) => upsertById(old, photo)),
+    onUploaded: (photo) => qc.setQueryData<CompanyPhoto[]>(listKey, (old) => upsertById(old, photo)),
     onBatchSettled: invalidate,
+    ...(adapter ? { upload: adapter.upload, errorMessage: adapter.errorMessage, maxPhotos: adapter.maxPhotos } : {}),
   })
   const startBatch = (files: File[]) => {
     if (isLoading) return
     setError('')
-    batch.start(files, Math.max(0, MAX_PHOTOS - (photos?.length ?? 0)))
+    batch.start(files, Math.max(0, limit - (photos?.length ?? 0)))
   }
 
   const removeMut = useMutation({
     mutationFn: ({ photoId, reason }: { photoId: string; reason?: 'DepictedPersonRequest' }) =>
-      companyPhotosApi.remove(companyId, photoId, reason),
+      adapter ? adapter.remove(photoId, reason) : companyPhotosApi.remove(companyId, photoId, reason),
     onMutate: () => setError(''),
     onSuccess: () => {
       setConfirmingRemoval(null)
       invalidate()
     },
-    onError: (err) => setError(getUploadErrorMessage(err)),
+    onError: (err) => setError(errorText(err)),
   })
 
   const reorderMut = useMutation({
-    mutationFn: (photoIds: string[]) => companyPhotosApi.reorder(companyId, photoIds),
+    mutationFn: (photoIds: string[]) => (adapter ? adapter.reorder(photoIds) : companyPhotosApi.reorder(companyId, photoIds)),
     onMutate: () => {
       setError('')
       setReordering(true)
     },
     onSettled: () => setReordering(false),
     onSuccess: invalidate,
-    onError: (err) => setError(getUploadErrorMessage(err)),
+    onError: (err) => setError(errorText(err)),
   })
 
   const move = (index: number, direction: -1 | 1) => {
@@ -199,14 +232,14 @@ export function CompanyPhotosSection({
     reorderMut.mutate(ids)
   }
 
-  const atLimit = (photos?.length ?? 0) >= MAX_PHOTOS
+  const atLimit = (photos?.length ?? 0) >= limit
   const busy = batch.running || removeMut.isPending || reordering
 
   return (
     <Card className="p-6">
       <div className="flex items-center justify-between mb-4">
-        <Heading className={headingClassName}>{kind === 'shop' ? 'Фотографии магазина' : 'Фотографии салона'}</Heading>
-        <span className="text-xs text-muted">{photos?.length ?? 0} / {MAX_PHOTOS}</span>
+        <Heading className={headingClassName}>{adapter?.title ?? (kind === 'shop' ? 'Фотографии магазина' : 'Фотографии салона')}</Heading>
+        <span className="text-xs text-muted">{photos?.length ?? 0} / {limit}</span>
       </div>
 
       {isLoading ? (
@@ -279,7 +312,7 @@ export function CompanyPhotosSection({
       ) : (
         <div className="text-center py-8 mb-4 bg-cream-deep rounded-xl">
           <Icon name="store" size={22} strokeWidth={1.6} className="text-gold-dark mx-auto mb-2" />
-          <p className="text-sm text-ink-soft">{kind === 'shop' ? 'В галерее магазина пока нет фотографий' : 'В галерее пока нет фотографий'}</p>
+          <p className="text-sm text-ink-soft">{adapter?.emptyText ?? (kind === 'shop' ? 'В галерее магазина пока нет фотографий' : 'В галерее пока нет фотографий')}</p>
         </div>
       )}
 
@@ -329,7 +362,7 @@ export function CompanyPhotosSection({
         }`}
       >
         <p className="text-sm text-ink-soft mb-2">
-          {atLimit ? `Достигнут лимит в ${MAX_PHOTOS} фото` : 'Перетащите фото сюда или'}
+          {atLimit ? `Достигнут лимит в ${limit} фото` : 'Перетащите фото сюда или'}
         </p>
         {!atLimit && (
           <Button
@@ -343,7 +376,7 @@ export function CompanyPhotosSection({
           </Button>
         )}
       </div>
-      <p className="text-xs text-muted mt-1">JPEG, PNG или WEBP, до 5 МБ, не больше {MAX_PHOTOS} фото</p>
+      <p className="text-xs text-muted mt-1">JPEG, PNG или WEBP, до 5 МБ, не больше {limit} фото</p>
       {error && <p className="text-xs text-danger mt-1">{error}</p>}
 
       {(batch.items.length > 0 || batch.overLimitMessage) && (

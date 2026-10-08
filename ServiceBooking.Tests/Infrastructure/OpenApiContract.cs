@@ -12,7 +12,7 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// </summary>
 public sealed class OpenApiContract
 {
-    private static readonly HashSet<string> Annotations = ["description", "example", "default", "title"];
+    private static readonly HashSet<string> Annotations = ["description", "example", "default", "title", "readOnly", "writeOnly"];
 
     private static readonly HashSet<string> Supported =
     [
@@ -68,6 +68,16 @@ public sealed class OpenApiContract
             || !responses.TryGetProperty(status.ToString(CultureInfo.InvariantCulture), out var response))
         {
             return [$"status {status} is not declared for {method} {pathTemplate}"];
+        }
+
+        // Cycle 37: shared responses (`#/components/responses/*`, e.g. the JSON 409 bodies of the «Дома» vertical) are referenced, not inlined.
+        if (response.TryGetProperty("$ref", out var responseRef))
+        {
+            const string responsePrefix = "#/components/responses/";
+            var name = responseRef.GetString()!;
+            if (!name.StartsWith(responsePrefix, StringComparison.Ordinal)
+                || !_root.GetProperty("components").GetProperty("responses").TryGetProperty(name[responsePrefix.Length..], out response))
+                return [$"response $ref {name} of {method} {pathTemplate} {status} cannot be resolved"];
         }
 
         if (!response.TryGetProperty("content", out var content) || !content.TryGetProperty("application/json", out var media)

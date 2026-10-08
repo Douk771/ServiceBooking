@@ -21,7 +21,7 @@ namespace ServiceBooking.API.Services.Subjects;
 public sealed class SubjectDataExporter(
     UserManager<AppUser> userManager, AppDbContext db, ConsentLedger ledger, SubjectScopeResolver subjectScopeResolver,
     HealthNoteProtector healthNoteProtector, LegalDocumentProvider legalProvider, ILogger<ProfileController> logger,
-    GuestDataGateJournal guestDataGateJournal, ServiceBooking.API.Services.Shops.ShopGateLoader gates)
+    GuestDataGateJournal guestDataGateJournal, ServiceBooking.API.Services.Shops.ShopGateLoader gates, ServiceBooking.API.Services.PublicSites.PublicSiteLinks stayLinks)
 {
     /// <summary>The export for <paramref name="userId"/>, or null when the account does not exist (404).
     /// <paramref name="requestAborted"/> is what the scope resolver was always given
@@ -255,6 +255,20 @@ public sealed class SubjectDataExporter(
                 .Join(db.Companies, n => n.CompanyId, c => c.Id, (n, c) => new { c.Name, n.UpdatedAtUtc })
                 .OrderBy(x => x.Name).Select(x => new ExportShopCustomerNoteDto(x.Name, x.UpdatedAtUtc)).ToListAsync(ct);
 
+        // ARCHITECTURE_CYCLE37.md §37.13.1: house bookings of the account, and guest bookings on the same number ONLY when the number is verified. The file of a proof is not
+        // embedded (metadata + the booking link, open question §37.19-7); the journal shows the guest only what the guest sees (no staff names).
+        var stayRows = await db.StayBookings.AsNoTracking().Include(b => b.PaymentProofs).Include(b => b.House).Include(b => b.Company)
+            .Where(b => b.GuestUserId == userId || (guestMatchPhone != null && b.GuestKind == StayActorKind.Guest && b.GuestPhone == guestMatchPhone && !b.Company.IsShowcase))  // SUBJECT-PHONE-GATE: gated — cycle 37, house bookings follow the same gate as bookings and orders (ARCHITECTURE_CYCLE37.md §37.13.1)
+            .OrderByDescending(b => b.CreatedAtUtc).ToListAsync(ct);
+        var stayIds = stayRows.Select(b => b.Id).ToList();
+        var stayEvents = (await db.StayBookingEvents.AsNoTracking().Where(e => stayIds.Contains(e.StayBookingId) && e.Kind != StayBookingEventKind.PaymentProofViewed)
+            .OrderBy(e => e.OccurredAtUtc).ToListAsync(ct)).ToLookup(e => e.StayBookingId);
+        var stayExport = stayRows.Select(b => new ExportStayBookingDto(
+            b.Company.Name, b.House.Name, b.CheckInDate, b.CheckOutDate, b.Status.ToString(), b.Adults, b.Children, b.Dogs, b.NeedCot, ServiceBooking.API.Services.Stays.StayFormat.Time(b.ArrivalTime),
+            b.GuestName, b.GuestPhone, b.Comment, b.TotalRub, b.PrepayRub, b.StatusReason, stayLinks.StayBookingPageUrl(b.PublicToken),
+            b.PaymentProofs.OrderBy(p => p.UploadedAtUtc).Select(p => new ExportStayPaymentProofDto(p.UploadedAtUtc, p.ContentType, p.SizeBytes, p.PurgedAtUtc != null || p.StorageKey == null)).ToList(),
+            stayEvents[b.Id].Select(e => new ExportStayEventDto(e.OccurredAtUtc, ServiceBooking.API.Services.Stays.StaysTexts.EventText(e.Kind))).ToList())).ToList();
+
         var export = new ProfileExportDto(
             DateTime.UtcNow,
             // ownPhone (§245.4 table): the account's own contact — shown regardless of verification.
@@ -266,7 +280,7 @@ public sealed class SubjectDataExporter(
             "компания — контакты и адрес каждой такой компании перечислены в разделе «operators» этой " +
             "выгрузки. Запрос об их предоставлении, уточнении или удалении направляйте ей напрямую. По " +
             "вопросам обработки ваших данных платформой обращайтесь в поддержку сервиса.",
-            operators, notifications, optOut, healthNotesExport, phoneVerification, guestDataGate, orderExport, staffMaxLink, shopCustomerNotes);
+            operators, notifications, optOut, healthNotesExport, phoneVerification, guestDataGate, orderExport, staffMaxLink, shopCustomerNotes, stayExport);
 
         return export;
     }

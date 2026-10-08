@@ -15,6 +15,9 @@
 # a Home Screen app with push) — the same home-screen checks as ezbook: manifest served, parsed, display=standalone,
 # linked from index.html, and GET /sw.js = 200. Default profile (ezbook) is unchanged.
 #
+# SMOKE_PROFILE=dom (ARCHITECTURE_CYCLE37.md §37.15.4) checks the dom.ezbook.ru build in dist/__dom: index.html with the React
+# root, favicon.ico/svg, apple-touch-icon.png, manifest (display=standalone) and GET /sw.js = 200 — same as goods.
+#
 # Any failed step exits 1.
 set -euo pipefail
 
@@ -51,14 +54,14 @@ favicon_svg_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/favicon.svg
 [ "$favicon_svg_code" = "200" ] || fail "GET /favicon.svg returned $favicon_svg_code (expected 200)"
 log "favicon OK"
 
-if [ "$SMOKE_PROFILE" = "goods" ]; then
+if [ "$SMOKE_PROFILE" = "goods" ] || [ "$SMOKE_PROFILE" = "dom" ]; then
   index_html=$(curl -sf "$BASE_URL/index.html") || fail "GET /index.html failed"
-  grep -q '<div id="root">' <<<"$index_html" || fail "goods index.html has no <div id=\"root\">"
+  grep -q '<div id="root">' <<<"$index_html" || fail "$SMOKE_PROFILE index.html has no <div id=\"root\">"
   apple_icon_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/apple-touch-icon.png")
   [ "$apple_icon_code" = "200" ] || fail "GET /apple-touch-icon.png returned $apple_icon_code (expected 200)"
   # Cycle 24 (ARCHITECTURE_CYCLE24.md §454, §463.2): goods is a standalone app now.
   curl -sf "$BASE_URL/manifest.webmanifest" -o /tmp/smoke-frontend-goods-manifest.json \
-    || fail "goods: GET /manifest.webmanifest did not return 200"
+    || fail "$SMOKE_PROFILE: GET /manifest.webmanifest did not return 200"
   python3 - /tmp/smoke-frontend-goods-manifest.json <<'PY' || fail "goods manifest.webmanifest must parse and have display=standalone, start_url, scope and icons"
 import json, sys
 m = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -69,8 +72,8 @@ PY
   grep -q 'rel="manifest" href="/manifest.webmanifest"' <<<"$index_html" || fail "goods index.html does not link the manifest"
   grep -q 'rel="apple-touch-icon"' <<<"$index_html" || fail "goods index.html does not link apple-touch-icon"
   sw_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/sw.js")
-  [ "$sw_code" = "200" ] || fail "goods: GET /sw.js returned $sw_code (expected 200)"
-  log "ALL FRONTEND SMOKE CHECKS PASSED (goods)"
+  [ "$sw_code" = "200" ] || fail "$SMOKE_PROFILE: GET /sw.js returned $sw_code (expected 200)"
+  log "ALL FRONTEND SMOKE CHECKS PASSED ($SMOKE_PROFILE)"
   exit 0
 fi
 

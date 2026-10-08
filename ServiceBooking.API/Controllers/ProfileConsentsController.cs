@@ -312,6 +312,7 @@ public class ProfileConsentsController(
         var photosDeleted = 0;
         var healthNotesDeleted = 0;
         var queuedNotificationsCancelled = 0;
+        var stayMessengerOff = 0;
         var writtenConsentRecordsRevoked = 0;
         var profileFieldsCleared = new List<string>();
         // TD-03 (ARCHITECTURE_CYCLE16.md §245.2 row 4 — a place the spec itself did not name). Before
@@ -424,6 +425,17 @@ public class ProfileConsentsController(
                 }
                 await db.SaveChangesAsync();
             }
+
+            // ARCHITECTURE_CYCLE37.md §37.13.1: the messenger choice of the account's ACTIVE house bookings is switched off; queued rows are cancelled above and the
+            // dispatcher skips what is left with StayMessengerDisabled. Everything stays available on the booking page.
+            var activeStatuses = new[] { StayBookingStatus.Held, StayBookingStatus.AwaitingPaymentCheck, StayBookingStatus.Confirmed };
+            var stays = await db.StayBookings.Where(b => b.GuestUserId == userId && b.NotifyByMessenger && activeStatuses.Contains(b.Status)).ToListAsync();
+            stayMessengerOff = stays.Count;
+            if (apply && stays.Count > 0)
+            {
+                foreach (var b in stays) b.NotifyByMessenger = false;
+                await db.SaveChangesAsync();
+            }
         }
 
         if (wholeDocument)
@@ -453,7 +465,7 @@ public class ProfileConsentsController(
         }
         if (avatarUrlToDelete is not null) storage.DeletePublic(avatarUrlToDelete);
 
-        return (new RevokeEffectsDto(photosDeleted, healthNotesDeleted, profileFieldsCleared, queuedNotificationsCancelled), writtenConsentRecordsRevoked);
+        return (new RevokeEffectsDto(photosDeleted, healthNotesDeleted, profileFieldsCleared, queuedNotificationsCancelled, stayMessengerOff), writtenConsentRecordsRevoked);
     }
 
     private async Task<ConsentsDto> BuildConsentsDtoAsync(string userId, LegalDocument pdnDoc)
@@ -500,5 +512,5 @@ public record SubmitConsentDto(string DocumentKey, string Version, List<string>?
 // (LegalTextKey.PhotoConsent/HealthDataConsent) — default null keeps every existing PdnConsent caller
 // compiling and behaving exactly as before.
 public record RevokeConsentDto(string DocumentKey, string? Purpose, string? Reason, Guid? CompanyId = null);
-public record RevokeEffectsDto(int PhotosDeleted, int HealthNotesDeleted, List<string> ProfileFieldsCleared, int QueuedNotificationsCancelled);
+public record RevokeEffectsDto(int PhotosDeleted, int HealthNotesDeleted, List<string> ProfileFieldsCleared, int QueuedNotificationsCancelled, int StayBookingsMessengerDisabled = 0);
 public record RevokeConsentResponseDto(int Revoked, RevokeEffectsDto Effects);

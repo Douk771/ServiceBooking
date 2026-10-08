@@ -34,6 +34,12 @@ READY_TIMEOUT_SECONDS=120
 # GOODS_SMOKE=0 is the emergency off switch (e.g. the vhost is being reissued); it does NOT skip ezbook checks.
 GOODS_HOST="${GOODS_HOST:-goods.ezbook.ru}"
 GOODS_SMOKE="${GOODS_SMOKE:-1}"
+# ARCHITECTURE_CYCLE37.md §37.15.3 — dom.ezbook.ru: the same, from current/__dom. Unlike goods, the dom smoke runs only when the vhost is
+# installed on this machine (cycle 37 does not roll dom out; ezbook/goods deploys must not depend on the readiness of dom DNS).
+# DOM_SMOKE=0 is the emergency off switch.
+DOM_HOST="${DOM_HOST:-dom.ezbook.ru}"
+DOM_SMOKE="${DOM_SMOKE:-1}"
+DOM_VHOST="${DOM_VHOST:-/etc/nginx/sites-enabled/dom.ezbook.conf}"
 
 NEW_RELEASE_DIR="$RELEASES_DIR/$RELEASE_TS"
 [ -d "$NEW_RELEASE_DIR" ] || { echo "ERROR: $NEW_RELEASE_DIR does not exist — did deploy.sh finish uploading it?" >&2; exit 1; }
@@ -315,6 +321,36 @@ if [ "$GOODS_SMOKE" != "0" ]; then
   echo "    goods OK"
 else
   echo "==> goods smoke skipped (GOODS_SMOKE=0)"
+fi
+
+if [ "$DOM_SMOKE" = "0" ]; then
+  echo "==> dom smoke skipped (DOM_SMOKE=0)"
+elif [ ! -e "$DOM_VHOST" ]; then
+  echo "WARNING: dom vhost not installed ($DOM_VHOST), smoke skipped (DEPLOY.md §28)" >&2
+else
+  echo "==> dom smoke: https://$DOM_HOST/ and /api/health/ready via local nginx"
+  [ -f "$CURRENT_LINK/__dom/index.html" ] || {
+    echo "ERROR: $CURRENT_LINK/__dom/index.html is missing — the release was built without dom (build:release includes it)" >&2
+    rollback_hint
+    exit 1
+  }
+  dom_index=$(curl -sf --max-time 10 --resolve "$DOM_HOST:443:127.0.0.1" "https://$DOM_HOST/") || {
+    echo "ERROR: https://$DOM_HOST/ did not answer 200 via local nginx — is the dom vhost installed and does it have a certificate? (DEPLOY.md §28)" >&2
+    rollback_hint
+    exit 1
+  }
+  grep -q '<div id="root">' <<<"$dom_index" || {
+    echo "ERROR: https://$DOM_HOST/ answered, but not with the dom SPA shell (<div id=\"root\"> missing)" >&2
+    rollback_hint
+    exit 1
+  }
+  dom_ready=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$DOM_HOST:443:127.0.0.1" "https://$DOM_HOST/api/health/ready")
+  [ "$dom_ready" = "200" ] || {
+    echo "ERROR: https://$DOM_HOST/api/health/ready returned $dom_ready via local nginx (expected 200)" >&2
+    rollback_hint
+    exit 1
+  }
+  echo "    dom OK"
 fi
 
 echo "==> Pruning old releases (keeping $KEEP_RELEASES most recent)"

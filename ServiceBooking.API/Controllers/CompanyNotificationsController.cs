@@ -36,7 +36,7 @@ public class CompanyNotificationsController(
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
         // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId, ct);
         if (company is null) return NotFound();
@@ -58,7 +58,7 @@ public class CompanyNotificationsController(
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
         // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId);
         if (company is null) return NotFound();
@@ -137,7 +137,7 @@ public class CompanyNotificationsController(
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
         // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var rows = await db.NotificationTemplates.AsNoTracking().Where(t => t.CompanyId == companyId).ToListAsync(ct);
         var placeholders = TemplatePlaceholders.All
@@ -169,7 +169,7 @@ public class CompanyNotificationsController(
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
         // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, companyId) is { } shopRefusal) return shopRefusal;
         if (!TryParseCustomizableType(type, out var parsedType)) return NotFound();
 
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId);
@@ -270,7 +270,7 @@ public class CompanyNotificationsController(
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
         // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, companyId) is { } shopRefusal) return shopRefusal;
         if (!TryParseCustomizableType(type, out var parsedType)) return NotFound();
 
         var validation = NotificationTemplateValidator.Validate(dto.Body, parsedType);
@@ -300,7 +300,7 @@ public class CompanyNotificationsController(
     {
         if (!await IsStaffAsync(companyId)) return Forbid();
         // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         var query = db.OutboundNotifications.AsNoTracking().Where(n => n.CompanyId == companyId);
@@ -336,7 +336,7 @@ public class CompanyNotificationsController(
     {
         if (!await IsStaffAsync(companyId)) return Forbid();
         // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var window = days is > 0 ? days.Value : 30;
         var sinceUtc = DateTime.UtcNow.AddDays(-window);

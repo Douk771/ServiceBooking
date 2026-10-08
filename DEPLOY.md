@@ -2453,7 +2453,58 @@ curl -s "https://ezbook.ru/api/companies/public?pageSize=20" | grep -o '"isShowc
 Цифры (пусто до замера): пик `api-demo` при сбросе — ___ МБ, покой через сутки — ___ МБ, `postgres-demo` — ___ МБ,
 время сброса — ___ с, `available` — ___ МБ, дата — ___.
 
-## 28. Единый шаблон главной и тарифы «Заказов» (цикл 38; ARCHITECTURE_CYCLE38.md §38.15)
+
+## 28. dom.ezbook.ru — третий сайт, «Дома» (цикл 37, ARCHITECTURE_CYCLE37.md §37.15; SPEC_CYCLE37_STAYS_HOUSES.md)
+
+**Статус на 2026-10-08.** Цикл 37 влит в `develop` и задеплоен на стенд (машина одна — она и стенд, и бой; релиз `master` не делался). DNS, vhost, сертификат,
+строка `/__dom/` в `ezbook.conf`, домен в SmartCaptcha и расширение `btree_gist` заказчик сделал вручную в тот же день; сайт отдаётся с `noindex`. Ниже — порядок,
+который был выполнен, и справка на случай переустановки (открытый вопрос §37.19 п. 2 закрыт). **Агенты выкат не выполняют —
+DNS, vhost, certbot и консоль Яндекса делает человек (sudo — заказчик).**
+
+**Что уже готово в репозитории.**
+- Сборка: `npm run build:release` кладёт dom в `frontend/dist/__dom` (рядом с `__goods`); релиз и откат переключают три сайта одним symlink.
+- `deploy/nginx/dom.ezbook.conf` — vhost: корень `current/__dom`, маскирование токена брони в логах (`/b/<token>`, `/api/stays/bookings/public/<token>`),
+  `client_max_body_size 11M` (подтверждение оплаты до 10 МБ), `X-Robots-Tag: noindex, nofollow` (стенд, R37-1), `sw.js` и манифест без кеша.
+  В `deploy/nginx/ezbook.conf` добавлено `location ^~ /__dom/ { return 404; }`.
+- `deploy/deploy-remote.sh` — смоук dom через локальный nginx (`curl --resolve dom.ezbook.ru:443:127.0.0.1`: SPA-оболочка `<div id="root">`,
+  `/api/health/ready` = 200). Срабатывает, **только если vhost установлен** (`/etc/nginx/sites-enabled/dom.ezbook.conf`); иначе строка
+  «dom vhost not installed, smoke skipped» и деплой ezbook/goods идёт как раньше. `DOM_SMOKE=0` — аварийное отключение, `DOM_HOST`, `DOM_VHOST` — переопределения.
+- CI: `tsc -p tsconfig.dom.json`, `npm run types:api:cycle37` + `git diff --exit-code`, `redocly lint` cycle37, `openapi.json` cycle37, смоук `SMOKE_PROFILE=dom`
+  по `dist/__dom`, запрет `fetch`/Cache API в `dom/public/sw.js`.
+- `.env.dev.example`: `SB_DOM_WEB_PORT=5175`, `PublicSites__StaysBaseUrl=http://localhost:5175`. В бою `PublicSites:StaysBaseUrl` = `https://dom.ezbook.ru`
+  по умолчанию из `appsettings.json` — новой обязательной переменной нет.
+
+**⚠️ Миграция `Cycle37Stays` применится при ЛЮБОМ следующем деплое `develop`** на эту машину (стенд = бой), а не только при первом выкате dom:
+миграции накатываются при старте API независимо от того, поднят ли vhost dom. Поэтому пункт «БД: расширение `btree_gist`» ниже проверяется **ДО ближайшего
+деплоя `develop`**, а не до выката dom; DNS, vhost, сертификат и SmartCaptcha можно делать позже, отдельным решением заказчика.
+
+**Порядок проверки и первого выката (когда заказчик решит).**
+1. **DNS.** A-запись `dom.ezbook.ru` → та же машина, что у `ezbook.ru` и `goods.ezbook.ru`.
+2. **БД: расширение `btree_gist` (делается первым, до ближайшего деплоя `develop`).** Миграция `Cycle37Stays` делает `CREATE EXTENSION IF NOT EXISTS btree_gist` (исключающее ограничение занятости,
+   §37.5). Расширение «trusted» (PostgreSQL 13+), но **проверьте до выката правами пользователя БД боя**:
+   `docker compose exec postgres psql -U <user> -d <db> -c "CREATE EXTENSION IF NOT EXISTS btree_gist;"` — без ошибки и без «permission denied».
+   Если не проходит — создать расширение суперпользователем один раз. Миграция падает целиком и откатывается (полу-применённого состояния нет, R37-8).
+3. **vhost + сертификат.** `sudo cp deploy/nginx/dom.ezbook.conf /etc/nginx/sites-available/`, `ln -s` в `sites-enabled`, `sudo nginx -t && sudo systemctl reload nginx`,
+   затем `sudo certbot --nginx -d dom.ezbook.ru` (отдельный сертификат; HSTS без `preload`). Повторное копирование файла поверх установленного **сносит 443-блок certbot** —
+   после него снова `certbot`. Заодно обновить `ezbook.conf` (строка `/__dom/`) и перезагрузить nginx.
+4. **SmartCaptcha.** В консоли Yandex Cloud добавить домен `dom.ezbook.ru` в список разрешённых доменов виджета (без этого форма брони для анонима не получит токен).
+   Ключ клиента — тот же `VITE_SMARTCAPTCHA_SITEKEY` (общая переменная сборки).
+5. **Деплой `develop`** обычным путём (если он уже был после слияния цикла 37 — миграция применена тогда, см. выше). Применится **миграция `Cycle37Stays`** (только добавления: таблицы «Домов», город Шерегеш, тарифы «Домов») — безопасно для ezbook и goods;
+   сборка dom ляжет в `current/__dom`, но без vhost недоступна.
+6. **Смоук.** `curl -s https://dom.ezbook.ru/ | grep 'id="root"'`, `curl -s -o /dev/null -w '%{http_code}' https://dom.ezbook.ru/api/health/ready` (200),
+   `curl -sI https://dom.ezbook.ru/sw.js | grep -i cache-control` (no-cache), `curl -sI https://dom.ezbook.ru/ | grep -i x-robots-tag` (noindex).
+   Дальше смоук dom входит в каждый деплой автоматически.
+7. **Не приглашать реальных владельцев** до ответов живого юриста (Т37-15, R37-1); `noindex` снять строкой в vhost при запуске. Web Push гостю на бою включён (тот же отправитель, что у персонала); WhatsApp/MAX гостю по умолчанию выключен флагом компании и требует оплаченного канала.
+   Прежняя формулировка «уведомления гостю выключены (`logging`, R37-5)» устарела — проверьте обе строки перед приглашением владельцев.
+
+**Откат.** Обычный: `deploy/rollback.sh` (symlink `current` на прошлый релиз; dom откатывается вместе с остальными). **Откат миграций цикла 37** — риск того же рода, что C24-10:
+в миграции только добавления, поэтому старый код работает на новой схеме; но `DROP` расширения `btree_gist` и таблиц «Домов» вручную **не делайте**, пока в них есть брони
+(они содержат ПДн гостей и подтверждения оплаты). Если нужно вернуть схему, это отдельная операция с резервной копией базы (`pg_dump`) и решением заказчика.
+
+**Локальный стенд.** `docker compose up` (API, БД) и `npm run dev:dom` в `frontend/` (порт 5175, прокси `/api` и `/uploads` на API). Для ручных проверок без бэкенда —
+`npx @stoplight/prism mock contracts/cycle37/openapi.yaml --port 4037` и `VITE_API_TARGET=http://localhost:4037 npm run dev:dom`.
+
+## 29. Единый шаблон главной и тарифы «Заказов» (цикл 38; ARCHITECTURE_CYCLE38.md §38.15)
 
 Миграций нет.
 

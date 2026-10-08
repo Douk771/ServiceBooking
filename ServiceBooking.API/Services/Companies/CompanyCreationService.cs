@@ -3,9 +3,12 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Orders;
+using ServiceBooking.API.DTOs.Stays;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Shops;
+using ServiceBooking.API.Services.Stays;
+using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -33,7 +36,7 @@ public sealed record CompanyCreationOutcome(
 public sealed class CompanyCreationService(
     AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
     BillingAccountProvisioner billingAccountProvisioner, LegalDocumentProvider legalProvider, ConsentLedger ledger,
-    TokenService tokenService, OrdersPlanResolver ordersPlans)
+    TokenService tokenService, OrdersPlanResolver ordersPlans, IOptions<StaysOptions> staysOptions)
 {
     public const string SlugTakenSalonText = "Slug already taken";
 
@@ -41,13 +44,15 @@ public sealed class CompanyCreationService(
         CompanyKind kind, CompanyCreationRequest request, ClaimsPrincipal user, string? remoteIp, string? userAgent)
     {
         var isShop = kind == CompanyKind.Orders;
-        var slug = isShop ? SlugPolicy.Normalize(request.Slug) : request.Slug ?? string.Empty;
+        var isStays = kind == CompanyKind.Stays;
+        var isSalon = kind == CompanyKind.Services;
+        var slug = isSalon ? request.Slug ?? string.Empty : SlugPolicy.Normalize(request.Slug);
 
         // Salons: the slug is checked first, exactly as before (ezbook behaviour unchanged).
-        if (!isShop && await db.Companies.AnyAsync(c => c.Slug == slug))
+        if (isSalon && await db.Companies.AnyAsync(c => c.Slug == slug))
             return Refuse(new ConflictObjectResult(SlugTakenSalonText));
         // ARCHITECTURE_CYCLE28.md §577.3: "primer-" is the showcase prefix nginx marks as noindex; a real company may not take it.
-        if (!isShop && ShowcaseMixingGuard.IsReservedSlug(slug))
+        if (isSalon && ShowcaseMixingGuard.IsReservedSlug(slug))
             return Refuse(new ConflictObjectResult(ShowcaseMixingGuard.ReservedSlugText));
 
         // ARCHITECTURE_CYCLE5.md §42.1, API_CONTRACT_CYCLE5.md §42.1 (BREAKING № 3). Checked by hand
@@ -70,15 +75,42 @@ public sealed class CompanyCreationService(
             if (slugRefusal is not null) return Refuse(slugRefusal);
         }
 
+        // Cycle 37 (API_CONTRACT_CYCLE37.md §37.27.1): name → phone → address (StaysSlugPolicy, JSON 409) → the city of the vertical.
+        string? staysPhone = null;
+        if (isStays)
+        {
+            if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 200)
+                return Refuse(new BadRequestObjectResult("Укажите название"));
+            if (request.Description is { Length: > 2000 }) return Refuse(new BadRequestObjectResult("Описание — не длиннее 2000 символов"));
+            if (string.IsNullOrWhiteSpace(request.Phone) || !PhoneNormalizer.TryNormalizeRussian(request.Phone, out var canonicalStaysPhone))
+                return Refuse(new BadRequestObjectResult("Введите номер телефона в формате +7 (900) 000-00-00"));
+            staysPhone = canonicalStaysPhone; // validated; the company keeps the number as the owner typed it (it is shown to guests)
+            if (string.IsNullOrEmpty(slug)) slug = await SuggestStaysSlugAsync(request.Name!);
+            var staysRefusal = await StaysSlugRefusalAsync(slug, exceptCompanyId: null);
+            if (staysRefusal is not null) return Refuse(new ConflictObjectResult(staysRefusal));
+        }
+
         // Cycle 4, API_CONTRACT_CYCLE4.md §31.2 (breaking change): every new company needs a city, so
         // a derived time zone exists for reminder timing. Validated before touching the advisory lock
         // below — no point serializing on the owner-companies lock for a request that's going to 400.
-        if (request.CityId is null)
-            return Refuse(new BadRequestObjectResult(isShop ? "Укажите город магазина" : "Укажите город салона"));
+        // A "Дома" company is always in the city of the vertical (Stays:CatalogCity) — cityId is not accepted (§37.11.1).
+        City? city;
+        if (isStays)
+        {
+            var cityOptions = staysOptions.Value.CatalogCity;
+            city = await db.Cities.FirstOrDefaultAsync(c => c.Name == cityOptions.Name && c.Region == cityOptions.Region && c.IsActive);
+            if (city is null)
+                return Refuse(new ObjectResult("Справочник городов не готов") { StatusCode = StatusCodes.Status503ServiceUnavailable });
+        }
+        else
+        {
+            if (request.CityId is null)
+                return Refuse(new BadRequestObjectResult(isShop ? "Укажите город магазина" : "Укажите город салона"));
 
-        var city = await db.Cities.FindAsync(request.CityId.Value);
-        if (city is null || !city.IsActive)
-            return Refuse(new BadRequestObjectResult("Город не найден"));
+            city = await db.Cities.FindAsync(request.CityId.Value);
+            if (city is null || !city.IsActive)
+                return Refuse(new BadRequestObjectResult("Город не найден"));
+        }
 
         if (!string.IsNullOrWhiteSpace(request.TimeZoneId) &&
             !TimeZoneOffset.TryGetUtcOffsetMinutes(request.TimeZoneId, DateTime.UtcNow, out _))
@@ -110,6 +142,12 @@ public sealed class CompanyCreationService(
             var slugRefusal = await CheckShopSlugAsync(slug, exceptCompanyId: null);
             if (slugRefusal is not null) return Refuse(slugRefusal);
         }
+        if (isStays)
+        {
+            await AdvisoryLock.AcquireAsync(db, "company-slug");
+            var staysRefusal = await StaysSlugRefusalAsync(slug, exceptCompanyId: null);
+            if (staysRefusal is not null) return Refuse(new ConflictObjectResult(staysRefusal));
+        }
 
         // ARCHITECTURE_CYCLE24.md §459.3 (Q-24-7, changes Q5 of cycle 23): the limits are counted WITHIN the line. A shop is checked against the tariff
         // of the "Заказы" line and the shops of the account; a salon against the "Записи" tariff and the salons — a shop no longer takes a salon's place.
@@ -124,7 +162,7 @@ public sealed class CompanyCreationService(
                     return Refuse(new ObjectResult(BillingTexts.ShopLimitReached(ordersPlan.PlanName, maxShops)) { StatusCode = 402 });
             }
         }
-        else
+        else if (isSalon)
         {
             if (plan.AccountMaxCompanies.HasValue)
             {
@@ -141,17 +179,17 @@ public sealed class CompanyCreationService(
         var company = new Company
         {
             Id = Guid.NewGuid(),
-            Name = isShop ? request.Name!.Trim() : request.Name ?? string.Empty,
+            Name = isSalon ? request.Name ?? string.Empty : request.Name!.Trim(),
             Slug = slug,
             Description = request.Description,
             Address = request.Address,
-            Phone = request.Phone,
+            Phone = isStays ? request.Phone!.Trim() : request.Phone,
             Email = request.Email,
             // A shop takes no bookings and is not in the salon directory (§388.4).
-            AllowSelfBooking = !isShop && request.AllowSelfBooking,
+            AllowSelfBooking = isSalon && request.AllowSelfBooking,
             // Cycle 25 (§505.2, Q-25-7): a shop is created visible in the goods catalog (it still needs hours, a product and a plan that allows it);
             // a salon keeps the owner's own choice.
-            ShowInPublicListing = isShop || request.ShowInPublicListing,
+            ShowInPublicListing = !isSalon || request.ShowInPublicListing,
             OwnerUserId = userId,
             BillingAccountId = accountId,
             CityId = city.Id,
@@ -173,6 +211,8 @@ public sealed class CompanyCreationService(
         db.CompanyMembers.Add(member);
         if (isShop)
             db.ShopSettings.Add(new ShopSettings { CompanyId = company.Id, UpdatedByUserId = userId, UpdatedAtUtc = DateTime.UtcNow });
+        if (isStays)
+            db.StaysSettings.Add(new StaysSettings { CompanyId = company.Id, UpdatedByUserId = userId, UpdatedAtUtc = DateTime.UtcNow });
 
         await db.SaveChangesAsync();
         // US-46, ARCHITECTURE.md §8.3/§8.4: recompute Identity roles from the CompanyMember rows just
@@ -231,6 +271,31 @@ public sealed class CompanyCreationService(
         var taken = await db.Companies.AsNoTracking()
             .AnyAsync(c => c.Slug.ToLower() == normalizedSlug && (exceptCompanyId == null || c.Id != exceptCompanyId));
         return taken ? new CatalogConflictDto(CatalogConflictCode.SlugTaken, ShopTexts.SlugTaken) : null;
+    }
+
+    /// <summary>
+    /// API_CONTRACT_CYCLE37.md §37.27.1 — the "Дома" address checks: format and length, reserved words (dom-routes.json), then whether ANY company holds it
+    /// (the slug space is shared by the whole platform, case-insensitively). Null = free.
+    /// </summary>
+    public async Task<StaysConflictDto?> StaysSlugRefusalAsync(string normalizedSlug, Guid? exceptCompanyId)
+    {
+        switch (StaysSlugPolicy.Validate(normalizedSlug))
+        {
+            case SlugCheck.Invalid: return new StaysConflictDto("SlugInvalid", ShopTexts.SlugInvalid);
+            case SlugCheck.Reserved: return new StaysConflictDto("SlugReserved", ShopTexts.SlugReserved);
+        }
+        var taken = await db.Companies.AsNoTracking()
+            .AnyAsync(c => c.Slug.ToLower() == normalizedSlug && (exceptCompanyId == null || c.Id != exceptCompanyId));
+        return taken ? new StaysConflictDto("SlugTaken", ShopTexts.SlugTaken) : null;
+    }
+
+    /// <summary>A free address made from the name (transliteration, then -2, -3 … suffixes).</summary>
+    public async Task<string> SuggestStaysSlugAsync(string name)
+    {
+        var baseSlug = SlugTransliterator.ToBase(name, 50, 3, StaysSlugPolicy.ReservedSlugs);
+        var candidates = SlugTransliterator.Candidates(baseSlug, () => Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(2)).ToLowerInvariant()).ToList();
+        var taken = (await db.Companies.AsNoTracking().Where(c => candidates.Contains(c.Slug.ToLower())).Select(c => c.Slug.ToLower()).ToListAsync()).ToHashSet();
+        return candidates.FirstOrDefault(c => !taken.Contains(c)) ?? candidates[^1];
     }
 
     private static CompanyCreationOutcome Refuse(ActionResult error) => new(error);
