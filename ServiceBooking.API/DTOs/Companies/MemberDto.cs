@@ -12,7 +12,9 @@ public record MemberDto(
     string? Bio,
     List<Guid> ServiceIds,
     decimal CommissionPercent,
-    bool ProvidesServices
+    bool ProvidesServices,
+    // ARCHITECTURE_CYCLE37.md §37.21.3: Manager/Housekeeper in a "Дома" company; null for salons, shops and owners.
+    ServiceBooking.Core.Enums.StaffPosition? Position = null
 );
 
 // US-62 (ARCHITECTURE_CYCLE6.md §40.3): confirm is required only when turning the flag off AND the
@@ -25,7 +27,10 @@ public record AddMemberDto(
     string LastName,
     string Role,
     string? Bio,
-    string? Email
+    string? Email,
+    ServiceBooking.Core.Enums.StaffPosition? Position = null
 );
 
 public record UpdateMemberCommissionDto(decimal CommissionPercent);
+
+public record UpdateMemberPositionDto(ServiceBooking.Core.Enums.StaffPosition? Position);

@@ -87,7 +87,8 @@ export function CompanyPage() {
 
   // Cycle 23 (ARCHITECTURE_CYCLE23.md §389.3-1): a goods shop has no booking page here — this address is only
   // ever reached through an old link, so send the visitor to the shop's own page on goods.
-  const isShop = company?.kind === 'Orders'
+  // Cycle 37 (§37.3.3 п. 1): any non-salon kind (a «Дома» company too) lives on its own site.
+  const isShop = company?.kind === 'Orders' || company?.kind === 'Stays'
   // API_CONTRACT_CYCLE28.md §591 — a showcase company's page is kept out of search indexes (nginx sends the same via X-Robots-Tag).
   useNoindexMeta(!!company?.isShowcase)
   useEffect(() => {

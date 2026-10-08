@@ -24,7 +24,9 @@ public record AdminPlanInput(
     List<AdminPlanOptionRuleDtoV2>? Options = null,
     // Cycle 24 (API_CONTRACT_CYCLE24.md §485.3). Line: set at creation (default "Записи"), a different value on PUT is a 409.
     // For the "Заказы" line MaxEmployees / MaxCompanies read as "Макс. участников" / "Макс. магазинов"; null limits = unlimited.
-    Core.Enums.CompanyKind? Line = null, int? MaxProductsPerShop = null, int? MaxOrdersPerMonth = null, bool? AllowOrders = null);
+    Core.Enums.CompanyKind? Line = null, int? MaxProductsPerShop = null, int? MaxOrdersPerMonth = null, bool? AllowOrders = null,
+    // Cycle 37 (API_CONTRACT_CYCLE37.md §37.21.4): published houses per account, «Дома» line only.
+    int? MaxHouses = null);
 
 // contracts/cycle7/openapi.yaml's AdminPlanInput has no isSystemFree property (additionalProperties:
 // false) — changing which plan is the system free one is a distinct, rarer administrative action from

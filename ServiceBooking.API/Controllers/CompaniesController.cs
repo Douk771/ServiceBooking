@@ -181,7 +181,8 @@ public class CompaniesController(
         int CountOf(CompanyKind k) => counts.FirstOrDefault(x => x.Kind == k)?.Count ?? 0;
         return Ok(new CompanyKindsSummaryDto(
             new CompanyKindSummaryItemDto(CountOf(CompanyKind.Services), siteLinks.SiteBaseUrl(CompanyKind.Services)),
-            new CompanyKindSummaryItemDto(CountOf(CompanyKind.Orders), siteLinks.SiteBaseUrl(CompanyKind.Orders))));
+            new CompanyKindSummaryItemDto(CountOf(CompanyKind.Orders), siteLinks.SiteBaseUrl(CompanyKind.Orders)),
+            new CompanyKindSummaryItemDto(CountOf(CompanyKind.Stays), siteLinks.SiteBaseUrl(CompanyKind.Stays))));
     }
 
     [HttpGet("{slug}")]
@@ -213,7 +214,7 @@ public class CompaniesController(
         CancellationToken ct = default)
     {
         // §389.2: anonymous public route — no rights to check first. A shop has no masters to pick.
-        if (await CompanyKindGuard.RejectShopAsync(db, id, ct) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, id, ct) is { } shopRefusal) return shopRefusal;
 
         // serviceId is bound as string (not Guid?) on purpose: ASP.NET Core's default model binder
         // treats an empty string for a nullable Guid query param as "absent" and silently maps it to
@@ -296,6 +297,14 @@ public class CompaniesController(
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
         if (!await CanManageCompany(id)) return Forbid();
+
+        // ARCHITECTURE_CYCLE37.md §37.3.2 / API_CONTRACT_CYCLE37.md §37.21.2: a «Дома» company stays in its city; its zone is the city's.
+        if (company.Kind == CompanyKind.Stays)
+        {
+            if (dto.CityId is not null && dto.CityId != company.CityId) return BadRequest("Город компании «Дома» — Шерегеш");
+            if (dto.TimeZoneId is { IsSpecified: true, Value: { } staysZone } && staysZone != company.TimeZoneId)
+                return BadRequest("Часовой пояс компании задаётся городом");
+        }
 
         if (dto.Name is not null) company.Name = dto.Name;
         if (dto.Description is not null) company.Description = dto.Description;
@@ -386,7 +395,7 @@ public class CompaniesController(
                 }
             }
         }
-        else if (city is not null)
+        else if (city is not null && company.Kind == CompanyKind.Services)
         {
             var (timeZoneId, timeZoneIsManual) = CompanyTimeZoneResolver.ForUpdate(
                 effectiveCityTimeZoneId: city.TimeZoneId,
@@ -462,8 +471,9 @@ public class CompaniesController(
         var isAllowed = userId is not null &&
             (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, id, userId));
         if (!isAllowed) return Forbid();
-        // §389.2: salon-only route (rights first, kind second).
-        if (CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
+        // §389.2: salon-only route (rights first, kind second). Cycle 37 (§37.21.1): a "Дома" company is told that photos belong to houses.
+        if (company.Kind == CompanyKind.Stays) return Conflict(ServiceBooking.API.Services.Stays.StaysTexts.GalleryRefusalText);
+        if (CompanyKindGuard.RejectNonSalon(company.Kind) is { } shopRefusal) return shopRefusal;
 
         var usedBytes = await db.ClientNotePhotos.Where(p => p.CompanyId == id).SumAsync(p => (long?)p.SizeBytes, ct) ?? 0;
         var photoCount = await db.ClientNotePhotos.CountAsync(p => p.CompanyId == id, ct);
@@ -482,7 +492,7 @@ public class CompaniesController(
     {
         if (!await CanManageCompany(id)) return Forbid();
         // §389.2: salon-only route (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, id, ct) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, id, ct) is { } shopRefusal) return shopRefusal;
 
         if (from is null || to is null) return BadRequest("Both 'from' and 'to' are required.");
         if (to < from) return BadRequest("Invalid date range: 'to' must not be earlier than 'from'.");

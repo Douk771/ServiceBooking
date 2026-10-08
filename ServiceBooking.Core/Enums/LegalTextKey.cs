@@ -57,6 +57,22 @@ public static class LegalTextKey
     public const string ShowcaseBookingClosed = "ShowcaseBookingClosed";
     public const string DemoBanner = "DemoBanner";
 
+    // ARCHITECTURE_CYCLE37.md §37.13.4 — "Дома". DELIBERATELY NOT in All (the deploy must not wait for legal-counsel):
+    // the frontend reads GET /api/legal/texts/<key> and shows its neutral fallback on 404.
+    public const string StayBookingNotice = "StayBookingNotice";
+    public const string StayBookingTerms = "StayBookingTerms";
+    public const string StayCancellationTerms = "StayCancellationTerms";
+    public const string StayPaymentProofNotice = "StayPaymentProofNotice";
+    public const string StayGuestCommentNotice = "StayGuestCommentNotice";
+    public const string StayMessengerConsent = "StayMessengerConsent";
+    public const string StayCheckInInfoOwnerNotice = "StayCheckInInfoOwnerNotice";
+    public const string StayPaymentRequisitesOwnerNotice = "StayPaymentRequisitesOwnerNotice";
+    public const string StayOwnerCancelNotice = "StayOwnerCancelNotice";
+    public const string StayPublicContactsNotice = "StayPublicContactsNotice";
+    public const string StayTouristTaxNotice = "StayTouristTaxNotice";
+    public const string StayMigrationOwnerNotice = "StayMigrationOwnerNotice";
+    public const string StayRegistryOwnerNotice = "StayRegistryOwnerNotice";
+
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         BookingNotice, TemplateAdWarning, UnsubscribePage, PhotoConsent, HealthDataConsent, GuardianConfirmation,

@@ -36,7 +36,7 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
         var isMember = await CompanyMembership.IsStaffAsync(db, companyId, userId);
         if (!isMember) return Forbid();
         // §389.2: salon-only route (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, companyId, ct) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, companyId, ct) is { } shopRefusal) return shopRefusal;
 
         // Needed once, up front: whether the CALLER (not the notes' authors) is this company's owner —
         // decides `canDelete` on every note and photo below (decision Q16).
@@ -242,7 +242,7 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
         var isStaff = await CompanyMembership.IsStaffAsync(db, request.CompanyId, userId);
         if (!isStaff) return Forbid();
         // §389.2: salon-only route (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, request.CompanyId) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, request.CompanyId) is { } shopRefusal) return shopRefusal;
 
         if (string.IsNullOrWhiteSpace(request.Note))
             return BadRequest("Note text is required.");

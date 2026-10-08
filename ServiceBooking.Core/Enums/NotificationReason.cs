@@ -129,4 +129,13 @@ public enum NotificationReason
     /// <summary>ARCHITECTURE_CYCLE28.md §576 — the company is a showcase (fictional) one, or the instance runs in demo mode:
     /// no outbound message is ever sent. Only the dispatch tasks' safety net produces it (rows are normally not queued at all).</summary>
     ShowcaseSuppressed,
+
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.12.1 — a stay message that was not sent within its TTL after being queued.</summary>
+    StayMessageOutdated,
+
+    /// <summary>§37.12.3 — the company switched off web-push to guests after the row was queued.</summary>
+    StayGuestPushDisabled,
+
+    /// <summary>§37.12.3 — messenger messages to guests were switched off (company setting or revoked consent) after the row was queued.</summary>
+    StayMessengerDisabled,
 }

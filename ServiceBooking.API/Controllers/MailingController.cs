@@ -21,7 +21,7 @@ public class MailingController(AppDbContext db, SubscriptionResolver subscriptio
     {
         if (!await CanManageCompany(id)) return Forbid();
         // §389.2: salon-only route (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, id) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, id) is { } shopRefusal) return shopRefusal;
 
         // ARCHITECTURE_CYCLE28.md §576, API_CONTRACT_CYCLE28.md §596: after rights and company kind, before the tariff check and before any MailLog row.
         if (showcaseGuard.DemoMode) return Conflict("В демо-версии рассылка не отправляется.");
@@ -62,7 +62,7 @@ public class MailingController(AppDbContext db, SubscriptionResolver subscriptio
     {
         if (!await CanManageCompany(id)) return Forbid();
         // §389.2: salon-only route (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, id, ct) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, id, ct) is { } shopRefusal) return shopRefusal;
         var logs = await db.MailLogs
             .Where(m => m.CompanyId == id)
             .OrderByDescending(m => m.SentAt)

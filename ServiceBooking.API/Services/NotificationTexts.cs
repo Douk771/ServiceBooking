@@ -32,6 +32,18 @@ public static class NotificationTexts
         NotificationType.OrderEditedByShop => "Заказ изменён магазином",
         NotificationType.OrderPickupChanged => "Изменено время получения заказа",
         NotificationType.OwnerOrderLimitWarning => "Предупреждение о лимите заказов",
+        // ARCHITECTURE_CYCLE37.md §37.12.1 — «Дома».
+        NotificationType.StaffStayCreated => "Уведомление сотруднику: новая бронь",
+        NotificationType.StaffStayPaymentProofUploaded => "Уведомление сотруднику: приложено подтверждение оплаты",
+        NotificationType.StaffStayCancelledByGuest => "Уведомление сотруднику: гость отменил бронь",
+        NotificationType.StayGuestCreated => "Бронь создана",
+        NotificationType.StayGuestHoldExpiring => "Скоро истечёт время на оплату",
+        NotificationType.StayGuestHoldExpired => "Время на оплату истекло",
+        NotificationType.StayGuestConfirmed => "Оплата подтверждена",
+        NotificationType.StayGuestPaymentRejected => "Оплата не подтверждена",
+        NotificationType.StayGuestCancelledByOwner => "Бронь отменена компанией",
+        NotificationType.StayGuestArrivalReminder => "Напоминание о заезде",
+        NotificationType.StayGuestCheckInInfo => "Информация к заселению",
         _ => "Уведомление",
     };
 
@@ -96,6 +108,10 @@ public static class NotificationTexts
             NotificationReason.OrderMessageOutdated => "не отправлено: сообщение о заказе устарело",
             NotificationReason.CustomerPushDisabledByShop => "магазин отключил уведомления в браузере",
             NotificationReason.MessengerDisabledByShop => "магазин отключил сообщения в мессенджер",
+            // ARCHITECTURE_CYCLE37.md §37.12 — «Дома».
+            NotificationReason.StayMessageOutdated => "не отправлено: сообщение о брони устарело",
+            NotificationReason.StayGuestPushDisabled => "компания отключила уведомления в браузере",
+            NotificationReason.StayMessengerDisabled => "сообщения в мессенджер о брони отключены",
             // ARCHITECTURE_CYCLE28.md §576 — showcase companies and the demo stand send nothing.
             NotificationReason.ShowcaseSuppressed => "не отправлено: демонстрационная компания",
             null => status == NotificationStatus.Failed ? "не удалось отправить" : "пропущено",

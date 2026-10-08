@@ -46,7 +46,7 @@ function toPagerProps(page: number, pageSize: number, totalCount: number) {
 
 interface AssignTarget {
   /** Cycle 24: which subscription of the account is being assigned. Absent = the salon one, exactly as before. */
-  line?: 'Services' | 'Orders'
+  line?: 'Services' | 'Orders' | 'Stays'
   account: AdminBillingAccount
   /** Pending request being approved, if opened from the requests queue — its desired composition
    *  pre-fills the form and its id closes the request as Approved in the same call. */
@@ -56,8 +56,10 @@ interface AssignTarget {
 function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; onClose: () => void }) {
   const { account, request } = target
   const line = target.line ?? 'Services'
-  const isOrders = line === 'Orders'
-  const ordersSub = account.ordersSubscription ?? null
+  const isOrders = line !== 'Services'
+  const isStays = line === 'Stays'
+  // The subscription of the line being assigned (cycle 37: «Дома» next to «Заказы»); the salon one lives on the account itself.
+  const ordersSub = (isStays ? account.staysSubscription : account.ordersSubscription) ?? null
   const qc = useQueryClient()
 
   const { data: plans } = useQuery({ queryKey: ['admin-plans'], queryFn: plansApi.list })
@@ -176,7 +178,7 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
             onChange={(e) => setPlanId(e.target.value)}
             className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold"
           >
-            <option value="">{isOrders ? 'Бесплатный тариф «Заказов» (снять тариф)' : 'Free (снять тариф)'}</option>
+            <option value="">{isStays ? 'Без тарифа «Домов» (снять тариф)' : isOrders ? 'Бесплатный тариф «Заказов» (снять тариф)' : 'Free (снять тариф)'}</option>
             {activePlans.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name} {p.pricePerMonth > 0 ? `— ${formatMonthlyPrice(p.pricePerMonth)}` : ''}
@@ -508,6 +510,7 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
   })
   const [assigning, setAssigning] = useState(false)
   const [assigningOrders, setAssigningOrders] = useState(false)
+  const [assigningStays, setAssigningStays] = useState(false)
 
   return (
     <Modal title={isLoading || !account ? 'Загрузка…' : `Аккаунт — ${account.ownerName}`} onClose={onClose}>
@@ -521,6 +524,7 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
         <div className="flex flex-col gap-5">
           {assigning && <AssignSubscriptionModal target={{ account }} onClose={() => setAssigning(false)} />}
           {assigningOrders && <AssignSubscriptionModal target={{ account, line: 'Orders' }} onClose={() => setAssigningOrders(false)} />}
+          {assigningStays && <AssignSubscriptionModal target={{ account, line: 'Stays' }} onClose={() => setAssigningStays(false)} />}
 
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2 flex-wrap">
@@ -589,6 +593,27 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
                 <div className="flex justify-between px-3 py-2">
                   <span className="text-ink-soft">Заказов в этом месяце</span>
                   <span className="text-ink">{account.ordersSubscription.ordersThisMonth} / {account.ordersSubscription.ordersLimit ?? '∞'}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {account.staysSubscription && (
+            <div data-testid="stays-subscription">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <p className="text-sm font-medium text-ink-soft">Подписка «Дома» — {account.staysSubscription.planName}</p>
+                <Button size="sm" variant="secondary" onClick={() => setAssigningStays(true)}>
+                  Назначить «Дома»
+                </Button>
+              </div>
+              <div className="rounded-xl border border-line divide-y divide-line text-sm">
+                <div className="flex justify-between px-3 py-2">
+                  <span className="text-ink-soft">{account.staysSubscription.paidUntil ? `Оплачено до ${fmtDate(account.staysSubscription.paidUntil)}` : 'Без срока'}</span>
+                  <span className="text-ink">{account.staysSubscription.isActive ? 'активна' : 'не активна'}</span>
+                </div>
+                <div className="flex justify-between px-3 py-2">
+                  <span className="text-ink-soft">Опубликовано домов</span>
+                  <span className="text-ink">{account.staysSubscription.housesPublished} / {account.staysSubscription.maxHouses ?? '∞'}</span>
                 </div>
               </div>
             </div>
@@ -903,7 +928,7 @@ function RequestsQueueSection() {
                   <span className="text-xs text-muted">{fmtDateTime(r.createdAt)}</span>
                   {/* Cycle 24: the «Линейка» of the request (absent from an older server = Записи). */}
                   <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-cream-deep text-ink-soft" data-testid="request-line">
-                    {r.line === 'Orders' ? 'Заказы' : 'Записи'}
+                    {r.line === 'Orders' ? 'Заказы' : r.line === 'Stays' ? 'Дома' : 'Записи'}
                   </span>
                 </div>
                 <p className="text-xs text-muted mt-0.5">

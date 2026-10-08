@@ -20,6 +20,10 @@
 > у компаний появились `kind`/`publicUrl`, у списков «мои компании» — `?kind=` (по умолчанию `Services`), маршруты записи
 > отвечают магазину 409. Всё помечено как ещё не выпущенное до релиза цикла 23.
 >
+>
+> **Цикл 37 («Дома», `dom.ezbook.ru`; НЕ ВЫПУЩЕНО — «unreleased», доступно с версии цикла 37):** новый раздел §4.21 — компании «Дома» (посуточная аренда домов),
+> дома, цены, брони, подтверждения оплаты, шахматка, график. Источник формы — `contracts/cycle37/openapi.yaml`, фактическая реализация описана в §4.21.
+>
 > **Цикл 24 (время, приём, уведомления, тарифы магазинов; НЕ ВЫПУЩЕНО):** дополнение к §4.20 — часы работы и пауза, слоты и предзаказы,
 > меню на дату, push, мессенджер, линейка тарифов «Заказы» (`line`), `site` у push-подписок.
 
@@ -4589,6 +4593,67 @@ curl -X POST http://localhost:5000/api/admin/plans \
 ```
 
 ---
+
+## 4.21. «Дома» — посуточная аренда домов (цикл 37, dom.ezbook.ru; НЕ ВЫПУЩЕНО)
+
+Документ отражает **фактическую реализацию**; контракт до кода — `API_CONTRACT_CYCLE37.md` и `contracts/cycle37/openapi.yaml` (61 новый маршрут; сверка — тест
+`Cycle22RouteTable`). Деньги — целые рубли (`...Rub`), даты ночей — `YYYY-MM-DD`, время — `HH:mm`, enum — строками. Осознанные 400/402/429 — голая строка; **все 409 `/api/stays/*` —
+JSON** с `code` и готовым `message`; 401/403/404 — пустое тело. Анонимные маршруты не раскрывают реквизиты оплаты, телефоны и имена гостей.
+
+### Правила, которые закреплены кодом
+
+* Ночь `D` начинается в дату `D`; занятость — полуинтервал `[заезд, выезд)`. Двойную бронь исключает **ограничение PostgreSQL** `EX_HouseOccupancies_NoOverlap` (+ замок дома,
+  + `expectedVersion` у действий персонала).
+* **Публикация дома (ЮР-2, решение заказчика 08.10.2026):** дом **без номера реестра публикуется любого вида** (`GuestHouse`, `OtherAccommodation`, `Residential`) под **заверением
+  владельца** (`attestation.accepted = true` + `noticeVersion` из `HouseManageDto.registryNotice.version`). Заверение сохраняется навсегда (`HouseRegistryAttestations`: вид, номер,
+  ссылка, версия текста, автор, время, IP). Код `RegistryNumberRequired` остаётся в перечислении контракта, но сервером **не выдаётся**. Порядок отказов публикации:
+  `HouseArchived` → `NoPrice` → `ObjectKindRequired` → `AttestationRequired` (409 JSON), затем тариф (402 строкой). Изменение вида/номера/ссылки у **опубликованного** дома без нового
+  заверения — 409 `AttestationRequired`.
+* **Шаблоны отмены (ЮР-1):** `Standard` (по умолчанию), `Flexible`, `NoDeductions`; удержание — не больше стоимости первой ночи. Гостю показывается «К возврату не меньше X ₽».
+  Значения шаблонов — конфигурация `Stays:CancellationPolicies`; запуск с удержанием больше одной ночи или границей раньше дня заезда **запрещён** (fail-fast).
+* **Информация к заселению (ЮР-4):** в мессенджер по умолчанию уходит ссылка; push гостю — всегда без ПДн и кодов. **Комментарий гостя горничной (ЮР-5)** скрыт по умолчанию.
+* Хранение (ЮР-6): подтверждения оплаты — 90 дней после более поздней из дат (выезд, конечный статус); «Снята: не оплачена» — обезличивание через 30 дней; прочее — 3 года.
+
+### Публичные маршруты (политики `stays-public`, `stay-create`, `stay-public`, `stay-proof`, `stay-push`)
+
+| Метод и путь | Назначение |
+|---|---|
+| `GET /api/stays/public/amenities` | справочник удобств |
+| `GET /api/stays/public/catalog?checkIn&checkOut&guests&maxPricePerNight&page&pageSize` | каталог (доступность по датам, цена «от»/за ночь); 400 строкой |
+| `GET /api/stays/public/companies/{slug}` | страница компании, блок «Об исполнителе» (`ProviderPublicDto`) |
+| `GET /api/stays/public/companies/{slug}/houses/{houseSlug}` | страница дома (`registry`, `rules`, `acceptingBookings`); архивный/заблокированный — 200 `available:false` |
+| `GET /api/stays/public/houses/{houseId}/calendar?from&to` | состояния ночей `Free/MayFreeUp/Occupied/Unavailable` |
+| `POST /api/stays/public/houses/{houseId}/quote` | расчёт, всегда 200, ничего не резервирует |
+| `POST /api/stays/public/houses/{houseId}/bookings` | создание брони: 201 / 200 (повтор по `idempotencyKey`) / 409 `StayRefusalDto` (`DatesUnavailable`, `PriceChanged` с `quote`, `NotAcceptingBookings` с `reasonCode` …) / 429 строкой |
+| `GET /api/stays/bookings/public/{token}` | страница брони (опрос 15 с): статусы, реквизиты (только здесь), возврат «не меньше», `availableActions` |
+| `POST …/{token}/payment-proofs` | multipart `file` (PDF/JPEG/PNG/WebP по сигнатуре; HEIC не принимается; до 10 МБ, до 3 файлов); 409 `ProofNotAllowed/ProofLimitReached/HoldExpired` |
+| `GET …/{token}/payment-proofs/{proofId}` | файл (`Cache-Control: private, no-store`, `nosniff`, `CSP: sandbox`; PDF — `attachment`) |
+| `POST …/{token}/cancel` | отмена гостем; 409 `CancelNotAllowed` |
+| `POST …/{token}/push-subscription`, `…/remove` | web-push гостя, 204 |
+| `GET /api/stays/bookings/my` | «Мои брони» (аккаунт) |
+
+### Кабинет (`/api/stays/companies/{companyId}/…`, права `StaysPermission`; не участник — 404, нет права — 403)
+
+Компания и тариф: `POST /api/stays/companies`, `GET /api/stays/companies/my`, `GET /api/stays/slug-check`, `GET|POST /api/stays/trial`, `GET {id}`, `PUT settings|payment-details|provider|slug`,
+`GET qr`, `GET|PUT notification-settings`. Дома: `houses` (список, создание, `order`, карточка, удаление, `setup`, `content`, `pricing`, `price-periods` ×4, `registry`, `publish`, `unpublish`,
+`archive`, `photos` ×3, `qr`). Шахматка: `board?from&days&sinceRevision`, `blocks` (POST/PUT/DELETE). Брони: `bookings` (список, ручная бронь, `quote`, карточка, `confirm-payment`,
+`reject-payment`, `cancel`, файл подтверждения). График: `schedule` (одна форма для всех ролей, без телефонов, сумм и файлов). Персонал: `PUT /api/Companies/{id}/members/{memberId}/position`,
+`position` в `AddMemberDto`/`MemberDto`.
+
+Фактические отличия от `API_CONTRACT_CYCLE37.md` (контракт был планом до реализации):
+
+* `DELETE …/houses/{houseId}` для дома, который хоть раз публиковался, отвечает 409 `HouseHasBookings` с текстом «Дом уже публиковался — его можно только архивировать» (заверения владельца неудаляемы).
+* `HouseManageDto.registryNotice` всегда содержит запасной текст сервера (`fallback:<sha256>`); текста в манифесте правовых документов пока нет.
+* Отдельной миграции «общих изменений» нет: обе части контракта миграций (§37.2.7) сделаны одной миграцией `Cycle37Stays`.
+* Каталог кешируется только «база» на 30 с; занятость не кешируется; бронь всегда проверяется по БД под замком дома.
+* Тариф-ограничение публикации: 402 «Выберите тариф, чтобы публиковать дома» (нет действующего тарифа) и «Тариф «X» позволяет опубликовать N …» (лимит).
+
+### Изменения существующих маршрутов
+
+`GET /api/companies/kinds-summary` (+`stays`), `GET /api/companies/{slug}` для «Домов» (`kind: Stays`, `publicUrl` dom), салонные маршруты закрытого перечня для компании «Дома» → 409 строкой
+«Это компания «Дома»: записи, услуги и расписание для неё недоступны.», галерея компании «Дома» → 409 «У компании «Дома» фото добавляются к домам.», `GET /api/billing/subscription?line=Stays`
+(блок `stays`), `POST /api/billing/subscription/request` (`line: Stays`), `GET|POST|PUT /api/admin/plans` (`maxHouses`), `PUT /api/admin/billing-accounts/{id}/subscription` (`line: Stays`),
+`GET /api/push/config` (`siteUrls.stays`), `GET /api/profile/export` (`stayBookings`), `GET /api/profile/delete-account/preview` (`stayBookings`), отзыв согласия (`effects.stayBookingsMessengerDisabled`).
 
 ## 6. Справочник кодов ответа
 

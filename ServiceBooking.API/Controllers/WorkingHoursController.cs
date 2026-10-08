@@ -43,7 +43,7 @@ public class WorkingHoursController(AppDbContext db) : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await CanManage(dto.MasterId, dto.CompanyId, userId)) return Forbid();
         // §389.2: a shop has no schedule (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, dto.CompanyId) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, dto.CompanyId) is { } shopRefusal) return shopRefusal;
 
         // Serialize concurrent Upsert calls for the same master+company+date so the find-or-create
         // below is atomic — otherwise two simultaneous requests could both miss the existing row and
@@ -109,7 +109,7 @@ public class WorkingHoursController(AppDbContext db) : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await CanManage(entry.MasterId, entry.CompanyId, userId)) return Forbid();
         // §389.2: a shop has no schedule (rights first, kind second).
-        if (await CompanyKindGuard.RejectShopAsync(db, entry.CompanyId) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, entry.CompanyId) is { } shopRefusal) return shopRefusal;
 
         db.WorkingHours.Remove(entry);
         await db.SaveChangesAsync();

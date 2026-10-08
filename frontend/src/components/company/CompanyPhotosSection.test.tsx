@@ -386,3 +386,67 @@ describe('CompanyPhotosSection — цикл 32: уровень и класс з�
   })
 })
 })
+
+// Cycle 37 (ARCHITECTURE_CYCLE37.md §37.14.2) — the same section serves the photos of a house through an adapter.
+describe('CompanyPhotosSection — photos adapter (a house, cycle 37)', () => {
+  const adapterList = vi.fn()
+  const adapterUpload = vi.fn()
+  const adapterRemove = vi.fn()
+  const adapterReorder = vi.fn()
+  const adapter = () => ({
+    queryKey: ['house-photos', 'h1'] as const,
+    list: adapterList,
+    upload: adapterUpload,
+    remove: adapterRemove,
+    reorder: adapterReorder,
+    title: 'Фотографии дома',
+    emptyText: 'У дома пока нет фотографий',
+    maxPhotos: 15,
+    removalReason: false,
+  })
+
+  beforeEach(() => {
+    adapterList.mockReset()
+    adapterUpload.mockReset()
+    adapterRemove.mockReset().mockResolvedValue(undefined)
+    adapterReorder.mockReset()
+  })
+
+  it('reads the list through the adapter, never touches the company gallery, and names the house limit', async () => {
+    adapterList.mockResolvedValue([])
+    renderSection({ adapter: adapter() })
+    expect(await screen.findByText('У дома пока нет фотографий')).toBeInTheDocument()
+    expect(screen.getByText('Фотографии дома')).toBeInTheDocument()
+    expect(screen.getByText('0 / 15')).toBeInTheDocument()
+    expect(screen.getByText(/не больше 15 фото/)).toBeInTheDocument()
+    expect(list).not.toHaveBeenCalled()
+  })
+
+  it('uploads through the adapter', async () => {
+    adapterList.mockResolvedValue([])
+    adapterUpload.mockResolvedValue(photo({ id: 'n1' }))
+    const { container } = renderSection({ adapter: adapter() })
+    await screen.findByText('У дома пока нет фотографий')
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [new File([new Uint8Array(10)], 'a.png', { type: 'image/png' })] } })
+    await waitFor(() => expect(adapterUpload).toHaveBeenCalledTimes(1))
+    expect(upload).not.toHaveBeenCalled()
+  })
+
+  it('a SuperAdmin removes a house photo without the «person in the photo» reason dialog', async () => {
+    useAuthStore.setState({ user: { id: 'sa', phone: '79990000001', firstName: 'С', lastName: 'А', roles: ['SuperAdmin'] }, token: 'tok' })
+    adapterList.mockResolvedValue([photo({ id: 'p1' })])
+    renderSection({ adapter: adapter() })
+    await userEvent.click(await screen.findByRole('button', { name: 'Удалить фото' }))
+    await waitFor(() => expect(adapterRemove).toHaveBeenCalledWith('p1', undefined))
+    expect(screen.queryByText('Причина удаления:')).not.toBeInTheDocument()
+  })
+
+  it('uses the adapter error text', async () => {
+    adapterList.mockResolvedValue([photo({ id: 'p1' }), photo({ id: 'p2', position: 1, isCover: false })])
+    adapterReorder.mockRejectedValue(new Error('x'))
+    renderSection({ adapter: { ...adapter(), errorMessage: () => 'У дома может быть не больше 15 фото' } })
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Переместить правее' }))[0])
+    expect(await screen.findByText('У дома может быть не больше 15 фото')).toBeInTheDocument()
+  })
+})

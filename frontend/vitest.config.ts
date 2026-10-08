@@ -10,6 +10,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@goods': fileURLToPath(new URL('./goods/src', import.meta.url)),
+      '@dom': fileURLToPath(new URL('./dom/src', import.meta.url)),
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
@@ -17,7 +18,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: false, // explicit imports of describe/it/expect — same convention as named exports in the app code
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.{ts,tsx}', 'goods/src/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', 'goods/src/**/*.test.{ts,tsx}', 'dom/src/**/*.test.{ts,tsx}'],
     css: false,
     // Cycle 36 (ARCHITECTURE_CYCLE36.md §36.8, L11): threads measured ≥ 10 % faster than forks, 3 green runs.
     pool: 'threads',

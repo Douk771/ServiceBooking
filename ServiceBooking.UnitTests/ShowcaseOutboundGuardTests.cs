@@ -32,7 +32,9 @@ public class ShowcaseOutboundGuardTests
         // The enum is stored as an integer; append-only (§572.2). Every earlier member keeps its number.
         var values = Enum.GetValues<NotificationReason>().Select(v => (int)v).ToList();
 
-        ((int)NotificationReason.ShowcaseSuppressed).Should().Be(values.Max());
+        // Cycle 37 appended three "Дома" reasons AFTER it (append-only): it keeps its number and the members before it stay put.
+        ((int)NotificationReason.ShowcaseSuppressed).Should().Be(30);
+        ((int)NotificationReason.StayMessageOutdated).Should().Be(values.Max() - 2);
         ((int)NotificationReason.StaffMaxShopInactive).Should().Be((int)NotificationReason.ShowcaseSuppressed - 1);
     }
 

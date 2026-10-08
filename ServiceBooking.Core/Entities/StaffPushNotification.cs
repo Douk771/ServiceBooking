@@ -31,6 +31,10 @@ public class StaffPushNotification
     public Guid? OrderId { get; set; }
     public Order? Order { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.2.1: a message about a house booking.</summary>
+    public Guid? StayBookingId { get; set; }
+    public StayBooking? StayBooking { get; set; }
+
     /// <summary>The specific device this row targets. Null only if the subscription was deleted between
     /// queueing and send (defensive — normally set).</summary>
     public Guid? SubscriptionId { get; set; }

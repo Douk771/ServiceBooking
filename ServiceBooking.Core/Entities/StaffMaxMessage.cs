@@ -17,6 +17,10 @@ public class StaffMaxMessage
     public Guid? OrderId { get; set; }
     public Order? Order { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.2.1: a message about a house booking.</summary>
+    public Guid? StayBookingId { get; set; }
+    public StayBooking? StayBooking { get; set; }
+
     public string ChatKey { get; set; } = string.Empty;
     public NotificationType Type { get; set; }
     public string Text { get; set; } = string.Empty;

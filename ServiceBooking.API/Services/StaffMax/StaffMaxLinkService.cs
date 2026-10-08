@@ -16,7 +16,7 @@ namespace ServiceBooking.API.Services.StaffMax;
 public sealed class StaffMaxLinkService(
     AppDbContext db, StaffMaxAvailability availability, IOptions<StaffMaxOptions> options, IOptions<PhoneVerificationOptions> phoneOptions)
 {
-    public const string NotEligibleText = "Подключить MAX могут владельцы и сотрудники магазинов";
+    public const string NotEligibleText = "Подключить MAX могут владельцы и сотрудники магазинов и компаний «Дома»";
 
     public const string NotLinkedText = "Не подключено";
     public const string PendingText = "Ждём подтверждения в MAX…";
@@ -71,7 +71,9 @@ public sealed class StaffMaxLinkService(
     public async Task<(string? Conflict, StaffMaxLinkSessionDto? Session)> CreateSessionAsync(string userId, CancellationToken ct)
     {
         if (!await db.CompanyMembers.Where(CompanyMembership.IsStaffRole)
-                .AnyAsync(cm => cm.UserId == userId && db.Companies.Any(c => c.Id == cm.CompanyId && c.Kind == CompanyKind.Orders && c.IsActive), ct))
+                .AnyAsync(cm => cm.UserId == userId && db.Companies.Any(c => c.Id == cm.CompanyId && c.IsActive &&
+                    // ARCHITECTURE_CYCLE37.md §37.3.2: a shop's staff, or the owner / a manager of a «Дома» company (a housekeeper gets no booking messages).
+                    (c.Kind == CompanyKind.Orders || (c.Kind == CompanyKind.Stays && cm.StaffPosition != StaffPosition.Housekeeper))), ct))
             return (NotEligibleText, null);
         if (!availability.Enabled) return (StaffMaxAvailability.NotEnabledText, null);
         if (!availability.CanLink) return (StaffMaxAvailability.LinkUnavailableText, null);

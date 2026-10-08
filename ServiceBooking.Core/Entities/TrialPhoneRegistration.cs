@@ -26,6 +26,9 @@ public class TrialPhoneRegistration
 {
     public Guid Id { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.2.1: once per number PER LINE.</summary>
+    public Enums.CompanyKind Line { get; set; } = Enums.CompanyKind.Services;
+
     public string PhoneKeyHash { get; set; } = string.Empty;   // string(64), lowercase hex, UNIQUE
 
     // Д16: the DATE OF GRANT of the trial — and only that date — is what the 3-year clock counts

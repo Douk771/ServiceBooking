@@ -44,6 +44,7 @@ type IconName =
   | 'bell'
   | 'eye-off'
   | 'printer'
+  | 'home'
 
 /**
  * Minimal line-icon set for the premium redesign.
@@ -244,6 +245,14 @@ const paths: Record<IconName, JSX.Element> = {
   ),
   // Cycle 20 — health-consent-form print page (US-20-01), hand-authored in the same style since the
   // mockups didn't cover it.
+  // Cycle 37 (dom.ezbook.ru) — house mark, same stroke style.
+  home: (
+    <>
+      <path d="M4 11l8-6.5 8 6.5" />
+      <path d="M6 9.5V19a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V9.5" />
+      <path d="M10 20v-5.5h4V20" />
+    </>
+  ),
   printer: (
     <>
       <path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5" />

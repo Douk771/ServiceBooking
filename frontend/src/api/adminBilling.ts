@@ -17,7 +17,16 @@ type Cycle28 = Cycle28Schemas['schemas']
 
 /** Cycle 24 (API_CONTRACT_CYCLE24.md §485.3) — the account's «Заказы» subscription block and the request line. Additive. */
 export type AdminOrdersSubscription = Cycle24['AdminOrdersSubscriptionDto']
-export type BillingLine = Cycle24['CompanyKind']
+export type BillingLine = 'Services' | 'Orders' | 'Stays'
+/** Cycle 37 (API_CONTRACT_CYCLE37.md §37.21.4): the account's «Дома» subscription block. */
+export interface AdminStaysSubscription {
+  planId?: string | null
+  planName: string
+  paidUntil?: string | null
+  isActive: boolean
+  housesPublished: number
+  maxHouses?: number | null
+}
 
 export type TrialAccountFilter = Cycle18['TrialAccountFilter']
 type TrialRegrantInput = Cycle18['TrialRegrantInput']
@@ -30,11 +39,11 @@ export type AdminBillingAccountListItem = Schemas['AdminBillingAccountListItemDt
   // Cycle 28 (API_CONTRACT_CYCLE28.md §594.2) — the list item gets `isShowcase`; optional so an older server still type-checks.
   Partial<Pick<Cycle28['AdminBillingAccountItem'], 'isShowcase'>>
 export type AdminBillingAccount = Omit<Schemas['AdminBillingAccountDto'], 'pendingRequest'> &
-  Cycle18['AdminBillingAccountDtoTrialPatch'] & { pendingRequest?: SubscriptionRequestDto | null; ordersSubscription?: AdminOrdersSubscription | null }
+  Cycle18['AdminBillingAccountDtoTrialPatch'] & { pendingRequest?: SubscriptionRequestDto | null; ordersSubscription?: AdminOrdersSubscription | null; staysSubscription?: AdminStaysSubscription | null }
 export type AdminSubscribedOption = Schemas['AdminSubscribedOptionDto']
 /** Cycle 20 (US-20-02, API_CONTRACT_CYCLE20.md §433.1) adds `reasonCode`/`reasonDetails` in the
  *  request body — same `AssignOptionInput`/log shapes otherwise. */
-export type AssignSubscriptionInput = Cycle20['AssignSubscriptionInput'] & { line?: BillingLine }
+export type AssignSubscriptionInput = Omit<Cycle20['AssignSubscriptionInput'], 'line'> & { line?: BillingLine }
 export type AssignOptionInput = Schemas['AssignOptionInput']
 export type SubscriptionChangeReason = Cycle20['SubscriptionChangeReason']
 type SubscriptionChangeReasonDto = Cycle20['SubscriptionChangeReasonDto']

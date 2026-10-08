@@ -20,6 +20,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                 .HasAnnotation("ProductVersion", "8.0.11")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "btree_gist");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -1125,6 +1126,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<int>("Role")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("StaffPosition")
+                        .HasColumnType("integer");
+
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasColumnType("text");
@@ -1472,6 +1476,389 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("UserId", "OccurredAtUtc");
 
                     b.ToTable("GuestDataGateEvents");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.House", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<long>("AmenitiesMask")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("ArchivedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Capacity")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CheckInInfoText")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("ConstantPriceRub")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<bool>("DogsForbidden")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ExtraBedPriceRub")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("ExtraBedsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ExtraBedsMax")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("HasCot")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsPublished")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("ObjectKind")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PriceMode")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RegistryNumber")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("RegistryUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("TwoGisUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("YandexMapsUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId")
+                        .HasDatabaseName("IX_Houses_Published")
+                        .HasFilter("\"IsPublished\" AND \"ArchivedAtUtc\" IS NULL");
+
+                    b.HasIndex("CompanyId", "Position");
+
+                    b.HasIndex("CompanyId", "Slug")
+                        .IsUnique();
+
+                    b.ToTable("Houses", t =>
+                        {
+                            t.HasCheckConstraint("CK_Houses_NotPublishedAndArchived", "NOT (\"IsPublished\" AND \"ArchivedAtUtc\" IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.HouseBlock", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<DateTime?>("DeletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("HouseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HouseId");
+
+                    b.HasIndex("CompanyId", "HouseId");
+
+                    b.ToTable("HouseBlocks", t =>
+                        {
+                            t.HasCheckConstraint("CK_HouseBlocks_Dates", "\"EndDate\" > \"StartDate\"");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.HouseBlockEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ActorNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ActorUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<string>("AfterJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("BeforeJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("HouseBlockId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HouseBlockId", "OccurredAtUtc");
+
+                    b.ToTable("HouseBlockEvents");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.HouseOccupancy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime?>("HoldExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("HouseBlockId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("HouseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ReleasedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("StayBookingId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("HouseBlockId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_HouseOccupancies_Block")
+                        .HasFilter("\"HouseBlockId\" IS NOT NULL");
+
+                    b.HasIndex("StayBookingId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_HouseOccupancies_Booking")
+                        .HasFilter("\"StayBookingId\" IS NOT NULL");
+
+                    b.HasIndex("HouseId", "EndDate")
+                        .HasDatabaseName("IX_HouseOccupancies_Active")
+                        .HasFilter("\"ReleasedAtUtc\" IS NULL");
+
+                    b.ToTable("HouseOccupancies", t =>
+                        {
+                            t.HasCheckConstraint("CK_HouseOccupancies_Dates", "\"EndDate\" > \"StartDate\"");
+
+                            t.HasCheckConstraint("CK_HouseOccupancies_Source", "((\"Source\" = 0) = (\"StayBookingId\" IS NOT NULL)) AND ((\"Source\" = 1) = (\"HouseBlockId\" IS NOT NULL))");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.HousePhoto", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("HouseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ThumbnailUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HouseId", "Position");
+
+                    b.ToTable("HousePhotos");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.HousePricePeriod", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("HouseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("PriceRub")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HouseId", "StartDate")
+                        .IsUnique()
+                        .HasDatabaseName("UX_HousePricePeriods_SingleDay")
+                        .HasFilter("\"StartDate\" = \"EndDate\"");
+
+                    b.ToTable("HousePricePeriods", t =>
+                        {
+                            t.HasCheckConstraint("CK_HousePricePeriods_Dates", "\"StartDate\" <= \"EndDate\" AND \"EndDate\" - \"StartDate\" <= 730");
+
+                            t.HasCheckConstraint("CK_HousePricePeriods_Price", "\"PriceRub\" BETWEEN 1 AND 1000000");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.HouseRegistryAttestation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("AttestedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AttestedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("HouseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)");
+
+                    b.Property<string>("NoticeVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<int>("ObjectKind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RegistryNumber")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("RegistryUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HouseId", "AttestedAtUtc");
+
+                    b.ToTable("HouseRegistryAttestations");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.MailLog", b =>
@@ -2239,6 +2626,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
+                    b.Property<Guid?>("StayBookingId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Transport")
                         .HasColumnType("integer");
 
@@ -2261,6 +2651,8 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasDatabaseName("IX_OutboundNotifications_ProviderMessageId")
                         .HasFilter("\"ProviderMessageId\" IS NOT NULL");
 
+                    b.HasIndex("StayBookingId");
+
                     b.HasIndex("ChannelId", "Status")
                         .HasDatabaseName("IX_OutboundNotifications_Channel_Status");
 
@@ -2273,7 +2665,10 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("VisitStartUtc", "CreatedAt"), new[] { "DueAtUtc", "ChannelId", "CompanyId" });
 
-                    b.ToTable("OutboundNotifications");
+                    b.ToTable("OutboundNotifications", t =>
+                        {
+                            t.HasCheckConstraint("CK_OutboundNotifications_OneSubject", "(CASE WHEN \"BookingId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"OrderId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"StayBookingId\" IS NULL THEN 0 ELSE 1 END) <= 1");
+                        });
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.PhoneVerificationSession", b =>
@@ -3215,6 +3610,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
+                    b.Property<Guid?>("StayBookingId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Text")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -3231,6 +3629,8 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsUnique();
 
                     b.HasIndex("OrderId");
+
+                    b.HasIndex("StayBookingId");
 
                     b.HasIndex("ExpiresAtUtc", "CreatedAt")
                         .HasDatabaseName("IX_StaffMaxMessages_Dispatch")
@@ -3294,6 +3694,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
+                    b.Property<Guid?>("StayBookingId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid?>("SubscriptionId")
                         .HasColumnType("uuid");
 
@@ -3315,6 +3718,8 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("OrderId");
 
+                    b.HasIndex("StayBookingId");
+
                     b.HasIndex("SubscriptionId");
 
                     b.HasIndex("ExpiresAtUtc", "CreatedAt")
@@ -3323,7 +3728,638 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("ExpiresAtUtc", "CreatedAt"), new[] { "UserId", "CompanyId", "SubscriptionId" });
 
-                    b.ToTable("StaffPushNotifications");
+                    b.ToTable("StaffPushNotifications", t =>
+                        {
+                            t.HasCheckConstraint("CK_StaffPushNotifications_OneSubject", "(CASE WHEN \"BookingId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"OrderId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"StayBookingId\" IS NULL THEN 0 ELSE 1 END) <= 1");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayBooking", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Adults")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ArrivalReminderQueuedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<TimeOnly?>("ArrivalTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<string>("BookingNoticeVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("BookingTermsVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("CancellationPolicySnapshot")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CancellationTermsVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateOnly>("CheckInDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime?>("CheckInInfoReleasedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<TimeOnly>("CheckInTimeSnapshot")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<DateOnly>("CheckOutDate")
+                        .HasColumnType("date");
+
+                    b.Property<TimeOnly>("CheckOutTimeSnapshot")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<int>("Children")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ConsentAcceptedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConsentPrivacyVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ConsentTermsVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Dogs")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("DueAtCheckInRub")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ExtraBeds")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("GuestKind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("GuestName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("GuestPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("GuestUserId")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("HoldExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("HoldReminderQueuedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("HouseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsManual")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("MessengerConsentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MessengerConsentVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<bool>("NeedCot")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("NightPricesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("Nights")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("NotifyByMessenger")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("PaymentConfirmedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaymentConfirmedByNameSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("PaymentConfirmedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<string>("PaymentDetailsSnapshot")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("PaymentProofsPurgedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaymentPurposeSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("PersonalDataErased")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("PrepayPercentSnapshot")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PrepayRub")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProviderSnapshotJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("PublicToken")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("StatusReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTime?>("TerminalAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TimeZoneIdSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("TotalRub")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CheckInDate")
+                        .HasDatabaseName("IX_StayBookings_ConfirmedCheckIn")
+                        .HasFilter("\"Status\" = 2");
+
+                    b.HasIndex("HoldExpiresAtUtc")
+                        .HasDatabaseName("IX_StayBookings_HoldExpiry")
+                        .HasFilter("\"Status\" = 0");
+
+                    b.HasIndex("PublicToken")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "Status");
+
+                    b.HasIndex("GuestPhone", "CreatedAtUtc")
+                        .HasDatabaseName("IX_StayBookings_Phone")
+                        .HasFilter("\"GuestPhone\" IS NOT NULL");
+
+                    b.HasIndex("GuestUserId", "CreatedAtUtc");
+
+                    b.HasIndex("HouseId", "CheckInDate");
+
+                    b.ToTable("StayBookings", t =>
+                        {
+                            t.HasCheckConstraint("CK_StayBookings_Dates", "\"CheckOutDate\" > \"CheckInDate\" AND \"CheckOutDate\" - \"CheckInDate\" <= 366");
+
+                            t.HasCheckConstraint("CK_StayBookings_Nights", "\"Nights\" = \"CheckOutDate\" - \"CheckInDate\"");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayBookingCharge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AmountRub")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("NightsCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("PrepayEligible")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("StayBookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("UnitPriceRub")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StayBookingId", "Position");
+
+                    b.ToTable("StayBookingCharges");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayBookingEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ActorKind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ActorNameSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ActorUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DetailsJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<int?>("FromStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid>("StayBookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("ToStatus")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccurredAtUtc");
+
+                    b.HasIndex("StayBookingId", "OccurredAtUtc");
+
+                    b.ToTable("StayBookingEvents");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayGuestPushNotification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("LastAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int?>("Reason")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReasonDetail")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTime?>("SentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("StayBookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SubscriptionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("StayBookingId");
+
+                    b.HasIndex("SubscriptionId");
+
+                    b.HasIndex("ExpiresAtUtc", "CreatedAt")
+                        .HasDatabaseName("IX_StayGuestPushNotifications_Dispatch")
+                        .HasFilter("\"Status\" = 0");
+
+                    NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("ExpiresAtUtc", "CreatedAt"), new[] { "CompanyId", "SubscriptionId" });
+
+                    b.ToTable("StayGuestPushNotifications");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayGuestPushSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AuthCiphertext")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("ConsecutiveFailures")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("KeyId")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime?>("LastSuccessAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("P256dhCiphertext")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("StayBookingId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAtUtc");
+
+                    b.HasIndex("StayBookingId", "Endpoint")
+                        .IsUnique();
+
+                    b.ToTable("StayGuestPushSubscriptions");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayPaymentProof", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("PurgedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("SizeBytes")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("StayBookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("StorageKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("UploadedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StayBookingId");
+
+                    b.ToTable("StayPaymentProofs");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StaysSettings", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("AllowGapFill")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AllowSameDayCheckIn")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ArrivalReminderEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("BookingsRevision")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
+                    b.Property<int>("CancellationPolicy")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("CheckInInfoSendFullText")
+                        .HasColumnType("boolean");
+
+                    b.Property<TimeOnly>("CheckInInfoSendTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<string>("CheckInInfoText")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<TimeOnly>("CheckInTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<TimeOnly>("CheckOutTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<int>("CotFeeRub")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("DogFeeRub")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("GuestMessengerEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("GuestWebPushEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("HoldMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("HorizonDays")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("HousekeeperSeesGuestComment")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MaxNights")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinNights")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PaymentDetails")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("PaymentPurpose")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("PrepayPercent")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProviderClaimsAddress")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("ProviderInn")
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)");
+
+                    b.Property<string>("ProviderName")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("ProviderOgrn")
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)");
+
+                    b.Property<int?>("ProviderStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("StaffMaxEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.HasKey("CompanyId");
+
+                    b.ToTable("StaysSettings", t =>
+                        {
+                            t.HasCheckConstraint("CK_StaysSettings_CheckOutNotAfterCheckIn", "\"CheckOutTime\" <= \"CheckInTime\"");
+
+                            t.HasCheckConstraint("CK_StaysSettings_Nights", "\"MinNights\" BETWEEN 1 AND 30 AND \"MaxNights\" BETWEEN 1 AND 90 AND \"MinNights\" <= \"MaxNights\"");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StaysSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BillingAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("PaidUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("PlanConfigId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BillingAccountId")
+                        .IsUnique();
+
+                    b.HasIndex("PlanConfigId");
+
+                    b.ToTable("StaysSubscriptions");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.SubjectRequest", b =>
@@ -3594,6 +4630,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<int?>("MaxEmployees")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("MaxHouses")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("MaxOrdersPerMonth")
                         .HasColumnType("integer");
 
@@ -3655,6 +4694,11 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int>("Line")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<int>("MailingWindowDays")
                         .HasColumnType("integer");
 
@@ -3691,12 +4735,12 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("BillingAccountId")
+                    b.HasIndex("GrantedAtUtc");
+
+                    b.HasIndex("BillingAccountId", "Line")
                         .IsUnique()
                         .HasDatabaseName("UX_TrialGrants_OnePerAccount")
                         .HasFilter("\"Source\" <> 2");
-
-                    b.HasIndex("GrantedAtUtc");
 
                     b.ToTable("TrialGrants");
                 });
@@ -3712,6 +4756,11 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
+                    b.Property<int>("Line")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("PhoneKeyHash")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -3724,11 +4773,11 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("KeyId");
 
-                    b.HasIndex("PhoneKeyHash")
+                    b.HasIndex("RegisteredAtUtc");
+
+                    b.HasIndex("Line", "PhoneKeyHash")
                         .IsUnique()
                         .HasDatabaseName("UX_TrialPhoneRegistrations_Key");
-
-                    b.HasIndex("RegisteredAtUtc");
 
                     b.ToTable("TrialPhoneRegistrations");
                 });
@@ -4298,6 +5347,89 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Subscription");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.House", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.HouseBlock", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.House", null)
+                        .WithMany()
+                        .HasForeignKey("HouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.HouseBlockEvent", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.HouseBlock", null)
+                        .WithMany()
+                        .HasForeignKey("HouseBlockId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.HouseOccupancy", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.HouseBlock", null)
+                        .WithMany()
+                        .HasForeignKey("HouseBlockId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ServiceBooking.Core.Entities.House", null)
+                        .WithMany()
+                        .HasForeignKey("HouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.StayBooking", null)
+                        .WithMany()
+                        .HasForeignKey("StayBookingId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.HousePhoto", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.House", "House")
+                        .WithMany("Photos")
+                        .HasForeignKey("HouseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("House");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.HousePricePeriod", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.House", null)
+                        .WithMany()
+                        .HasForeignKey("HouseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.HouseRegistryAttestation", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.House", null)
+                        .WithMany()
+                        .HasForeignKey("HouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.MailLog", b =>
                 {
                     b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
@@ -4484,6 +5616,11 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasForeignKey("OrderId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("ServiceBooking.Core.Entities.StayBooking", "StayBooking")
+                        .WithMany()
+                        .HasForeignKey("StayBookingId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Booking");
 
                     b.Navigation("Channel");
@@ -4491,6 +5628,8 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Company");
 
                     b.Navigation("Order");
+
+                    b.Navigation("StayBooking");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.PhoneVerificationSession", b =>
@@ -4713,9 +5852,16 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasForeignKey("OrderId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("ServiceBooking.Core.Entities.StayBooking", "StayBooking")
+                        .WithMany()
+                        .HasForeignKey("StayBookingId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Company");
 
                     b.Navigation("Order");
+
+                    b.Navigation("StayBooking");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.StaffPushNotification", b =>
@@ -4736,6 +5882,11 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasForeignKey("OrderId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("ServiceBooking.Core.Entities.StayBooking", "StayBooking")
+                        .WithMany()
+                        .HasForeignKey("StayBookingId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("ServiceBooking.Core.Entities.PushSubscription", "Subscription")
                         .WithMany()
                         .HasForeignKey("SubscriptionId")
@@ -4747,7 +5898,121 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.Navigation("Order");
 
+                    b.Navigation("StayBooking");
+
                     b.Navigation("Subscription");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayBooking", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("GuestUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ServiceBooking.Core.Entities.House", "House")
+                        .WithMany()
+                        .HasForeignKey("HouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Company");
+
+                    b.Navigation("House");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayBookingCharge", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.StayBooking", null)
+                        .WithMany("Charges")
+                        .HasForeignKey("StayBookingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayBookingEvent", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.StayBooking", null)
+                        .WithMany()
+                        .HasForeignKey("StayBookingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayGuestPushNotification", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.StayBooking", "StayBooking")
+                        .WithMany()
+                        .HasForeignKey("StayBookingId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ServiceBooking.Core.Entities.StayGuestPushSubscription", "Subscription")
+                        .WithMany()
+                        .HasForeignKey("SubscriptionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("StayBooking");
+
+                    b.Navigation("Subscription");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayGuestPushSubscription", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.StayBooking", "StayBooking")
+                        .WithMany()
+                        .HasForeignKey("StayBookingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("StayBooking");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayPaymentProof", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.StayBooking", null)
+                        .WithMany("PaymentProofs")
+                        .HasForeignKey("StayBookingId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StaysSettings", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", null)
+                        .WithOne()
+                        .HasForeignKey("ServiceBooking.Core.Entities.StaysSettings", "CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StaysSubscription", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.BillingAccount", "BillingAccount")
+                        .WithMany()
+                        .HasForeignKey("BillingAccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.SubscriptionPlanConfig", "PlanConfig")
+                        .WithMany()
+                        .HasForeignKey("PlanConfigId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("BillingAccount");
+
+                    b.Navigation("PlanConfig");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.SubscriptionChangeLog", b =>
@@ -4869,6 +6134,11 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Services");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.House", b =>
+                {
+                    b.Navigation("Photos");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.NotificationChannel", b =>
                 {
                     b.Navigation("Assignments");
@@ -4896,6 +6166,13 @@ namespace ServiceBooking.Infrastructure.Migrations
             modelBuilder.Entity("ServiceBooking.Core.Entities.ShopDailyMenu", b =>
                 {
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayBooking", b =>
+                {
+                    b.Navigation("Charges");
+
+                    b.Navigation("PaymentProofs");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.WorkingHours", b =>

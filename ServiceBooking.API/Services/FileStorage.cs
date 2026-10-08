@@ -2,7 +2,7 @@ namespace ServiceBooking.API.Services;
 
 /// <summary>Named subfolder of the public storage root — every public image class gets one, mirroring
 /// what the existing company-logo upload already did (`wwwroot/uploads/companies/`).</summary>
-public enum PublicArea { Avatars, Services, Companies, Products, Showcase }
+public enum PublicArea { Avatars, Services, Companies, Products, Showcase, Houses }
 
 /// <summary>
 /// Owns where uploaded files live: every default path is resolved here, and DeploymentSafetyChecks
@@ -264,6 +264,7 @@ public class FileStorage
         PublicArea.Companies => "companies",
         PublicArea.Products => "products",
         PublicArea.Showcase => "showcase",
+        PublicArea.Houses => "houses",
         _ => throw new ArgumentOutOfRangeException(nameof(area))
     };
 }

@@ -8,7 +8,9 @@ using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Legal;
+using ServiceBooking.API.Services.Stays;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
@@ -36,8 +38,10 @@ public class CompanyPhotosController(
     {
         // Matches GetBySlug (CompaniesController): a deactivated company is NotFound to an anonymous
         // caller, not a visible gallery — this endpoint and GetBySlug must not disagree.
-        var exists = await db.Companies.AnyAsync(c => c.Id == id && c.IsActive, ct);
-        if (!exists) return NotFound();
+        var kind = await db.Companies.Where(c => c.Id == id && c.IsActive).Select(c => (CompanyKind?)c.Kind).FirstOrDefaultAsync(ct);
+        if (kind is null) return NotFound();
+        // ARCHITECTURE_CYCLE37.md §37.3.2: a "Дома" company has no gallery — photos belong to houses.
+        if (kind == CompanyKind.Stays) return Ok(new List<CompanyPhotoDto>());
 
         return Ok(await CompanyPhotoQueries.OrderedAsync(db, id, ct));
     }
@@ -51,6 +55,7 @@ public class CompanyPhotosController(
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
         if (!await IsOwnerOrSuperAdmin(id)) return Forbid();
+        if (company.Kind == CompanyKind.Stays) return Conflict(StaysTexts.GalleryRefusalText);
 
         var validation = await imageUploadService.ReadAndProcessAsync(
             file, [ImageProfile.CompanyPhoto, ImageProfile.CompanyPhotoThumb]);
@@ -143,6 +148,7 @@ public class CompanyPhotosController(
         if (company is null) return NotFound();
         var isSuperAdmin = User.IsInRole("SuperAdmin");
         if (!isSuperAdmin && !await IsOwnerOrSuperAdmin(id)) return Forbid();
+        if (company.Kind == CompanyKind.Stays) return Conflict(StaysTexts.GalleryRefusalText);
 
         var photo = await db.CompanyPhotos.FirstOrDefaultAsync(p => p.Id == photoId && p.CompanyId == id);
         // A photoId belonging to a DIFFERENT company is indistinguishable from "doesn't exist" —
@@ -186,6 +192,7 @@ public class CompanyPhotosController(
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
         if (!await IsOwnerOrSuperAdmin(id)) return Forbid();
+        if (company.Kind == CompanyKind.Stays) return Conflict(StaysTexts.GalleryRefusalText);
 
         await using var tx = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"company-photos:{id}");

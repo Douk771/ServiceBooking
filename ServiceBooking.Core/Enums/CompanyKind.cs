@@ -10,5 +10,8 @@ public enum CompanyKind
     Services = 0,
 
     /// <summary>A shop or canteen taking pickup orders on goods.ezbook.ru.</summary>
-    Orders = 1
+    Orders = 1,
+
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.3 — a company renting houses by the night on dom.ezbook.ru.</summary>
+    Stays = 2
 }

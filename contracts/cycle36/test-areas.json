@@ -72,6 +72,14 @@
       ]
     },
     {
+      "id": "stays",
+      "title": "Дома (dom)",
+      "description": "Посуточная аренда домов: каталог, страница дома и брони, кабинет владельца, шахматка, график, расчёты по эталонным векторам, всё приложение dom.",
+      "frontendPathPrefixes": [
+        "dom/src/"
+      ]
+    },
+    {
       "id": "notifications",
       "title": "Уведомления",
       "description": "Каналы WhatsApp/MAX, очередь и диспетчер, рассылки, web-push сотрудникам и покупателям, service worker, MAX для персонала.",
@@ -186,7 +194,7 @@
         "goods/src/goodsRoutes",
         "goods/src/sharedSources",
         "goods/src/assets/",
-        "goods/src/components/UpdateBanner"
+        "src/components/sites/"
       ]
     }
   ]
