@@ -194,7 +194,7 @@
         "goods/src/goodsRoutes",
         "goods/src/sharedSources",
         "goods/src/assets/",
-        "goods/src/components/UpdateBanner"
+        "src/components/sites/"
       ]
     }
   ]

@@ -31,6 +31,11 @@ import { HouseEditPage } from './pages/cabinet/HouseEditPage'
 import { BoardPage } from './pages/cabinet/BoardPage'
 import { BookingsPage } from './pages/cabinet/BookingsPage'
 import { BookingCardPage } from './pages/cabinet/BookingCardPage'
+import { MyBookingsPage } from './pages/MyBookingsPage'
+import { ProfilePage } from './pages/ProfilePage'
+import { ConsentsPage } from '@/pages/ConsentsPage'
+import { NoticesPage } from '@/pages/NoticesPage'
+import { UpdateBanner } from '@/components/sites/UpdateBanner'
 import { SchedulePage } from './pages/cabinet/SchedulePage'
 
 /**
@@ -85,6 +90,10 @@ export function DomApp() {
                 <Route path="/b/:token" element={<BookingPage />} />
 
                 <Route element={<RequireAuth />}>
+                  <Route path="/bookings" element={<MyBookingsPage />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/profile/consents" element={<ConsentsPage />} />
+                  <Route path="/notices" element={<NoticesPage />} />
                   <Route path="/cabinet" element={<CabinetHomePage />} />
                   <Route path="/cabinet/new" element={<CreateCompanyPage />} />
                   <Route path="/cabinet/subscription" element={<SubscriptionPage />} />
@@ -122,6 +131,7 @@ export function DomApp() {
             <DomFooter />
           </LegalGuard>
           <OwnerTermsGateModal />
+          <UpdateBanner />
         </div>
       </BrowserRouter>
     </QueryClientProvider>
