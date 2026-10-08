@@ -5,7 +5,8 @@ using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services.Stays;
 
-public enum TransitionOutcome { Ok, NotFound, VersionMismatch, InvalidTransition }
+/// <summary><see cref="HoldExpired"/> — the guest acted on a held booking whose timer had already run out: the expiry was finished instead (only the guest's cancel).</summary>
+public enum TransitionOutcome { Ok, NotFound, VersionMismatch, InvalidTransition, HoldExpired }
 
 public sealed record TransitionResult(TransitionOutcome Outcome, StayBooking? Booking);
 
@@ -104,7 +105,17 @@ public class StayBookingTransitionService(
         var now = clock.UtcNow;
         var checkInMoment = StayTime.ToUtc(booking.TimeZoneIdSnapshot, booking.CheckInDate, booking.CheckInTimeSnapshot);
         var holdOver = booking.Status == StayBookingStatus.Held && booking.HoldExpiresAtUtc <= now;
-        var next = holdOver || now >= checkInMoment ? null : StayStateMachine.Next(booking.Status, StayAction.CancelByGuest);
+        if (holdOver)
+        {
+            // The timer ran out before the cancel (the task has not reached the booking yet): finish the expiry now, under the same house lock, so the
+            // guest is told «Время на оплату истекло» and the page shows the real status — not «Время заезда наступило».
+            db.Entry(booking).State = EntityState.Detached;
+            await ExpireAsync(booking.Id, now, ct);
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return new TransitionResult(TransitionOutcome.HoldExpired, null);
+        }
+        var next = now >= checkInMoment ? null : StayStateMachine.Next(booking.Status, StayAction.CancelByGuest);
         if (next is null) return new TransitionResult(TransitionOutcome.InvalidTransition, Detach(booking));
 
         var from = booking.Status;

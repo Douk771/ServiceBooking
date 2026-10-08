@@ -60,6 +60,8 @@ public class StayDtoMapper(
         var canCancel = actions.Contains("Cancel");
         var refund = RefundFor(b, now, byOwner: false);
         var active = !StayStateMachine.IsTerminal(b.Status);
+        // A held booking whose timer has run out but which the task has not processed yet: it cannot be cancelled because the time to pay is over.
+        var holdExpired = b.Status == StayBookingStatus.Held && b.HoldExpiresAtUtc <= now;
 
         PaymentInstructionsDto? payment = active
             ? new PaymentInstructionsDto(b.PaymentDetailsSnapshot, b.PaymentPurposeSnapshot, b.PrepayRub) : null;
@@ -83,7 +85,7 @@ public class StayDtoMapper(
             new ProofRulesDto(canAttach, maxProofs, options.Value.PaymentProofs.MaxFileBytes, AcceptedProofTypes.ToList()),
             new BookingCancellationDto(b.CancellationPolicySnapshot, StaysTexts.CancellationSummary(b.CancellationPolicySnapshot), canCancel,
                 new StayRefundViewDto(refund.Kind, refund.RefundAtLeastRub, refund.MaxDeductionRub, refund.Text),
-                !canCancel && active ? StaysTexts.CannotCancel(phone) : null),
+                !canCancel && active ? (holdExpired ? StaysTexts.HoldExpiredMessage(phone) : StaysTexts.CannotCancel(phone)) : null),
             b.StatusReason, StayStateMachine.IsTerminal(b.Status) ? StaysTexts.OutcomeText(b.Status, b.StatusReason, phone) is { Length: > 0 } t ? t : null : null,
             info, new BookingNotificationsDto(new WebPushInfoDto(pushOn, pushOn ? webPush.Value.VapidPublicKey : null), b.NotifyByMessenger), actions);
     }

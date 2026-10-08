@@ -79,7 +79,10 @@ public class StayBookingsPublicController(
         if (result.Outcome == TransitionOutcome.NotFound) return NotFound();
         var dto = await mapper.ToPublicAsync((await FindAsync(token, ct))!, ct);
         if (result.Outcome == TransitionOutcome.Ok) return Ok(dto);
-        var message = dto.Cancellation.CannotCancelText ?? StaysTexts.CannotCancelAlready;
+        // An expired hold (just finished by this request, or earlier by the task) is «Время на оплату истекло», not «уже отменена» (QA CY37 №6).
+        var message = result.Outcome == TransitionOutcome.HoldExpired || dto.Status == StayBookingStatus.ExpiredUnpaid
+            ? StaysTexts.HoldExpiredMessage(dto.Company.Phone)
+            : dto.Cancellation.CannotCancelText ?? StaysTexts.CannotCancelAlready;
         return Conflict(new StayGuestConflictDto("CancelNotAllowed", message, dto));
     }
 
