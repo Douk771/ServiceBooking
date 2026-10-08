@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/Icon'
 import { CompanyPhotoGallery } from '@/components/company/CompanyPhotoGallery'
 import { CompanyMapLinks } from '@/components/company/CompanyMapLinks'
-import type { CompanyPhoto } from '@/types'
 import { formatPhone, telHref } from '@/utils/phone'
 import { formatRub } from '@/utils/money'
 import { publicStaysApi } from '../api/publicStays'
@@ -13,24 +12,12 @@ import { ProviderBlock } from '../components/ProviderBlock'
 import { ErrorState, LoadingList } from '../components/StatePanels'
 import { StayNotice } from '../components/StayNotice'
 import { StayTermsModal } from '../components/StayTermsModal'
-import type { HousePhotoDto, PublicHouseDto } from '../types'
+import type { PublicHouseDto } from '../types'
+import { housePhotosToCompanyPhotos } from '../utils/housePhotos'
 import { isIsoDate, nightsLabel } from '../utils/stayDates'
 import { getStayErrorMessage, isNotFound } from '../utils/stayError'
 import { maxGuests } from '../utils/bookingForm'
 import { NotFoundPage } from './NotFoundPage'
-
-/** The shared gallery shows `CompanyPhoto`s; a house photo has the same fields the gallery reads (the first photo is the cover). */
-function toGalleryPhotos(photos: HousePhotoDto[]): CompanyPhoto[] {
-  return photos.map((p) => ({
-    id: p.id,
-    url: p.url,
-    thumbnailUrl: p.thumbnailUrl ?? p.url,
-    width: 0,
-    height: 0,
-    position: p.position,
-    isCover: p.position === 0,
-  }))
-}
 
 function intParam(raw: string | null, min: number, max: number): number | undefined {
   if (!raw || !/^\d+$/.test(raw)) return undefined
@@ -112,7 +99,7 @@ export function HousePage() {
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-start">
         <div className="min-w-0">
-          <CompanyPhotoGallery photos={toGalleryPhotos(house.photos)} companyName={house.name} />
+          <CompanyPhotoGallery photos={housePhotosToCompanyPhotos(house.photos)} companyName={house.name} />
 
           <header className="mt-6">
             <h1 className="font-serif text-[32px] leading-tight text-ink sm:text-[42px]">{house.name}</h1>

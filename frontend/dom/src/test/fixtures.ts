@@ -1,4 +1,4 @@
-import type { HouseCalendarDto, PublicHouseDto, PublicStayBookingDto, StayQuoteDto } from '../types'
+import type { HouseCalendarDto, HouseManageDto, PublicHouseDto, PublicStayBookingDto, StayQuoteDto, StaysCompanyManageDto } from '../types'
 import { addDays, nightDates } from '../utils/stayDates'
 
 /** Test data shaped like the cycle-37 contract (never imported by app code). */
@@ -145,4 +145,87 @@ export function bookingFixture(over: Partial<PublicStayBookingDto> = {}): Public
 /** An axios-shaped error for the API mocks. */
 export function httpError(status: number, data: unknown) {
   return Object.assign(new Error(`HTTP ${status}`), { isAxiosError: true, response: { status, data, headers: {} } })
+}
+
+
+export function houseManageFixture(over: Partial<HouseManageDto> = {}): HouseManageDto {
+  return {
+    id: 'house-1',
+    slug: 'dom-1',
+    name: 'Дом у склона',
+    description: 'Тёплый дом.',
+    capacity: 4,
+    extraBeds: { enabled: false, max: 0, priceRub: 0 },
+    dogsForbidden: false,
+    hasCot: false,
+    amenities: ['Wifi'],
+    address: 'Шерегеш, ул. Лесная, 1',
+    yandexMapsUrl: null,
+    twoGisUrl: null,
+    checkInInfoText: null,
+    priceMode: 'Constant',
+    constantPriceRub: 5000,
+    registry: { objectKind: 'Residential', registryNumber: null, registryUrl: null, lastAttestation: null },
+    registryNotice: { version: 'v1', text: 'Вы отвечаете за достоверность сведений о доме.' },
+    isPublished: false,
+    isArchived: false,
+    position: 0,
+    photos: [],
+    publicUrl: 'https://dom.ezbook.ru/lesnoy/dom-1',
+    uncoveredDates: [],
+    publishProblems: [],
+    hasBookings: false,
+    ...over,
+  }
+}
+
+export const OWNER_PERMS = ['ManageCompany', 'ManageHouses', 'EditHouseContent', 'ViewBookings', 'ManageBookings', 'ManageBlocks', 'ViewSchedule', 'ViewCabinet'] as const
+
+export function companyFixture(over: Partial<StaysCompanyManageDto> = {}): StaysCompanyManageDto {
+  return {
+    id: 'co-1',
+    name: 'Лесной',
+    slug: 'lesnoy',
+    description: null,
+    phone: '79001234567',
+    email: null,
+    logoUrl: null,
+    address: null,
+    yandexMapsUrl: null,
+    twoGisUrl: null,
+    cityName: 'Шерегеш',
+    timeZoneId: 'Asia/Novokuznetsk',
+    isActive: true,
+    showInCatalog: true,
+    publicUrl: 'https://dom.ezbook.ru/lesnoy',
+    myRole: 'Owner',
+    myPermissions: [...OWNER_PERMS],
+    settings: {
+      checkInTime: '14:00',
+      checkOutTime: '12:00',
+      minNights: 1,
+      maxNights: 30,
+      horizonDays: 365,
+      allowGapFill: false,
+      allowSameDayCheckIn: true,
+      holdMinutes: 30,
+      prepayPercent: 30,
+      cancellationPolicy: 'Standard',
+      dogFeeRub: 0,
+      cotFeeRub: 0,
+      checkInInfoSendTime: '09:00',
+      checkInInfoText: null,
+      checkInInfoSendFullText: false,
+      arrivalReminderEnabled: true,
+      housekeeperSeesGuestComment: false,
+      showInCatalog: true,
+    },
+    paymentDetails: { paymentDetails: 'Карта 2202', paymentPurpose: 'Бронь' },
+    provider: { status: 'IndividualEntrepreneur', statusLabel: 'ИП', name: 'ИП Иванов', inn: '123456789012', ogrn: '123456789012345', claimsAddress: 'Новокузнецк' },
+    gate: { accepting: true, reasonCode: null, reasonText: null },
+    checklist: [],
+    plan: { planName: 'Старт', isTrial: false, paidUntilUtc: null, maxHouses: 5, housesPublished: 1, warningLevel: 'None', text: null },
+    awaitingPaymentCount: 0,
+    ...over,
+  }
 }

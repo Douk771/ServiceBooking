@@ -4,13 +4,11 @@ import { Icon } from '@/components/ui/Icon'
 import { useCallback, useEffect } from 'react'
 import { staysCompaniesApi } from '../../api/staysCompanies'
 import { ErrorState, LoadingList } from '../../components/StatePanels'
-import { useStaysCompany, type CompanyContext } from '../../hooks/useStaysCompany'
+import { companyKey, useStaysCompany, type CompanyContext } from '../../hooks/useStaysCompany'
 import { can, cabinetTabs, defaultCabinetTab, roleLabel } from '../../utils/permissions'
 import { getStayErrorMessage, httpStatus } from '../../utils/stayError'
 import { NotFoundPage } from '../NotFoundPage'
 import type { StaysCompanyManageDto } from '../../types'
-
-export const companyKey = (companyId: string) => ['stays-company', companyId] as const
 
 /** Waiting-for-check counter and the plan are refreshed in the background so the badge stays honest while the tab is open. */
 const COMPANY_POLL_MS = 30_000

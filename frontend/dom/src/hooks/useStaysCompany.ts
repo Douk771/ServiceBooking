@@ -1,6 +1,8 @@
 import { useOutletContext } from 'react-router-dom'
 import type { StaysCompanyManageDto } from '../types'
 
+export const companyKey = (companyId: string) => ['stays-company', companyId] as const
+
 export interface CompanyContext {
   company: StaysCompanyManageDto
   /** Re-reads the company (after a save that changes the checklist, the gate, the plan or the rights). */
