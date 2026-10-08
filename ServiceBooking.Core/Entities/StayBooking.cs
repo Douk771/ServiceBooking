@@ -63,6 +63,9 @@ public class StayBooking
 
     public DateTime? HoldReminderQueuedAtUtc { get; set; }
     public DateTime? ArrivalReminderQueuedAtUtc { get; set; }
+    /// <summary>ARCHITECTURE_CYCLE39.md §39.11.6: the snapshot of the reminder text for the booking page (Р39-17). Contains the guest's name: erased on depersonalisation (Т39-11).</summary>
+    public string? ArrivalReminderPageText { get; set; }
+    public DateTime? ArrivalReminderSentAtUtc { get; set; }
     public DateTime? CheckInInfoReleasedAtUtc { get; set; }
     public DateTime? PaymentProofsPurgedAtUtc { get; set; }
     public bool PersonalDataErased { get; set; }
@@ -83,6 +86,8 @@ public class StayBookingCharge
     public Guid StayBookingId { get; set; }
     public int Position { get; set; }
     public StayChargeKind Kind { get; set; }
+    /// <summary>ARCHITECTURE_CYCLE39.md §39.2.2: the session this line belongs to (kinds ServiceSlot / ServiceItem).</summary>
+    public Guid? ServiceSessionId { get; set; }
     public string Label { get; set; } = string.Empty;
     public int Quantity { get; set; }
     public int UnitPriceRub { get; set; }
@@ -97,6 +102,7 @@ public class StayBookingEvent
     public Guid Id { get; set; }
     public Guid StayBookingId { get; set; }
     public Guid CompanyId { get; set; }
+    public Guid? ServiceSessionId { get; set; }
     public StayBookingEventKind Kind { get; set; }
     public DateTime OccurredAtUtc { get; set; } = DateTime.UtcNow;
     public StayActorKind ActorKind { get; set; }
@@ -112,7 +118,9 @@ public class StayBookingEvent
 public class StayPaymentProof
 {
     public Guid Id { get; set; }
-    public Guid StayBookingId { get; set; }
+    /// <summary>Exactly one of <see cref="StayBookingId"/> / <see cref="StayServiceOrderId"/> is set (CK_StayPaymentProofs_OneOwner).</summary>
+    public Guid? StayBookingId { get; set; }
+    public Guid? StayServiceOrderId { get; set; }
     public Guid CompanyId { get; set; }
     public string? StorageKey { get; set; }
     public string ContentType { get; set; } = string.Empty;

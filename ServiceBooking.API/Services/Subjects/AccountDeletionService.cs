@@ -215,7 +215,7 @@ public sealed class AccountDeletionService(
         if (erasedStayIds.Count > 0)
         {
             foreach (var e in await db.StayBookingEvents.Where(e => erasedStayIds.Contains(e.StayBookingId)).ToListAsync()) Stays.StayPersonalData.TombstoneGuestEvent(e);
-            db.StayGuestPushSubscriptions.RemoveRange(await db.StayGuestPushSubscriptions.Where(s => erasedStayIds.Contains(s.StayBookingId)).ToListAsync());
+            db.StayGuestPushSubscriptions.RemoveRange(await db.StayGuestPushSubscriptions.Where(s => s.StayBookingId != null && erasedStayIds.Contains(s.StayBookingId.Value)).ToListAsync());
         }
 
         // TD-05 (ARCHITECTURE_CYCLE16.md §247.2, no migration — §240.3/§247.1). Two rules, both scoped

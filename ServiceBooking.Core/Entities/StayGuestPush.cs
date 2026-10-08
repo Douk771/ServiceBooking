@@ -6,8 +6,10 @@ namespace ServiceBooking.Core.Entities;
 public class StayGuestPushSubscription
 {
     public Guid Id { get; set; }
-    public Guid StayBookingId { get; set; }
-    public StayBooking StayBooking { get; set; } = null!;
+    /// <summary>Exactly one of <see cref="StayBookingId"/> / <see cref="StayServiceOrderId"/> is set (CK_StayGuestPushSubscriptions_OneOwner).</summary>
+    public Guid? StayBookingId { get; set; }
+    public StayBooking? StayBooking { get; set; }
+    public Guid? StayServiceOrderId { get; set; }
     public string Endpoint { get; set; } = string.Empty;
     public string P256dhCiphertext { get; set; } = string.Empty;
     public string AuthCiphertext { get; set; } = string.Empty;
@@ -22,6 +24,7 @@ public class StayGuestPushNotification
     public Guid Id { get; set; }
     public Guid? StayBookingId { get; set; }
     public StayBooking? StayBooking { get; set; }
+    public Guid? StayServiceOrderId { get; set; }
     public Guid CompanyId { get; set; }
     public Guid? SubscriptionId { get; set; }
     public StayGuestPushSubscription? Subscription { get; set; }

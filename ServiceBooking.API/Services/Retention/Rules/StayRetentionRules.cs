@@ -134,7 +134,7 @@ public sealed class StayGuestPushSubscriptionRule(AppDbContext db) : IRetentionR
         var cutoff = ctx.NowUtc.AddDays(-days);
         var cutoffDate = DateOnly.FromDateTime(cutoff);
         IQueryable<StayGuestPushSubscription> Query(Guid cursor) => db.StayGuestPushSubscriptions
-            .Where(s => s.Id > cursor && (s.StayBooking.CheckOutDate < cutoffDate || (s.StayBooking.TerminalAtUtc != null && s.StayBooking.TerminalAtUtc < cutoff)))
+            .Where(s => s.Id > cursor && s.StayBooking != null && (s.StayBooking.CheckOutDate < cutoffDate || (s.StayBooking.TerminalAtUtc != null && s.StayBooking.TerminalAtUtc < cutoff)))
             .OrderBy(s => s.Id);
         return RetentionRuleRunner.RunAsync(Name, Query, s => s.Id, s => db.StayGuestPushSubscriptions.Remove(s), ctx, db, ct, dateOf: s => s.CreatedAtUtc);
     }
