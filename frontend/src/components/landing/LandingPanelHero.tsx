@@ -38,8 +38,8 @@ export function LandingPanelHero({ config, aside }: { config: LandingPanelHeroCo
           </p>
           {facts.length > 0 && (
             <ul role="list" className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-x-6">
-              {facts.map((f) => (
-                <li key={f.text} className="flex items-center gap-2 text-[14px] text-ink">
+              {facts.map((f, i) => (
+                <li key={`${i}-${f.text}`} className="flex items-center gap-2 text-[14px] text-ink">
                   <Icon name={f.icon} size={16} strokeWidth={1.6} className="shrink-0 text-gold-dark" aria-hidden="true" />
                   {f.text}
                 </li>
