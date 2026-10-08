@@ -1,5 +1,5 @@
 import type { HouseAmenity, HouseObjectKind, HouseSetupInput, PricePeriodInput, StaysConflictCode } from '../types'
-import { isHouseSlugValid, HOUSE_SLUG_FORMAT_TEXT } from './slug'
+import { isHouseSlugValid, isHouseSlugReserved, HOUSE_SLUG_FORMAT_TEXT, HOUSE_SLUG_RESERVED_TEXT } from './slug'
 import { diffDays, isIsoDate } from './stayDates'
 
 /**
@@ -16,6 +16,7 @@ export function validateSetup(s: HouseSetupInput): Errors<SetupField> {
   const name = s.name.trim()
   if (!name || name.length > 100) e.name = 'Укажите название дома'
   if (!isHouseSlugValid(s.slug.trim())) e.slug = HOUSE_SLUG_FORMAT_TEXT
+  else if (isHouseSlugReserved(s.slug.trim())) e.slug = HOUSE_SLUG_RESERVED_TEXT
   if (!Number.isInteger(s.capacity) || s.capacity < 1 || s.capacity > 50) e.capacity = 'Вместимость — от 1 до 50'
   if (s.extraBedsEnabled) {
     if (!Number.isInteger(s.extraBedsMax) || s.extraBedsMax < 1 || s.extraBedsMax > 10) e.extraBedsMax = 'Доп. мест — от 1 до 10'

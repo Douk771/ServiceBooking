@@ -1,15 +1,20 @@
 import { api } from '@/api/client'
 import type {
+  ArrivalReminderChangeDto,
+  ArrivalReminderInput,
+  ArrivalReminderPreviewDto,
+  ArrivalReminderPreviewInput,
+  ArrivalReminderSettingsDto,
+  StaysCompanyManageWithServices,
+  StaysSettingsWithServices,
   CompanyKindsSummaryDto,
   PaymentDetailsDto,
   ProviderInput,
   StaysCompanyCreateInput,
   StaysCompanyCreatedDto,
   StaysCompanyListItemDto,
-  StaysCompanyManageDto,
   StaysNotificationSettingsDto,
   StaysNotificationSettingsInput,
-  StaysSettingsDto,
   StaysSlugCheckDto,
   StaysTrialOutcomeDto,
   StaysTrialStateDto,
@@ -26,19 +31,30 @@ export const staysCompaniesApi = {
   /** A refusal is a 409 with the same body shape (`granted: false`) — callers read it from the error. */
   activateTrial: (termsVersion: string) => api.post<StaysTrialOutcomeDto>('/stays/trial', { termsVersion }).then((r) => r.data),
 
-  get: (companyId: string) => api.get<StaysCompanyManageDto>(`/stays/companies/${companyId}`).then((r) => r.data),
-  updateSettings: (companyId: string, input: StaysSettingsDto) =>
-    api.put<StaysCompanyManageDto>(`/stays/companies/${companyId}/settings`, input).then((r) => r.data),
+  get: (companyId: string) => api.get<StaysCompanyManageWithServices>(`/stays/companies/${companyId}`).then((r) => r.data),
+  updateSettings: (companyId: string, input: StaysSettingsWithServices) =>
+    api.put<StaysCompanyManageWithServices>(`/stays/companies/${companyId}/settings`, input).then((r) => r.data),
   updatePaymentDetails: (companyId: string, input: PaymentDetailsDto) =>
-    api.put<StaysCompanyManageDto>(`/stays/companies/${companyId}/payment-details`, input).then((r) => r.data),
+    api.put<StaysCompanyManageWithServices>(`/stays/companies/${companyId}/payment-details`, input).then((r) => r.data),
   updateProvider: (companyId: string, input: ProviderInput) =>
-    api.put<StaysCompanyManageDto>(`/stays/companies/${companyId}/provider`, input).then((r) => r.data),
+    api.put<StaysCompanyManageWithServices>(`/stays/companies/${companyId}/provider`, input).then((r) => r.data),
   updateSlug: (companyId: string, slug: string) =>
-    api.put<StaysCompanyManageDto>(`/stays/companies/${companyId}/slug`, { slug }).then((r) => r.data),
+    api.put<StaysCompanyManageWithServices>(`/stays/companies/${companyId}/slug`, { slug }).then((r) => r.data),
   qr: (companyId: string) => api.get<Blob>(`/stays/companies/${companyId}/qr`, { responseType: 'blob' }).then((r) => r.data),
 
   notificationSettings: (companyId: string) =>
     api.get<StaysNotificationSettingsDto>(`/stays/companies/${companyId}/notification-settings`).then((r) => r.data),
   updateNotificationSettings: (companyId: string, input: StaysNotificationSettingsInput) =>
     api.put<StaysNotificationSettingsDto>(`/stays/companies/${companyId}/notification-settings`, input).then((r) => r.data),
+
+  // ───── arrival reminder (API_CONTRACT_CYCLE39.md §39.33), ManageCompany ─────
+  arrivalReminder: (companyId: string) =>
+    api.get<ArrivalReminderSettingsDto>(`/stays/companies/${companyId}/arrival-reminder`).then((r) => r.data),
+  /** 409 `ReminderConfirmationRequired` carries `markers[]` and `noticeText`: ask, then repeat with `confirmCodeMarkers: true`. */
+  saveArrivalReminder: (companyId: string, input: ArrivalReminderInput) =>
+    api.put<ArrivalReminderSettingsDto>(`/stays/companies/${companyId}/arrival-reminder`, input).then((r) => r.data),
+  previewArrivalReminder: (companyId: string, input: ArrivalReminderPreviewInput) =>
+    api.post<ArrivalReminderPreviewDto>(`/stays/companies/${companyId}/arrival-reminder/preview`, input).then((r) => r.data),
+  arrivalReminderHistory: (companyId: string) =>
+    api.get<ArrivalReminderChangeDto[]>(`/stays/companies/${companyId}/arrival-reminder/history`).then((r) => r.data),
 }
