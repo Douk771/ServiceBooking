@@ -18,8 +18,44 @@ namespace ServiceBooking.Tests.Tests;
 public class Cycle37ContractTests(TestDatabaseFixture fixture) : Cycle37TestBase(fixture)
 {
     private static readonly OpenApiContract C37 = OpenApiContract.Load("cycle37");
-    private static readonly System.Text.RegularExpressions.Regex Cycle39Additions = new(
-        "\\.(sessions|servicesBlock|arrivalReminder|services|serviceCells|acceptServiceOrdersWithoutStay|acceptsServiceOrdersWithoutStay|servicesForStay|serviceIndex): property is not described by the schema$|value \"AddSession\" is not in enum$");
+    // Цикл 39 дописал необязательные поля в DTO цикла 37 и значение AddSession в действия персонала (contracts/cycle39/openapi.yaml, тег shared-changed). Контракт cycle37 заморожен;
+    // принимаются ТОЛЬКО эти добавления и ТОЛЬКО в тех операциях и по тем путям ответа, где их делает цикл 39 (форма добавлений проверяется Cycle39ContractTests). Всё остальное — строго.
+    private const string NotDescribed = ": property is not described by the schema$";
+    private static System.Text.RegularExpressions.Regex Rx(string pattern) => new(pattern, System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static readonly System.Text.RegularExpressions.Regex PublicBookingAdds = Rx(@"^\$\.(booking\.)?(sessions|servicesBlock|arrivalReminder)" + NotDescribed);
+    private static readonly System.Text.RegularExpressions.Regex StaffCardAdds = Rx(@"^\$\.(booking\.)?(sessions" + NotDescribed.TrimEnd('$') + @"|availableActions\[\d+\]: value ""AddSession"" is not in enum)$");
+    private static readonly System.Text.RegularExpressions.Regex SettingsAdds = Rx(@"^\$\.(company\.)?settings\.acceptServiceOrdersWithoutStay" + NotDescribed);
+
+    private static readonly Dictionary<string, System.Text.RegularExpressions.Regex> Cycle39Additions = new()
+    {
+        ["GET /api/stays/public/companies/{slug} 200"] = Rx(@"^\$\.(services|acceptsServiceOrdersWithoutStay)" + NotDescribed),
+        ["GET /api/stays/public/companies/{slug}/houses/{houseSlug} 200"] = Rx(@"^\$\.servicesForStay" + NotDescribed),
+        ["POST /api/stays/public/houses/{houseId}/quote 200"] = Rx(@"^\$\.services" + NotDescribed),
+        ["POST /api/stays/public/houses/{houseId}/bookings 200"] = PublicBookingAdds,
+        ["POST /api/stays/public/houses/{houseId}/bookings 201"] = PublicBookingAdds,
+        ["POST /api/stays/public/houses/{houseId}/bookings 409"] = Rx(@"^\$\.(serviceIndex|quote\.services)" + NotDescribed),
+        ["GET /api/stays/bookings/public/{token} 200"] = PublicBookingAdds,
+        ["POST /api/stays/bookings/public/{token}/cancel 200"] = PublicBookingAdds,
+        ["POST /api/stays/bookings/public/{token}/cancel 409"] = PublicBookingAdds,
+        ["POST /api/stays/bookings/public/{token}/payment-proofs 201"] = PublicBookingAdds,
+        ["POST /api/stays/bookings/public/{token}/payment-proofs 409"] = PublicBookingAdds,
+        ["POST /api/stays/companies 201"] = SettingsAdds,
+        ["GET /api/stays/companies/{companyId} 200"] = SettingsAdds,
+        ["PUT /api/stays/companies/{companyId}/settings 200"] = SettingsAdds,
+        ["PUT /api/stays/companies/{companyId}/payment-details 200"] = SettingsAdds,
+        ["PUT /api/stays/companies/{companyId}/provider 200"] = SettingsAdds,
+        ["GET /api/stays/companies/{companyId}/board 200"] = Rx(@"^\$\.(services|serviceCells)" + NotDescribed),
+        ["GET /api/stays/companies/{companyId}/schedule 200"] = Rx(@"^\$\.days\[\d+\]\.sessions" + NotDescribed),
+        ["GET /api/stays/companies/{companyId}/bookings/{bookingId} 200"] = StaffCardAdds,
+        ["POST /api/stays/companies/{companyId}/bookings 201"] = StaffCardAdds,
+        ["POST /api/stays/companies/{companyId}/bookings/quote 200"] = Rx(@"^\$\.services" + NotDescribed),
+        ["POST /api/stays/companies/{companyId}/bookings/{bookingId}/confirm-payment 200"] = StaffCardAdds,
+        ["POST /api/stays/companies/{companyId}/bookings/{bookingId}/cancel 409"] = StaffCardAdds,
+    };
+
+    private static bool IsCycle39Addition(string method, string path, int status, string error) =>
+        Cycle39Additions.TryGetValue($"{method} {path} {status}", out var allowed) && allowed.IsMatch(error);
 
     private sealed class Violations
     {
@@ -32,9 +68,7 @@ public class Cycle37ContractTests(TestDatabaseFixture fixture) : Cycle37TestBase
             JsonElement body;
             try { body = JsonDocument.Parse(text).RootElement.Clone(); }
             catch (JsonException) { Items.Add($"{method} {path} -> {status}: тело не JSON: {text}"); return; }
-            // Cycle 39 appended optional fields to DTOs of cycle 37 (contracts/cycle39/openapi.yaml, tag shared-changed) and the value AddSession to the staff actions of a booking.
-            // The cycle-37 contract stays frozen; exactly these additions are accepted here, everything else is checked strictly, as before (their shape is checked by cycle 39).
-            var errors = C37.Collect(method, path, status, body).Where(e => !Cycle39Additions.IsMatch(e)).ToList();
+            var errors = C37.Collect(method, path, status, body).Where(e => !IsCycle39Addition(method, path, status, e)).ToList();
             Items.AddRange(errors.Select(e => $"{method} {path} -> {status}: {e}"));
         }
     }
