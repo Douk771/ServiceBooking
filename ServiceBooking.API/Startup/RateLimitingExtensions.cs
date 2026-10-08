@@ -208,6 +208,44 @@ internal static class RateLimitingExtensions
         o.AddPolicy("company-photos", ctx => UserWindowPolicy(ctx, "company-photos", defaultPermitLimit: 20, defaultWindowMinutes: 1));
         o.AddPolicy("company-photos-edit", ctx => UserWindowPolicy(ctx, "company-photos-edit", defaultPermitLimit: 60, defaultWindowMinutes: 1));
 
+        // ── Cycle 37 (ARCHITECTURE_CYCLE37.md §37.35, API_CONTRACT_CYCLE37.md §37.35): «Дома» ──────────────────────────────────────
+        // stays-public: amenities, catalog, company/house pages, calendar, quote — 120/min per IP.
+        o.AddPolicy("stays-public", ctx => IpWindowPolicy(ctx, "stays-public", defaultPermitLimit: 120, defaultWindowMinutes: 1));
+        // stay-create: creating a booking — 5/hour per IP anonymously, 20/hour per signed-in user. The per-number limits live in StayPhoneThrottle.
+        o.AddPolicy("stay-create", ctx =>
+        {
+            var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+            var windowMinutes = config.GetValue("RateLimits:stay-create:WindowMinutes", 60);
+            var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId is not null)
+                return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = config.GetValue("RateLimits:stay-create:PermitLimit", 20), Window = TimeSpan.FromMinutes(windowMinutes), QueueLimit = 0
+                });
+            var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+            return RateLimitPartition.GetFixedWindowLimiter($"ip:{ip}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = config.GetValue("RateLimits:stay-create:AnonymousPermitLimit", 5), Window = TimeSpan.FromMinutes(windowMinutes), QueueLimit = 0
+            });
+        });
+        // stay-public: the booking page by token, the proof file, the cancellation — 120/min per IP (the token is 256 bits; the limit only bounds a flood of 404s).
+        o.AddPolicy("stay-public", ctx => IpWindowPolicy(ctx, "stay-public", defaultPermitLimit: 120, defaultWindowMinutes: 1));
+        // stay-proof: uploading a payment proof — 6 per 10 minutes per booking token; the second link of the chain (20/hour per IP) is StayProofIpLimiter.
+        o.AddPolicy("stay-proof", ctx =>
+        {
+            var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+            var token = ctx.Request.RouteValues.TryGetValue("token", out var t) ? t?.ToString() : null;
+            return RateLimitPartition.GetFixedWindowLimiter($"token:{token ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous"}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = config.GetValue("RateLimits:stay-proof:PermitLimit", 6),
+                Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:stay-proof:WindowMinutes", 10)), QueueLimit = 0
+            });
+        });
+        // stay-push: a guest's web-push subscription (both operations) — 20/hour per IP.
+        o.AddPolicy("stay-push", ctx => IpWindowPolicy(ctx, "stay-push", defaultPermitLimit: 20, defaultWindowMinutes: 60));
+        // stays-board: the staff board and the booking list — 120/min per user.
+        o.AddPolicy("stays-board", ctx => UserWindowPolicy(ctx, "stays-board", defaultPermitLimit: 120, defaultWindowMinutes: 1));
+
         // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §14) — the built-in rejection
         // response is empty, so OnRejected has to write the body itself or the frontend's *Error.ts mappers
         // couldn't tell a 429 apart from a 403. Branches by policy name so each surfaces its own Russian
@@ -236,6 +274,9 @@ internal static class RateLimitingExtensions
                 "order-create" => "Слишком много заказов подряд — попробуйте через несколько минут",
                 "order-push" => "Слишком много запросов — подождите минуту",
                 "shop-reports" or "goods-catalog" or "staff-max-link" => "Слишком много запросов — подождите минуту",
+                "stays-public" or "stay-public" or "stays-board" => "Слишком много запросов. Попробуйте через минуту",
+                "stay-create" or "stay-push" => "Слишком много попыток. Попробуйте позже",
+                "stay-proof" => "Слишком много загрузок. Попробуйте позже",
                 // "uploads", "company-photos", "company-photos-edit" намеренно делят текст с веткой по умолчанию (контракт цикла 31).
                 _ => "Too many uploads. Try again in a minute."
             };

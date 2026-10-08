@@ -86,6 +86,20 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysCompanyService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysTrialService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.HouseService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.HouseOccupancyWriter>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayPhoneThrottle>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayActorResolver>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayNotificationPlanner>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayBookingEventLog>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.CheckInInfoReleaser>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayBookingTransitionService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayHoldExpirer>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayPaymentProofService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayBookingCreationService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayDtoMapper>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysCatalogService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysHousePageService>();
+    builder.Services.AddSingleton<ServiceBooking.API.Services.Stays.StayProofIpLimiter>();
 
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopManageMapper>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.CatalogMapper>();

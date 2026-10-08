@@ -42,6 +42,8 @@ public sealed record ImageProfile(int MaxDimension, bool SquareCrop, OutputForma
     // ARCHITECTURE_CYCLE23.md §393.1: a product photo of a shop — the same "one validation, two renditions"
     // pipeline; public storage class, area "products".
     public static readonly ImageProfile ProductImage = new(1200, SquareCrop: false, OutputFormatPolicy.PngIfSourceWasPngElseJpeg, JpegQuality: 85);
+    // ARCHITECTURE_CYCLE37.md §37.8: a payment proof (screenshot / photo of a receipt) — re-encoded to JPEG (which removes EXIF/GPS), long side 2400 px, no crop.
+    public static readonly ImageProfile PaymentProof = new(2400, SquareCrop: false, OutputFormatPolicy.AlwaysJpeg, JpegQuality: 85);
     public static readonly ImageProfile ProductImageThumb = new(480, SquareCrop: false, OutputFormatPolicy.AlwaysJpeg, JpegQuality: 78);
 }
 

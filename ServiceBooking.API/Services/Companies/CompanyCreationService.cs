@@ -84,7 +84,7 @@ public sealed class CompanyCreationService(
             if (request.Description is { Length: > 2000 }) return Refuse(new BadRequestObjectResult("Описание — не длиннее 2000 символов"));
             if (string.IsNullOrWhiteSpace(request.Phone) || !PhoneNormalizer.TryNormalizeRussian(request.Phone, out var canonicalStaysPhone))
                 return Refuse(new BadRequestObjectResult("Введите номер телефона в формате +7 (900) 000-00-00"));
-            staysPhone = canonicalStaysPhone;
+            staysPhone = canonicalStaysPhone; // validated; the company keeps the number as the owner typed it (it is shown to guests)
             if (string.IsNullOrEmpty(slug)) slug = await SuggestStaysSlugAsync(request.Name!);
             var staysRefusal = await StaysSlugRefusalAsync(slug, exceptCompanyId: null);
             if (staysRefusal is not null) return Refuse(new ConflictObjectResult(staysRefusal));
@@ -183,7 +183,7 @@ public sealed class CompanyCreationService(
             Slug = slug,
             Description = request.Description,
             Address = request.Address,
-            Phone = isStays ? staysPhone : request.Phone,
+            Phone = isStays ? request.Phone!.Trim() : request.Phone,
             Email = request.Email,
             // A shop takes no bookings and is not in the salon directory (§388.4).
             AllowSelfBooking = isSalon && request.AllowSelfBooking,
