@@ -163,6 +163,10 @@ public class StayBookingCreationService(
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         // 6. The number's limits, under the number's lock (lock order: phone → house, §37.5.1).
         await AdvisoryLock.AcquireAsync(db, $"stay-guest-phone:{canonicalPhone}");
+        // A double click: the twin request (same key, same number) may have committed while this one waited for the number's lock. Step 3 ran BEFORE the lock,
+        // so without this re-check the twin would be refused by the number's limit (429) or by its own dates (409) instead of getting the existing booking.
+        var twin = await db.StayBookings.AsNoTracking().FirstOrDefaultAsync(b => b.CompanyId == company.Id && b.IdempotencyKey == idempotencyKey, ct);
+        if (twin is not null) return new StayCreateResult(null, twin, Created: false);
         switch (await throttle.CheckAsync(company.Id, canonicalPhone, now, ct))
         {
             case StayThrottleVerdict.TooManyHeld: return Throttled(StayPhoneThrottle.HeldText);
