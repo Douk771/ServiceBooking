@@ -55,6 +55,8 @@ export interface LandingScreenshot {
 }
 
 export interface LandingHeroConfig {
+  /** Обычная шапка. Поле есть только для того, чтобы конфиг с layout: 'panel' нельзя было передать как обычный. */
+  layout?: never
   eyebrow: string
   /** Строка — одна строка заголовка; объект — «строка + выделенная часть» (выделение с новой строки). */
   title: string | { lead: string; accent: string }
@@ -125,3 +127,33 @@ export interface LandingConfig {
   pricing?: LandingPricingConfig
   faq: { items: FaqItems }
 }
+
+/** Закрытый список фоновых рисунков шапки с панелью. Новый мотив = новая строка тут + SVG в LandingHeroBackdrop.tsx. */
+export type HeroBackdrop = 'none' | 'mountains'
+
+/** Короткий факт под абзацем шапки; иконка декоративная (aria-hidden). */
+export interface HeroFact {
+  icon: IconName
+  text: string
+}
+/** От 0 до 3 фактов: 4 — ошибка tsc. */
+export type HeroFacts =
+  | readonly []
+  | readonly [HeroFact]
+  | readonly [HeroFact, HeroFact]
+  | readonly [HeroFact, HeroFact, HeroFact]
+
+/** Шапка с боковой панелью (ARCHITECTURE_CYCLE41.md §41.3.1). Основной кнопки нет: её роль играет панель (слот heroAside). */
+export interface LandingPanelHeroConfig {
+  layout: 'panel'
+  eyebrow: string
+  title: string | { lead: string; accent: string }
+  intro: string
+  /** Якорь на заголовок секции 3. */
+  howTo: AnchorAction
+  facts: HeroFacts
+  backdrop: HeroBackdrop
+}
+
+/** Конфиг главной с шапкой-панелью: всё как в LandingConfig, кроме hero. */
+export type LandingPanelConfig = Omit<LandingConfig, 'hero'> & { hero: LandingPanelHeroConfig }

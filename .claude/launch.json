@@ -44,6 +44,19 @@
       "env": {
         "VITE_API_TARGET": "http://localhost:5001"
       }
+    },
+    {
+      "name": "frontend-dom",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:dom"
+      ],
+      "cwd": "frontend",
+      "port": 5175,
+      "env": {
+        "VITE_API_TARGET": "http://localhost:5001"
+      }
     }
   ]
 }
