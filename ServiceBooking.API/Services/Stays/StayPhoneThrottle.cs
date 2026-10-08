@@ -19,15 +19,13 @@ public class StayPhoneThrottle(AppDbContext db, IOptions<StaysOptions> options)
     public async Task<StayThrottleVerdict> CheckAsync(Guid companyId, string canonicalPhone, DateTime nowUtc, CancellationToken ct = default)
     {
         var limits = options.Value.PhoneLimits;
-        // SUBJECT-PHONE-GATE: not-account-scoped — abuse throttle by the number typed at booking; returns only counts, no subject data
         var held = await db.StayBookings.AsNoTracking()
-            .Where(b => b.GuestPhone == canonicalPhone && b.Status == StayBookingStatus.Held && b.HoldExpiresAtUtc > nowUtc)
+            .Where(b => b.GuestPhone == canonicalPhone && b.Status == StayBookingStatus.Held && b.HoldExpiresAtUtc > nowUtc)  // SUBJECT-PHONE-GATE: not-account-scoped — abuse throttle by the number typed at booking; returns only counts, no subject data
             .Select(b => b.CompanyId).ToListAsync(ct);
         if (held.Count >= limits.MaxHeldPerPhone || held.Count(c => c == companyId) >= limits.MaxHeldPerPhonePerCompany) return StayThrottleVerdict.TooManyHeld;
 
         var since = nowUtc.AddHours(-24);
-        // SUBJECT-PHONE-GATE: not-account-scoped — abuse throttle by the number typed at booking; returns only a count, no subject data
-        var recent = await db.StayBookings.AsNoTracking().CountAsync(b => b.GuestPhone == canonicalPhone && b.CreatedAtUtc >= since && !b.IsManual, ct);
+        var recent = await db.StayBookings.AsNoTracking().CountAsync(b => b.GuestPhone == canonicalPhone && b.CreatedAtUtc >= since && !b.IsManual, ct);  // SUBJECT-PHONE-GATE: not-account-scoped — abuse throttle by the number typed at booking; returns only a count, no subject data
         return recent >= limits.MaxCreatedPerPhonePerDay ? StayThrottleVerdict.TooManyPerDay : StayThrottleVerdict.Ok;
     }
 }

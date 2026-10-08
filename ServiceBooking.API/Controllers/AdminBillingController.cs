@@ -642,7 +642,7 @@ public class AdminBillingController(
 
         logger.LogInformation(
             "{Line} subscription assigned to billing account {AccountId} by {UserId}: plan {PlanName}, options {OptionsSummary}",
-            kind, accountId, changedByUserId, plan?.Name ?? (kind == CompanyKind.Orders ? OrdersFreePlan.Name : "—"), string.IsNullOrEmpty(newOptionsSummary) ? "—" : newOptionsSummary);
+            kind, accountId, changedByUserId, plan?.Name ?? (kind switch { CompanyKind.Orders => OrdersFreePlan.Name, _ => "—" }), string.IsNullOrEmpty(newOptionsSummary) ? "—" : newOptionsSummary);
         var freshAccount = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan).FirstAsync(a => a.Id == accountId);
         return Ok(await BuildAdminAccountDtoAsync(freshAccount));
     }
@@ -789,7 +789,7 @@ public class AdminBillingController(
                 createdAt = a.RequestedAtUtc,
                 status = "Pending",
                 line = requestLine,
-                currentPlanName = currentPlanConfig?.Name ?? (requestLine == CompanyKind.Orders ? OrdersFreePlan.Name : null),
+                currentPlanName = currentPlanConfig?.Name ?? (requestLine switch { CompanyKind.Orders => OrdersFreePlan.Name, _ => null }),
                 desiredPlanName = a.RequestedPlan?.Name,
                 items = itemDtos,
                 estimatedMonthlyPrice = estimated,

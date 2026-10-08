@@ -28,8 +28,9 @@ public sealed class AccountDeletionService(
     {
         var everHadTrial = await db.BillingAccounts
             .AnyAsync(a => a.OwnerUserId == userId && a.TrialStartedAtUtc != null, ct);
+        var stayBookings = await db.StayBookings.AsNoTracking().CountAsync(b => b.GuestUserId == userId, ct);
         return new AccountDeletionPreviewDto(
-            everHadTrial ? Services.Billing.TrialLegalNotices.TrialRegistryNoticeOnAccountDeletion : null);
+            everHadTrial ? Services.Billing.TrialLegalNotices.TrialRegistryNoticeOnAccountDeletion : null, stayBookings);
     }
 
     /// <summary><paramref name="requestAborted"/> is what the scope resolver was always given
@@ -185,6 +186,36 @@ public sealed class AccountDeletionService(
         {
             settings.AcceptanceChangedByName = OrderPersonalData.DeletedActorName;
             settings.AcceptanceChangedByUserId = null;
+        }
+
+        // Step 3c (ARCHITECTURE_CYCLE37.md §37.13.1): house bookings — the account's own, plus guest bookings on a PROVEN number (the same gate). Depersonalised, never
+        // cancelled; dates, amounts, status and occupancy stay so the owner's calendar does not break; payment proof files go at once, the fact of payment stays (ЮР-6);
+        // the guest's events get the deleted-user name; the browsers subscribed to those bookings are deleted.
+        var staysToErase = await db.StayBookings.Include(b => b.PaymentProofs)
+            .Where(b => b.GuestUserId == userId || (guestMatchPhone != null && b.GuestKind == StayActorKind.Guest && b.GuestPhone == guestMatchPhone && !db.Companies.Any(c => c.Id == b.CompanyId && c.IsShowcase)))  // SUBJECT-PHONE-GATE: gated — cycle 37, house bookings follow the same gate as bookings and orders (ARCHITECTURE_CYCLE37.md §37.13.1)
+            .ToListAsync();
+        var stayProofKeys = new List<string>();
+        var erasedStayIds = staysToErase.Select(b => b.Id).ToList();
+        foreach (var stay in staysToErase)
+        {
+            Stays.StayPersonalData.Erase(stay);
+            foreach (var proof in stay.PaymentProofs.Where(p => p.StorageKey != null))
+            {
+                stayProofKeys.Add(proof.StorageKey!);
+                proof.StorageKey = null;
+                proof.PurgedAtUtc = DateTime.UtcNow;
+            }
+            stay.PaymentProofsPurgedAtUtc ??= DateTime.UtcNow;
+            db.StayBookingEvents.Add(new StayBookingEvent
+            {
+                Id = Guid.NewGuid(), StayBookingId = stay.Id, CompanyId = stay.CompanyId, Kind = StayBookingEventKind.PersonalDataErased, OccurredAtUtc = DateTime.UtcNow,
+                ActorKind = StayActorKind.System, ActorNameSnapshot = "Система",
+            });
+        }
+        if (erasedStayIds.Count > 0)
+        {
+            foreach (var e in await db.StayBookingEvents.Where(e => erasedStayIds.Contains(e.StayBookingId)).ToListAsync()) Stays.StayPersonalData.TombstoneGuestEvent(e);
+            db.StayGuestPushSubscriptions.RemoveRange(await db.StayGuestPushSubscriptions.Where(s => erasedStayIds.Contains(s.StayBookingId)).ToListAsync());
         }
 
         // TD-05 (ARCHITECTURE_CYCLE16.md §247.2, no migration — §240.3/§247.1). Two rules, both scoped
@@ -346,6 +377,7 @@ public sealed class AccountDeletionService(
             storage.DeletePrivate(full);
             storage.DeletePrivate(thumb);
         }
+        foreach (var key in stayProofKeys) storage.DeletePrivate(key);
         storage.DeletePublic(oldAvatarUrl);
 
         return new(AccountDeletionStatus.Deleted);

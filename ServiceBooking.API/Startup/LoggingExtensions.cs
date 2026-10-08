@@ -185,6 +185,14 @@ internal static class LoggingExtensions
         // it sits in the path of the order page API and of the cancellation. The tail after the token ("/cancel") is kept.
         const string orderPublicPrefix = "/api/orders/public/";
 
+        // ARCHITECTURE_CYCLE37.md §37.13.2 — the same for the 256-bit booking token of «Дома» (page, proof files, cancellation, push).
+        const string stayPublicPrefix = "/api/stays/bookings/public/";
+        if (path.StartsWith(stayPublicPrefix, StringComparison.Ordinal) && path.Length > stayPublicPrefix.Length)
+        {
+            var slash = path.IndexOf('/', stayPublicPrefix.Length);
+            return stayPublicPrefix + "***" + (slash < 0 ? string.Empty : path[slash..]);
+        }
+
         if (path.StartsWith(orderPublicPrefix, StringComparison.Ordinal) && path.Length > orderPublicPrefix.Length)
         {
             var slash = path.IndexOf('/', orderPublicPrefix.Length);
