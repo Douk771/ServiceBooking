@@ -96,8 +96,8 @@ export function PricingPage() {
             key={plan.id}
             plan={plan}
             featured={plan.id === featuredPlanId}
-            messengerAddons={plan.isFree || plan.isTrial ? undefined : data.messengerAddons}
-            messengerAddonsNote={plan.isFree || plan.isTrial ? undefined : data.messengerAddonsNote}
+            messengerAddons={data.messengerAddons}
+            messengerAddonsNote={data.messengerAddonsNote}
           />
         ))}
       </div>

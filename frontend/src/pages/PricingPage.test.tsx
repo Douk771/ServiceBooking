@@ -123,7 +123,7 @@ describe('PricingPage — states', () => {
 })
 
 describe('PricingPage — messenger addon lines (cycle 40, Т40-L-11)', () => {
-  it('shows server lines on paid plans only and nothing when the server sends none', async () => {
+  it('shows server lines on every plan card (incl. free and trial, SPEC §0.3 О4) and nothing when the server sends none', async () => {
     getPublicPricing.mockResolvedValue({
       ...CATALOG,
       messengerAddons: [{ transport: 'Max', label: 'MAX', pricePerMonth: 490, text: '+ MAX 490 ₽/мес', footnote: null }],
@@ -132,8 +132,8 @@ describe('PricingPage — messenger addon lines (cycle 40, Т40-L-11)', () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: 'Студия' })
     expect(within(card('Студия')).getByText('+ MAX 490 ₽/мес')).toBeInTheDocument()
-    expect(within(card('Бесплатный')).queryByText(/MAX/)).toBeNull()
-    expect(within(card('Пробный период')).queryByText(/MAX/)).toBeNull()
+    expect(within(card('Бесплатный')).getByText('+ MAX 490 ₽/мес')).toBeInTheDocument()
+    expect(within(card('Пробный период')).getByText('+ MAX 490 ₽/мес')).toBeInTheDocument()
   })
 
   it('renders no lines without messengerAddons (WhatsApp closed, nothing sellable)', async () => {
