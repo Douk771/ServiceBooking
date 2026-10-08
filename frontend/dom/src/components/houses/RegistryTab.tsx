@@ -15,11 +15,11 @@ import { StayNotice } from '../StayNotice'
 import { houseKey } from './houseKey'
 import { useHouseTab } from './houseContext'
 
-/** The registry text of the server is HTML when the lawyer's text exists, plain words otherwise; either is the server's own. */
+/**
+ * `HouseManageDto.registryNotice.text` is PLAIN TEXT by contract (API_CONTRACT_CYCLE37.md §37.28: no markup, paragraphs are `\n`) — the exact
+ * words the owner attests to. It is printed as text, never as HTML.
+ */
 function RegistryNoticeText({ text }: { text: string }) {
-  if (/<\/?[a-z][\s\S]*>/i.test(text)) {
-    return <div className="legal-content text-sm leading-relaxed text-ink-soft [&_p]:mb-2" dangerouslySetInnerHTML={{ __html: text }} />
-  }
   return <p className="whitespace-pre-line text-sm leading-relaxed text-ink-soft">{text}</p>
 }
 

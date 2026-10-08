@@ -1173,10 +1173,11 @@ components:
         registryNumber: { type: string, nullable: true }
     RegistryNoticeDto:
       type: object
+      description: 'Текст заверения владельца для диалога публикации (ЮР-2). Заверяется ровно этот text — его версия пишется в HouseRegistryAttestation.'
       required: [version, text]
       properties:
-        version: { type: string }
-        text: { type: string }
+        version: { type: string, description: 'fallback:<sha256 hex от text в UTF-8> — пока текста StayRegistryOwnerNotice нет в манифесте (весь цикл 37); фронт возвращает его как есть в attestation.noticeVersion' }
+        text: { type: string, description: 'ПРОСТОЙ ТЕКСТ, не HTML: без разметки, абзацы — переводом строки \n. Фронт выводит его как текст (whitespace: pre-line), никогда через innerHTML' }
     HouseRegistryDto:
       type: object
       properties:

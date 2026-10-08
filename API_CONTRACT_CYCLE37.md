@@ -462,7 +462,10 @@ filename="payment-proof.pdf"`, изображения — `inline`.
 `dogsForbidden`, `hasCot`, `amenities[]` (коды), `address`, `yandexMapsUrl`, `twoGisUrl`, `checkInInfoText`, `priceMode`,
 `constantPriceRub`, `registry` (`objectKind`, `registryNumber`, `registryUrl`, `lastAttestation` — `{attestedAtUtc,
 attestedByName, objectKind, registryNumber}` или null), `registryNotice` (`{version, text}` — текст для диалога заверения;
-`version` = версия манифеста или `fallback:<sha>`), `isPublished`, `isArchived`, `position`, `photos[]` (`HousePhotoDto`:
+`text` — **простой текст, не HTML** (абзацы — `\n`; фронт выводит его как текст, не через `innerHTML`), заверяется ровно он;
+`version` = `fallback:<sha256 hex от text>` — в цикле 37 всегда так (текст `StayRegistryOwnerNotice` юриста показывается отдельно
+блоком `StayNotice` рядом с полями и в версию заверения не входит; если он появится в манифесте — `text` останется plain-text,
+`version` станет версией манифеста, формат поля не меняется), `isPublished`, `isArchived`, `position`, `photos[]` (`HousePhotoDto`:
 `id`, `url`, `thumbnailUrl`, `position`), `publicUrl`, `uncoveredDates[]` (режим `ByDates`: диапазоны будущих дат без цены
 на горизонте, `{startDate, endDate}`), `publishProblems[]` (коды публикации, которые сейчас не выполнены), `hasBookings`.
 

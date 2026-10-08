@@ -1732,8 +1732,11 @@ export interface components {
             objectKind: components["schemas"]["HouseObjectKind"];
             registryNumber?: string | null;
         } | null;
+        /** @description Текст заверения владельца для диалога публикации (ЮР-2). Заверяется ровно этот text — его версия пишется в HouseRegistryAttestation. */
         RegistryNoticeDto: {
+            /** @description fallback:<sha256 hex от text в UTF-8> — пока текста StayRegistryOwnerNotice нет в манифесте (весь цикл 37); фронт возвращает его как есть в attestation.noticeVersion */
             version: string;
+            /** @description ПРОСТОЙ ТЕКСТ, не HTML: без разметки, абзацы — переводом строки \n. Фронт выводит его как текст (whitespace: pre-line), никогда через innerHTML */
             text: string;
         };
         HouseRegistryDto: {
