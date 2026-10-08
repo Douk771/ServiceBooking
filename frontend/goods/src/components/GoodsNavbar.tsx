@@ -4,6 +4,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/authStore'
 import { unsubscribeCurrentDeviceOnLogout } from '@/hooks/useWebPush'
 import { Icon } from '@/components/ui/Icon'
+import { PricingNavLink } from '@/components/pricing/PricingNavLink'
+import { ordersPricingLine } from '../pricing/ordersPricingLine'
 
 /** "ezbook · Заказы" (SPEC US-23-04). Signed-in: «Мои заказы», «Кабинет», профиль, выход. */
 export function GoodsNavbar() {
@@ -27,6 +29,7 @@ export function GoodsNavbar() {
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `text-sm font-medium transition-colors ${isActive ? 'text-ink' : 'text-ink-soft hover:text-gold-dark'}`
+  const pricingLinkClass = 'text-sm font-medium text-ink-soft hover:text-gold-dark transition-colors'
   const mobileLinkClass =
     'block px-4 py-3 text-[15px] font-medium text-ink-soft hover:text-gold-dark hover:bg-cream-deep rounded-xl transition-colors'
 
@@ -47,6 +50,7 @@ export function GoodsNavbar() {
         </Link>
 
         <div className="hidden md:flex items-center gap-7">
+          <PricingNavLink line={ordersPricingLine} className={pricingLinkClass} />
           {authed ? (
             <>
               <NavLink to="/orders" className={linkClass}>
@@ -111,6 +115,7 @@ export function GoodsNavbar() {
 
       {menuOpen && (
         <div className="md:hidden border-t border-line bg-cream px-4 py-3 flex flex-col gap-1">
+          <PricingNavLink line={ordersPricingLine} className={mobileLinkClass} onClick={closeMenu} />
           {authed ? (
             <>
               <Link to="/orders" className={mobileLinkClass} onClick={closeMenu}>

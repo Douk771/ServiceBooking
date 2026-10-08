@@ -21,7 +21,7 @@ vi.mock('../api/cities', () => ({
   },
 }))
 
-// PricingTeaser (rendered by HomePage) calls this live; without a mock these tests would hit a real
+// LandingPricingSection (rendered by HomePage) calls this live; without a mock these tests would hit a real
 // network request for /api/pricing (see code-reviewer Н1).
 vi.mock('../api/pricing', () => ({
   pricingApi: {
@@ -218,5 +218,48 @@ describe('HomePage — cycle 29 (US-29-03) logo mark', () => {
     renderPage()
     expect(await screen.findByTestId('company-logo-initial')).toHaveTextContent('Р')
     expect(screen.getByTestId('company-logo-img')).toHaveAttribute('alt', '')
+  })
+})
+
+// T38-10: главная «Записи» на едином шаблоне (ARCHITECTURE_CYCLE38.md §38.4.2).
+describe('HomePage — единый шаблон (T38-10)', () => {
+  const LONG = 'Я'.repeat(200)
+  beforeEach(() => {
+    localStorage.clear()
+    citiesSearch.mockReset().mockResolvedValue([])
+    getPublic.mockReset().mockResolvedValue({
+      items: [company({ name: LONG, slug: 'long' })], page: 1, pageSize: 20, total: 1, hasNext: false,
+    })
+  })
+  const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+
+  it('catalog lives in #companies, anchors lead to #companies and #clients-title, no footer', async () => {
+    const { container } = renderPage()
+    await screen.findByText(LONG)
+    const frame = container.querySelector('#companies') as HTMLElement
+    expect(frame.contains(screen.getByText(LONG))).toBe(true)
+    expect(screen.getAllByRole('link', { name: 'Найти специалиста' })[0]).toHaveAttribute('href', '#companies')
+    expect(screen.getByRole('link', { name: 'Как записаться' })).toHaveAttribute('href', '#clients-title')
+    expect(container.querySelector('footer')).toBeNull()
+    expect(container.querySelectorAll('h1')).toHaveLength(1)
+  })
+
+  it('salon photo comes after #companies, lazy; reminder wording stays (Q38-6); long name is not truncated', async () => {
+    const { container } = renderPage()
+    await screen.findByText(LONG)
+    const img = container.querySelector('img[alt="Интерьер салона"]') as HTMLImageElement
+    expect(img.getAttribute('loading')).toBe('lazy')
+    expect(follows(container.querySelector('#companies') as Element, img)).toBe(true)
+    expect(container.textContent).toContain('напоминание накануне визита')
+    const h3 = screen.getByText(LONG)
+    expect(h3.className).not.toContain('truncate')
+  })
+
+  it('FAQ has 8 collapsed questions', async () => {
+    const { container } = renderPage()
+    await screen.findByText(LONG)
+    const buttons = container.querySelectorAll('#faq h3 > button')
+    expect(buttons).toHaveLength(8)
+    buttons.forEach((b) => expect(b.getAttribute('aria-expanded')).toBe('false'))
   })
 })

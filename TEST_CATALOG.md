@@ -7529,3 +7529,36 @@ Vitest разработчиков (не пересобирались QA): раз
 Прогон: `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle37"` (нужны `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` и `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`).
 
 Найденное QA: двойное нажатие «Забронировать» (CY37-40, CY37-66) давало 429/409 вместо существующей брони — исправлено (`StayBookingCreationService`, повторная проверка ключа под замком номера). Каталог «Домов» кешируется на 30 с и не сбрасывается при публикации/блокировке — тесты вызывают `InvalidateCatalog()`.
+
+## Цикл 38 — перенос главных на единый шаблон (FE, T-38-08…10)
+
+Перенос тестов goods (ARCHITECTURE_CYCLE38.md §38.12.2): проверки и id прежние, рендер через `LandingClientsSection`/`LandingBusinessSection` с `goodsLanding`.
+
+| Было | Стало |
+|---|---|
+| `goods/src/components/BuyersBlock.test.tsx` (T30-01…12) | `goods/src/landing/goodsLanding.clients.test.tsx` |
+| T30-13 (паритет классов) | удалён из goods; держит шаблон (T38-03, `ServiceLanding.test.tsx`) |
+| `BuyersBlock.qa.test.tsx` (QA30-02…10) | `goods/src/landing/goodsLanding.qa.test.tsx` |
+| `BusinessBlock.test.tsx` (T27-01…10) | `goods/src/landing/goodsLanding.business.test.tsx` |
+| `BusinessBlock.qa.test.tsx` (QA27-01…) | `goods/src/landing/goodsLanding.business.qa.test.tsx` |
+| `BusinessBlock.screenshot.test.tsx` (T30-14) | `goods/src/landing/goodsLanding.business.screenshot.test.tsx` |
+
+Новые: T38-09 (`goods/src/landing/configs.guard.test.ts`, `src/pages/home/zapisFaq.test.ts`), T38-10 (`src/pages/HomePage.test.tsx`), T38-11 (`goods/src/pages/CatalogHomePage.test.tsx`), T38-13 (`goods/src/pricing/ordersPricingLine.test.ts`), T38-14 (`goods/src/pages/PricingPage.test.tsx`), T38-15 (`goods/src/components/GoodsNavbar.test.tsx`).
+
+### Цикл 38 — функциональные тесты бэкенда (QA, T38-B04…B06)
+
+Файл `ServiceBooking.Tests/Tests/Cycle38OrdersPricingTests.cs` (область `billing`); написано по SPEC_CYCLE38, `API_CONTRACT_CYCLE38.md`, `contracts/cycle38/openapi.yaml`. Классам с «чистой» БД отведена своя база.
+
+| Id | Класс | Что проверяет | Критерий |
+|---|---|---|---|
+| `CY38-B04-01` | `Cycle38OrdersTariffsCleanTests` | `apply` на чистой БД создаёт «Лавку» 690 / «Магазин» 1490 / «Сеть магазинов» 2990 с лимитами, фиксированными Id, правилом `notifications.whatsapp` = `Extra` и `Unavailable` по остальным опциям; бесплатный переименован в «Бесплатный», лимиты целы; повторный `apply` ничего не создаёт и не добавляет правил; одноимённый тариф «Записи» «Магазин» не тронут и не принят за тариф «Заказов» | Q38-1, Q38-2 |
+| `CY38-B04-02` | `Cycle38OrdersTariffsAdminEditsTests` | цена, изменённая в админке, не перезаписывается и попадает в строку отчёта «в админке 777, в сетке 690»; `apply` не публикует скрытый бесплатный тариф и не трогает его `Highlights` (правка ревью) | Q38-2 |
+| `CY38-B05-01` | `Cycle38OrdersPricingNotSeededTests` | `GET /api/pricing/orders` до сидирования — 404 без тела | US-38 тарифы |
+| `CY38-B05-02` | `Cycle38OrdersPricingTests` | после `apply` — 200, ответ проходит `OpenApiContract.Load("cycle38")`; порядок «Бесплатный», «Лавка», «Магазин», «Сеть магазинов»; `ETag`, `Cache-Control: public, max-age=60`; `null`-лимиты у «Сети магазинов»; ≤ 5 преимуществ | там же |
+| `CY38-B05-03` | `Cycle38OrdersPricingTests` | «Демо» (даже при `IsPublic=true`), `IsPublic=false`, `IsActive=false`, тарифы «Записи» в ответ не попадают; тарифов «Заказов» нет в `/api/pricing` | там же |
+| `CY38-B05-04` | `Cycle38OrdersPricingTests` | `pricing.public-enabled=false`: `/api/pricing` — 404, `/api/pricing/orders` — 200; и наоборот | Q38-3 |
+| `CY38-B05-05` | `Cycle38OrdersPricingTests` | `If-None-Match` с актуальным `ETag` — 304 без тела, с чужим — 200 | там же |
+| `CY38-B05-06` | `Cycle38OrdersPricingTests` | правка цены через `PUT /api/admin/plans/{id}` видна сразу (кэш 60 с сброшен), `ETag` меняется | там же |
+| `CY38-B06-01` | `Cycle35DemoScenarioTests` | после настоящего `DemoResetService.ResetAsync` `/api/pricing/orders` — 200 по контракту, три платных тарифа есть, «Демо» нет | там же |
+
+Контрактная проверка цикла 38: `@redocly/cli lint` по `contracts/cycle38/openapi.yaml` без ошибок; `types:api:cycle38` и `contracts:json` не дают диффа; живые ответы проверяются `AssertResponse` в `CY38-B05-02` и `CY38-B06-01`.

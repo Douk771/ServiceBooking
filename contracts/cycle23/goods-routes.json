@@ -15,6 +15,7 @@
     "/login",
     "/register",
     "/o/:token",
+    "/pricing",
     "/orders",
     "/profile",
     "/profile/consents",

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { BuyersBlock } from './BuyersBlock'
-import { BusinessBlock } from './BusinessBlock'
+import { LandingClientsSection } from '@/components/landing/LandingClientsSection'
+import { goodsLanding } from './goodsLanding'
 import { useAuthStore } from '@/store/authStore'
 import manifest from '../assets/screenshots/screenshots.json'
 
@@ -23,7 +23,7 @@ const TRACK = [
 ]
 const ORDER_ALT = `Страница заказа на телефоне: заказ № ${manifest.orderPage.orderNumber} принят магазином, получение сегодня к ${manifest.orderPage.pickupClock}, отмечены шаги „Заказ оформлен“ и „Магазин принял заказ“`
 
-const setup = () => render(<MemoryRouter><BuyersBlock /></MemoryRouter>)
+const setup = () => render(<MemoryRouter><LandingClientsSection config={goodsLanding.clients} placeholder={false} /></MemoryRouter>)
 const signIn = () =>
   useAuthStore.setState({ user: { id: 'u', phone: '79001234567', firstName: 'И', lastName: 'П', roles: ['Client'] }, token: 't' })
 
@@ -149,39 +149,5 @@ describe('BuyersBlock', () => {
     expect(srcset).toContain(' 1x')
     expect(srcset).toContain(' 2x')
     expect(container.querySelector('figcaption')?.textContent).toBe('Так выглядит страница заказа: статус меняется сам')
-  })
-
-  it('T30-13 class parity with BusinessBlock', () => {
-    const { container } = render(<MemoryRouter><BuyersBlock /><BusinessBlock /></MemoryRouter>)
-    const [buyers, biz] = Array.from(container.querySelectorAll('section'))
-    const tokens = (el: Element | null | undefined) => new Set((el?.getAttribute('class') ?? '').split(/\s+/).filter(Boolean))
-    const pick = (root: Element) => ({
-      section: root,
-      eyebrow: root.querySelector('p'),
-      buttons: root.querySelector('a')?.parentElement,
-      primary: root.querySelector('a'),
-      secondary: root.querySelectorAll('a')[1],
-      panel: root.querySelector('ol')?.parentElement,
-      h3: root.querySelector('ol')?.parentElement?.querySelector('h3'),
-      ol: root.querySelector('ol'),
-      circle: root.querySelector('ol li > div'),
-      h4: root.querySelector('ol h4'),
-      stepP: root.querySelector('ol li p'),
-      benefitLi: root.querySelector('ul li'),
-      benefitSvg: root.querySelector('ul li svg'),
-      h2: root.querySelector('h2'),
-    })
-    const b = pick(buyers)
-    const z = pick(biz)
-    // BusinessBlock's paragraph sits in the first column; the buyers one in max-w wrapper — same classes
-    const bp = buyers.querySelector('h2 + p')
-    const zp = biz.querySelector('h2 + p')
-    expect(tokens(bp)).toEqual(tokens(zp))
-    for (const key of Object.keys(b) as (keyof typeof b)[]) {
-      expect(b[key], key).not.toBeNull()
-      const want = tokens(z[key])
-      const got = tokens(b[key])
-      want.forEach((t) => expect(got.has(t), `${key}: ${t}`).toBe(true))
-    }
   })
 })
