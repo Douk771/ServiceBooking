@@ -178,7 +178,7 @@ export function ServicePricesTab() {
       <SectionCard title="Предпросмотр: день × час" description="Цена каждого часа по правилам. «нет цены» в рабочее время — час, с которого сеанс начать нельзя.">
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse text-xs" data-testid="price-matrix">
-            <caption className="sr-only">Цена за час по дням недели и часам бизнес-дня</caption>
+            <caption className="sr-only">Цена за час по дням недели и часам дня услуги</caption>
             <thead>
               <tr>
                 <th scope="col" className="sticky left-0 bg-white px-2 py-1.5 text-left font-medium text-ink-soft">День</th>
