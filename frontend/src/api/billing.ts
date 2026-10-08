@@ -4,6 +4,7 @@ import type { components as Cycle18Schemas } from '../types/api-cycle18.generate
 import type { components as Cycle19Schemas } from '../types/api-cycle19.generated'
 import type { components as Cycle20Schemas } from '../types/api-cycle20.generated'
 import type { components as Cycle24Schemas } from '../types/api-cycle24.generated'
+import type { components as Cycle37Schemas } from '../types/api-cycle37.generated'
 
 /**
  * Owner "Ваша подписка" screen (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41,
@@ -48,10 +49,13 @@ type OwnerSubscriptionDtoWithTrial = OwnerSubscriptionDto & Cycle18['OwnerSubscr
 // ── Cycle 24 (ARCHITECTURE_CYCLE24.md §462.2 п.2, API_CONTRACT_CYCLE24.md §485.1) — the same screen serves the goods
 // «Заказы» line. Additive: `line`, `orders`, `availablePlans`. Without `line` everything below behaves exactly as before.
 type Cycle24 = Cycle24Schemas['schemas']
-export type BillingLine = Cycle24['CompanyKind']
+// Cycle 37 (API_CONTRACT_CYCLE37.md §37.21.4): a third line — `Stays` — adds the `stays` block; `availablePlans` lists the line's plans.
+type Cycle37 = Cycle37Schemas['schemas']
+export type BillingLine = Cycle37['CompanyKind']
 export type OrdersUsageDto = Cycle24['OrdersUsageDto']
+export type StaysSubscriptionBlockDto = Cycle37['StaysSubscriptionBlockDto']
 export type AvailablePlanDto = Cycle24['AvailablePlanDto']
-export type OwnerSubscriptionDtoCycle24Patch = Pick<Cycle24['OwnerSubscriptionDtoCycle24'], 'line' | 'orders' | 'availablePlans'>
+export type OwnerSubscriptionDtoCycle24Patch = Pick<Cycle24['OwnerSubscriptionDtoCycle24'], 'line' | 'orders' | 'availablePlans'> & { stays?: StaysSubscriptionBlockDto | null }
 
 export const billingApi = {
   /** GET /api/billing/subscription. 404 means the caller owns no company (not an error state). */

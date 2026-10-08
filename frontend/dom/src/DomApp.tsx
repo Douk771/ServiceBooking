@@ -17,6 +17,14 @@ import { CatalogPage } from './pages/CatalogPage'
 import { CompanyPage } from './pages/CompanyPage'
 import { HousePage } from './pages/HousePage'
 import { BookingPage } from './pages/BookingPage'
+import { CabinetHomePage } from './pages/cabinet/CabinetHomePage'
+import { CreateCompanyPage } from './pages/cabinet/CreateCompanyPage'
+import { CompanyLayout, CompanyIndexRedirect } from './pages/cabinet/CompanyLayout'
+import { SettingsPage } from './pages/cabinet/SettingsPage'
+import { StaffPage } from './pages/cabinet/StaffPage'
+import { NotificationsPage } from './pages/cabinet/NotificationsPage'
+import { LinkPage } from './pages/cabinet/LinkPage'
+import { SubscriptionPage } from './pages/cabinet/SubscriptionPage'
 
 /**
  * Routes reachable while a "Material" change to a GLOBAL-gate document is pending acceptance (same reasoning as ezbook's
@@ -69,7 +77,18 @@ export function DomApp() {
                 <Route path="/register" element={<RegisterPage />} />
                 <Route path="/b/:token" element={<BookingPage />} />
 
-                <Route element={<RequireAuth />}>{null}</Route>
+                <Route element={<RequireAuth />}>
+                  <Route path="/cabinet" element={<CabinetHomePage />} />
+                  <Route path="/cabinet/new" element={<CreateCompanyPage />} />
+                  <Route path="/cabinet/subscription" element={<SubscriptionPage />} />
+                  <Route element={<CompanyLayout />}>
+                    <Route path="/cabinet/:companyId" element={<CompanyIndexRedirect />} />
+                    <Route path="/cabinet/:companyId/settings" element={<SettingsPage />} />
+                    <Route path="/cabinet/:companyId/staff" element={<StaffPage />} />
+                    <Route path="/cabinet/:companyId/notifications" element={<NotificationsPage />} />
+                    <Route path="/cabinet/:companyId/link" element={<LinkPage />} />
+                  </Route>
+                </Route>
 
                 <Route path="/data-request" element={<SubjectRequestPage />} />
                 <Route path="/privacy" element={<LegalDocumentPage type="Privacy" />} />

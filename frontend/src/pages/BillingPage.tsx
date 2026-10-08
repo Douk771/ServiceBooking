@@ -28,27 +28,29 @@ import { BillingNoticesSummary } from '../components/billing/BillingNoticesSumma
  */
 export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) {
   const qc = useQueryClient()
-  // Cycle 24: goods mounts this same screen with line="Orders" (ARCHITECTURE_CYCLE24.md §462.2 п.2). Without the prop
-  // nothing below differs from before: same query key, same request, same blocks.
+  // Cycle 24: goods mounts this same screen with line="Orders" (ARCHITECTURE_CYCLE24.md §462.2 п.2); cycle 37: dom with line="Stays"
+  // (ARCHITECTURE_CYCLE37.md §37.10.4). Without the prop nothing below differs from before: same query key, same request, same blocks.
   const isOrders = line === 'Orders'
-  const queryKey = isOrders ? ['owner-subscription', 'Orders'] : ['owner-subscription']
+  const isStays = line === 'Stays'
+  const isLine = line !== 'Services'
+  const queryKey = isLine ? ['owner-subscription', line] : ['owner-subscription']
   const [requestError, setRequestError] = useState('')
   const [trialError, setTrialError] = useState('')
   const [desiredOptions, setDesiredOptions] = useState<Record<string, number> | null>(null)
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
     queryKey,
-    queryFn: () => billingApi.getSubscription(isOrders ? 'Orders' : undefined),
+    queryFn: () => billingApi.getSubscription(isLine ? line : undefined),
     retry: false,
   })
 
   useEffect(() => {
-    document.title = isOrders ? 'Ваша подписка — ezbook · Заказы' : 'Ваша подписка — ServiceBooking'
-  }, [isOrders])
+    document.title = isStays ? 'Ваша подписка — ezbook · Дома' : isOrders ? 'Ваша подписка — ezbook · Заказы' : 'Ваша подписка — ServiceBooking'
+  }, [isOrders, isStays])
 
-  // Cycle 24 (L14): a plan of the «Заказы» line is requested straight from `availablePlans`.
+  // Cycle 24 (L14): a plan of the «Заказы» line (cycle 37: «Дома») is requested straight from `availablePlans`.
   const planRequestMut = useMutation({
-    mutationFn: (planId: string) => billingApi.submitRequest({ line: 'Orders', planId, options: [] }),
+    mutationFn: (planId: string) => billingApi.submitRequest({ line: isStays ? 'Stays' : 'Orders', planId, options: [] }),
     onSuccess: () => {
       setRequestError('')
       qc.invalidateQueries({ queryKey: ['owner-subscription'] })
@@ -69,7 +71,7 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
     mutationFn: (options: Record<string, number>) =>
       billingApi.submitRequest({
         options: Object.entries(options).map(([optionId, quantity]) => ({ optionId, quantity })),
-        ...(isOrders ? { line: 'Orders' as const } : {}),
+        ...(isLine ? { line } : {}),
       }),
     onSuccess: () => {
       setRequestError('')
@@ -192,7 +194,7 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
     <div className="max-w-[860px] mx-auto px-8 pt-16 pb-24">
       <header className="mb-10">
         <h1 className="font-serif text-[36px] font-medium text-ink mb-2">Ваша подписка</h1>
-        <p className="text-sm text-ink-soft">{isOrders ? 'Тариф действует на все ваши магазины сразу; опции — общие для аккаунта.' : 'Тариф и опции действуют на все ваши компании сразу.'}</p>
+        <p className="text-sm text-ink-soft">{isStays ? 'Тариф действует на все ваши дома сразу; он ограничивает число опубликованных домов.' : isOrders ? 'Тариф действует на все ваши магазины сразу; опции — общие для аккаунта.' : 'Тариф и опции действуют на все ваши компании сразу.'}</p>
       </header>
 
       {/* Cycle 18 — трial plan (API_CONTRACT_CYCLE18.md §371). `trial` is null only when it has
@@ -254,6 +256,15 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
         </Card>
       )}
 
+      {isStays && data.stays && data.stays.warningLevel !== 'None' && data.stays.text && (
+        <Card
+          className={`p-5 mb-6 border ${data.stays.warningLevel === 'TrialEnding3d' || data.stays.warningLevel === 'TrialEnding1d' ? 'border-warning bg-warning-bg' : 'border-danger bg-danger-bg'}`}
+          data-testid="stays-plan-banner"
+        >
+          <p className="text-sm font-semibold text-ink">{data.stays.text}</p>
+        </Card>
+      )}
+
       <Card className="p-[26px] mb-6">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
           <h2 className="text-[15.5px] font-semibold text-ink">{data.plan.name}</h2>
@@ -284,6 +295,15 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
               <dt>{data.orders.text}</dt>
             </div>
           )}
+          {isStays && data.stays && (
+            <div className="flex justify-between" data-testid="stays-usage">
+              <dt>
+                Опубликовано домов: {data.stays.housesPublished}
+                {data.stays.maxHouses != null ? ` из ${data.stays.maxHouses}` : ''}
+                {data.stays.isTrial ? ' · пробный период' : ''}
+              </dt>
+            </div>
+          )}
         </dl>
       </Card>
 
@@ -311,9 +331,9 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
         </Card>
       )}
 
-      {isOrders && data.availablePlans && data.availablePlans.length > 0 && (
+      {isLine && data.availablePlans && data.availablePlans.length > 0 && (
         <Card className="p-[26px] mb-6" data-testid="available-plans">
-          <h2 className="text-[15.5px] font-semibold text-ink mb-4">Тарифы «Заказов»</h2>
+          <h2 className="text-[15.5px] font-semibold text-ink mb-4">{isStays ? 'Тарифы «Домов»' : 'Тарифы «Заказов»'}</h2>
           <ul className="grid gap-4">
             {data.availablePlans.map((p) => (
               <li key={p.planId} className="flex items-start justify-between gap-4 flex-wrap">
@@ -455,9 +475,9 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
       <BillingNoticesSummary />
 
       {/* Т20-04 п. 3 (US-20-01) — operator-of-record details for the paper health-consent form. */}
-      {!isOrders && <OperatorDetailsSection />}
+      {!isLine && <OperatorDetailsSection />}
 
-      {!isOrders && (
+      {!isLine && (
         <p className="text-xs text-muted">
           Хотите сравнить тарифы целиком? <Link to="/pricing" className="underline">Смотрите страницу тарифов</Link>.
         </p>
