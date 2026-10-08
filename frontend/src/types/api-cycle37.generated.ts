@@ -1161,7 +1161,7 @@ export interface components {
             warningLevel: components["schemas"]["StaysWarningLevel"];
             text?: string | null;
         };
-        /** @description AvailablePlanDto цикла 24 + maxHouses в конце (лимит домов тарифа «Дома»; null — без ограничения у «Домов», всегда null у других линеек). */
+        /** @description AvailablePlanDto цикла 24 + maxHouses в конце (лимит домов тарифа «Дома»; поле опускается, если лимита нет: у «Домов» — без ограничения, у других линеек — не применимо). */
         AvailablePlanDtoCycle37: {
             /** Format: uuid */
             planId: string;
