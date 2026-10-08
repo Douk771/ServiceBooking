@@ -1013,6 +1013,7 @@ useAuthedImage}`, `utils/{money, phone, dateFormat, timezone, *Error, pushWorker
 | `/cabinet` | мои компании «Дома», «Подключить дома», строки про ezbook и goods | вошедший |
 | `/cabinet/new` | создание компании (соглашение, условия триала) | вошедший |
 | `/cabinet/subscription` | подписка линейки «Дома» | владелец |
+| `/cabinet/:companyId` | вход в компанию: переадресация на шахматку (владелец, управляющий) или на график (горничная) | участник |
 | `/cabinet/:companyId/board` | шахматка (по умолчанию для владельца и управляющего); на телефоне — список | `ViewBookings` |
 | `/cabinet/:companyId/bookings` | список «Ожидают проверки оплаты» и все брони с фильтром статуса | `ViewBookings` |
 | `/cabinet/:companyId/bookings/:bookingId` | карточка брони, файлы, действия, журнал (P1 — журнал) | `ViewBookings` |

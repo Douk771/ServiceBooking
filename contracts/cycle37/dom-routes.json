@@ -31,6 +31,7 @@
     "/cabinet",
     "/cabinet/new",
     "/cabinet/subscription",
+    "/cabinet/:companyId",
     "/cabinet/:companyId/board",
     "/cabinet/:companyId/bookings",
     "/cabinet/:companyId/bookings/:bookingId",
