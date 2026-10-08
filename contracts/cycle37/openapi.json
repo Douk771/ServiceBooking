@@ -4,18 +4,15 @@
     "title": "ServiceBooking API — цикл 37 (Дома, цикл 1)",
     "version": "37.1.0",
     "license": {
-      "name": "Proprietary"
+      "name": "Proprietary",
+      "url": "https://ezbook.ru/terms"
     },
     "description": "Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ:\n  * camelCase; enum — строками (имена членов C#); DateTime — ISO-8601 UTC; DateOnly — \"YYYY-MM-DD\";\n    время суток — \"HH:mm\";\n  * ДЕНЬГИ ВЕРТИКАЛИ — ЦЕЛЫЕ РУБЛИ (integer, суффикс Rub);\n  * тела осознанных 400/402/429 — ГОЛАЯ СТРОКА (text/plain) по-русски; 401/403 — пустое тело; 404 — пустое тело;\n  * 451 — гейты правовых документов;\n  * текст, который видит человек (статусы, причины, отказы, суммы возврата, строки суммы), собирает СЕРВЕР.\n\nИСКЛЮЧЕНИЕ, КАК У ЗАКАЗОВ: все 409 маршрутов /api/stays/* — JSON с машиночитаемым code и готовым message\n(StayRefusalDto, StayGuestConflictDto, StayStaffConflictDto, StaysConflictDto).\n\nГЛАВНЫЕ ПРАВИЛА, КОТОРЫЕ СХЕМА ЗАКРЕПЛЯЕТ ФОРМОЙ:\n  1. Ночь D начинается в дату D; период [startDate, endDate) — endDate это дата выезда.\n  2. Реквизиты для оплаты есть ТОЛЬКО в PublicStayBookingDto (по токену брони) и в PaymentDetailsDto (владельцу).\n     Ни один публичный DTO дома/компании/каталога их не содержит (Т37-04).\n  3. ФИО исполнителя-физлица — только в ProviderFullDto (страница брони, кабинет владельца); публично — ProviderPublicDto.\n  4. Сумма возврата — «не меньше X» (StayRefundViewDto.refundAtLeastRub), считает сервер (ЮР-1).\n  5. Действия персонала над бронью несут expectedVersion; чужое изменение → 409 VersionMismatch с актуальной карточкой.\n  6. Ссылка на бронь — токен не короче 43 символов base64url (256 бит). Неизвестный токен → 404 с пустым телом.\n  7. График (StaysScheduleDto) не содержит телефонов, сумм и файлов; comment = null, если скрыт от горничной.\n"
   },
   "servers": [
     {
-      "url": "http://localhost:5000",
-      "description": "dev (dotnet run)"
-    },
-    {
-      "url": "http://localhost:4037",
-      "description": "prism mock по этой схеме"
+      "url": "https://dom.ezbook.ru",
+      "description": "production"
     }
   ],
   "tags": [
@@ -357,7 +354,10 @@
           "ManageBookings",
           "ManageBlocks",
           "ViewSchedule",
-          "ViewCabinet"
+          "ViewCabinet",
+          "ManageServices",
+          "EditServiceContent",
+          "ManageServiceDates"
         ]
       },
       "StayBookingStatus": {
@@ -464,13 +464,15 @@
       },
       "StayChargeKind": {
         "type": "string",
-        "description": "Строки суммы брони. Цикл 2 допишет ServiceSlot, ServiceItem.",
+        "description": "Строки суммы брони. Цикл 39 дописал ServiceSlot, ServiceItem.",
         "enum": [
           "Nights",
           "ExtraBeds",
           "Dogs",
           "Cot",
-          "ManualTotal"
+          "ManualTotal",
+          "ServiceSlot",
+          "ServiceItem"
         ]
       },
       "StayRefusalCode": {
@@ -488,7 +490,9 @@
           "CotNotAvailable",
           "NoPriceForNights",
           "NotAcceptingBookings",
-          "PriceChanged"
+          "PriceChanged",
+          "ServiceSlotUnavailable",
+          "ServiceSelectionInvalid"
         ]
       },
       "NotAcceptingReason": {
@@ -534,7 +538,8 @@
           "PricePeriodOverlap",
           "BlockConflictsWithBooking",
           "BlockOverlapsBlock",
-          "MessengerUnavailable"
+          "MessengerUnavailable",
+          "ProviderRequiredForServiceOrders"
         ]
       },
       "StayGuestAction": {
@@ -634,6 +639,7 @@
                 "$ref": "#/components/schemas/NotAcceptingReason"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "reasonText": {
@@ -817,6 +823,7 @@
                 "$ref": "#/components/schemas/NotAcceptingReason"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "quote": {
@@ -825,6 +832,7 @@
                 "$ref": "#/components/schemas/StayQuoteDto"
               }
             ],
+            "type": "object",
             "nullable": true,
             "description": "только у PriceChanged"
           }
@@ -887,6 +895,7 @@
                 "$ref": "#/components/schemas/PricePeriodDto"
               }
             ],
+            "type": "object",
             "nullable": true
           },
           "conflicts": {
@@ -983,6 +992,7 @@
                 "$ref": "#/components/schemas/StaffPosition"
               }
             ],
+            "type": "string",
             "nullable": true
           }
         }
@@ -1009,6 +1019,7 @@
                 "$ref": "#/components/schemas/StaffPosition"
               }
             ],
+            "type": "string",
             "nullable": true
           }
         }
@@ -1115,6 +1126,7 @@
                 "$ref": "#/components/schemas/StaysSubscriptionBlockDto"
               }
             ],
+            "type": "object",
             "nullable": true
           }
         }
@@ -1807,6 +1819,7 @@
                 "$ref": "#/components/schemas/TimeOfDay"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "comment": {
@@ -2152,6 +2165,7 @@
                 "$ref": "#/components/schemas/TimeOfDay"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "guestName": {
@@ -2455,6 +2469,7 @@
                 "$ref": "#/components/schemas/StaysTrialOutcomeDto"
               }
             ],
+            "type": "object",
             "nullable": true
           }
         }
@@ -2518,6 +2533,7 @@
                 "$ref": "#/components/schemas/StaysConflictDto"
               }
             ],
+            "type": "object",
             "nullable": true
           }
         }
@@ -2832,6 +2848,7 @@
                 "$ref": "#/components/schemas/StaysSettingsDto"
               }
             ],
+            "type": "object",
             "nullable": true,
             "description": "null для горничной"
           },
@@ -2841,6 +2858,7 @@
                 "$ref": "#/components/schemas/PaymentDetailsDto"
               }
             ],
+            "type": "object",
             "nullable": true,
             "description": "только при ManageCompany"
           },
@@ -3218,6 +3236,7 @@
                 "$ref": "#/components/schemas/AttestationInput"
               }
             ],
+            "type": "object",
             "nullable": true,
             "description": "обязательно, если дом опубликован"
           }
@@ -3307,6 +3326,7 @@
                 "$ref": "#/components/schemas/HouseObjectKind"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "registryNumber": {
@@ -3519,6 +3539,7 @@
                 "$ref": "#/components/schemas/HouseBlockKind"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "needsAction": {
@@ -3956,6 +3977,7 @@
                 "$ref": "#/components/schemas/TimeOfDay"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "guestName": {
@@ -4261,6 +4283,7 @@
                 "$ref": "#/components/schemas/TimeOfDay"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "guestName": {
@@ -4556,6 +4579,7 @@
           "stays-public"
         ],
         "operationId": "staysPublicAmenities",
+        "security": [],
         "summary": "Справочник удобств с подписями.",
         "responses": {
           "200": {
@@ -4583,6 +4607,7 @@
           "stays-public"
         ],
         "operationId": "staysPublicCatalog",
+        "security": [],
         "summary": "Каталог домов Шерегеша с фильтрами по датам, гостям и цене.",
         "parameters": [
           {
@@ -4636,6 +4661,7 @@
           "stays-public"
         ],
         "operationId": "staysPublicCompany",
+        "security": [],
         "summary": "Страница компании «Дома» по адресу (ссылка, QR).",
         "parameters": [
           {
@@ -4680,6 +4706,7 @@
           "stays-public"
         ],
         "operationId": "staysPublicHouse",
+        "security": [],
         "summary": "Страница дома.",
         "parameters": [
           {
@@ -4715,6 +4742,7 @@
           "stays-public"
         ],
         "operationId": "staysPublicCalendar",
+        "security": [],
         "summary": "Календарь занятости и цен дома по ночам.",
         "parameters": [
           {
@@ -4768,6 +4796,7 @@
           "stays-public"
         ],
         "operationId": "staysPublicQuote",
+        "security": [],
         "summary": "Расчёт стоимости и проверка дат (ничего не резервирует, всегда 200).",
         "parameters": [
           {
@@ -4877,6 +4906,7 @@
           "stays-booking-public"
         ],
         "operationId": "staysGetPublicBooking",
+        "security": [],
         "summary": "Страница брони по ссылке.",
         "parameters": [
           {
@@ -4909,6 +4939,7 @@
           "stays-booking-public"
         ],
         "operationId": "staysUploadPaymentProof",
+        "security": [],
         "summary": "Приложить подтверждение оплаты (PDF, JPEG, PNG, WebP; до 10 МБ; до 3 файлов).",
         "parameters": [
           {
@@ -4966,6 +4997,7 @@
           "stays-booking-public"
         ],
         "operationId": "staysGetPublicPaymentProof",
+        "security": [],
         "summary": "Скачать/посмотреть своё подтверждение оплаты.",
         "parameters": [
           {
@@ -4994,6 +5026,7 @@
           "stays-booking-public"
         ],
         "operationId": "staysCancelByGuest",
+        "security": [],
         "summary": "Отменить бронь гостем (до момента заезда).",
         "parameters": [
           {
@@ -5039,6 +5072,7 @@
           "stays-booking-public"
         ],
         "operationId": "staysGuestPushSubscribe",
+        "security": [],
         "summary": "Подписать браузер на уведомления о брони.",
         "parameters": [
           {
@@ -5080,6 +5114,7 @@
           "stays-booking-public"
         ],
         "operationId": "staysGuestPushUnsubscribe",
+        "security": [],
         "summary": "Отписать браузер (идемпотентно).",
         "parameters": [
           {

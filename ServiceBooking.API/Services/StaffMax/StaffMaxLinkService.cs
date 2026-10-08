@@ -52,8 +52,11 @@ public sealed class StaffMaxLinkService(
         else if (link is { Status: StaffMaxLinkStatus.StoppedInMax }) { status = StaffMaxStatus.StoppedInMax; text = StoppedText; }
         else { status = StaffMaxStatus.NotLinked; text = NotLinkedText; }
 
+        // Cycle 39: an owner or a manager of a «Дома» company is eligible too (a housekeeper is not — the same rule as LinkAsync).
+        var eligible = shops.Count > 0 || await db.CompanyMembers.AsNoTracking().Where(CompanyMembership.IsStaffRole)
+            .AnyAsync(cm => cm.UserId == userId && cm.Company.IsActive && cm.Company.Kind == CompanyKind.Stays && cm.StaffPosition != StaffPosition.Housekeeper, ct);
         return new StaffMaxStatusDto(
-            availability.Enabled, availability.CanLink, availability.UnavailableText, shops.Count > 0, status, text,
+            availability.Enabled, availability.CanLink, availability.UnavailableText, eligible, status, text,
             link?.LinkedAtUtc, link?.StoppedAtUtc,
             pending is null ? null : new StaffMaxPendingSessionDto(pending.Id, DateTime.SpecifyKind(pending.ExpiresAtUtc, DateTimeKind.Utc)),
             shops, Math.Max(1, options.Value.PollIntervalSeconds));

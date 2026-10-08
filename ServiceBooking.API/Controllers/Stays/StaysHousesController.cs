@@ -138,6 +138,8 @@ public class StaysHousesController(
 
         if (slug != house.Slug)
         {
+            // A house that kept an old address (the migration renames only the reserved ones it finds) can still save its card; only a CHANGE to a reserved word is refused.
+            if (StaysSlugPolicy.IsReservedHouseSlug(slug)) return Conflict(new StaysConflictDto("SlugReserved", "Этот адрес зарезервирован — выберите другой"));
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             await AdvisoryLock.AcquireAsync(db, $"stay-houses:{companyId}");
             if (await db.Houses.AnyAsync(h => h.CompanyId == companyId && h.Slug == slug && h.Id != houseId, ct))

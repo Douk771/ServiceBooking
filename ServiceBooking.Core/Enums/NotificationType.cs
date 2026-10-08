@@ -33,7 +33,7 @@ public enum NotificationType
     OwnerOrderLimitWarning = 15,
 
     // ARCHITECTURE_CYCLE37.md §37.12.1 — "Дома". Bit positions 16..26 are NOT used by the salon mask:
-    // NotificationTypeCatalog.IsBookingType does not include them. Free values left after this cycle: 27..30.
+    // NotificationTypeCatalog.IsBookingType does not include them. Cycle 39 took 27..38.
     StaffStayCreated = 16,
     StaffStayPaymentProofUploaded = 17,
     StaffStayCancelledByGuest = 18,
@@ -45,4 +45,19 @@ public enum NotificationType
     StayGuestCancelledByOwner = 24,
     StayGuestArrivalReminder = 25,
     StayGuestCheckInInfo = 26,
+
+    // ARCHITECTURE_CYCLE39.md §39.9.1 — time-slot services of «Дома». Like 16..26 they never use the salon mask (the mask is built from
+    // NotificationTypeCatalog.BookingTypes only). 39 and 40 are reserved for cycle 40 (iCal): do not use them here.
+    StaffStaySessionAdded = 27,
+    StaffServiceOrderCreated = 28,
+    StaffServiceOrderPaymentProofUploaded = 29,
+    StaffServiceSessionCancelledByGuest = 30,
+    ServiceGuestOrderCreated = 31,
+    ServiceGuestHoldExpiring = 32,
+    ServiceGuestHoldExpired = 33,
+    ServiceGuestConfirmed = 34,
+    ServiceGuestPaymentRejected = 35,
+    ServiceGuestCancelledByOwner = 36,
+    StayGuestSessionAdded = 37,
+    StayGuestSessionCancelledByOwner = 38,
 }

@@ -9,7 +9,7 @@ export function can(perms: readonly StaysPermission[] | undefined, p: StaysPermi
 }
 
 export interface CabinetTab {
-  id: 'board' | 'bookings' | 'houses' | 'schedule' | 'settings' | 'staff' | 'notifications' | 'link'
+  id: 'board' | 'bookings' | 'houses' | 'services' | 'schedule' | 'settings' | 'staff' | 'notifications' | 'link'
   label: string
   /** Path segment after `/cabinet/:companyId/`. */
   to: string
@@ -24,6 +24,7 @@ export function cabinetTabs(perms: readonly StaysPermission[]): CabinetTab[] {
     tabs.push({ id: 'board', label: 'Шахматка', to: 'board' }, { id: 'bookings', label: 'Брони', to: 'bookings' })
   }
   if (has(perms, 'ViewCabinet', 'EditHouseContent', 'ManageHouses')) tabs.push({ id: 'houses', label: 'Дома', to: 'houses' })
+  if (has(perms, 'ManageServices', 'EditServiceContent', 'ManageServiceDates')) tabs.push({ id: 'services', label: 'Услуги', to: 'services' })
   if (has(perms, 'ViewSchedule')) tabs.push({ id: 'schedule', label: 'График', to: 'schedule' })
   if (has(perms, 'ManageCompany')) {
     tabs.push(

@@ -102,8 +102,10 @@ public class StayPaymentProofService(
             }
             else
             {
-                await db.Database.ExecuteSqlInterpolatedAsync(
-                    $"""UPDATE "StayBookings" SET "Version" = "Version" + 1, "UpdatedAtUtc" = {now} WHERE "Id" = {bookingId}""", ct);
+                // The status is part of the condition: a rejection or a cancellation that won the race is not overwritten, the file is refused.
+                var touched = await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"""UPDATE "StayBookings" SET "Version" = "Version" + 1, "UpdatedAtUtc" = {now} WHERE "Id" = {bookingId} AND "Status" = {(int)StayBookingStatus.AwaitingPaymentCheck}""", ct);
+                if (touched == 0) return new ProofResult(ProofOutcome.NotAllowed, await db.StayBookings.AsNoTracking().FirstAsync(b => b.Id == bookingId, ct));
             }
 
             db.StayPaymentProofs.Add(new StayPaymentProof

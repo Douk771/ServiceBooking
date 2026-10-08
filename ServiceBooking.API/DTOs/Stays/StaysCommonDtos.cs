@@ -25,7 +25,7 @@ public record StayRefundViewDto(StayRefundKind Kind, int RefundAtLeastRub, int M
 public record ProblemDto(StayRefusalCode Code, string Message);
 
 // ── 409 bodies ──
-public record StayRefusalDto(StayRefusalCode Code, string Message, string? ReasonCode = null, StayQuoteDto? Quote = null);
+public record StayRefusalDto(StayRefusalCode Code, string Message, string? ReasonCode = null, StayQuoteDto? Quote = null, int? ServiceIndex = null);
 
 public record StayGuestConflictDto(string Code, string Message, PublicStayBookingDto Booking);
 
@@ -43,7 +43,8 @@ public record StayCatalogItemDto(
 
 public record PublicStaysCompanyDto(
     Guid Id, string Slug, string Name, string? LogoUrl, string? Description, string? Phone, bool Available, string? NotAvailableText,
-    bool AcceptingBookings, string? NotAcceptingText, ProviderPublicDto? Provider, List<StayCatalogItemDto> Houses, DateOnly Today);
+    bool AcceptingBookings, string? NotAcceptingText, ProviderPublicDto? Provider, List<StayCatalogItemDto> Houses, DateOnly Today,
+    List<PublicServiceSummaryDto>? Services = null, bool? AcceptsServiceOrdersWithoutStay = null);
 
 public record HousePhotoDto(Guid Id, string Url, string? ThumbnailUrl, int Position);
 
@@ -62,7 +63,7 @@ public record PublicHouseDto(
     bool DogsForbidden, int DogFeeRub, bool HasCot, int CotFeeRub, List<HouseAmenityDto> Amenities, string? Address,
     string? YandexMapsUrl, string? TwoGisUrl, PublicRegistryDto? Registry, PublicCompanyRefDto Company, ProviderPublicDto? Provider,
     PublicStayRulesDto Rules, int? PriceFromRub, bool AcceptingBookings, string? NotAcceptingText, bool Available,
-    string? NotAvailableText, DateOnly Today, string TimeZoneId);
+    string? NotAvailableText, DateOnly Today, string TimeZoneId, List<ServiceLinkDto>? ServicesForStay = null);
 
 public record CalendarDayDto(DateOnly Date, CalendarDayState State, int? PriceRub);
 
@@ -72,16 +73,18 @@ public record HouseCalendarDto(
 
 public enum CalendarDayState { Free, MayFreeUp, Occupied, Unavailable }
 
-public record StayQuoteInput(DateOnly? CheckIn, DateOnly? CheckOut, int Adults, int Children, int Dogs, bool NeedCot);
+public record StayQuoteInput(DateOnly? CheckIn, DateOnly? CheckOut, int Adults, int Children, int Dogs, bool NeedCot, List<StayServiceSelectionInput>? Services = null);
 
 public record StayQuoteDto(
     bool Ok, List<ProblemDto> Problems, int Nights, List<NightPriceDto> NightPrices, List<StayChargeLineDto> Lines, int ExtraBeds,
     int TotalRub, int PrepayPercent, int PrepayRub, int DueAtCheckInRub, int AverageNightRub, int HoldMinutes, string CheckInTime,
-    string CheckOutTime, StayCancellationPolicy CancellationPolicy, string CancellationSummary, bool AcceptingBookings, string? NotAcceptingText);
+    string CheckOutTime, StayCancellationPolicy CancellationPolicy, string CancellationSummary, bool AcceptingBookings, string? NotAcceptingText,
+    List<StayQuoteServiceDto>? Services = null);
 
 public record CreateStayBookingInput(
     DateOnly? CheckIn, DateOnly? CheckOut, int Adults, int Children, int Dogs, bool NeedCot, string? GuestName, string? GuestPhone,
-    string? ArrivalTime, string? Comment, bool NotifyByMessenger, int ExpectedTotalRub, Guid? IdempotencyKey, string? CaptchaToken);
+    string? ArrivalTime, string? Comment, bool NotifyByMessenger, int ExpectedTotalRub, Guid? IdempotencyKey, string? CaptchaToken,
+    List<StayServiceSelectionInput>? Services = null);
 
 public record CreateStayBookingResponse(string Token, string BookingUrl, PublicStayBookingDto Booking);
 
@@ -111,7 +114,8 @@ public record PublicStayBookingDto(
     string? GuestName, string? GuestPhoneMasked, string? Comment, List<StayChargeLineDto> Lines, List<NightPriceDto> NightPrices,
     int TotalRub, int PrepayPercent, int PrepayRub, int DueAtCheckInRub, PaymentInstructionsDto? Payment, DateTime? PaymentConfirmedAtUtc,
     List<PaymentProofDto> PaymentProofs, ProofRulesDto Proofs, BookingCancellationDto Cancellation, string? StatusReason, string? OutcomeText,
-    CheckInInfoDto? CheckInInfo, BookingNotificationsDto Notifications, List<string> AvailableActions);
+    CheckInInfoDto? CheckInInfo, BookingNotificationsDto Notifications, List<string> AvailableActions,
+    List<PublicBookingSessionDto>? Sessions = null, BookingServicesBlockDto? ServicesBlock = null, ArrivalReminderSnapshotDto? ArrivalReminder = null);
 
 public record PushKeysInput(string P256dh, string Auth);
 
@@ -143,7 +147,8 @@ public record StaysSlugCheckDto(string Suggested, bool Available, StaysConflictD
 public record StaysSettingsDto(
     string CheckInTime, string CheckOutTime, int MinNights, int MaxNights, int HorizonDays, bool AllowGapFill, bool AllowSameDayCheckIn,
     int HoldMinutes, int PrepayPercent, StayCancellationPolicy CancellationPolicy, int DogFeeRub, int CotFeeRub, string CheckInInfoSendTime,
-    string? CheckInInfoText, bool CheckInInfoSendFullText, bool ArrivalReminderEnabled, bool HousekeeperSeesGuestComment, bool ShowInCatalog);
+    string? CheckInInfoText, bool CheckInInfoSendFullText, bool ArrivalReminderEnabled, bool HousekeeperSeesGuestComment, bool ShowInCatalog,
+    bool? AcceptServiceOrdersWithoutStay = null);
 
 public record PaymentDetailsDto(string? PaymentDetails, string? PaymentPurpose);
 
@@ -224,7 +229,7 @@ public enum BoardItemState { Held, AwaitingPaymentCheck, Confirmed, Block, Exter
 
 public record StaysBoardDto(
     bool Changed, long Revision, DateTime ServerTimeUtc, DateOnly Today, DateOnly? From, int? Days, List<BoardHouseDto>? Houses,
-    List<BoardItemDto>? Items, int? AwaitingPaymentCount);
+    List<BoardItemDto>? Items, int? AwaitingPaymentCount, List<BoardServiceDto>? Services = null, List<BoardServiceCellDto>? ServiceCells = null);
 
 public record HouseBlockInput(Guid? HouseId, DateOnly? StartDate, DateOnly? EndDate, HouseBlockKind Kind, string? Comment);
 
@@ -255,7 +260,7 @@ public record StaffStayBookingCardDto(
     List<StayChargeLineDto> Lines, List<NightPriceDto> NightPrices, int TotalRub, int PrepayPercent, int PrepayRub, int DueAtCheckInRub,
     StayCancellationPolicy CancellationPolicy, string? OwnerCancelRefundText, List<PaymentProofDto> PaymentProofs, PaymentConfirmedDto? PaymentConfirmed,
     DateTime? PaymentProofsPurgedAtUtc, string? StatusReason, bool IsManual, List<string> AvailableActions, List<StayBookingEventDto> Events,
-    List<StayMessageLogDto>? Messages);
+    List<StayMessageLogDto>? Messages, List<StaffBookingSessionDto>? Sessions = null);
 
 public record ExpectedVersionInput(int? ExpectedVersion);
 
@@ -274,7 +279,8 @@ public record ScheduleArrivalDto(
     Guid BookingId, Guid HouseId, string HouseName, string CheckInTime, string? ArrivalTime, string? GuestName, int Adults, int Children,
     int ExtraBeds, int Dogs, bool NeedCot, string? Comment, bool PaymentUnconfirmed, bool SameDayTurnover, string? TurnoverText);
 
-public record ScheduleDayDto(DateOnly Date, string Label, List<ScheduleDepartureDto> Departures, List<ScheduleArrivalDto> Arrivals);
+public record ScheduleDayDto(
+    DateOnly Date, string Label, List<ScheduleDepartureDto> Departures, List<ScheduleArrivalDto> Arrivals, List<ScheduleSessionDto>? Sessions = null);
 
 public record StaysScheduleDto(DateOnly Today, List<ScheduleDayDto> Days);
 

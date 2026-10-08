@@ -2,16 +2,24 @@ import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { guestBookingsApi } from '../api/guestBookings'
-import type { PublicStayBookingDto, StayGuestConflictDto } from '../types'
+import type { ProofRulesDto } from '../types'
 import { PROOF_ACCEPT, proofFileProblem, splitBySlots } from '../utils/paymentProof'
 import { getStayErrorMessage, readConflict } from '../utils/stayError'
 import { InlineError } from './StatePanels'
 
-interface Props {
+/** What the uploader needs of a booking OR of a separate session: the files already attached and the rules. */
+interface ProofHolder {
+  paymentProofs: readonly unknown[]
+  proofs: ProofRulesDto
+}
+
+interface Props<T extends ProofHolder> {
   token: string
-  booking: PublicStayBookingDto
+  booking: T
   /** The server's answer after every file (it carries the current status and the list of files). */
-  onBooking: (booking: PublicStayBookingDto) => void
+  onBooking: (booking: T) => void
+  /** Sends one file; defaults to the booking route. A session passes its own route. */
+  upload?: (token: string, file: File, onProgress: (percent: number) => void) => Promise<T>
   /** A refusal that came with the current booking (e.g. `HoldExpired`): the screen changes under the uploader, so the page keeps the text. */
   onRefusal?: (message: string) => void
 }
@@ -22,7 +30,7 @@ interface Props {
  * file moves the booking to «ожидает проверки оплаты»; a hold that expired meanwhile comes back as a 409 `HoldExpired` with the
  * current booking, which replaces the screen — nothing is lost silently.
  */
-export function ProofUploader({ token, booking, onBooking, onRefusal }: Props) {
+export function ProofUploader<T extends ProofHolder>({ token, booking, onBooking, onRefusal, upload: send }: Props<T>) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<{ index: number; total: number; percent: number } | null>(null)
@@ -32,7 +40,7 @@ export function ProofUploader({ token, booking, onBooking, onRefusal }: Props) {
   const attached = booking.paymentProofs.length
   const freeSlots = Math.max(0, rules.maxCount - attached)
 
-  const upload = async (picked: File[]) => {
+  const uploadAll = async (picked: File[]) => {
     setError('')
     const { take, skipped } = splitBySlots(picked, attached, rules.maxCount)
     if (take.length === 0) {
@@ -49,13 +57,16 @@ export function ProofUploader({ token, booking, onBooking, onRefusal }: Props) {
         }
         setProgress({ index: i + 1, total: take.length, percent: 0 })
         try {
-          const next = await guestBookingsApi.uploadProof(token, take[i], (percent) => setProgress({ index: i + 1, total: take.length, percent }))
+          const onPercent = (percent: number) => setProgress({ index: i + 1, total: take.length, percent })
+          const next = send ? await send(token, take[i], onPercent) : ((await guestBookingsApi.uploadProof(token, take[i], onPercent)) as unknown as T)
           onBooking(next)
         } catch (err) {
-          const conflict = readConflict<StayGuestConflictDto>(err)
+          // A booking refusal carries `booking`, a session refusal carries `order`: both are the current state of the holder.
+          const conflict = readConflict<{ code: string; message: string; booking?: T; order?: T }>(err)
           const message = getStayErrorMessage(err, 'Не удалось загрузить файл.')
-          if (conflict?.booking) {
-            onBooking(conflict.booking)
+          const current = conflict?.booking ?? conflict?.order
+          if (current) {
+            onBooking(current)
             onRefusal?.(message)
           }
           setError(message)
@@ -83,7 +94,7 @@ export function ProofUploader({ token, booking, onBooking, onRefusal }: Props) {
         id="proof-input"
         onChange={(e) => {
           const files = Array.from(e.target.files ?? [])
-          if (files.length > 0) void upload(files)
+          if (files.length > 0) void uploadAll(files)
         }}
       />
       <Button type="button" size="lg" loading={busy} onClick={() => inputRef.current?.click()} className="w-full sm:w-auto">

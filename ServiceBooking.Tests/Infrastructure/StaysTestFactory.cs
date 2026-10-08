@@ -16,7 +16,8 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// и <paramref name="stayCreateAnonymousPermits"/>.
 /// </summary>
 public sealed class StaysTestFactory(
-    string connectionString, bool phoneLimits = false, int? stayCreateAnonymousPermits = null, int? stayProofPermitsPerToken = null)
+    string connectionString, bool phoneLimits = false, int? stayCreateAnonymousPermits = null, int? stayProofPermitsPerToken = null,
+    IReadOnlyDictionary<string, string>? settings = null)
     : WebApplicationFactory<Program>
 {
     public FakeStaysClock StaysClock { get; } = new();
@@ -43,6 +44,10 @@ public sealed class StaysTestFactory(
             builder.UseSetting("RateLimits:stay-create:AnonymousPermitLimit", n.ToString());
         if (stayProofPermitsPerToken is { } p)
             builder.UseSetting("RateLimits:stay-proof:PermitLimit", p.ToString());
+
+        // цикл 39: произвольные настройки (боевые лимиты услуг, политики частоты сеансов)
+        if (settings is not null)
+            foreach (var (key, value) in settings) builder.UseSetting(key, value);
 
         builder.ConfigureServices(services =>
         {

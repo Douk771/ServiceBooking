@@ -162,6 +162,11 @@ public static class StaysTexts
         StayBookingEventKind.CancelledByOwner => "Компания отменила бронь",
         StayBookingEventKind.CheckInInfoReleased => "Открыта информация к заселению",
         StayBookingEventKind.PaymentProofsPurged => "Подтверждения оплаты удалены по сроку хранения",
+        StayBookingEventKind.ServiceSessionAdded => "Добавлена услуга",
+        StayBookingEventKind.ServiceSessionCancelledByGuest => "Гость отменил сеанс услуги",
+        StayBookingEventKind.ServiceSessionCancelledByOwner => "Компания отменила сеанс услуги",
+        StayBookingEventKind.ServiceSessionsReleased => "Сеансы услуг сняты вместе с бронью",
+        StayBookingEventKind.ArrivalReminderSent => "Отправлено напоминание о заезде",
         _ => "Персональные данные удалены"
     };
 }

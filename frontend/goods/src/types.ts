@@ -150,8 +150,7 @@ export type CatalogAcceptance = M['CatalogAcceptance']
 export type CatalogListingCheckCode = M['CatalogListingCheckCode']
 
 export type ReportPeriodDto = M['ReportPeriodDto']
-export type StaffMaxStatusDto = M['StaffMaxStatusDto']
-export type StaffMaxLinkSessionDto = M['StaffMaxLinkSessionDto']
+export type { StaffMaxStatusDto, StaffMaxLinkSessionDto } from '@/types'
 export type OrderHistoryQuery = M['OrderHistoryQuery']
 export type OrderHistoryRowDto = M['OrderHistoryRowDto']
 export type OrderHistoryPageDto = M['OrderHistoryPageDto']

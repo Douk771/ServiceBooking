@@ -73,6 +73,18 @@ public static class LegalTextKey
     public const string StayMigrationOwnerNotice = "StayMigrationOwnerNotice";
     public const string StayRegistryOwnerNotice = "StayRegistryOwnerNotice";
 
+    // ARCHITECTURE_CYCLE39.md §39.13.4 (LEGAL_REVIEW_CYCLE39.md §12) — time-slot services of «Дома». DELIBERATELY NOT in All (the deploy must not wait for
+    // legal-counsel): the frontend reads GET /api/legal/texts/<key> and shows its neutral fallback (dom/src/utils/stayTexts.ts) on 404.
+    public const string StayServiceBookingNotice = "StayServiceBookingNotice";
+    public const string StayServiceBookingTerms = "StayServiceBookingTerms";
+    public const string StayServiceCancellationTerms = "StayServiceCancellationTerms";
+    public const string StayServiceAddNotice = "StayServiceAddNotice";
+    public const string StayServiceCancellationOwnerNotice = "StayServiceCancellationOwnerNotice";
+    public const string StayServiceCommentNotice = "StayServiceCommentNotice";
+    public const string StayReminderTemplateOwnerNotice = "StayReminderTemplateOwnerNotice";
+    public const string StayReminderPushOwnerNotice = "StayReminderPushOwnerNotice";
+    public const string StayServiceSafetyOwnerNotice = "StayServiceSafetyOwnerNotice";
+
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         BookingNotice, TemplateAdWarning, UnsubscribePage, PhotoConsent, HealthDataConsent, GuardianConfirmation,

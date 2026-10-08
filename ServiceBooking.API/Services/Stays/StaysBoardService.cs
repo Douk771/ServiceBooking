@@ -62,7 +62,46 @@ public class StaysBoardService(AppDbContext db, IStaysClock clock)
         var houses = await db.Houses.AsNoTracking().Where(h => h.CompanyId == company.Id && (h.ArchivedAtUtc == null || withBookings.Contains(h.Id)))
             .OrderBy(h => h.ArchivedAtUtc != null).ThenBy(h => h.Position).ThenBy(h => h.Name)
             .Select(h => new BoardHouseDto(h.Id, h.Name, h.IsPublished, h.ArchivedAtUtc != null)).ToListAsync(ct);
-        var awaiting = await db.StayBookings.AsNoTracking().CountAsync(b => b.CompanyId == company.Id && b.Status == StayBookingStatus.AwaitingPaymentCheck, ct);
-        return new StaysBoardDto(true, revision, now, today, from, days, houses, items, awaiting);
+        var awaiting = await db.StayBookings.AsNoTracking().CountAsync(b => b.CompanyId == company.Id && b.Status == StayBookingStatus.AwaitingPaymentCheck, ct)
+            + await db.StayServiceOrders.AsNoTracking().CountAsync(o => o.CompanyId == company.Id && o.Status == StayBookingStatus.AwaitingPaymentCheck, ct);
+        var (services, cells) = await ServicesAsync(company, from, to, now, ct);
+        return new StaysBoardDto(true, revision, now, today, from, days, houses, items, awaiting, services, cells);
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE39.md §39.10 — the group «Услуги»: one cell per (service, business date) with the active sessions; a session sits in the cell of the business date of its START. A hold that
+    /// has already run out and a released session are not shown.
+    /// </summary>
+    private async Task<(List<BoardServiceDto> Services, List<BoardServiceCellDto> Cells)> ServicesAsync(Company company, DateOnly from, DateOnly to, DateTime now, CancellationToken ct)
+    {
+        var sessions = await db.StayServiceSessions.AsNoTracking()
+            .Where(x => x.CompanyId == company.Id && x.ReleasedAtUtc == null && x.BusinessDate >= from && x.BusinessDate < to).ToListAsync(ct);
+        var bookingIds = sessions.Where(x => x.StayBookingId != null).Select(x => x.StayBookingId!.Value).ToList();
+        var orderIds = sessions.Where(x => x.StayServiceOrderId != null).Select(x => x.StayServiceOrderId!.Value).ToList();
+        var bookings = await db.StayBookings.AsNoTracking().Where(b => bookingIds.Contains(b.Id)).ToDictionaryAsync(b => b.Id, b => (b.Status, b.HoldExpiresAtUtc), ct);
+        var orders = await db.StayServiceOrders.AsNoTracking().Where(o => orderIds.Contains(o.Id)).ToDictionaryAsync(o => o.Id, o => (o.Status, o.HoldExpiresAtUtc), ct);
+        var live = new List<(StayServiceSession Session, StayBookingStatus Status)>();
+        foreach (var x in sessions)
+        {
+            (StayBookingStatus Status, DateTime? Hold) parent;
+            if (x.StayBookingId is { } bid && bookings.TryGetValue(bid, out var bk)) parent = bk;
+            else if (x.StayServiceOrderId is { } oid && orders.TryGetValue(oid, out var ok)) parent = ok;
+            else continue;
+            if (parent.Status == StayBookingStatus.Held && parent.Hold <= now) continue;
+            live.Add((x, parent.Status));
+        }
+        var cells = live.GroupBy(x => (x.Session.ServiceId, x.Session.BusinessDate)).OrderBy(g => g.Key.BusinessDate).Select(g =>
+        {
+            var first = g.OrderBy(x => x.Session.StartMinute).First().Session;
+            var lastEnd = g.Max(x => x.Session.StartMinute + 60 * x.Session.Hours);
+            return new BoardServiceCellDto(g.Key.ServiceId, g.Key.BusinessDate, g.Count(), "с " + ServiceTimeFormat.StartLabel(first.BusinessDate, first.StartMinute).Split(' ')[0],
+                lastEnd > BusinessClock.MinutesPerDay ? "до " + ServiceTimeFormat.StaffMoment(first.BusinessDate, lastEnd).Split(' ')[0] : null,
+                g.Any(x => x.Status == StayBookingStatus.AwaitingPaymentCheck));
+        }).ToList();
+        var withSessions = cells.Select(c => c.ServiceId).ToHashSet();
+        var services = await db.StayServices.AsNoTracking().Where(sv => sv.CompanyId == company.Id && (sv.ArchivedAtUtc == null || withSessions.Contains(sv.Id)))
+            .OrderBy(sv => sv.ArchivedAtUtc != null).ThenBy(sv => sv.Position).ThenBy(sv => sv.Name)
+            .Select(sv => new BoardServiceDto(sv.Id, sv.Name, sv.IsPublished, sv.ArchivedAtUtc != null)).ToListAsync(ct);
+        return (services, cells);
     }
 }

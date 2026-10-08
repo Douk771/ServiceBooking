@@ -446,6 +446,11 @@ public class Cycle37BookingFlowTests(TestDatabaseFixture fixture) : Cycle37TestB
         var noProvider = await CreateStaysCompanyAsync(provider: false);
         var h4 = await CreateHouseAsync(noProvider);
         (await Refusal(noProvider, h4.Id)).GetProperty("reasonCode").GetString().Should().Be("NoProviderInfo");
+        // ЮР39-2 (изменённое требование цикла 39, закрывает §37.19 п. 5): сведения об исполнителе обязательны при ЛЮБОЙ предоплате, в том числе при 0 %
+        var zeroNoProvider = await CreateStaysCompanyAsync(provider: false, paymentDetails: false, prepayPercent: 0);
+        var h5 = await CreateHouseAsync(zeroNoProvider);
+        (await Refusal(zeroNoProvider, h5.Id)).GetProperty("reasonCode").GetString().Should().Be("NoProviderInfo");
+        (await GetCompanyAsync(zeroNoProvider)).Checklist.Should().Contain(i => i.Code == "ProviderInfo" && !i.Done);
     }
 
     [Fact, TestCase("CY37-44")]

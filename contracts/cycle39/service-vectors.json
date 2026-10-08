@@ -1,0 +1,240 @@
+{
+  "_comment": "Эталон расчётов услуг-слотов «Домов» (ARCHITECTURE_CYCLE39.md §39.3–§39.8, §39.11; API_CONTRACT_CYCLE39.md §39.38). ОДИН файл читают юнит-тесты бэкенда (ServiceBooking.UnitTests: ServiceVectorsTests, ArrivalReminderTemplateTests) и vitest фронта dom (dom/src/utils/businessClock.test.ts, serviceTimeFormat.test.ts, serviceMoney.test.ts, serviceWindows.test.ts). Раздел reminderTemplate — только бэкенд (рендер напоминания есть только на сервере). Пояс — Asia/Novokuznetsk (UTC+7, без перехода на летнее время). Время суток услуги — минуты от 00:00 даты бизнес-дня; граница бизнес-дня B = 360 (06:00). 2027-01-15 — пятница, 2026-12-31 — четверг. Деньги — целые рубли. Правка правила = правка векторов в том же коммите.",
+  "schemaVersion": 1,
+  "common": { "timeZoneId": "Asia/Novokuznetsk", "businessDayStartMinute": 360 },
+
+  "businessDay": {
+    "_rule": "BusinessDateOf(tz, utc): local = utc в поясе; date = дата(local − B минут); minute = минуты от 00:00 даты date до local (B ≤ minute < B + 1440). ToUtc(tz, date, minute) — обратное. TodayBusinessDate = дата из BusinessDateOf(now).",
+    "cases": [
+      { "id": "BD01", "utc": "2027-01-15T15:00:00Z", "_local": "пт 15.01 22:00", "expected": { "businessDate": "2027-01-15", "minute": 1320 } },
+      { "id": "BD02", "utc": "2027-01-15T17:30:00Z", "_local": "сб 16.01 00:30", "expected": { "businessDate": "2027-01-15", "minute": 1470 } },
+      { "id": "BD03", "utc": "2027-01-15T22:59:00Z", "_local": "сб 16.01 05:59", "expected": { "businessDate": "2027-01-15", "minute": 1799 } },
+      { "id": "BD04", "utc": "2027-01-15T23:00:00Z", "_local": "сб 16.01 06:00", "expected": { "businessDate": "2027-01-16", "minute": 360 } },
+      { "id": "BD05", "utc": "2026-12-31T16:00:00Z", "_local": "чт 31.12 23:00", "expected": { "businessDate": "2026-12-31", "minute": 1380 } },
+      { "id": "BD06", "utc": "2026-12-31T18:00:00Z", "_local": "пт 01.01 01:00 — смена года", "expected": { "businessDate": "2026-12-31", "minute": 1500 } },
+      { "id": "BD07", "utc": "2027-01-31T20:00:00Z", "_local": "пн 01.02 03:00 — смена месяца", "expected": { "businessDate": "2027-01-31", "minute": 1620 } },
+      { "id": "BD08", "utc": "2027-01-15T05:00:00Z", "_local": "пт 15.01 12:00", "expected": { "businessDate": "2027-01-15", "minute": 720 } }
+    ],
+    "toUtc": [
+      { "id": "BU01", "businessDate": "2027-01-15", "minute": 1500, "expectedUtc": "2027-01-15T18:00:00Z" },
+      { "id": "BU02", "businessDate": "2027-01-16", "minute": 360, "expectedUtc": "2027-01-15T23:00:00Z" },
+      { "id": "BU03", "businessDate": "2026-12-31", "minute": 1380, "expectedUtc": "2026-12-31T16:00:00Z" },
+      { "id": "BU04", "businessDate": "2027-01-15", "minute": 1800, "expectedUtc": "2027-01-15T23:00:00Z" }
+    ]
+  },
+
+  "windows": {
+    "_rule": "Окна одного дня: Start, End кратны 30; B ≤ Start < End ≤ B + 1440; не больше 3; не пересекаются (касание допустимо). Ошибка — первая по порядку: WindowNotOnGrid → WindowEmpty → WindowOutsideBusinessDay → TooManyWindows → WindowsOverlap.",
+    "cases": [
+      { "id": "W01", "windows": [ { "startMinute": 1080, "endMinute": 1560 } ], "expected": { "ok": true, "labels": [ "18:00 – 02:00 (след. дня)" ] } },
+      { "id": "W02", "windows": [ { "startMinute": 1080, "endMinute": 1830 } ], "expected": { "ok": false, "error": "WindowOutsideBusinessDay" } },
+      { "id": "W03", "windows": [ { "startMinute": 300, "endMinute": 600 } ], "expected": { "ok": false, "error": "WindowOutsideBusinessDay" } },
+      { "id": "W04", "windows": [ { "startMinute": 720, "endMinute": 960 }, { "startMinute": 900, "endMinute": 1200 } ], "expected": { "ok": false, "error": "WindowsOverlap" } },
+      { "id": "W05", "windows": [ { "startMinute": 720, "endMinute": 960 }, { "startMinute": 960, "endMinute": 1200 } ], "expected": { "ok": true, "labels": [ "12:00 – 16:00", "16:00 – 20:00" ] } },
+      { "id": "W06", "windows": [ { "startMinute": 725, "endMinute": 960 } ], "expected": { "ok": false, "error": "WindowNotOnGrid" } },
+      { "id": "W07", "windows": [ { "startMinute": 360, "endMinute": 480 }, { "startMinute": 540, "endMinute": 600 }, { "startMinute": 720, "endMinute": 780 }, { "startMinute": 900, "endMinute": 960 } ], "expected": { "ok": false, "error": "TooManyWindows" } },
+      { "id": "W08", "windows": [ { "startMinute": 960, "endMinute": 960 } ], "expected": { "ok": false, "error": "WindowEmpty" } },
+      { "id": "W09", "windows": [ { "startMinute": 360, "endMinute": 1800 } ], "expected": { "ok": true, "labels": [ "06:00 – 06:00 (след. дня)" ] } }
+    ]
+  },
+
+  "priceRules": {
+    "_rule": "Правило: daysMask (бит 0 = Пн … бит 6 = Вс, 1…127), fromHour < toHour, 6 ≤ fromHour, toHour ≤ 30, priceRub 1…100000. Новое правило пересекается с существующим, если (маски & ≠ 0) и [from, to) пересекаются. Ошибка — первая по порядку: NoDays → HoursOutOfRange → PriceOutOfRange → PriceRuleOverlap.",
+    "existing": [ { "id": "R-FRI-EVE", "daysMask": 16, "fromHour": 18, "toHour": 26, "priceRub": 2000 } ],
+    "cases": [
+      { "id": "PRV01", "rule": { "daysMask": 48, "fromHour": 24, "toHour": 28, "priceRub": 2500 }, "expected": { "ok": false, "error": "PriceRuleOverlap", "conflictingRuleId": "R-FRI-EVE" } },
+      { "id": "PRV02", "rule": { "daysMask": 32, "fromHour": 24, "toHour": 28, "priceRub": 2500 }, "expected": { "ok": true } },
+      { "id": "PRV03", "rule": { "daysMask": 16, "fromHour": 5, "toHour": 10, "priceRub": 1000 }, "expected": { "ok": false, "error": "HoursOutOfRange" } },
+      { "id": "PRV04", "rule": { "daysMask": 16, "fromHour": 26, "toHour": 31, "priceRub": 1000 }, "expected": { "ok": false, "error": "HoursOutOfRange" } },
+      { "id": "PRV05", "rule": { "daysMask": 0, "fromHour": 10, "toHour": 12, "priceRub": 1000 }, "expected": { "ok": false, "error": "NoDays" } },
+      { "id": "PRV06", "rule": { "daysMask": 16, "fromHour": 12, "toHour": 18, "priceRub": 1500 }, "expected": { "ok": true, "_note": "касание с 18–26 допустимо" } }
+    ],
+    "labels": [
+      { "id": "PL01", "rule": { "daysMask": 16, "fromHour": 18, "toHour": 26 }, "expectedGuest": "Пт 18:00 — 02:00 (ночь на сб)", "expectedStaff": "Пт 18:00 – 02:00 (след. дня)" },
+      { "id": "PL02", "rule": { "daysMask": 31, "fromHour": 10, "toHour": 18 }, "expectedGuest": "Пн–Пт 10:00 — 18:00", "expectedStaff": "Пн–Пт 10:00 – 18:00" }
+    ]
+  },
+
+  "price": {
+    "_rule": "ServicePricing.HourPrices: час k начинается в минуту m = startMinute + 60k бизнес-дня старта; цена — правило с битом дня недели бизнес-дня и fromHour×60 ≤ m < toHour×60; нет правила → null (старт недоступен).",
+    "ruleSets": {
+      "FRI": [ { "daysMask": 16, "fromHour": 12, "toHour": 18, "priceRub": 1500 }, { "daysMask": 16, "fromHour": 18, "toHour": 26, "priceRub": 2000 } ],
+      "FRI-TO-MIDNIGHT": [ { "daysMask": 16, "fromHour": 18, "toHour": 24, "priceRub": 2000 } ],
+      "SAT": [ { "daysMask": 32, "fromHour": 10, "toHour": 24, "priceRub": 2500 } ],
+      "THU-NIGHT": [ { "daysMask": 8, "fromHour": 18, "toHour": 30, "priceRub": 3000 } ]
+    },
+    "cases": [
+      { "id": "PR01", "ruleSet": "FRI", "businessDate": "2027-01-15", "startMinute": 1380, "hours": 2, "expected": [ 2000, 2000 ], "_note": "пт 23:00–01:00 = 4 000 ₽ (Р39-16)" },
+      { "id": "PR02", "ruleSet": "FRI", "businessDate": "2027-01-15", "startMinute": 1470, "hours": 2, "expected": [ 2000, 2000 ], "_note": "пт 00:30 (ночь на сб) – 02:30 — по правилам пятницы" },
+      { "id": "PR03", "ruleSet": "FRI", "businessDate": "2027-01-15", "startMinute": 1530, "hours": 2, "expected": [ 2000, null ] },
+      { "id": "PR04", "ruleSet": "FRI", "businessDate": "2027-01-15", "startMinute": 1050, "hours": 2, "expected": [ 1500, 2000 ], "_note": "часы 17:30 и 18:30 — по правилам, содержащим их начало" },
+      { "id": "PR05", "ruleSet": "FRI-TO-MIDNIGHT", "businessDate": "2027-01-15", "startMinute": 1380, "hours": 2, "expected": [ 2000, null ], "_note": "у часа 00:00 нет цены — старт недоступен" },
+      { "id": "PR06", "ruleSet": "SAT", "businessDate": "2027-01-16", "startMinute": 1380, "hours": 1, "expected": [ 2500 ] },
+      { "id": "PR07", "ruleSet": "THU-NIGHT", "businessDate": "2026-12-31", "startMinute": 1380, "hours": 2, "expected": [ 3000, 3000 ], "_note": "31 дек 23:00 – 1 янв 01:00 относится к 31 декабря" }
+    ]
+  },
+
+  "money": {
+    "_rule": "service = Σ hourPrices; items = Σ quantity × unitPriceRub; total = service + items; prepay = prepayPercent == null ? 0 : floor((service × prepayPercent + 50) / 100) (позиции не входят); dueOnSite = total − prepay; firstHourRub = hourPrices[0].",
+    "cases": [
+      { "id": "MO01", "input": { "hourPrices": [ 2000, 2000 ], "items": [ { "unitPriceRub": 300, "quantity": 2 } ], "prepayPercent": 30 }, "expected": { "serviceAmountRub": 4000, "itemsAmountRub": 600, "totalRub": 4600, "prepayRub": 1200, "dueOnSiteRub": 3400, "firstHourRub": 2000 } },
+      { "id": "MO02", "input": { "hourPrices": [ 1500, 2000 ], "items": [], "prepayPercent": null }, "expected": { "serviceAmountRub": 3500, "itemsAmountRub": 0, "totalRub": 3500, "prepayRub": 0, "dueOnSiteRub": 3500, "firstHourRub": 1500 } },
+      { "id": "MO03", "_note": "половина — вверх: 1010 × 5 % = 50,5 → 51", "input": { "hourPrices": [ 1010 ], "items": [], "prepayPercent": 5 }, "expected": { "serviceAmountRub": 1010, "itemsAmountRub": 0, "totalRub": 1010, "prepayRub": 51, "dueOnSiteRub": 959, "firstHourRub": 1010 } },
+      { "id": "MO04", "_note": "3333 × 15 % = 499,95 → 500; бесплатная позиция", "input": { "hourPrices": [ 3333 ], "items": [ { "unitPriceRub": 0, "quantity": 3 } ], "prepayPercent": 15 }, "expected": { "serviceAmountRub": 3333, "itemsAmountRub": 0, "totalRub": 3333, "prepayRub": 500, "dueOnSiteRub": 2833, "firstHourRub": 3333 } },
+      { "id": "MO05", "input": { "hourPrices": [ 2000, 2000, 2000 ], "items": [ { "unitPriceRub": 150, "quantity": 1 } ], "prepayPercent": 100 }, "expected": { "serviceAmountRub": 6000, "itemsAmountRub": 150, "totalRub": 6150, "prepayRub": 6000, "dueOnSiteRub": 150, "firstHourRub": 2000 } },
+      { "id": "MO06", "_note": "позиции по умолчанию 0 (69-ФЗ) — строки позиций нет", "input": { "hourPrices": [ 2000, 2000 ], "items": [ { "unitPriceRub": 300, "quantity": 0 } ], "prepayPercent": 30 }, "expected": { "serviceAmountRub": 4000, "itemsAmountRub": 0, "totalRub": 4000, "prepayRub": 1200, "dueOnSiteRub": 2800, "firstHourRub": 2000 } }
+    ]
+  },
+
+  "starts": {
+    "_rule": "ServiceSlotCalculator.Calculate (ARCHITECTURE_CYCLE39.md §39.4.2). Для каждого окна, для s = окно.start + k × step, s < окно.end: maxHours = наибольшее h ≤ service.maxHours, при котором s + 60h ≤ окно.end, [sUtc, sUtc + h ч + buffer) не пересекает occupied, у каждого часа есть цена, [sUtc, sUtc + h) ⊂ stayRange (если задан), sUtc ≥ now + minLead. Старт попадает в список при maxHours ≥ minHours. Дата вне [today, today + horizonDays − 1] → пусто с reason. occupied — [startUtc, occupiedUntilUtc).",
+    "_ruleSetNote": "В кейсе либо ruleSet (ссылка на price.ruleSets), либо rules (правила прямо в кейсе). windows: \"baseWindowsFri\" — ссылка на baseWindowsFri, иначе массив окон. service отсутствует — baseService. checks — проверки IsStartAllowed вместо полного списка.",
+    "baseService": { "minHours": 2, "maxHours": 6, "stepMinutes": 60, "bufferMinutes": 30, "minLeadMinutes": 60 },
+    "baseWindowsFri": [ { "startMinute": 720, "endMinute": 960 }, { "startMinute": 1080, "endMinute": 1560 } ],
+    "cases": [
+      { "id": "ST01", "_note": "пусто, всё свободно", "businessDate": "2027-01-15", "nowUtc": "2027-01-14T00:00:00Z", "horizonDays": 365, "ruleSet": "FRI", "windows": "baseWindowsFri", "occupied": [],
+        "expected": { "reason": null, "starts": [ { "startMinute": 720, "maxHours": 4 }, { "startMinute": 780, "maxHours": 3 }, { "startMinute": 840, "maxHours": 2 }, { "startMinute": 1080, "maxHours": 6 }, { "startMinute": 1140, "maxHours": 6 }, { "startMinute": 1200, "maxHours": 6 }, { "startMinute": 1260, "maxHours": 5 }, { "startMinute": 1320, "maxHours": 4 }, { "startMinute": 1380, "maxHours": 3 }, { "startMinute": 1440, "maxHours": 2 } ] } },
+      { "id": "ST02", "_note": "занят пт 23:00–01:00 (+30 мин): зазор нового сеанса тоже не должен залезать", "businessDate": "2027-01-15", "nowUtc": "2027-01-14T00:00:00Z", "horizonDays": 365, "ruleSet": "FRI", "windows": "baseWindowsFri",
+        "occupied": [ { "startUtc": "2027-01-15T16:00:00Z", "occupiedUntilUtc": "2027-01-15T18:30:00Z" } ],
+        "expected": { "reason": null, "starts": [ { "startMinute": 720, "maxHours": 4 }, { "startMinute": 780, "maxHours": 3 }, { "startMinute": 840, "maxHours": 2 }, { "startMinute": 1080, "maxHours": 4 }, { "startMinute": 1140, "maxHours": 3 }, { "startMinute": 1200, "maxHours": 2 } ] } },
+      { "id": "ST03", "_note": "проверка IsStartAllowed через полночь: шаг 30, окно 18:00–04:00, занят пт 23:00–01:00 (+30)", "businessDate": "2027-01-15", "nowUtc": "2027-01-14T00:00:00Z", "horizonDays": 365,
+        "service": { "minHours": 2, "maxHours": 6, "stepMinutes": 30, "bufferMinutes": 30, "minLeadMinutes": 60 },
+        "rules": [ { "daysMask": 16, "fromHour": 18, "toHour": 30, "priceRub": 2000 } ],
+        "windows": [ { "startMinute": 1080, "endMinute": 1680 } ],
+        "occupied": [ { "startUtc": "2027-01-15T16:00:00Z", "occupiedUntilUtc": "2027-01-15T18:30:00Z" } ],
+        "checks": [ { "startMinute": 1470, "hours": 2, "allowed": false }, { "startMinute": 1530, "hours": 2, "allowed": true }, { "startMinute": 1500, "hours": 2, "allowed": false } ] },
+      { "id": "ST04", "_note": "зазор через границу бизнес-дня: пт 04:00–06:00 (+30) закрывает сб 06:00", "businessDate": "2027-01-16", "nowUtc": "2027-01-14T00:00:00Z", "horizonDays": 365,
+        "rules": [ { "daysMask": 32, "fromHour": 6, "toHour": 12, "priceRub": 1000 } ],
+        "windows": [ { "startMinute": 360, "endMinute": 600 } ],
+        "occupied": [ { "startUtc": "2027-01-15T21:00:00Z", "occupiedUntilUtc": "2027-01-15T23:30:00Z" } ],
+        "expected": { "reason": null, "starts": [ { "startMinute": 420, "maxHours": 3 }, { "startMinute": 480, "maxHours": 2 } ] } },
+      { "id": "ST05", "_note": "минимальное время до начала 60 мин: сейчас пт 12:30", "businessDate": "2027-01-15", "nowUtc": "2027-01-15T05:30:00Z", "horizonDays": 365, "ruleSet": "FRI", "windows": "baseWindowsFri", "occupied": [],
+        "expected": { "reason": null, "starts": [ { "startMinute": 840, "maxHours": 2 }, { "startMinute": 1080, "maxHours": 6 }, { "startMinute": 1140, "maxHours": 6 }, { "startMinute": 1200, "maxHours": 6 }, { "startMinute": 1260, "maxHours": 5 }, { "startMinute": 1320, "maxHours": 4 }, { "startMinute": 1380, "maxHours": 3 }, { "startMinute": 1440, "maxHours": 2 } ] } },
+      { "id": "ST06", "_note": "сеанс в брони: выезд пт 12:00 — в день выезда старта нет", "businessDate": "2027-01-15", "nowUtc": "2027-01-14T00:00:00Z", "horizonDays": 365, "ruleSet": "FRI", "windows": "baseWindowsFri", "occupied": [],
+        "stayRange": { "fromUtc": "2027-01-14T07:00:00Z", "toUtc": "2027-01-15T05:00:00Z" },
+        "expected": { "reason": "NoStarts", "starts": [] } },
+      { "id": "ST07", "_note": "часы без цены: только Пт 18–24", "businessDate": "2027-01-15", "nowUtc": "2027-01-14T00:00:00Z", "horizonDays": 365, "ruleSet": "FRI-TO-MIDNIGHT", "windows": "baseWindowsFri", "occupied": [],
+        "expected": { "reason": null, "starts": [ { "startMinute": 1080, "maxHours": 6 }, { "startMinute": 1140, "maxHours": 5 }, { "startMinute": 1200, "maxHours": 4 }, { "startMinute": 1260, "maxHours": 3 }, { "startMinute": 1320, "maxHours": 2 } ] } },
+      { "id": "ST08", "_note": "за горизонтом", "businessDate": "2027-02-14", "nowUtc": "2027-01-15T05:00:00Z", "horizonDays": 30, "rules": [ { "daysMask": 127, "fromHour": 6, "toHour": 30, "priceRub": 1000 } ], "windows": [ { "startMinute": 720, "endMinute": 960 } ], "occupied": [],
+        "expected": { "reason": "BeyondHorizon", "starts": [] } },
+      { "id": "ST09", "_note": "прошедший бизнес-день", "businessDate": "2027-01-14", "nowUtc": "2027-01-15T05:00:00Z", "horizonDays": 365, "rules": [ { "daysMask": 127, "fromHour": 6, "toHour": 30, "priceRub": 1000 } ], "windows": [ { "startMinute": 720, "endMinute": 960 } ], "occupied": [],
+        "expected": { "reason": "DateInPast", "starts": [] } },
+      { "id": "ST10", "_note": "в 01:00 субботы «сегодня» для услуги — ещё пятница: старт пт 02:00 (минута 1560) доступен", "businessDate": "2027-01-15", "nowUtc": "2027-01-15T18:00:00Z", "horizonDays": 365,
+        "service": { "minHours": 1, "maxHours": 6, "stepMinutes": 60, "bufferMinutes": 0, "minLeadMinutes": 60 },
+        "rules": [ { "daysMask": 16, "fromHour": 18, "toHour": 30, "priceRub": 2000 } ], "windows": [ { "startMinute": 1080, "endMinute": 1800 } ], "occupied": [],
+        "expected": { "reason": null, "starts": [ { "startMinute": 1560, "maxHours": 4 }, { "startMinute": 1620, "maxHours": 3 }, { "startMinute": 1680, "maxHours": 2 }, { "startMinute": 1740, "maxHours": 1 } ] } }
+    ]
+  },
+
+  "overlap": {
+    "_rule": "Семантика ограничения БД EX_StayServiceSessions_NoOverlap: два активных сеанса одной услуги конфликтуют, если [startUtc, endUtc + buffer) пересекаются (полуинтервалы). Полночь и граница бизнес-дня не участвуют.",
+    "cases": [
+      { "id": "OV01", "a": { "startUtc": "2027-01-15T16:00:00Z", "endUtc": "2027-01-15T18:00:00Z", "bufferMinutes": 30 }, "b": { "startUtc": "2027-01-15T17:30:00Z", "endUtc": "2027-01-15T19:30:00Z", "bufferMinutes": 30 }, "conflict": true, "_note": "пт 23:00–01:00 и пт 00:30 (ночь на сб)–02:30" },
+      { "id": "OV02", "a": { "startUtc": "2027-01-15T16:00:00Z", "endUtc": "2027-01-15T18:00:00Z", "bufferMinutes": 30 }, "b": { "startUtc": "2027-01-15T18:30:00Z", "endUtc": "2027-01-15T20:30:00Z", "bufferMinutes": 30 }, "conflict": false, "_note": "касание после зазора" },
+      { "id": "OV03", "a": { "startUtc": "2027-01-15T21:00:00Z", "endUtc": "2027-01-15T23:00:00Z", "bufferMinutes": 30 }, "b": { "startUtc": "2027-01-15T23:00:00Z", "endUtc": "2027-01-16T01:00:00Z", "bufferMinutes": 30 }, "conflict": true, "_note": "пт 04:00–06:00 + 30 мин и сб 06:00" },
+      { "id": "OV04", "a": { "startUtc": "2027-01-15T21:00:00Z", "endUtc": "2027-01-15T23:00:00Z", "bufferMinutes": 0 }, "b": { "startUtc": "2027-01-15T23:00:00Z", "endUtc": "2027-01-16T01:00:00Z", "bufferMinutes": 30 }, "conflict": false },
+      { "id": "OV05", "a": { "startUtc": "2027-01-15T16:00:00Z", "endUtc": "2027-01-15T18:00:00Z", "bufferMinutes": 30 }, "b": { "startUtc": "2027-01-15T14:00:00Z", "endUtc": "2027-01-15T16:00:00Z", "bufferMinutes": 30 }, "conflict": true, "_note": "зазор нового сеанса залезает на существующий" }
+    ]
+  },
+
+  "refund": {
+    "_rule": "ServiceRefund.Compute (ЮР39-1, LEGAL_REVIEW_CYCLE39.md §2.4). Конечный статус → NothingPaid. Held или prepay = 0 → NothingPaid. Отменяет компания → Full. NoDeductions → Full. PreparationCosts: момент < startUtc − boundaryHours → Full; иначе D = min(prepay, firstHourRub), X = prepay − D: X > 0 → PartialAtLeast (refundAtLeastRub = X, maxDeductionRub = D); X = 0 → CostsOnlyUpTo (refundAtLeastRub = null — «не меньше 0 ₽» не показывается никогда, maxDeductionRub = D). AwaitingPaymentCheck и Confirmed — оплачены.",
+    "common": { "startUtc": "2027-01-15T15:00:00Z", "_note": "пт 15.01 22:00; рубеж 12 ч = 2027-01-15T03:00:00Z" },
+    "cases": [
+      { "id": "SR01", "policy": "PreparationCosts", "boundaryHours": 12, "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 1200, "firstHourRub": 2000, "atUtc": "2027-01-15T02:59:59Z", "expected": { "kind": "Full", "refundAtLeastRub": 1200, "maxDeductionRub": 0 } },
+      { "id": "SR02", "policy": "PreparationCosts", "boundaryHours": 12, "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 1200, "firstHourRub": 2000, "atUtc": "2027-01-15T03:00:00Z", "expected": { "kind": "CostsOnlyUpTo", "refundAtLeastRub": null, "maxDeductionRub": 1200 } },
+      { "id": "SR03", "policy": "PreparationCosts", "boundaryHours": 12, "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 3000, "firstHourRub": 2000, "atUtc": "2027-01-15T10:00:00Z", "expected": { "kind": "PartialAtLeast", "refundAtLeastRub": 1000, "maxDeductionRub": 2000 } },
+      { "id": "SR04", "policy": "NoDeductions", "boundaryHours": 12, "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 3000, "firstHourRub": 2000, "atUtc": "2027-01-15T14:00:00Z", "expected": { "kind": "Full", "refundAtLeastRub": 3000, "maxDeductionRub": 0 } },
+      { "id": "SR05", "policy": "PreparationCosts", "boundaryHours": 12, "status": "Held", "cancelledBy": "Guest", "prepayRub": 3000, "firstHourRub": 2000, "atUtc": "2027-01-15T14:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } },
+      { "id": "SR06", "policy": "PreparationCosts", "boundaryHours": 12, "status": "Confirmed", "cancelledBy": "Owner", "prepayRub": 3000, "firstHourRub": 2000, "atUtc": "2027-01-15T14:00:00Z", "expected": { "kind": "Full", "refundAtLeastRub": 3000, "maxDeductionRub": 0 } },
+      { "id": "SR07", "policy": "PreparationCosts", "boundaryHours": 12, "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 0, "firstHourRub": 2000, "atUtc": "2027-01-15T14:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } },
+      { "id": "SR08", "policy": "PreparationCosts", "boundaryHours": 12, "status": "CancelledByGuest", "cancelledBy": "Guest", "prepayRub": 3000, "firstHourRub": 2000, "atUtc": "2027-01-15T14:00:00Z", "expected": { "kind": "NothingPaid", "refundAtLeastRub": 0, "maxDeductionRub": 0 } },
+      { "id": "SR09", "policy": "PreparationCosts", "boundaryHours": 12, "status": "AwaitingPaymentCheck", "cancelledBy": "Guest", "prepayRub": 3000, "firstHourRub": 2000, "atUtc": "2027-01-15T01:00:00Z", "expected": { "kind": "Full", "refundAtLeastRub": 3000, "maxDeductionRub": 0 } },
+      { "id": "SR10", "policy": "PreparationCosts", "boundaryHours": 3, "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 3000, "firstHourRub": 2000, "atUtc": "2027-01-15T12:00:00Z", "expected": { "kind": "PartialAtLeast", "refundAtLeastRub": 1000, "maxDeductionRub": 2000 } },
+      { "id": "SR11", "policy": "PreparationCosts", "boundaryHours": 3, "status": "Confirmed", "cancelledBy": "Guest", "prepayRub": 3000, "firstHourRub": 2000, "atUtc": "2027-01-15T11:59:59Z", "expected": { "kind": "Full", "refundAtLeastRub": 3000, "maxDeductionRub": 0 } }
+    ],
+    "config": {
+      "_rule": "Валидатор конфигурации на старте (DeploymentSafetyChecks.ValidateStaysServices): MaxDeductionHours ∈ {0, 1}; 1 ≤ CancellationBoundaryHours.Min ≤ Default ≤ Max ≤ 24; имена шаблонов — только NoDeductions, PreparationCosts.",
+      "cases": [
+        { "id": "SC01", "maxDeductionHours": 1, "boundary": { "min": 3, "max": 24, "default": 12 }, "valid": true },
+        { "id": "SC02", "maxDeductionHours": 2, "boundary": { "min": 3, "max": 24, "default": 12 }, "valid": false },
+        { "id": "SC03", "maxDeductionHours": 1, "boundary": { "min": 3, "max": 48, "default": 12 }, "valid": false },
+        { "id": "SC04", "maxDeductionHours": 1, "boundary": { "min": 0, "max": 24, "default": 12 }, "valid": false },
+        { "id": "SC05", "policyName": "Standard", "valid": false }
+      ]
+    }
+  },
+
+  "format": {
+    "_rule": "ServiceTimeFormat. Гостю (ЮР39-8): «дн д мес, ЧЧ:ММ — ЧЧ:ММ» в одних сутках; при переходе через полночь — вторая календарная дата; старт после полуночи — календарная дата старта. Персоналу (SPEC §4.9): «Дн, д мес · ЧЧ:ММ – ЧЧ:ММ (дн)» на бизнес-дне старта. Список стартов гостю: время, у стартов после полуночи — « (ночь на дн)». Окно в редакторе — «ЧЧ:ММ – ЧЧ:ММ (след. дня)».",
+    "cases": [
+      { "id": "F01", "businessDate": "2027-01-15", "startMinute": 1320, "hours": 3, "expectedGuest": "пт 15 янв, 22:00 — сб 16 янв, 01:00", "expectedStaff": "Пт, 15 янв · 22:00 – 01:00 (сб)", "expectedStartLabel": "22:00" },
+      { "id": "F02", "businessDate": "2027-01-15", "startMinute": 1470, "hours": 2, "expectedGuest": "сб 16 янв, 00:30 — 02:30", "expectedStaff": "Пт, 15 янв · 00:30 (ночь на сб) – 02:30", "expectedStartLabel": "00:30 (ночь на сб)" },
+      { "id": "F03", "businessDate": "2027-01-15", "startMinute": 1080, "hours": 3, "expectedGuest": "пт 15 янв, 18:00 — 21:00", "expectedStaff": "Пт, 15 янв · 18:00 – 21:00", "expectedStartLabel": "18:00" },
+      { "id": "F04", "businessDate": "2026-12-31", "startMinute": 1380, "hours": 2, "expectedGuest": "чт 31 дек, 23:00 — пт 1 янв, 01:00", "expectedStaff": "Чт, 31 дек · 23:00 – 01:00 (пт)", "expectedStartLabel": "23:00" },
+      { "id": "F05", "businessDate": "2027-01-15", "startMinute": 1320, "hours": 2, "expectedGuest": "пт 15 янв, 22:00 — сб 16 янв, 00:00", "expectedStaff": "Пт, 15 янв · 22:00 – 00:00 (сб)", "expectedStartLabel": "22:00" }
+    ],
+    "businessDateLabel": [
+      { "id": "FD01", "businessDate": "2027-01-15", "expected": "пт 15 янв" },
+      { "id": "FD02", "businessDate": "2026-12-31", "expected": "чт 31 дек" }
+    ]
+  },
+
+  "reminderTemplate": {
+    "_rule": "ArrivalReminderTemplate (ARCHITECTURE_CYCLE39.md §39.11). template = null → мессенджер — прежний текст StayNotificationTexts (байт-в-байт), push — прежний фиксированный, страница — рендер Default в режиме страницы. Рендер: строки; строка с подстановкой, запрещённой в режиме, выпадает; строка с пустым значением подстановки выпадает; push — жёсткий фильтр текста владельца (подстановки вырезаны): Digits (≥ 4 цифр подряд, пробелы/дефисы между ними допустимы) → Link → Email → Phone → CodeWord; мессенджер — в конец строка «Бронь: <url>», если в шаблоне нет {СсылкаНаБронь}, затем пустая строка и «Отписаться от сообщений: <url>». Push — только при pushTextEnabled и шаблоне ≠ null; ≤ 180 символов с «…»; пусто → фиксированный. Порядок причин выпадения: ForbiddenPlaceholder → EmptyValue → Digits → Link → Email → Phone → CodeWord. Сумма — StaysTexts.Rub (обычный пробел-разделитель тысяч).",
+    "defaultTemplate": "{Компания}: завтра заезд в «{Дом}» — {ДатаЗаезда} с {ВремяЗаезда}.\nАдрес: {Адрес}.\nК оплате при заселении: {КОплатеПриЗаселении}.\nБронь: {СсылкаНаБронь}",
+    "fixedPush": "Завтра заезд — откройте бронь",
+    "facts": {
+      "companyName": "Кедр Парк", "houseName": "Кедр", "checkInDate": "2027-01-15", "checkOutDate": "2027-01-18", "nights": 3,
+      "checkInTime": "14:00", "checkOutTime": "12:00", "guestName": "Анна", "address": "ул. Лесная, 5", "companyPhone": "+7 900 000-00-00",
+      "dueAtCheckInRub": 12500, "bookingUrl": "https://dom.ezbook.ru/b/TOKEN", "unsubscribeUrl": "https://ezbook.ru/u/UNSUB",
+      "sessions": [ { "serviceName": "Баня", "businessDate": "2027-01-15", "startMinute": 1320, "hours": 3 } ]
+    },
+    "cases": [
+      { "id": "RT01", "_note": "шаблон не менялся", "template": null, "pushTextEnabled": false,
+        "expected": {
+          "messenger": "Кедр Парк: завтра заезд в «Кедр» — 15 янв с 14:00. Адрес: ул. Лесная, 5. К оплате при заселении: 12 500 ₽. Бронь: https://dom.ezbook.ru/b/TOKEN\n\nОтписаться от сообщений: https://ezbook.ru/u/UNSUB",
+          "page": "Кедр Парк: завтра заезд в «Кедр» — 15 янв с 14:00.\nАдрес: ул. Лесная, 5.\nК оплате при заселении: 12 500 ₽.",
+          "push": "Завтра заезд — откройте бронь" } },
+      { "id": "RT02", "_note": "шаблон не менялся, нет адреса, остаток 0", "template": null, "pushTextEnabled": true, "factsOverride": { "address": null, "dueAtCheckInRub": 0 },
+        "expected": {
+          "messenger": "Кедр Парк: завтра заезд в «Кедр» — 15 янв с 14:00. Бронь: https://dom.ezbook.ru/b/TOKEN\n\nОтписаться от сообщений: https://ezbook.ru/u/UNSUB",
+          "page": "Кедр Парк: завтра заезд в «Кедр» — 15 янв с 14:00.",
+          "push": "Завтра заезд — откройте бронь" } },
+      { "id": "RT03", "template": "Здравствуйте, {ИмяГостя}!\nЖдём вас {ДатаЗаезда} с {ВремяЗаезда} в «{Дом}».\nКод от калитки 4512\nАдрес: {Адрес}", "pushTextEnabled": true,
+        "expected": {
+          "messenger": "Здравствуйте, Анна!\nЖдём вас 15 янв с 14:00 в «Кедр».\nКод от калитки 4512\nАдрес: ул. Лесная, 5\nБронь: https://dom.ezbook.ru/b/TOKEN\n\nОтписаться от сообщений: https://ezbook.ru/u/UNSUB",
+          "page": "Здравствуйте, Анна!\nЖдём вас 15 янв с 14:00 в «Кедр».\nКод от калитки 4512\nАдрес: ул. Лесная, 5",
+          "push": "Ждём вас 15 янв с 14:00 в «Кедр».",
+          "pushDropped": [ { "line": 1, "reason": "ForbiddenPlaceholder" }, { "line": 3, "reason": "Digits" }, { "line": 4, "reason": "ForbiddenPlaceholder" } ],
+          "validation": { "errors": [], "confirmationRequired": true, "warnings": [] } } },
+      { "id": "RT04", "template": "Wi-Fi и пароль — в информации к заселению\nЗвоните +7 900 111-22-33\nПишите owner@mail.ru\nСайт kedr.ru\nДо встречи, {Компания}!", "pushTextEnabled": true,
+        "expected": {
+          "push": "До встречи, Кедр Парк!",
+          "pushDropped": [ { "line": 1, "reason": "CodeWord" }, { "line": 2, "reason": "Digits" }, { "line": 3, "reason": "Email" }, { "line": 4, "reason": "Link" } ] } },
+      { "id": "RT05", "template": "Ждём вас, {Имя}!", "pushTextEnabled": false, "expected": { "validation": { "errors": [ "UnknownPlaceholder" ], "confirmationRequired": false, "warnings": [] } } },
+      { "id": "RT06", "template": "Задаток не возвращается", "pushTextEnabled": false, "expected": { "validation": { "errors": [ "ForbiddenWords" ], "confirmationRequired": false, "warnings": [ "CancellationTermsInText" ] } } },
+      { "id": "RT07", "template": "Возьмите с собой паспорт", "pushTextEnabled": false, "expected": { "validation": { "errors": [], "confirmationRequired": false, "warnings": [ "Passport" ] } } },
+      { "id": "RT08", "templateLength": 701, "pushTextEnabled": false, "expected": { "validation": { "errors": [ "TooLong" ], "confirmationRequired": false, "warnings": [] } } },
+      { "id": "RT09", "_note": "push включён, но все строки выпали — фиксированный push", "template": "Ключница: 2580\nhttps://kedr.ru/rules", "pushTextEnabled": true,
+        "expected": { "push": "Завтра заезд — откройте бронь", "pushDropped": [ { "line": 1, "reason": "Digits" }, { "line": 2, "reason": "Link" } ] } },
+      { "id": "RT10", "_note": "шаблон изменён, push выключен — фиксированный push", "template": "Ждём вас в «{Дом}»!", "pushTextEnabled": false,
+        "expected": { "push": "Завтра заезд — откройте бронь", "messenger": "Ждём вас в «Кедр»!\nБронь: https://dom.ezbook.ru/b/TOKEN\n\nОтписаться от сообщений: https://ezbook.ru/u/UNSUB", "page": "Ждём вас в «Кедр»!" } },
+      { "id": "RT11", "_note": "{Услуги} — календарными датами", "template": "Ждём вас в «{Дом}»!\nУслуги: {Услуги}", "pushTextEnabled": true,
+        "expected": { "push": "Ждём вас в «Кедр»!\nУслуги: Баня, пт 15 янв, 22:00 — сб 16 янв, 01:00", "page": "Ждём вас в «Кедр»!\nУслуги: Баня, пт 15 янв, 22:00 — сб 16 янв, 01:00" } },
+      { "id": "RT12", "_note": "без сеансов строка с {Услуги} выпадает", "template": "Ждём вас в «{Дом}»!\nУслуги: {Услуги}", "pushTextEnabled": true, "factsOverride": { "sessions": [] },
+        "expected": { "push": "Ждём вас в «Кедр»!", "pushDropped": [ { "line": 2, "reason": "EmptyValue" } ] } },
+      { "id": "RT13", "_note": "время из подстановки не роняет строку (фильтр — по тексту владельца)", "template": "Заезд {ДатаЗаезда} с {ВремяЗаезда}, выезд {ДатаВыезда} до {ВремяВыезда}", "pushTextEnabled": true,
+        "expected": { "push": "Заезд 15 янв с 14:00, выезд 18 янв до 12:00" } },
+      { "id": "RT14", "_note": "«задать» — не «задаток»", "template": "Не стесняйтесь задать вопросы, {Компания} на связи", "pushTextEnabled": true,
+        "expected": { "push": "Не стесняйтесь задать вопросы, Кедр Парк на связи", "validation": { "errors": [], "confirmationRequired": false, "warnings": [] } } },
+      { "id": "RT15", "_note": "мессенджерные ссылки и сокращатели", "template": "Пишите в t.me/kedr\nВот wa.me/79001112233\nСмотрите bit.ly/abc\nСсылка vk.cc/xyz", "pushTextEnabled": true,
+        "expected": { "push": "Завтра заезд — откройте бронь", "pushDropped": [ { "line": 1, "reason": "Link" }, { "line": 2, "reason": "Digits" }, { "line": 3, "reason": "Link" }, { "line": 4, "reason": "Link" } ] } },
+      { "id": "RT16", "_note": "wi-fi с неразрывным дефисом и через пробел", "template": "Wi\u2011Fi в доме\nвай фай бесплатный\nДо встречи!", "pushTextEnabled": true,
+        "expected": { "push": "До встречи!", "pushDropped": [ { "line": 1, "reason": "CodeWord" }, { "line": 2, "reason": "CodeWord" } ] } },
+      { "id": "RT17", "_note": "телефон с типографскими тире, точками и косыми, ссылка со схемой tg:// (QA цикла 39)", "template": "Звоните 8\u2013900\u2013111\u201322\u201333\nЗвоните 8.900.111.22.33\nЗвоните 8/900/111/22/33\nЗвоните +7\u2011900\u2011111\u201122\u201133\nТелеграм tg://resolve?domain=kedr\nДо встречи!", "pushTextEnabled": true,
+        "expected": { "push": "До встречи!", "pushDropped": [ { "line": 1, "reason": "Digits" }, { "line": 2, "reason": "Phone" }, { "line": 3, "reason": "Phone" }, { "line": 4, "reason": "Digits" }, { "line": 5, "reason": "Link" } ] } }
+    ],
+    "pushLength": { "_rule": "Push длиннее 180 символов обрезается до 179 символов + «…» (суррогатные пары не режутся).", "maxLength": 180 }
+  }
+}

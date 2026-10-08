@@ -2629,6 +2629,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<Guid?>("StayBookingId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("StayServiceOrderId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Transport")
                         .HasColumnType("integer");
 
@@ -2653,6 +2656,9 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("StayBookingId");
 
+                    b.HasIndex("StayServiceOrderId")
+                        .HasFilter("\"StayServiceOrderId\" IS NOT NULL");
+
                     b.HasIndex("ChannelId", "Status")
                         .HasDatabaseName("IX_OutboundNotifications_Channel_Status");
 
@@ -2667,7 +2673,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.ToTable("OutboundNotifications", t =>
                         {
-                            t.HasCheckConstraint("CK_OutboundNotifications_OneSubject", "(CASE WHEN \"BookingId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"OrderId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"StayBookingId\" IS NULL THEN 0 ELSE 1 END) <= 1");
+                            t.HasCheckConstraint("CK_OutboundNotifications_OneSubject", "num_nonnulls(\"BookingId\", \"OrderId\", \"StayBookingId\", \"StayServiceOrderId\") <= 1");
                         });
                 });
 
@@ -3613,6 +3619,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<Guid?>("StayBookingId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("StayServiceOrderId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Text")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -3632,13 +3641,19 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("StayBookingId");
 
+                    b.HasIndex("StayServiceOrderId")
+                        .HasFilter("\"StayServiceOrderId\" IS NOT NULL");
+
                     b.HasIndex("ExpiresAtUtc", "CreatedAt")
                         .HasDatabaseName("IX_StaffMaxMessages_Dispatch")
                         .HasFilter("\"Status\" = 0");
 
                     NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("ExpiresAtUtc", "CreatedAt"), new[] { "CompanyId", "ChatKey" });
 
-                    b.ToTable("StaffMaxMessages");
+                    b.ToTable("StaffMaxMessages", t =>
+                        {
+                            t.HasCheckConstraint("CK_StaffMaxMessages_OneSubject", "num_nonnulls(\"OrderId\", \"StayBookingId\", \"StayServiceOrderId\") <= 1");
+                        });
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.StaffPushNotification", b =>
@@ -3697,6 +3712,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<Guid?>("StayBookingId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("StayServiceOrderId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid?>("SubscriptionId")
                         .HasColumnType("uuid");
 
@@ -3720,6 +3738,9 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("StayBookingId");
 
+                    b.HasIndex("StayServiceOrderId")
+                        .HasFilter("\"StayServiceOrderId\" IS NOT NULL");
+
                     b.HasIndex("SubscriptionId");
 
                     b.HasIndex("ExpiresAtUtc", "CreatedAt")
@@ -3730,7 +3751,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.ToTable("StaffPushNotifications", t =>
                         {
-                            t.HasCheckConstraint("CK_StaffPushNotifications_OneSubject", "(CASE WHEN \"BookingId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"OrderId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"StayBookingId\" IS NULL THEN 0 ELSE 1 END) <= 1");
+                            t.HasCheckConstraint("CK_StaffPushNotifications_OneSubject", "num_nonnulls(\"BookingId\", \"OrderId\", \"StayBookingId\", \"StayServiceOrderId\") <= 1");
                         });
                 });
 
@@ -3743,7 +3764,14 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<int>("Adults")
                         .HasColumnType("integer");
 
+                    b.Property<string>("ArrivalReminderPageText")
+                        .HasMaxLength(1200)
+                        .HasColumnType("character varying(1200)");
+
                     b.Property<DateTime?>("ArrivalReminderQueuedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ArrivalReminderSentAtUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<TimeOnly?>("ArrivalTime")
@@ -3988,6 +4016,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<int>("Quantity")
                         .HasColumnType("integer");
 
+                    b.Property<Guid?>("ServiceSessionId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("StayBookingId")
                         .HasColumnType("uuid");
 
@@ -3996,9 +4027,15 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ServiceSessionId")
+                        .HasFilter("\"ServiceSessionId\" IS NOT NULL");
+
                     b.HasIndex("StayBookingId", "Position");
 
-                    b.ToTable("StayBookingCharges");
+                    b.ToTable("StayBookingCharges", t =>
+                        {
+                            t.HasCheckConstraint("CK_StayBookingCharges_ServiceNotPrepaid", "NOT (\"Kind\" IN (5, 6) AND \"PrepayEligible\")");
+                        });
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.StayBookingEvent", b =>
@@ -4037,6 +4074,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
 
+                    b.Property<Guid?>("ServiceSessionId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("StayBookingId")
                         .HasColumnType("uuid");
 
@@ -4046,6 +4086,8 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("OccurredAtUtc");
+
+                    b.HasIndex("ServiceSessionId");
 
                     b.HasIndex("StayBookingId", "OccurredAtUtc");
 
@@ -4102,6 +4144,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<Guid?>("StayBookingId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("StayServiceOrderId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid?>("SubscriptionId")
                         .HasColumnType("uuid");
 
@@ -4117,6 +4162,9 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("StayBookingId");
 
+                    b.HasIndex("StayServiceOrderId")
+                        .HasFilter("\"StayServiceOrderId\" IS NOT NULL");
+
                     b.HasIndex("SubscriptionId");
 
                     b.HasIndex("ExpiresAtUtc", "CreatedAt")
@@ -4125,7 +4173,10 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("ExpiresAtUtc", "CreatedAt"), new[] { "CompanyId", "SubscriptionId" });
 
-                    b.ToTable("StayGuestPushNotifications");
+                    b.ToTable("StayGuestPushNotifications", t =>
+                        {
+                            t.HasCheckConstraint("CK_StayGuestPushNotifications_OneOwner", "num_nonnulls(\"StayBookingId\", \"StayServiceOrderId\") <= 1");
+                        });
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.StayGuestPushSubscription", b =>
@@ -4160,7 +4211,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid>("StayBookingId")
+                    b.Property<Guid?>("StayBookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("StayServiceOrderId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
@@ -4170,7 +4224,15 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("StayBookingId", "Endpoint")
                         .IsUnique();
 
-                    b.ToTable("StayGuestPushSubscriptions");
+                    b.HasIndex("StayServiceOrderId", "Endpoint")
+                        .IsUnique()
+                        .HasDatabaseName("UX_StayGuestPushSubscriptions_Order_Endpoint")
+                        .HasFilter("\"StayServiceOrderId\" IS NOT NULL");
+
+                    b.ToTable("StayGuestPushSubscriptions", t =>
+                        {
+                            t.HasCheckConstraint("CK_StayGuestPushSubscriptions_OneOwner", "num_nonnulls(\"StayBookingId\", \"StayServiceOrderId\") = 1");
+                        });
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.StayPaymentProof", b =>
@@ -4193,7 +4255,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<int>("SizeBytes")
                         .HasColumnType("integer");
 
-                    b.Property<Guid>("StayBookingId")
+                    b.Property<Guid?>("StayBookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("StayServiceOrderId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("StorageKey")
@@ -4207,13 +4272,783 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("StayBookingId");
 
-                    b.ToTable("StayPaymentProofs");
+                    b.HasIndex("StayServiceOrderId")
+                        .HasFilter("\"StayServiceOrderId\" IS NOT NULL");
+
+                    b.ToTable("StayPaymentProofs", t =>
+                        {
+                            t.HasCheckConstraint("CK_StayPaymentProofs_OneOwner", "num_nonnulls(\"StayBookingId\", \"StayServiceOrderId\") = 1");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayService", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ArchivedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("AvailableForHouseBookings")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("BufferMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CancellationBoundaryHours")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CancellationPolicy")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<bool>("IsPublished")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MaxHours")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinHours")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinLeadMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("ShowBufferToGuests")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int?>("StandalonePrepayPercent")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StepMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "Position");
+
+                    b.HasIndex("CompanyId", "Slug")
+                        .IsUnique();
+
+                    b.ToTable("StayServices", t =>
+                        {
+                            t.HasCheckConstraint("CK_StayServices_Boundary", "\"CancellationBoundaryHours\" BETWEEN 1 AND 24");
+
+                            t.HasCheckConstraint("CK_StayServices_Buffer", "\"BufferMinutes\" BETWEEN 0 AND 240 AND \"BufferMinutes\" % 15 = 0");
+
+                            t.HasCheckConstraint("CK_StayServices_Hours", "1 <= \"MinHours\" AND \"MinHours\" <= \"MaxHours\" AND \"MaxHours\" <= 12");
+
+                            t.HasCheckConstraint("CK_StayServices_Lead", "\"MinLeadMinutes\" BETWEEN 0 AND 2880 AND \"MinLeadMinutes\" % 30 = 0");
+
+                            t.HasCheckConstraint("CK_StayServices_Prepay", "\"StandalonePrepayPercent\" IS NULL OR \"StandalonePrepayPercent\" BETWEEN 1 AND 100");
+
+                            t.HasCheckConstraint("CK_StayServices_PublishedNotArchived", "NOT (\"IsPublished\" AND \"ArchivedAtUtc\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_StayServices_Step", "\"StepMinutes\" IN (30, 60)");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceDateOverride", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateOnly>("BusinessDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<bool>("IsClosed")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("ServiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<string>("WindowsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceId", "BusinessDate")
+                        .IsUnique();
+
+                    b.ToTable("StayServiceDateOverrides");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MaxPerSession")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PriceRub")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ServiceId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceId", "Position");
+
+                    b.ToTable("StayServiceItems", t =>
+                        {
+                            t.HasCheckConstraint("CK_StayServiceItems_Max", "\"MaxPerSession\" BETWEEN 1 AND 50");
+
+                            t.HasCheckConstraint("CK_StayServiceItems_Price", "\"PriceRub\" BETWEEN 0 AND 100000");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BookingNoticeVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("BookingTermsVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("CancellationBoundaryHoursSnapshot")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CancellationPolicySnapshot")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CancellationTermsVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ConsentAcceptedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConsentPrivacyVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ConsentTermsVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DueOnSiteRub")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("GuestKind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("GuestName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("GuestPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("GuestUserId")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("HoldExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("HoldReminderQueuedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsManual")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ItemsAmountRub")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("MessengerConsentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MessengerConsentVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<bool>("NotifyByMessenger")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("PaymentConfirmedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaymentConfirmedByNameSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("PaymentConfirmedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<string>("PaymentDetailsSnapshot")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("PaymentProofsPurgedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaymentPurposeSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("PersonalDataErased")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("PrepayPercentSnapshot")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PrepayRub")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProviderSnapshotJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("PublicToken")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int?>("RequestBasis")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ServiceAmountRub")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ServiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("StatusReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTime?>("TerminalAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TimeZoneIdSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("TotalRub")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HoldExpiresAtUtc")
+                        .HasDatabaseName("IX_StayServiceOrders_HoldExpiry")
+                        .HasFilter("\"Status\" = 0");
+
+                    b.HasIndex("PublicToken")
+                        .IsUnique();
+
+                    b.HasIndex("ServiceId");
+
+                    b.HasIndex("CompanyId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "Status");
+
+                    b.HasIndex("GuestPhone", "CreatedAtUtc")
+                        .HasDatabaseName("IX_StayServiceOrders_Phone")
+                        .HasFilter("\"GuestPhone\" IS NOT NULL");
+
+                    b.HasIndex("GuestUserId", "CreatedAtUtc");
+
+                    b.ToTable("StayServiceOrders", t =>
+                        {
+                            t.HasCheckConstraint("CK_StayServiceOrders_Money", "\"TotalRub\" = \"ServiceAmountRub\" + \"ItemsAmountRub\" AND \"DueOnSiteRub\" = \"TotalRub\" - \"PrepayRub\"");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceOrderEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ActorKind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ActorNameSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ActorUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DetailsJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<int?>("FromStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid>("StayServiceOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("ToStatus")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccurredAtUtc");
+
+                    b.HasIndex("StayServiceOrderId", "OccurredAtUtc");
+
+                    b.ToTable("StayServiceOrderEvents");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServicePhoto", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ServiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ThumbnailUrl")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceId", "Position");
+
+                    b.ToTable("StayServicePhotos");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServicePriceRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DaysMask")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FromHour")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PriceRub")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ServiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ToHour")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceId");
+
+                    b.ToTable("StayServicePriceRules", t =>
+                        {
+                            t.HasCheckConstraint("CK_StayServicePriceRules_Days", "\"DaysMask\" BETWEEN 1 AND 127");
+
+                            t.HasCheckConstraint("CK_StayServicePriceRules_Hours", "\"FromHour\" BETWEEN 6 AND 29 AND \"ToHour\" > \"FromHour\" AND \"ToHour\" <= 30");
+
+                            t.HasCheckConstraint("CK_StayServicePriceRules_Price", "\"PriceRub\" BETWEEN 1 AND 100000");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceScheduleEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ActorNameSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ActorUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<string>("AfterJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("BeforeJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateOnly?>("BusinessDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ServiceId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccurredAtUtc");
+
+                    b.HasIndex("ServiceId", "OccurredAtUtc");
+
+                    b.ToTable("StayServiceScheduleEvents");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AddNoticeVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("AddedByKind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AddedByNameSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("AddedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<int>("BufferMinutesSnapshot")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly>("BusinessDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("EndUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("HourPricesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("Hours")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("IdempotencyKey")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ItemsAmountRub")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ItemsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("OccupiedUntilUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ReleasedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("RequestBasis")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ServiceAmountRub")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ServiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ServiceNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("StartMinute")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("StartUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("StatusReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid?>("StayBookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("StayServiceOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("TotalRub")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StayBookingId");
+
+                    b.HasIndex("StayServiceOrderId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_StayServiceSessions_Order")
+                        .HasFilter("\"StayServiceOrderId\" IS NOT NULL");
+
+                    b.HasIndex("CompanyId", "BusinessDate");
+
+                    b.HasIndex("ServiceId", "StartUtc")
+                        .HasDatabaseName("IX_StayServiceSessions_Active")
+                        .HasFilter("\"ReleasedAtUtc\" IS NULL");
+
+                    b.HasIndex("StayBookingId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_StayServiceSessions_Booking_Key")
+                        .HasFilter("\"IdempotencyKey\" IS NOT NULL");
+
+                    b.ToTable("StayServiceSessions", t =>
+                        {
+                            t.HasCheckConstraint("CK_StayServiceSessions_Hours", "\"Hours\" BETWEEN 1 AND 12");
+
+                            t.HasCheckConstraint("CK_StayServiceSessions_OneParent", "num_nonnulls(\"StayBookingId\", \"StayServiceOrderId\") = 1");
+
+                            t.HasCheckConstraint("CK_StayServiceSessions_Released", "(\"ReleasedAtUtc\" IS NULL) = (\"State\" = 0)");
+
+                            t.HasCheckConstraint("CK_StayServiceSessions_RequestBasis", "(\"AddedByKind\" IN (2, 3)) = (\"RequestBasis\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_StayServiceSessions_Times", "\"EndUtc\" > \"StartUtc\" AND \"OccupiedUntilUtc\" >= \"EndUtc\"");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceWeeklyWindow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DayOfWeek")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("EndMinute")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ServiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("StartMinute")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceId", "DayOfWeek");
+
+                    b.ToTable("StayServiceWeeklyWindows", t =>
+                        {
+                            t.HasCheckConstraint("CK_StayServiceWeeklyWindows_Day", "\"DayOfWeek\" BETWEEN 1 AND 7");
+
+                            t.HasCheckConstraint("CK_StayServiceWeeklyWindows_Minutes", "\"StartMinute\" >= 0 AND \"EndMinute\" > \"StartMinute\" AND \"EndMinute\" <= 2880");
+                        });
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StaysReminderTemplateChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ChangedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ChangedByNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ChangedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<bool>("CodeMarkersConfirmed")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("CodeMarkersHit")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("NewPushText")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("NewTemplate")
+                        .HasMaxLength(700)
+                        .HasColumnType("character varying(700)");
+
+                    b.Property<TimeOnly>("NewTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<string>("OwnerNoticeVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<bool>("PreviousPushText")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("PreviousTemplate")
+                        .HasMaxLength(700)
+                        .HasColumnType("character varying(700)");
+
+                    b.Property<TimeOnly>("PreviousTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<string>("PushNoticeVersion")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "ChangedAtUtc");
+
+                    b.ToTable("StaysReminderTemplateChanges");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.StaysSettings", b =>
                 {
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("AcceptServiceOrdersWithoutStay")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<bool>("AllowGapFill")
                         .HasColumnType("boolean");
@@ -4223,6 +5058,20 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.Property<bool>("ArrivalReminderEnabled")
                         .HasColumnType("boolean");
+
+                    b.Property<bool>("ArrivalReminderPushText")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("ArrivalReminderTemplate")
+                        .HasMaxLength(700)
+                        .HasColumnType("character varying(700)");
+
+                    b.Property<TimeOnly>("ArrivalReminderTime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("time without time zone")
+                        .HasDefaultValue(new TimeOnly(18, 0, 0));
 
                     b.Property<long>("BookingsRevision")
                         .ValueGeneratedOnAdd()
@@ -5621,6 +6470,11 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasForeignKey("StayBookingId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("ServiceBooking.Core.Entities.StayServiceOrder", "StayServiceOrder")
+                        .WithMany()
+                        .HasForeignKey("StayServiceOrderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Booking");
 
                     b.Navigation("Channel");
@@ -5630,6 +6484,8 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Order");
 
                     b.Navigation("StayBooking");
+
+                    b.Navigation("StayServiceOrder");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.PhoneVerificationSession", b =>
@@ -5857,11 +6713,18 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasForeignKey("StayBookingId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("ServiceBooking.Core.Entities.StayServiceOrder", "StayServiceOrder")
+                        .WithMany()
+                        .HasForeignKey("StayServiceOrderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Company");
 
                     b.Navigation("Order");
 
                     b.Navigation("StayBooking");
+
+                    b.Navigation("StayServiceOrder");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.StaffPushNotification", b =>
@@ -5887,6 +6750,11 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasForeignKey("StayBookingId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("ServiceBooking.Core.Entities.StayServiceOrder", "StayServiceOrder")
+                        .WithMany()
+                        .HasForeignKey("StayServiceOrderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("ServiceBooking.Core.Entities.PushSubscription", "Subscription")
                         .WithMany()
                         .HasForeignKey("SubscriptionId")
@@ -5899,6 +6767,8 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Order");
 
                     b.Navigation("StayBooking");
+
+                    b.Navigation("StayServiceOrder");
 
                     b.Navigation("Subscription");
                 });
@@ -5929,6 +6799,11 @@ namespace ServiceBooking.Infrastructure.Migrations
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.StayBookingCharge", b =>
                 {
+                    b.HasOne("ServiceBooking.Core.Entities.StayServiceSession", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceSessionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("ServiceBooking.Core.Entities.StayBooking", null)
                         .WithMany("Charges")
                         .HasForeignKey("StayBookingId")
@@ -5938,6 +6813,11 @@ namespace ServiceBooking.Infrastructure.Migrations
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.StayBookingEvent", b =>
                 {
+                    b.HasOne("ServiceBooking.Core.Entities.StayServiceSession", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceSessionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("ServiceBooking.Core.Entities.StayBooking", null)
                         .WithMany()
                         .HasForeignKey("StayBookingId")
@@ -5958,6 +6838,11 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasForeignKey("StayBookingId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("ServiceBooking.Core.Entities.StayServiceOrder", null)
+                        .WithMany()
+                        .HasForeignKey("StayServiceOrderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("ServiceBooking.Core.Entities.StayGuestPushSubscription", "Subscription")
                         .WithMany()
                         .HasForeignKey("SubscriptionId")
@@ -5973,8 +6858,12 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasOne("ServiceBooking.Core.Entities.StayBooking", "StayBooking")
                         .WithMany()
                         .HasForeignKey("StayBookingId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("ServiceBooking.Core.Entities.StayServiceOrder", null)
+                        .WithMany()
+                        .HasForeignKey("StayServiceOrderId")
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("StayBooking");
                 });
@@ -5984,6 +6873,136 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasOne("ServiceBooking.Core.Entities.StayBooking", null)
                         .WithMany("PaymentProofs")
                         .HasForeignKey("StayBookingId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ServiceBooking.Core.Entities.StayServiceOrder", null)
+                        .WithMany("PaymentProofs")
+                        .HasForeignKey("StayServiceOrderId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayService", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceDateOverride", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.StayService", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceItem", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.StayService", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceOrder", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("GuestUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ServiceBooking.Core.Entities.StayService", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceOrderEvent", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.StayServiceOrder", null)
+                        .WithMany()
+                        .HasForeignKey("StayServiceOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServicePhoto", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.StayService", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServicePriceRule", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.StayService", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceScheduleEvent", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.StayService", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceSession", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.StayService", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.StayBooking", null)
+                        .WithMany()
+                        .HasForeignKey("StayBookingId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ServiceBooking.Core.Entities.StayServiceOrder", null)
+                        .WithMany()
+                        .HasForeignKey("StayServiceOrderId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceWeeklyWindow", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.StayService", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StaysReminderTemplateChange", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -6172,6 +7191,11 @@ namespace ServiceBooking.Infrastructure.Migrations
                 {
                     b.Navigation("Charges");
 
+                    b.Navigation("PaymentProofs");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceOrder", b =>
+                {
                     b.Navigation("PaymentProofs");
                 });
 

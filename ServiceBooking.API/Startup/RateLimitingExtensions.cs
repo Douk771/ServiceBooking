@@ -246,6 +246,37 @@ internal static class RateLimitingExtensions
         // stays-board: the staff board and the booking list — 120/min per user.
         o.AddPolicy("stays-board", ctx => UserWindowPolicy(ctx, "stays-board", defaultPermitLimit: 120, defaultWindowMinutes: 1));
 
+        // ── Cycle 39 (API_CONTRACT_CYCLE39.md §39.32): services ──
+        // stay-service-create: an order of a service without a stay — 5/hour per IP anonymously, 20/hour per signed-in user.
+        o.AddPolicy("stay-service-create", ctx =>
+        {
+            var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+            var windowMinutes = config.GetValue("RateLimits:stay-service-create:WindowMinutes", 60);
+            var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId is not null)
+                return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = config.GetValue("RateLimits:stay-service-create:PermitLimit", 20), Window = TimeSpan.FromMinutes(windowMinutes), QueueLimit = 0
+                });
+            var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+            return RateLimitPartition.GetFixedWindowLimiter($"ip:{ip}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = config.GetValue("RateLimits:stay-service-create:AnonymousPermitLimit", 5), Window = TimeSpan.FromMinutes(windowMinutes), QueueLimit = 0
+            });
+        });
+        // stay-session-add: adding a session to a booking by its link — 10/hour per token AND 30/hour per IP (a chain).
+        o.AddPolicy("stay-session-add", ctx =>
+        {
+            var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+            var windowMinutes = config.GetValue("RateLimits:stay-session-add:WindowMinutes", 60);
+            var token = ctx.Request.RouteValues.TryGetValue("token", out var t) ? t?.ToString() : null;
+            var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+            return RateLimitPartition.GetFixedWindowLimiter($"token:{token ?? ip}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = config.GetValue("RateLimits:stay-session-add:PermitLimit", 10), Window = TimeSpan.FromMinutes(windowMinutes), QueueLimit = 0
+            });
+        });
+
         // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §14) — the built-in rejection
         // response is empty, so OnRejected has to write the body itself or the frontend's *Error.ts mappers
         // couldn't tell a 429 apart from a 403. Branches by policy name so each surfaces its own Russian
@@ -275,7 +306,7 @@ internal static class RateLimitingExtensions
                 "order-push" => "Слишком много запросов — подождите минуту",
                 "shop-reports" or "goods-catalog" or "staff-max-link" => "Слишком много запросов — подождите минуту",
                 "stays-public" or "stay-public" or "stays-board" => "Слишком много запросов. Попробуйте через минуту",
-                "stay-create" or "stay-push" => "Слишком много попыток. Попробуйте позже",
+                "stay-create" or "stay-push" or "stay-service-create" or "stay-session-add" => "Слишком много попыток. Попробуйте позже",
                 "stay-proof" => "Слишком много загрузок. Попробуйте позже",
                 // "uploads", "company-photos", "company-photos-edit" намеренно делят текст с веткой по умолчанию (контракт цикла 31).
                 _ => "Too many uploads. Try again in a minute."

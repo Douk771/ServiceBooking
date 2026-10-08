@@ -28,7 +28,7 @@ namespace ServiceBooking.API.Controllers.Stays;
 public class StaysCompaniesController(
     AppDbContext db, CompanyCreationService companyCreation, StaysAccessResolver access, StaysCompanyService companyService,
     PublicSiteLinks links, StaysTrialService trial, BillingAccountProvisioner accounts, ShopChannelReader channelReader,
-    IStaysClock clock) : ControllerBase
+    IStaysClock clock, ArrivalReminderService reminder, StayActorResolver actors, Microsoft.Extensions.Options.IOptions<StaysOptions> staysOptions) : ControllerBase
 {
     public const string MessengerUnavailableText = "Подключите канал WhatsApp или MAX, чтобы отправлять сообщения гостям";
 
@@ -66,7 +66,8 @@ public class StaysCompaniesController(
             var role = StaysAccess.RoleOfMember(r.Role == UserRole.CompanyOwner, r.StaffPosition);
             var gate = await companyService.EvaluateGateAsync(r.Company, await companyService.LoadSettingsAsync(r.Company.Id, ct: ct), ct);
             int? awaiting = role == StaysMyRole.Housekeeper ? null
-                : await db.StayBookings.AsNoTracking().CountAsync(b => b.CompanyId == r.Company.Id && b.Status == StayBookingStatus.AwaitingPaymentCheck, ct);
+                : await db.StayBookings.AsNoTracking().CountAsync(b => b.CompanyId == r.Company.Id && b.Status == StayBookingStatus.AwaitingPaymentCheck, ct)
+                  + await db.StayServiceOrders.AsNoTracking().CountAsync(o => o.CompanyId == r.Company.Id && o.Status == StayBookingStatus.AwaitingPaymentCheck, ct);
             result.Add(new StaysCompanyListItemDto(r.Company.Id, r.Company.Name, r.Company.Slug, r.Company.LogoUrl, links.CompanyPageUrl(r.Company), role, gate.Accepting, awaiting));
         }
         return Ok(result);
@@ -140,10 +141,58 @@ public class StaysCompaniesController(
         settings.CheckInInfoSendFullText = input.CheckInInfoSendFullText;
         settings.ArrivalReminderEnabled = input.ArrivalReminderEnabled;
         settings.HousekeeperSeesGuestComment = input.HousekeeperSeesGuestComment;
+        // Cycle 39: null / absent = do not change (an old client replacing the whole form must not switch the orders off).
+        if (input.AcceptServiceOrdersWithoutStay is { } accept)
+        {
+            if (accept && !StaysBookingGate.ProviderComplete(StaysCompanyService.ProviderFacts(settings)))
+                return Conflict(new StaysConflictDto("ProviderRequiredForServiceOrders", ServiceTexts.ProviderRequiredForServiceOrders));
+            settings.AcceptServiceOrdersWithoutStay = accept;
+        }
         Touch(settings);
         result.Company!.ShowInPublicListing = input.ShowInCatalog;
         await db.SaveChangesAsync(ct);
         return Ok(await companyService.BuildManageAsync(result.Company!, result.Role, ct));
+    }
+
+    // ── cycle 39: the arrival reminder (API_CONTRACT_CYCLE39.md §39.33) ──
+
+    [HttpGet("companies/{companyId:guid}/arrival-reminder")]
+    public async Task<ActionResult<ArrivalReminderSettingsDto>> GetArrivalReminder(Guid companyId, CancellationToken ct)
+    {
+        var result = await access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, asNoTracking: true, ct: ct);
+        if (!result.Ok) return result.Error!;
+        return Ok(reminder.ToDto(await companyService.LoadSettingsAsync(companyId, ct: ct)));
+    }
+
+    [HttpPut("companies/{companyId:guid}/arrival-reminder")]
+    [RequiresOwnerTerms]
+    public async Task<ActionResult<ArrivalReminderSettingsDto>> SaveArrivalReminder(Guid companyId, ArrivalReminderInput input, CancellationToken ct)
+    {
+        var result = await access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, asNoTracking: true, ct: ct);
+        if (!result.Ok) return result.Error!;
+        var saved = await reminder.SaveAsync(result.Company!, await companyService.LoadSettingsAsync(companyId, ct: ct), input, await actors.ResolveStaffAsync(User, ct), ct);
+        if (saved.BadRequest is not null) return BadRequest(saved.BadRequest);
+        if (saved.Conflict is not null) return Conflict(saved.Conflict);
+        return Ok(saved.Settings);
+    }
+
+    [HttpPost("companies/{companyId:guid}/arrival-reminder/preview")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("stays-board")]
+    public async Task<ActionResult<ArrivalReminderPreviewDto>> PreviewArrivalReminder(Guid companyId, ArrivalReminderPreviewInput input, CancellationToken ct)
+    {
+        var result = await access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, asNoTracking: true, ct: ct);
+        if (!result.Ok) return result.Error!;
+        if (input.Template is { Length: > 2000 }) return BadRequest("Текст напоминания — не длиннее 700 символов");
+        var preview = await reminder.PreviewAsync(result.Company!, input, ct);
+        return preview is null ? NotFound() : Ok(preview);
+    }
+
+    [HttpGet("companies/{companyId:guid}/arrival-reminder/history")]
+    public async Task<ActionResult<List<ArrivalReminderChangeDto>>> ArrivalReminderHistory(Guid companyId, CancellationToken ct)
+    {
+        var result = await access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, asNoTracking: true, ct: ct);
+        if (!result.Ok) return result.Error!;
+        return Ok(await reminder.HistoryAsync(companyId, staysOptions.Value.Services.HistoryRows, ct));
     }
 
     [HttpPut("companies/{companyId:guid}/payment-details")]

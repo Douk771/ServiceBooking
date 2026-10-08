@@ -28,6 +28,7 @@ info:
   version: "37.1.0"
   license:
     name: Proprietary
+    url: https://ezbook.ru/terms
   description: |
     Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ:
       * camelCase; enum — строками (имена членов C#); DateTime — ISO-8601 UTC; DateOnly — "YYYY-MM-DD";
@@ -51,10 +52,8 @@ info:
       7. График (StaysScheduleDto) не содержит телефонов, сумм и файлов; comment = null, если скрыт от горничной.
 
 servers:
-  - url: http://localhost:5000
-    description: dev (dotnet run)
-  - url: http://localhost:4037
-    description: prism mock по этой схеме
+  - url: https://dom.ezbook.ru
+    description: production
 
 tags:
   - name: shared
@@ -232,7 +231,7 @@ components:
       enum: [Owner, Manager, Housekeeper, SuperAdmin]
     StaysPermission:
       type: string
-      enum: [ManageCompany, ManageHouses, EditHouseContent, ViewBookings, ManageBookings, ManageBlocks, ViewSchedule, ViewCabinet]
+      enum: [ManageCompany, ManageHouses, EditHouseContent, ViewBookings, ManageBookings, ManageBlocks, ViewSchedule, ViewCabinet, ManageServices, EditServiceContent, ManageServiceDates]
     StayBookingStatus:
       type: string
       enum: [Held, AwaitingPaymentCheck, Confirmed, ExpiredUnpaid, PaymentRejected, CancelledByGuest, CancelledByOwner]
@@ -267,11 +266,11 @@ components:
       enum: [Free, MayFreeUp, Occupied, Unavailable]
     StayChargeKind:
       type: string
-      description: Строки суммы брони. Цикл 2 допишет ServiceSlot, ServiceItem.
-      enum: [Nights, ExtraBeds, Dogs, Cot, ManualTotal]
+      description: Строки суммы брони. Цикл 39 дописал ServiceSlot, ServiceItem.
+      enum: [Nights, ExtraBeds, Dogs, Cot, ManualTotal, ServiceSlot, ServiceItem]
     StayRefusalCode:
       type: string
-      enum: [InvalidDates, CheckInInPast, SameDayNotAllowed, BeyondHorizon, MaxNightsExceeded, DatesUnavailable, MinNightsNotMet, TooManyGuests, DogsNotAllowed, CotNotAvailable, NoPriceForNights, NotAcceptingBookings, PriceChanged]
+      enum: [InvalidDates, CheckInInPast, SameDayNotAllowed, BeyondHorizon, MaxNightsExceeded, DatesUnavailable, MinNightsNotMet, TooManyGuests, DogsNotAllowed, CotNotAvailable, NoPriceForNights, NotAcceptingBookings, PriceChanged, ServiceSlotUnavailable, ServiceSelectionInvalid]
     NotAcceptingReason:
       type: string
       enum: [CompanyBlocked, NoPlan, OverHouseLimit, NoPaymentDetails, NoProviderInfo, HouseNotPublished]
@@ -283,7 +282,7 @@ components:
       enum: [VersionMismatch, InvalidTransition]
     StaysConflictCode:
       type: string
-      enum: [SlugInvalid, SlugReserved, SlugTaken, NoPrice, ObjectKindRequired, RegistryNumberRequired, AttestationRequired, HouseArchived, HouseHasBookings, PhotoLimitReached, PricePeriodOverlap, BlockConflictsWithBooking, BlockOverlapsBlock, MessengerUnavailable]
+      enum: [SlugInvalid, SlugReserved, SlugTaken, NoPrice, ObjectKindRequired, RegistryNumberRequired, AttestationRequired, HouseArchived, HouseHasBookings, PhotoLimitReached, PricePeriodOverlap, BlockConflictsWithBooking, BlockOverlapsBlock, MessengerUnavailable, ProviderRequiredForServiceOrders]
     StayGuestAction:
       type: string
       enum: [AttachProof, Cancel]
@@ -322,7 +321,7 @@ components:
       required: [accepting]
       properties:
         accepting: { type: boolean }
-        reasonCode: { allOf: [ { $ref: '#/components/schemas/NotAcceptingReason' } ], nullable: true }
+        reasonCode: { allOf: [ { $ref: '#/components/schemas/NotAcceptingReason' } ], type: string, nullable: true }
         reasonText: { type: string, nullable: true }
     ProviderPublicDto:
       type: object
@@ -386,8 +385,8 @@ components:
       properties:
         code: { $ref: '#/components/schemas/StayRefusalCode' }
         message: { type: string }
-        reasonCode: { allOf: [ { $ref: '#/components/schemas/NotAcceptingReason' } ], nullable: true }
-        quote: { allOf: [ { $ref: '#/components/schemas/StayQuoteDto' } ], nullable: true, description: только у PriceChanged }
+        reasonCode: { allOf: [ { $ref: '#/components/schemas/NotAcceptingReason' } ], type: string, nullable: true }
+        quote: { allOf: [ { $ref: '#/components/schemas/StayQuoteDto' } ], type: object, nullable: true, description: только у PriceChanged }
     StayGuestConflictDto:
       type: object
       required: [code, message, booking]
@@ -408,7 +407,7 @@ components:
       properties:
         code: { $ref: '#/components/schemas/StaysConflictCode' }
         message: { type: string }
-        conflictingPeriod: { allOf: [ { $ref: '#/components/schemas/PricePeriodDto' } ], nullable: true }
+        conflictingPeriod: { allOf: [ { $ref: '#/components/schemas/PricePeriodDto' } ], type: object, nullable: true }
         conflicts:
           type: array
           nullable: true
@@ -445,7 +444,7 @@ components:
       properties:
         phone: { type: string }
         role: { type: string }
-        position: { allOf: [ { $ref: '#/components/schemas/StaffPosition' } ], nullable: true }
+        position: { allOf: [ { $ref: '#/components/schemas/StaffPosition' } ], type: string, nullable: true }
     MemberDtoCycle37:
       type: object
       additionalProperties: true
@@ -454,7 +453,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         role: { type: string }
-        position: { allOf: [ { $ref: '#/components/schemas/StaffPosition' } ], nullable: true }
+        position: { allOf: [ { $ref: '#/components/schemas/StaffPosition' } ], type: string, nullable: true }
     MemberPositionInput:
       type: object
       additionalProperties: false
@@ -494,7 +493,7 @@ components:
           type: array
           nullable: true
           items: { $ref: '#/components/schemas/AvailablePlanDtoCycle37' }
-        stays: { allOf: [ { $ref: '#/components/schemas/StaysSubscriptionBlockDto' } ], nullable: true }
+        stays: { allOf: [ { $ref: '#/components/schemas/StaysSubscriptionBlockDto' } ], type: object, nullable: true }
 
     # ───────────── публичное ─────────────
     StayCatalogItemDto:
@@ -704,7 +703,7 @@ components:
         needCot: { type: boolean }
         guestName: { type: string, minLength: 1, maxLength: 100 }
         guestPhone: { type: string, nullable: true, description: обязателен для анонима; у вошедшего игнорируется }
-        arrivalTime: { allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ], nullable: true }
+        arrivalTime: { allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ], type: string, nullable: true }
         comment: { type: string, maxLength: 500, nullable: true }
         notifyByMessenger: { type: boolean }
         expectedTotalRub: { type: integer, minimum: 0 }
@@ -812,7 +811,7 @@ components:
         dogs: { type: integer }
         needCot: { type: boolean }
         extraBeds: { type: integer }
-        arrivalTime: { allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ], nullable: true }
+        arrivalTime: { allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ], type: string, nullable: true }
         guestName: { type: string, nullable: true }
         guestPhoneMasked: { type: string, nullable: true }
         comment: { type: string, nullable: true }
@@ -917,7 +916,7 @@ components:
       properties:
         company: { $ref: '#/components/schemas/StaysCompanyManageDto' }
         token: { type: string }
-        trial: { allOf: [ { $ref: '#/components/schemas/StaysTrialOutcomeDto' } ], nullable: true }
+        trial: { allOf: [ { $ref: '#/components/schemas/StaysTrialOutcomeDto' } ], type: object, nullable: true }
     StaysCompanyListItemDto:
       type: object
       required: [id, name, slug, publicUrl, myRole, acceptingBookings]
@@ -936,7 +935,7 @@ components:
       properties:
         suggested: { type: string }
         available: { type: boolean }
-        conflict: { allOf: [ { $ref: '#/components/schemas/StaysConflictDto' } ], nullable: true }
+        conflict: { allOf: [ { $ref: '#/components/schemas/StaysConflictDto' } ], type: object, nullable: true }
     StaysSettingsDto:
       type: object
       required: [checkInTime, checkOutTime, minNights, maxNights, horizonDays, allowGapFill, allowSameDayCheckIn, holdMinutes, prepayPercent, cancellationPolicy, dogFeeRub, cotFeeRub, checkInInfoSendTime, checkInInfoSendFullText, arrivalReminderEnabled, housekeeperSeesGuestComment, showInCatalog]
@@ -1022,8 +1021,8 @@ components:
         myPermissions:
           type: array
           items: { $ref: '#/components/schemas/StaysPermission' }
-        settings: { allOf: [ { $ref: '#/components/schemas/StaysSettingsDto' } ], nullable: true, description: null для горничной }
-        paymentDetails: { allOf: [ { $ref: '#/components/schemas/PaymentDetailsDto' } ], nullable: true, description: только при ManageCompany }
+        settings: { allOf: [ { $ref: '#/components/schemas/StaysSettingsDto' } ], type: object, nullable: true, description: null для горничной }
+        paymentDetails: { allOf: [ { $ref: '#/components/schemas/PaymentDetailsDto' } ], type: object, nullable: true, description: только при ManageCompany }
         provider: { $ref: '#/components/schemas/ProviderFullDto' }
         gate: { $ref: '#/components/schemas/GateDto' }
         checklist:
@@ -1144,7 +1143,7 @@ components:
         objectKind: { $ref: '#/components/schemas/HouseObjectKind' }
         registryNumber: { type: string, nullable: true, pattern: '^[0-9A-Za-zА-Яа-яЁё\-]{5,32}$' }
         registryUrl: { type: string, nullable: true, maxLength: 500 }
-        attestation: { allOf: [ { $ref: '#/components/schemas/AttestationInput' } ], nullable: true, description: 'обязательно, если дом опубликован' }
+        attestation: { allOf: [ { $ref: '#/components/schemas/AttestationInput' } ], type: object, nullable: true, description: 'обязательно, если дом опубликован' }
     HousePublishInput:
       type: object
       additionalProperties: false
@@ -1181,7 +1180,7 @@ components:
     HouseRegistryDto:
       type: object
       properties:
-        objectKind: { allOf: [ { $ref: '#/components/schemas/HouseObjectKind' } ], nullable: true }
+        objectKind: { allOf: [ { $ref: '#/components/schemas/HouseObjectKind' } ], type: string, nullable: true }
         registryNumber: { type: string, nullable: true }
         registryUrl: { type: string, nullable: true }
         lastAttestation: { $ref: '#/components/schemas/LastAttestationDto' }
@@ -1245,7 +1244,7 @@ components:
         stateText: { type: string }
         label: { type: string }
         holdExpiresAtUtc: { type: string, format: date-time, nullable: true }
-        blockKind: { allOf: [ { $ref: '#/components/schemas/HouseBlockKind' } ], nullable: true }
+        blockKind: { allOf: [ { $ref: '#/components/schemas/HouseBlockKind' } ], type: string, nullable: true }
         needsAction: { type: boolean }
         comment: { type: string, nullable: true, description: 'комментарий блокировки (только kind = Block) — для правки блокировки без потери комментария; у броней и внешних периодов null' }
     StaysBoardDto:
@@ -1374,7 +1373,7 @@ components:
         dogs: { type: integer }
         needCot: { type: boolean }
         extraBeds: { type: integer }
-        arrivalTime: { allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ], nullable: true }
+        arrivalTime: { allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ], type: string, nullable: true }
         guestName: { type: string, nullable: true }
         guestPhone: { type: string, nullable: true }
         guestKind: { type: string, enum: [Guest, Customer, Staff] }
@@ -1469,7 +1468,7 @@ components:
         houseId: { type: string, format: uuid }
         houseName: { type: string }
         checkInTime: { $ref: '#/components/schemas/TimeOfDay' }
-        arrivalTime: { allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ], nullable: true }
+        arrivalTime: { allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ], type: string, nullable: true }
         guestName: { type: string, nullable: true }
         adults: { type: integer }
         children: { type: integer }
@@ -1599,6 +1598,7 @@ paths:
     get:
       tags: [stays-public]
       operationId: staysPublicAmenities
+      security: []
       summary: Справочник удобств с подписями.
       responses:
         '200':
@@ -1614,6 +1614,7 @@ paths:
     get:
       tags: [stays-public]
       operationId: staysPublicCatalog
+      security: []
       summary: Каталог домов Шерегеша с фильтрами по датам, гостям и цене.
       parameters:
         - { $ref: '#/components/parameters/CheckInQuery' }
@@ -1638,6 +1639,7 @@ paths:
     get:
       tags: [stays-public]
       operationId: staysPublicCompany
+      security: []
       summary: Страница компании «Дома» по адресу (ссылка, QR).
       parameters:
         - { $ref: '#/components/parameters/Slug' }
@@ -1658,6 +1660,7 @@ paths:
     get:
       tags: [stays-public]
       operationId: staysPublicHouse
+      security: []
       summary: Страница дома.
       parameters:
         - { $ref: '#/components/parameters/Slug' }
@@ -1675,6 +1678,7 @@ paths:
     get:
       tags: [stays-public]
       operationId: staysPublicCalendar
+      security: []
       summary: Календарь занятости и цен дома по ночам.
       parameters:
         - { $ref: '#/components/parameters/HouseId' }
@@ -1700,6 +1704,7 @@ paths:
     post:
       tags: [stays-public]
       operationId: staysPublicQuote
+      security: []
       summary: Расчёт стоимости и проверка дат (ничего не резервирует, всегда 200).
       parameters:
         - { $ref: '#/components/parameters/HouseId' }
@@ -1752,6 +1757,7 @@ paths:
     get:
       tags: [stays-booking-public]
       operationId: staysGetPublicBooking
+      security: []
       summary: Страница брони по ссылке.
       parameters:
         - { $ref: '#/components/parameters/BookingToken' }
@@ -1768,6 +1774,7 @@ paths:
     post:
       tags: [stays-booking-public]
       operationId: staysUploadPaymentProof
+      security: []
       summary: Приложить подтверждение оплаты (PDF, JPEG, PNG, WebP; до 10 МБ; до 3 файлов).
       parameters:
         - { $ref: '#/components/parameters/BookingToken' }
@@ -1795,6 +1802,7 @@ paths:
     get:
       tags: [stays-booking-public]
       operationId: staysGetPublicPaymentProof
+      security: []
       summary: Скачать/посмотреть своё подтверждение оплаты.
       parameters:
         - { $ref: '#/components/parameters/BookingToken' }
@@ -1808,6 +1816,7 @@ paths:
     post:
       tags: [stays-booking-public]
       operationId: staysCancelByGuest
+      security: []
       summary: Отменить бронь гостем (до момента заезда).
       parameters:
         - { $ref: '#/components/parameters/BookingToken' }
@@ -1830,6 +1839,7 @@ paths:
     post:
       tags: [stays-booking-public]
       operationId: staysGuestPushSubscribe
+      security: []
       summary: Подписать браузер на уведомления о брони.
       parameters:
         - { $ref: '#/components/parameters/BookingToken' }
@@ -1849,6 +1859,7 @@ paths:
     post:
       tags: [stays-booking-public]
       operationId: staysGuestPushUnsubscribe
+      security: []
       summary: Отписать браузер (идемпотентно).
       parameters:
         - { $ref: '#/components/parameters/BookingToken' }

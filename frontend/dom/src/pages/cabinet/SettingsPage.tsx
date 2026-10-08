@@ -1,4 +1,5 @@
 import { useLocation } from 'react-router-dom'
+import { ArrivalReminderCard } from '../../components/cabinet/ArrivalReminderCard'
 import { PaymentCard } from '../../components/cabinet/PaymentCard'
 import { ProviderCard } from '../../components/cabinet/ProviderCard'
 import { RulesCard } from '../../components/cabinet/RulesCard'
@@ -29,6 +30,7 @@ export function SettingsPage() {
       )}
       <StaysProfileCard key={`profile-${company.id}`} company={company} onSaved={refresh} />
       <RulesCard key={`rules-${company.id}`} company={company} onSaved={refresh} />
+      <ArrivalReminderCard key={`reminder-${company.id}`} companyId={company.id} />
       <PaymentCard key={`pay-${company.id}`} company={company} onSaved={refresh} />
       <ProviderCard key={`provider-${company.id}`} company={company} onSaved={refresh} />
     </main>

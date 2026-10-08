@@ -4,10 +4,13 @@ import { registerPushWorker } from '@/utils/pushWorker'
 import { arrayBufferToBase64Url, urlBase64ToUint8Array } from '@/utils/webPushEncoding'
 import { detectIosEnvironment, getPushUnavailableReason, type PushUnavailableReason } from '@/utils/pushAvailability'
 import { guestBookingsApi } from '../api/guestBookings'
+import { serviceOrdersApi } from '../api/serviceOrders'
 import { getStayErrorMessage } from '../utils/stayError'
 import { bookingPushAtKey, bookingPushKey, pruneBookingPushStorage } from '../utils/stayPush'
 
 interface Options {
+  /** A booking (`/b/<token>`) or a separate session (`/s/<token>`); the endpoints differ, the mechanism is the same. */
+  kind?: 'booking' | 'order'
   token: string
   /** `BookingNotificationsDto.webPush.publicKey`. */
   publicKey: string | null | undefined
@@ -35,7 +38,10 @@ function readStored(token: string): string | null {
  * `enable()` (a click), never on mount. `disable()` removes the SERVER row only and never calls `PushSubscription.unsubscribe()`:
  * one browser has one subscription shared with the staff role (ARCHITECTURE_CYCLE37.md §37.14.6).
  */
-export function useStayGuestPush({ token, publicKey }: Options) {
+export function useStayGuestPush({ kind = 'booking', token: rawToken, publicKey }: Options) {
+  const api = kind === 'order' ? serviceOrdersApi : guestBookingsApi
+  // one browser may follow a booking and a session with different tokens; the memory keys never collide
+  const token = kind === 'order' ? `so:${rawToken}` : rawToken
   const [permission, setPermission] = useState(readPermission)
   const [endpoint, setEndpoint] = useState<string | null>(() => readStored(token))
   const [subscribedHere, setSubscribedHere] = useState(false)
@@ -92,7 +98,7 @@ export function useStayGuestPush({ token, publicKey }: Options) {
       if (!sub) {
         sub = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource })
       }
-      await guestBookingsApi.pushSubscribe(token, {
+      await api.pushSubscribe(rawToken, {
         endpoint: sub.endpoint,
         keys: { p256dh: arrayBufferToBase64Url(sub.getKey('p256dh')), auth: arrayBufferToBase64Url(sub.getKey('auth')) },
         deviceLabel: describeDevice(),
@@ -110,13 +116,13 @@ export function useStayGuestPush({ token, publicKey }: Options) {
     } finally {
       setBusy(false)
     }
-  }, [publicKey, token])
+  }, [publicKey, token, rawToken, api])
 
   const disable = useCallback(async () => {
     setError(null)
     setBusy(true)
     try {
-      if (endpoint) await guestBookingsApi.pushUnsubscribe(token, endpoint)
+      if (endpoint) await api.pushUnsubscribe(rawToken, endpoint)
       try {
         window.localStorage.removeItem(bookingPushKey(token))
         window.localStorage.removeItem(bookingPushAtKey(token))
@@ -130,7 +136,7 @@ export function useStayGuestPush({ token, publicKey }: Options) {
     } finally {
       setBusy(false)
     }
-  }, [endpoint, token])
+  }, [endpoint, token, rawToken, api])
 
   return { reason, subscribed: subscribedHere, busy, error, enable, disable }
 }

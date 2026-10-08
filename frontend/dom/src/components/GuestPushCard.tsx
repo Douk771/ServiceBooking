@@ -2,7 +2,6 @@ import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { useStayGuestPush } from '../hooks/useStayGuestPush'
 import { guestPushMessage } from '../utils/stayPush'
-import type { PublicStayBookingDto } from '../types'
 import { InlineError } from './StatePanels'
 
 /**
@@ -10,8 +9,8 @@ import { InlineError } from './StatePanels'
  * (`notifications.webPush.available`); device-side causes (iPhone outside the Home Screen app, denied permission) are explained with
  * the shared reason picker. The prompt appears only on the click. Everything stays visible on this page either way (R37-5).
  */
-export function GuestPushCard({ token, info }: { token: string; info: PublicStayBookingDto['notifications']['webPush'] }) {
-  const push = useStayGuestPush({ token, publicKey: info.publicKey })
+export function GuestPushCard({ token, info, kind = 'booking' }: { token: string; info: { available: boolean; publicKey?: string | null }; kind?: 'booking' | 'order' }) {
+  const push = useStayGuestPush({ kind, token, publicKey: info.publicKey })
   if (!info.available) return null
 
   return (

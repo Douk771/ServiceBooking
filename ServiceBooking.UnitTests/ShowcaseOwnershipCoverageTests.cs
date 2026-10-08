@@ -112,8 +112,11 @@ public class ShowcaseOwnershipCoverageTests
         string[] stays = ["StaysSettings", "Houses", "HousePhotos", "HousePricePeriods", "HouseRegistryAttestations", "HouseBlocks", "HouseBlockEvents",
             "HouseOccupancies", "StayBookings", "StayBookingCharges", "StayBookingEvents", "StayPaymentProofs",
             "StayGuestPushSubscriptions", "StayGuestPushNotifications", "StaysSubscriptions"];
-        ShowcaseOwnership.NeverWritten.Keys.Where(k => k != "NotificationChannels").Should().BeEquivalentTo(stays);
-        ShowcaseOwnership.NeverWritten.Keys.Should().Contain("NotificationChannels").And.HaveCount(16);
+        // Cycle 39 (ARCHITECTURE_CYCLE39.md §39.2.6): the 11 tables of the time-slot services are declared never written too.
+        string[] services = ["StayServices", "StayServicePhotos", "StayServiceWeeklyWindows", "StayServiceDateOverrides", "StayServiceScheduleEvents",
+            "StayServicePriceRules", "StayServiceItems", "StayServiceSessions", "StayServiceOrders", "StayServiceOrderEvents", "StaysReminderTemplateChanges"];
+        ShowcaseOwnership.NeverWritten.Keys.Where(k => k != "NotificationChannels").Should().BeEquivalentTo(stays.Concat(services));
+        ShowcaseOwnership.NeverWritten.Keys.Should().Contain("NotificationChannels").And.HaveCount(27);
     }
 
     [Fact]

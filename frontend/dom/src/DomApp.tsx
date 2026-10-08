@@ -17,6 +17,8 @@ import { CatalogPage } from './pages/CatalogPage'
 import { CompanyPage } from './pages/CompanyPage'
 import { HousePage } from './pages/HousePage'
 import { BookingPage } from './pages/BookingPage'
+import { ServicePage } from './pages/ServicePage'
+import { ServiceOrderPage } from './pages/ServiceOrderPage'
 import { CabinetHomePage } from './pages/cabinet/CabinetHomePage'
 import { CreateCompanyPage } from './pages/cabinet/CreateCompanyPage'
 import { CompanyLayout, CompanyIndexRedirect } from './pages/cabinet/CompanyLayout'
@@ -28,6 +30,11 @@ import { SubscriptionPage } from './pages/cabinet/SubscriptionPage'
 import { HousesPage } from './pages/cabinet/HousesPage'
 import { HouseCreatePage } from './pages/cabinet/HouseCreatePage'
 import { HouseEditPage } from './pages/cabinet/HouseEditPage'
+import { ServiceDayPage } from './pages/cabinet/ServiceDayPage'
+import { ServiceSessionPage } from './pages/cabinet/ServiceSessionPage'
+import { ServicesPage } from './pages/cabinet/ServicesPage'
+import { ServiceCreatePage } from './pages/cabinet/ServiceCreatePage'
+import { ServiceEditPage } from './pages/cabinet/ServiceEditPage'
 import { BoardPage } from './pages/cabinet/BoardPage'
 import { BookingsPage } from './pages/cabinet/BookingsPage'
 import { BookingCardPage } from './pages/cabinet/BookingCardPage'
@@ -71,8 +78,8 @@ function RouteErrorBoundary({ children }: { children: ReactNode }) {
 }
 
 /**
- * dom.ezbook.ru (ARCHITECTURE_CYCLE37.md §37.14.5). The route table mirrors contracts/cycle37/dom-routes.json
- * (`spaRoutes` + `/:slug` + `/:slug/:houseSlug`); domRoutes.test.ts checks both directions, and every first segment must be a
+ * dom.ezbook.ru (ARCHITECTURE_CYCLE37.md §37.14.5). The route table mirrors contracts/cycle39/dom-routes.json
+ * (`spaRoutes` + `/:slug` + `/:slug/:houseSlug` + `/:slug/uslugi/:serviceSlug`); domRoutes.test.ts checks both directions, and every first segment must be a
  * reserved word so a company address can never shadow a route.
  */
 export function DomApp() {
@@ -88,6 +95,7 @@ export function DomApp() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
                 <Route path="/b/:token" element={<BookingPage />} />
+                <Route path="/s/:token" element={<ServiceOrderPage />} />
 
                 <Route element={<RequireAuth />}>
                   <Route path="/bookings" element={<MyBookingsPage />} />
@@ -102,6 +110,11 @@ export function DomApp() {
                     <Route path="/cabinet/:companyId/board" element={<BoardPage />} />
                     <Route path="/cabinet/:companyId/bookings" element={<BookingsPage />} />
                     <Route path="/cabinet/:companyId/bookings/:bookingId" element={<BookingCardPage />} />
+                    <Route path="/cabinet/:companyId/services" element={<ServicesPage />} />
+                    <Route path="/cabinet/:companyId/services/new" element={<ServiceCreatePage />} />
+                    <Route path="/cabinet/:companyId/services/:serviceId" element={<ServiceEditPage />} />
+                    <Route path="/cabinet/:companyId/service-day/:date" element={<ServiceDayPage />} />
+                    <Route path="/cabinet/:companyId/service-sessions/:sessionId" element={<ServiceSessionPage />} />
                     <Route path="/cabinet/:companyId/schedule" element={<SchedulePage />} />
                     <Route path="/cabinet/:companyId/houses" element={<HousesPage />} />
                     <Route path="/cabinet/:companyId/houses/new" element={<HouseCreatePage />} />
@@ -122,8 +135,9 @@ export function DomApp() {
                 <Route path="/offer-channel" element={<Navigate to="/terms-owner#offer-channel" replace />} />
                 <Route path="/payment-terms" element={<Navigate to="/terms-owner#payment-terms" replace />} />
 
-                {/* /:slug and /:slug/:houseSlug are the company and the house; static routes rank higher. */}
+                {/* /:slug, /:slug/:houseSlug and /:slug/uslugi/:serviceSlug are the company, the house and the service; static routes rank higher. */}
                 <Route path="/:slug" element={<CompanyPage />} />
+                <Route path="/:slug/uslugi/:serviceSlug" element={<ServicePage />} />
                 <Route path="/:slug/:houseSlug" element={<HousePage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>

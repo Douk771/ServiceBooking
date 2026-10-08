@@ -16,7 +16,7 @@ public sealed record TransitionResult(TransitionOutcome Outcome, StayBooking? Bo
 /// the table forbids is a 409 with the CURRENT card — the action is not applied. Each change is journalled in the same transaction.
 /// </summary>
 public class StayBookingTransitionService(
-    AppDbContext db, HouseOccupancyWriter occupancy, StayBookingEventLog eventLog, IStaysClock clock, CheckInInfoReleaser checkInInfo)
+    AppDbContext db, HouseOccupancyWriter occupancy, StayBookingEventLog eventLog, IStaysClock clock, CheckInInfoReleaser checkInInfo, StayBookingReleaser releaser)
 {
     // ── staff ──
 
@@ -70,7 +70,7 @@ public class StayBookingTransitionService(
                 kind = StayBookingEventKind.CancelledByOwner;
                 break;
         }
-        if (StayStateMachine.IsTerminal(next.Value)) await occupancy.ReleaseBookingAsync(booking.Id, now);
+        if (StayStateMachine.IsTerminal(next.Value)) await releaser.ReleaseAsync(booking, now);
 
         await eventLog.AppendAsync(booking, kind, actor, from, next, reason);
         if (action == StayAction.ConfirmPayment) await checkInInfo.ReleaseIfDueAsync(booking, actor: StayActor.System, ct);
@@ -126,7 +126,7 @@ public class StayBookingTransitionService(
         booking.TerminalAtUtc = now;
         booking.HoldExpiresAtUtc = null;
         booking.UpdatedAtUtc = now;
-        await occupancy.ReleaseBookingAsync(booking.Id, now);
+        await releaser.ReleaseAsync(booking, now);
         await eventLog.AppendAsync(booking, StayBookingEventKind.CancelledByGuest, actor, from, next);
         try
         {
@@ -157,8 +157,8 @@ public class StayBookingTransitionService(
             WHERE "Id" = {bookingId} AND "Status" = {(int)StayBookingStatus.Held} AND "HoldExpiresAtUtc" <= {nowUtc}
             """, ct);
         if (rows == 0) return false;
-        await occupancy.ReleaseBookingAsync(bookingId, nowUtc);
         var booking = await db.StayBookings.AsNoTracking().FirstAsync(b => b.Id == bookingId, ct);
+        await releaser.ReleaseAsync(booking, nowUtc);
         await eventLog.AppendAsync(booking, StayBookingEventKind.HoldExpired, StayActor.System, StayBookingStatus.Held, StayBookingStatus.ExpiredUnpaid);
         return true;
     }

@@ -2,7 +2,12 @@ using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.Services.Stays;
 
-public enum StaysPermission { ManageCompany, ManageHouses, EditHouseContent, ViewBookings, ManageBookings, ManageBlocks, ViewSchedule, ViewCabinet }
+/// <summary>Cycle 39 appended ManageServices, EditServiceContent, ManageServiceDates (ARCHITECTURE_CYCLE39.md §39.12): append-only, the names travel to the frontend.</summary>
+public enum StaysPermission
+{
+    ManageCompany, ManageHouses, EditHouseContent, ViewBookings, ManageBookings, ManageBlocks, ViewSchedule, ViewCabinet,
+    ManageServices, EditServiceContent, ManageServiceDates
+}
 
 public enum StaysMyRole { Owner, Manager, Housekeeper, SuperAdmin }
 
@@ -14,7 +19,8 @@ public static class StaysAccess
     private static readonly StaysPermission[] ManagerSet =
     [
         StaysPermission.EditHouseContent, StaysPermission.ViewBookings, StaysPermission.ManageBookings,
-        StaysPermission.ManageBlocks, StaysPermission.ViewSchedule, StaysPermission.ViewCabinet
+        StaysPermission.ManageBlocks, StaysPermission.ViewSchedule, StaysPermission.ViewCabinet,
+        StaysPermission.EditServiceContent, StaysPermission.ManageServiceDates
     ];
 
     public static IReadOnlyList<StaysPermission> For(StaysMyRole role) => role switch

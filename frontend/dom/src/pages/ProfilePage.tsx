@@ -12,8 +12,9 @@ import { VerifyPhoneButton } from '@/components/phoneVerification/VerifyPhoneBut
 import { PhoneVerifiedBadge } from '@/components/phoneVerification/PhoneVerifiedBadge'
 import { unsubscribeCurrentDeviceOnLogout } from '@/hooks/useWebPush'
 import { DevicesAndNotificationsSection } from '@/components/push/DevicesAndNotificationsSection'
+import { StaffMaxCard } from '@/components/staffMax/StaffMaxCard'
 import { staysCompaniesApi } from '../api/staysCompanies'
-import { ErrorState, Skeleton } from '../components/StatePanels'
+import { ErrorState, InlineError, LoadingList, Skeleton } from '../components/StatePanels'
 import { getStayErrorMessage } from '../utils/stayError'
 
 /**
@@ -26,6 +27,9 @@ export function ProfilePage() {
   const { user, token, setAuth, logout } = useAuthStore()
   const { data: profile, isLoading, isError, error, refetch } = useQuery({ queryKey: ['profile'], queryFn: profileApi.get })
   const { data: summary } = useQuery({ queryKey: ['kinds-summary'], queryFn: staysCompaniesApi.kindsSummary, retry: false })
+  // «Заказы в MAX» (US-39-21): for the owner and the manager of any company of the vertical; a housekeeper gets no card (ARCHITECTURE_CYCLE39.md §39.15.1).
+  const { data: myCompanies } = useQuery({ queryKey: ['stays-companies-my'], queryFn: staysCompaniesApi.my, retry: false })
+  const showMax = (myCompanies ?? []).some((c) => c.myRole === 'Owner' || c.myRole === 'Manager')
   const { data: verifyConfig } = usePhoneVerificationConfig()
   const [editing, setEditing] = useState(false)
   const [firstName, setFirstName] = useState('')
@@ -118,6 +122,12 @@ export function ProfilePage() {
       </Card>
 
       <DevicesAndNotificationsSection site="Stays" appName="Дома" keepBrowserSubscription className="mb-4" />
+
+      {showMax && (
+        <div className="-mt-2 mb-4">
+          <StaffMaxCard getErrorMessage={getStayErrorMessage} slots={{ LoadingList, ErrorState, InlineError }} />
+        </div>
+      )}
 
       <Card className="mb-4 p-6">
         <h2 className="mb-3 text-[15px] font-semibold text-ink">Данные и согласия</h2>

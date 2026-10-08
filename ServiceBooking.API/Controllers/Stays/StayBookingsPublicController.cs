@@ -20,7 +20,8 @@ namespace ServiceBooking.API.Controllers.Stays;
 public class StayBookingsPublicController(
     AppDbContext db, StayDtoMapper mapper, StayPaymentProofService proofs, StayBookingTransitionService transitions, StayActorResolver actors,
     StayProofIpLimiter proofIpLimiter, IStaysClock clock, ServiceBooking.API.Services.Notifications.StayGuestPushSubscriptionWriter pushWriter,
-    Microsoft.Extensions.Options.IOptions<ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions> webPush) : ControllerBase
+    Microsoft.Extensions.Options.IOptions<ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions> webPush,
+    ServiceSessionAddService sessionAdd, StaySessionIpLimiter sessionIpLimiter, ServiceSlotService slots, ServiceDtoMapper serviceMapper, StaysCompanyService companyService) : ControllerBase
 {
     private const int MaxTokenLength = 100;
 
@@ -84,6 +85,94 @@ public class StayBookingsPublicController(
             ? StaysTexts.HoldExpiredMessage(dto.Company.Phone)
             : dto.Cancellation.CannotCancelText ?? StaysTexts.CannotCancelAlready;
         return Conflict(new StayGuestConflictDto("CancelNotAllowed", message, dto));
+    }
+
+    // ── cycle 39: services of a stay (API_CONTRACT_CYCLE39.md §39.24) ──
+
+    [HttpGet("public/{token}/services")]
+    [EnableRateLimiting("stays-public")]
+    public async Task<ActionResult<BookingServicesDto>> Services(string token, CancellationToken ct)
+    {
+        var booking = await FindAsync(token, ct);
+        if (booking is null) return NotFound();
+        var company = await db.Companies.AsNoTracking().FirstAsync(c => c.Id == booking.CompanyId, ct);
+        var settings = await companyService.LoadSettingsAsync(company.Id, ct: ct);
+        var block = await serviceMapper.ServicesBlockAsync(booking, company, settings, ct);
+        if (!block.CanAdd) return Ok(new BookingServicesDto(false, block.CannotAddText, block.Hint, []));
+
+        var stay = ServiceSlotService.StayRangeOf(booking);
+        var firstDay = BusinessClock.BusinessDateOf(booking.TimeZoneIdSnapshot, stay.FromUtc, slots.BusinessDayStart).Date;
+        var today = slots.TodayOf(company);
+        var from = firstDay > today ? firstDay : today;
+        var days = Math.Clamp(booking.CheckOutDate.DayNumber - from.DayNumber + 1, 1, 31);
+        var list = new List<BookingServiceOptionDto>();
+        var services = await db.StayServices.AsNoTracking().Where(x => x.CompanyId == company.Id && x.IsPublished && x.ArchivedAtUtc == null && x.AvailableForHouseBookings)
+            .OrderBy(x => x.Position).ThenBy(x => x.Name).ToListAsync(ct);
+        foreach (var service in services)
+        {
+            var scope = new ServiceScope(service, company, settings);
+            var dates = await slots.AvailabilityAsync(scope, from, days, staff: false, stay, ct);
+            var cover = await db.StayServicePhotos.AsNoTracking().Where(p => p.ServiceId == service.Id).OrderBy(p => p.Position).Select(p => p.ThumbnailUrl ?? p.Url).FirstOrDefaultAsync(ct);
+            var price = await db.StayServicePriceRules.AsNoTracking().Where(r => r.ServiceId == service.Id).Select(r => (int?)r.PriceRub).MinAsync(ct);
+            var items = await db.StayServiceItems.AsNoTracking().Where(i => i.ServiceId == service.Id && i.IsActive).OrderBy(i => i.Position)
+                .Select(i => new ServiceItemPublicDto(i.Id, i.Name, i.PriceRub, i.MaxPerSession)).ToListAsync(ct);
+            list.Add(new BookingServiceOptionDto(service.Id, service.Name, serviceMapper.ServiceUrl(company, service.Slug), cover, price, service.MinHours, dates, service.Id, items));
+        }
+        return Ok(new BookingServicesDto(true, null, block.Hint, list));
+    }
+
+    [HttpGet("public/{token}/services/{serviceId:guid}/starts")]
+    [EnableRateLimiting("stays-public")]
+    public async Task<ActionResult<ServiceStartsDto>> ServiceStarts(string token, Guid serviceId, [FromQuery] string? date, CancellationToken ct)
+    {
+        if (!StaysCatalogService.TryDate(date, out var d)) return BadRequest(string.IsNullOrWhiteSpace(date) ? "Выберите дату" : "Неверный формат даты");
+        var booking = await FindAsync(token, ct);
+        if (booking is null) return NotFound();
+        var scope = await slots.FindOfCompanyAsync(booking.CompanyId, serviceId, ct);
+        if (scope is null || !scope.Service.IsPublished || scope.Service.ArchivedAtUtc is not null || !scope.Service.AvailableForHouseBookings) return NotFound();
+        return Ok(await slots.StartsAsync(scope, d, staff: false, ServiceSlotService.StayRangeOf(booking), ct));
+    }
+
+    [HttpPost("public/{token}/services/{serviceId:guid}/quote")]
+    [EnableRateLimiting("stays-public")]
+    public async Task<ActionResult<ServiceQuoteDto>> ServiceQuote(string token, Guid serviceId, ServiceSelectionInput input, CancellationToken ct)
+    {
+        var formError = ServiceOrderCreationService.ValidateSelection(input.BusinessDate, input.StartMinute, input.Hours, input.Items, out var selection);
+        if (formError is not null) return BadRequest(formError);
+        var booking = await FindAsync(token, ct);
+        if (booking is null) return NotFound();
+        var scope = await slots.FindOfCompanyAsync(booking.CompanyId, serviceId, ct);
+        if (scope is null || !scope.Service.IsPublished || scope.Service.ArchivedAtUtc is not null || !scope.Service.AvailableForHouseBookings) return NotFound();
+        var gate = await companyService.EvaluateGateAsync(scope.Company, scope.Settings, 0, ct);
+        var evaluation = await slots.EvaluateAsync(scope, selection, staff: false, ServiceSlotService.StayRangeOf(booking), includeExpiredHolds: false, extraOccupied: null, prepayPercent: null, ct);
+        return Ok(ServiceQuoteBuilder.Build(scope, evaluation, null, gate, scope.Settings.HoldMinutes));
+    }
+
+    [HttpPost("public/{token}/sessions")]
+    [EnableRateLimiting("stay-session-add")]
+    public async Task<ActionResult<PublicStayBookingDto>> AddSession(string token, AddSessionInput input, CancellationToken ct)
+    {
+        if (token.Length > MaxTokenLength) return NotFound();
+        // the second link of the chain (§39.32): 30 per hour per IP
+        if (!sessionIpLimiter.TryAcquire(HttpContext.Connection.RemoteIpAddress?.ToString())) return StatusCode(StatusCodes.Status429TooManyRequests, StaySessionIpLimiter.Text);
+        var result = await sessionAdd.AddByGuestAsync(token, input, User, ct);
+        if (result.Error is not null) return result.Error;
+        var dto = await mapper.ToPublicAsync((await FindAsync(token, ct))!, ct);
+        return result.Created ? StatusCode(StatusCodes.Status201Created, dto) : Ok(dto);
+    }
+
+    [HttpPost("public/{token}/sessions/{sessionId:guid}/cancel")]
+    [EnableRateLimiting("stay-public")]
+    public async Task<ActionResult<PublicStayBookingDto>> CancelSession(string token, Guid sessionId, EmptyInput? _, CancellationToken ct)
+    {
+        if (token.Length > MaxTokenLength) return NotFound();
+        var existing = await FindAsync(token, ct);
+        if (existing is null) return NotFound();
+        var actor = await actors.ResolveGuestAsync(User, existing.GuestName, ct);
+        var result = await sessionAdd.CancelByGuestAsync(token, sessionId, actor, ct);
+        if (result.Outcome == SessionCancelOutcome.NotFound) return NotFound();
+        var dto = await mapper.ToPublicAsync((await FindAsync(token, ct))!, ct);
+        return result.Outcome == SessionCancelOutcome.Ok ? Ok(dto) : Conflict(new StayBookingGuestConflictDto("CancelNotAllowed", result.Message ?? ServiceTexts.SessionAlreadyCancelled, dto));
     }
 
     public const string CompanyNoPush = "Компания отключила уведомления о бронях";
