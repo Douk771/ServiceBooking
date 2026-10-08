@@ -49,4 +49,19 @@ public enum ChannelStateReason
     /// side misconfiguration, not something the owner did or can retry their way out of; appended at the
     /// end, this enum is append-only (see <see cref="SecretUnavailable"/>'s own note).</summary>
     ServerCountryMismatch,
+
+    /// <summary>ARCHITECTURE_CYCLE40.md §40.2.2 — the owner replaced the number with another one.</summary>
+    ReplacedByOwner = 11,
+
+    /// <summary>§40.2.2 — a rebind of pending messages started.</summary>
+    RebindStarted = 12,
+
+    /// <summary>§40.8 — the automatic check message was sent.</summary>
+    TestMessageSent = 13,
+
+    /// <summary>§40.8 — the automatic check message failed.</summary>
+    TestMessageFailed = 14,
+
+    /// <summary>§40.8 — the automatic check message was skipped.</summary>
+    TestMessageSkipped = 15,
 }

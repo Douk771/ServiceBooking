@@ -105,6 +105,7 @@ public static class ShowcaseOwnership
     public static readonly IReadOnlyDictionary<string, string> NeverWritten = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["NotificationChannels"] = "showcase accounts own no notification numbers (mixing with real accounts is forbidden, sending is suppressed)",
+        ["ChannelOptionChangeLogs"] = "cycle 40: journal of the channel options; showcase accounts own no notification numbers (ARCHITECTURE_CYCLE40.md §40.2.3)",
         ["StaysSettings"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
         ["Houses"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
         ["HousePhotos"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",

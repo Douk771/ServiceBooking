@@ -91,4 +91,10 @@ public class NotificationChannel
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<ChannelCompanyAssignment> Assignments { get; set; } = [];
+
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.2.3): automatic check message (§40.8) and the provider server country (§40.7.4).
+    public ChannelTestResult? LastTestResult { get; set; }
+    public DateTime? LastTestResultAtUtc { get; set; }
+    public string? AutoTestInstanceId { get; set; }
+    public string? ProviderServerCountry { get; set; }
 }
