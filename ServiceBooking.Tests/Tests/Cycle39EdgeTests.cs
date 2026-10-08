@@ -2,6 +2,7 @@ using System.Net;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Stays;
+using ServiceBooking.API.Services.Stays;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Tests.Infrastructure;
@@ -298,5 +299,50 @@ public class Cycle39EdgeTests(TestDatabaseFixture fixture) : Cycle39TestBase(fix
         var raw = await catalog.Content.ReadAsStringAsync();
         raw.Should().NotContain("Баня").And.NotContain("uslugi").And.NotContain(svc.Slug);
         _ = house;
+    }
+
+    [Fact, TestCase("CY39-181")]
+    public async Task StayMode_StartsAndAvailability_OnlyInsideTheStay_RealTime_PartialParametersAre400()
+    {
+        var (company, svc) = await SceneAsync();
+        var house = await CreateHouseAsync(company, price: 2000);
+        var settings = (await GetCompanyAsync(company)).Settings!;
+        var inT = TimeOnly.Parse(settings.CheckInTime);
+        var outT = TimeOnly.Parse(settings.CheckOutTime);
+        var ci = InDays(12);
+        var co = ci.AddDays(2);
+        var anon = AnonymousClient();
+        string Q(DateOnly d) => $"/api/stays/public/services/{svc.Id}/starts?date={D(d)}&houseId={house.Id}&checkIn={D(ci)}&checkOut={D(co)}";
+
+        (await StartsAsync(svc.Id, ci.AddDays(-1))).Starts.Should().NotBeEmpty("без проживания вчерашний день доступен");
+        (await (await anon.GetAsync(Q(ci.AddDays(-1)))).Content.ReadJsonAsync<ServiceStartsDto>())!.Starts.Should().BeEmpty("до заезда в режиме проживания стартов нет");
+        var first = (await (await anon.GetAsync(Q(ci))).Content.ReadJsonAsync<ServiceStartsDto>())!;
+        first.Starts.Should().NotBeEmpty();
+        first.Starts.Should().OnlyContain(x => x.StartUtc >= StartUtc(ci, inT.Hour * 60 + inT.Minute), "в день заезда — только после времени заезда");
+        var middle = (await (await anon.GetAsync(Q(ci.AddDays(1)))).Content.ReadJsonAsync<ServiceStartsDto>())!;
+        middle.Starts.Select(x => x.StartMinute).Should().Contain(480).And.Contain(1380, "в середине проживания — всё окно, включая ночные старты");
+        var last = (await (await anon.GetAsync(Q(co))).Content.ReadJsonAsync<ServiceStartsDto>())!;
+        last.Starts.Should().OnlyContain(x => x.StartUtc.AddHours(x.MaxHours) <= StartUtc(co, outT.Hour * 60 + outT.Minute), "в день выезда сеанс заканчивается до времени выезда");
+        // ночной сеанс последней ночи, заканчивающийся после полуночи, но до выезда (бизнес-день = предыдущая дата) — допустим
+        (await (await anon.GetAsync(Q(co.AddDays(-1)))).Content.ReadJsonAsync<ServiceStartsDto>())!.Starts.Should().Contain(x => x.StartMinute == 1380);
+
+        var avail = (await (await anon.GetAsync($"/api/stays/public/services/{svc.Id}/availability?from={D(ci.AddDays(-2))}&days=6&houseId={house.Id}&checkIn={D(ci)}&checkOut={D(co)}")).Content.ReadJsonAsync<ServiceAvailabilityDto>())!;
+        avail.Days.Where(d => d.BusinessDate < ci).Should().OnlyContain(d => !d.HasStarts);
+        avail.Days.Single(d => d.BusinessDate == ci.AddDays(1)).HasStarts.Should().BeTrue();
+        avail.Days.Where(d => d.BusinessDate > co).Should().OnlyContain(d => !d.HasStarts);
+
+        // расчёт в режиме проживания: вне проживания — проблема OutsideStay, деньги не показываются как «можно»
+        var outside = await anon.PostJsonAsync($"/api/stays/public/services/{svc.Id}/quote", new PublicServiceQuoteInput(ci.AddDays(-1), 720, 2, [], house.Id, ci, co));
+        var outsideQuote = (await outside.Content.ReadJsonAsync<ServiceQuoteDto>())!;
+        outsideQuote.Ok.Should().BeFalse();
+        outsideQuote.Problems.Should().Contain(p => p.Code == ServiceRefusalCode.OutsideStay);
+        outsideQuote.Problems.First(p => p.Code == ServiceRefusalCode.OutsideStay).Message.Should().Contain("пределах проживания");
+
+        // неполный набор «дом + обе даты» — 400; чужой дом — 404
+        foreach (var url in new[] { $"/api/stays/public/services/{svc.Id}/starts?date={D(ci)}&houseId={house.Id}", $"/api/stays/public/services/{svc.Id}/starts?date={D(ci)}&checkIn={D(ci)}&checkOut={D(co)}",
+                     $"/api/stays/public/services/{svc.Id}/starts?date={D(ci)}&houseId={house.Id}&checkIn={D(co)}&checkOut={D(ci)}" })
+            (await anon.GetAsync(url)).StatusCode.Should().Be(HttpStatusCode.BadRequest, url);
+        var strangerHouse = await CreateHouseAsync(await CreateStaysCompanyAsync(), price: 1000);
+        (await anon.GetAsync($"/api/stays/public/services/{svc.Id}/starts?date={D(ci)}&houseId={strangerHouse.Id}&checkIn={D(ci)}&checkOut={D(co)}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }

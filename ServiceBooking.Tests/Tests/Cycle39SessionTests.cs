@@ -137,7 +137,7 @@ public class Cycle39SessionTests(TestDatabaseFixture fixture) : Cycle39TestBase(
         var notForHouses = await AddSessionAsync(s.Token, SessionInput(s.Svc.Id, date, 600, 2, 4000));
         notForHouses.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await Code(notForHouses)).Should().Be("ServiceNotAvailableForStays");
-        (await AnonymousClient().GetAsync($"/api/stays/bookings/public/{s.Token}/services")).Content.ReadJsonAsync<BookingServicesDto>().Result!.Services.Should().BeEmpty();
+        (await (await AnonymousClient().GetAsync($"/api/stays/bookings/public/{s.Token}/services")).Content.ReadJsonAsync<BookingServicesDto>())!.Services.Should().BeEmpty();
 
         var other = await CreateStaysCompanyAsync();
         var foreign = await CreateServiceAsync(other);

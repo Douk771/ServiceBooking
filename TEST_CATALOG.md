@@ -7579,7 +7579,7 @@ Vitest разработчиков (не пересобирались QA): раз
 | Миграция Cycle39StaysServices (накат → откат → накат) | CY39-140 | DEPLOY.md §28а |
 | ПДн: выгрузка, удаление, отзыв согласия, retention, график | CY39-150…158 | US-39-27; ЮР39-5, 9; Т39-10, 11 |
 | Уведомления: 12 типов, персонал, гость без ПДн | CY39-160…164 | US-39-17; A39-5; Т37-08 |
-| Граничные случаи и злоупотребления | CY39-170…180 | US-39-05, 12, 13; §4.5, 4.6 |
+| Граничные случаи и злоупотребления | CY39-170…181 | US-39-05, 12, 13; §4.5, 4.6 |
 
 Изменённое требование (запись реестра QA): `CY37-43` дополнен случаем «предоплата 0 % без сведений об исполнителе → `NoProviderInfo`» (ЮР39-2, закрывает §37.19 п. 5). Фронтенд: `frontend/dom/src/components/services/guestServicesQa.test.tsx`, `frontend/dom/src/guestCopy.guard.test.ts` (область `stays`). Юнит-стражи: `ServiceBooking.UnitTests/StayBookingReleaserGuardTests.cs` (`ReleaseBookingAsync` зовётся только из `StayBookingReleaser`), `ServiceVectorsTests`, `ArrivalReminderTemplateTests` (вектор `RT17` добавлен QA).
 
@@ -7718,6 +7718,7 @@ Vitest разработчиков (не пересобирались QA): раз
 | CY39-178 | `Cycle39EdgeTests` | `BlockedCompany_RefusesNewOrdersAndSessions_ExistingStayVisible` |
 | CY39-179 | `Cycle39EdgeTests` | `SessionAdditions_RateLimits_PerBookingLink_AndPerIp_429WithText` |
 | CY39-180 | `Cycle39EdgeTests` | `UnpublishedService_UsableByStaffOnly_ArchivedKeepsSessionsOnBoard_CatalogHasNoServices` |
+| CY39-181 | `Cycle39EdgeTests` | `StayMode_StartsAndAvailability_OnlyInsideTheStay_RealTime_PartialParametersAre400` |
 
 Прогон: `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle39"` (нужны `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` и `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`).
 
