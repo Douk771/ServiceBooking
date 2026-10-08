@@ -17,7 +17,7 @@ import type {
   StaffStayBookingPage,
   StaffStayQuoteInput,
   StayQuoteDto,
-  StaysScheduleDto,
+  StaysScheduleWithServices,
   StayBookingStatus,
 } from '../types'
 
@@ -52,7 +52,7 @@ export const staysBoardApi = {
   deleteBlock: (companyId: string, blockId: string) => api.delete(`${co(companyId)}/blocks/${blockId}`).then(() => undefined),
 
   schedule: (companyId: string, params?: { from?: string; days?: number }) =>
-    api.get<StaysScheduleDto>(`${co(companyId)}/schedule`, { params }).then((r) => r.data),
+    api.get<StaysScheduleWithServices>(`${co(companyId)}/schedule`, { params }).then((r) => r.data),
 
   bookings: (companyId: string, q: BookingListQuery) =>
     api

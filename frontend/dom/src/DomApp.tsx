@@ -30,6 +30,8 @@ import { SubscriptionPage } from './pages/cabinet/SubscriptionPage'
 import { HousesPage } from './pages/cabinet/HousesPage'
 import { HouseCreatePage } from './pages/cabinet/HouseCreatePage'
 import { HouseEditPage } from './pages/cabinet/HouseEditPage'
+import { ServiceDayPage } from './pages/cabinet/ServiceDayPage'
+import { ServiceSessionPage } from './pages/cabinet/ServiceSessionPage'
 import { ServicesPage } from './pages/cabinet/ServicesPage'
 import { ServiceCreatePage } from './pages/cabinet/ServiceCreatePage'
 import { ServiceEditPage } from './pages/cabinet/ServiceEditPage'
@@ -111,6 +113,8 @@ export function DomApp() {
                     <Route path="/cabinet/:companyId/services" element={<ServicesPage />} />
                     <Route path="/cabinet/:companyId/services/new" element={<ServiceCreatePage />} />
                     <Route path="/cabinet/:companyId/services/:serviceId" element={<ServiceEditPage />} />
+                    <Route path="/cabinet/:companyId/service-day/:date" element={<ServiceDayPage />} />
+                    <Route path="/cabinet/:companyId/service-sessions/:sessionId" element={<ServiceSessionPage />} />
                     <Route path="/cabinet/:companyId/schedule" element={<SchedulePage />} />
                     <Route path="/cabinet/:companyId/houses" element={<HousesPage />} />
                     <Route path="/cabinet/:companyId/houses/new" element={<HouseCreatePage />} />

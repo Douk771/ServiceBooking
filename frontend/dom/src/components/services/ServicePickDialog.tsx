@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
-import type { AvailabilityDayDto, ServiceQuoteDto, ServiceSelectionInput, ServiceStartsDto } from '../../types'
+import type {
+  AvailabilityDayDto,
+  ServiceItemPublicDto,
+  ServiceQuoteDto,
+  ServiceSelectionInput,
+  ServiceStartsDto,
+} from '../../types'
 import { publicServicesApi } from '../../api/publicServices'
 import { isQuoteBookable, toSelectionInput, type SessionPick } from '../../utils/serviceSelection'
 import { parseServiceUrl } from '../../utils/serviceUrl'
@@ -15,8 +21,8 @@ import { ServiceTimePicker } from './ServiceTimePicker'
 export interface PickableService {
   id: string
   name: string
-  /** `/<company>/uslugi/<service>`: the positions of the service are read from its page. */
-  url: string
+  /** `/<company>/uslugi/<service>`: the positions of the service are read from its page (absent for the staff, who pass `loadItems`). */
+  url?: string
   priceFromRub?: number | null
   minHours?: number
 }
@@ -26,9 +32,15 @@ interface Props {
   services: readonly PickableService[]
   /** The days of the stay (booking and staff modes); absent → the picker pages through `loadAvailability`. */
   staticDays?: (serviceId: string) => readonly AvailabilityDayDto[]
-  loadAvailability?: (serviceId: string, from: string | undefined, days: number) => ReturnType<typeof publicServicesApi.availability>
+  loadAvailability?: (
+    serviceId: string,
+    from: string | undefined,
+    days: number,
+  ) => ReturnType<typeof publicServicesApi.availability>
   loadStarts: (serviceId: string, date: string) => Promise<ServiceStartsDto>
   loadQuote: (serviceId: string, selection: ServiceSelectionInput) => Promise<ServiceQuoteDto>
+  /** Positions of a service when its public page is not the source (the staff: an unpublished service has no page). */
+  loadItems?: (serviceId: string) => Promise<ServiceItemPublicDto[]>
   confirmLabel: string
   /** `StayServiceAddNotice` under the button. */
   showAddNotice?: boolean
@@ -56,6 +68,7 @@ export function ServicePickDialog({
   loadAvailability,
   loadStarts,
   loadQuote,
+  loadItems,
   confirmLabel,
   showAddNotice = true,
   hint,
@@ -74,11 +87,16 @@ export function ServicePickDialog({
 
   useEffect(() => setPick(null), [serviceId])
 
-  const address = service ? parseServiceUrl(service.url) : null
+  const address = service?.url ? parseServiceUrl(service.url) : null
   const page = useQuery({
-    queryKey: ['stays-service-page', address?.companySlug, address?.serviceSlug],
-    queryFn: () => publicServicesApi.page(address!.companySlug, address!.serviceSlug),
-    enabled: !!address,
+    queryKey: loadItems
+      ? ['stays-service-items-pick', serviceId]
+      : ['stays-service-page', address?.companySlug, address?.serviceSlug],
+    queryFn: async () =>
+      loadItems
+        ? { items: await loadItems(serviceId!) }
+        : { items: (await publicServicesApi.page(address!.companySlug, address!.serviceSlug)).items },
+    enabled: loadItems ? !!serviceId : !!address,
   })
   const items = page.data?.items ?? []
   const order = useMemo(() => items.map((i) => i.id), [items])
@@ -105,7 +123,13 @@ export function ServicePickDialog({
               {services.map((s) => (
                 <li key={s.id}>
                   <label className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-2xl border border-line bg-white px-4 py-2 text-sm text-ink has-[:checked]:border-ink">
-                    <input type="radio" name="service" checked={serviceId === s.id} onChange={() => setServiceId(s.id)} className="h-5 w-5 accent-gold" />
+                    <input
+                      type="radio"
+                      name="service"
+                      checked={serviceId === s.id}
+                      onChange={() => setServiceId(s.id)}
+                      className="h-5 w-5 accent-gold"
+                    />
                     <span className="font-medium">{s.name}</span>
                   </label>
                 </li>
@@ -114,11 +138,14 @@ export function ServicePickDialog({
           </fieldset>
         )}
 
-        {service && address && page.isLoading && <Skeleton className="h-32" />}
-        {service && address && page.isError && (
-          <ErrorState message={getStayErrorMessage(page.error, 'Не удалось загрузить услугу.')} onRetry={() => void page.refetch()} />
+        {service && (address || loadItems) && page.isLoading && <Skeleton className="h-32" />}
+        {service && (address || loadItems) && page.isError && (
+          <ErrorState
+            message={getStayErrorMessage(page.error, 'Не удалось загрузить услугу.')}
+            onRetry={() => void page.refetch()}
+          />
         )}
-        {service && (!address || page.data) && (
+        {service && (!(address || loadItems) || page.data) && (
           <>
             <ServiceTimePicker
               key={service.id}
@@ -134,7 +161,10 @@ export function ServicePickDialog({
               <div className="border-t border-line pt-4">
                 <h3 className="mb-2 text-[15px] font-semibold text-ink">Стоимость</h3>
                 {quote.isError && !q ? (
-                  <ErrorState message={getStayErrorMessage(quote.error, 'Не удалось рассчитать стоимость.')} onRetry={() => void quote.refetch()} />
+                  <ErrorState
+                    message={getStayErrorMessage(quote.error, 'Не удалось рассчитать стоимость.')}
+                    onRetry={() => void quote.refetch()}
+                  />
                 ) : (
                   <ServiceQuoteSummary quote={q} loading={quote.isLoading} stale={quote.isFetching} />
                 )}

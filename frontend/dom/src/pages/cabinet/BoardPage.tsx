@@ -11,7 +11,8 @@ import { BoardList } from '../../components/board/BoardList'
 import { ManualBookingDialog } from '../../components/board/ManualBookingDialog'
 import { EmptyState, ErrorState, LoadingList } from '../../components/StatePanels'
 import { useStaysCompany } from '../../hooks/useStaysCompany'
-import type { BoardItemDto, StaysBoardDto } from '../../types'
+import { BoardServicesGroup } from '../../components/services/staff/BoardServicesGroup'
+import type { BoardItemDto, StaysBoardWithServices } from '../../types'
 import { BOARD_POLL_MS, clampDays, mergeBoard, shiftWindow } from '../../utils/boardLayout'
 import { can } from '../../utils/permissions'
 import { addDays, formatDateShort, instantToZoned } from '../../utils/stayDates'
@@ -48,7 +49,7 @@ export function BoardPage() {
   const query = useQuery({
     queryKey: key,
     queryFn: async () => {
-      const prev = qc.getQueryData<StaysBoardDto>(key)
+      const prev = qc.getQueryData<StaysBoardWithServices>(key)
       const next = await staysBoardApi.board(company.id, { from, days, ...(prev?.items ? { sinceRevision: prev.revision } : {}) })
       return mergeBoard(prev, next)
     },
@@ -105,6 +106,11 @@ export function BoardPage() {
           </select>
         </div>
         <div className="flex flex-wrap gap-2">
+          {can(company.myPermissions, 'ViewBookings') && (
+            <Link to={`/cabinet/${company.id}/service-day/${today}`} className="inline-flex min-h-[44px] items-center rounded-full border border-line bg-white px-5 text-sm font-semibold !text-ink hover:bg-cream-deep">
+              День услуг
+            </Link>
+          )}
           {canBook && houses.some((h) => !h.isArchived) && (
             <Button className="min-h-[44px]" onClick={() => setManual({})}>
               <Icon name="plus" size={15} /> Новая бронь
@@ -168,6 +174,7 @@ export function BoardPage() {
           ) : (
             <BoardList companyId={company.id} board={board} timeZoneId={company.timeZoneId} onOpenBlock={openBlock} />
           )}
+          <BoardServicesGroup board={board} companyId={company.id} from={from} days={days} today={today} wide={wide} />
           <p className="mt-3 text-xs text-muted">
             Брони, ожидающие проверки оплаты, выделены; удержания без оплаты исчезают сами, когда истекает время на оплату.
           </p>
