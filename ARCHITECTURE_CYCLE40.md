@@ -404,7 +404,7 @@ MessengerConsentDecision = MessengerConsentRule.Evaluate(...)  // §40.11.2: All
 | не оплачен ∧ RequestNewerThanPayment | `PaymentPending` |
 | не оплачен | `Payment` |
 | приостановлен ∨ `Blocked` ∨ (`Disconnected` ∧ `ServerCountryMismatch`) ∨ `IsDuplicate` | `None` |
-| `Connected` | `Done` |
+| `Connected` (только при наличии живого канала; без канала состояние фиктивное) | `Done` |
 | оплачен (в т. ч. пробный) ∧ (нет живого канала ∨ `!TermsAccepted`) | **`Terms`** (Т40-L-03) |
 | оплачен ∧ State ∈ {`NotConnected`, `Connecting`, `Disconnected`, `NeedsReconnect`, `DisabledByOwner`} | `Qr` |
 
