@@ -311,17 +311,17 @@ Deleted = 2 }`, `OccurredAtUtc`, `ActorUserId`, `ActorNameSnapshot`, `BeforeJson
 - **`StaysSubscription`** — копия формы `OrdersSubscription` (`BillingAccountId` уникален, `PlanConfigId`, `PaidUntil`,
   `IsActive`, `CreatedAtUtc`, `UpdatedAtUtc`, `UpdatedByUserId`). Нет строки = нет тарифа (бесплатного уровня нет, Q2).
 
-### §37.2.7 Миграции — две, закреплённым `dotnet-ef` 8.0.11, один разработчик в начале трека (BE-37-M)
+### §37.2.7 Миграция — одна (`Cycle37Stays`), закреплённым `dotnet-ef` 8.0.11, один разработчик в начале трека (BE-37-M)
 
-1. **`Cycle37SharedChanges`** — только добавочное и данные:
-   `HasPostgresExtension("btree_gist")` (в модели → и в снапшоте); колонки §37.2.1; пересоздание двух уникальных индексов
-   триала с колонкой `Line`; CHECK «не больше одного FK» у очередей; строка «Шерегеш» (идемпотентный `INSERT … WHERE NOT
-   EXISTS` по `(Name, Region)`, `SearchName` — по правилу `CitySearch.Normalize`, как `ExpandCityDirectory`); 4 тарифа
-   §37.10.1 с фиксированными Guid (`StaysPlans.*SeedId`) + `PlanOptionRules` канала по образцу §448.3 цикла 24.
-2. **`Cycle37StaysTables`** — 15 таблиц §37.2.2–§37.2.6 с индексами, FK и CHECK; три `EXCLUDE`-ограничения —
-   `migrationBuilder.Sql(...)` (EF их не моделирует, дрейф снапшота они не создают).
+Фактически реализована **одна** миграция `Cycle37Stays` (вместо двух задуманных): общая часть и таблицы в одном `Up()`.
+Состав: `HasPostgresExtension("btree_gist")` (в модели → и в снапшоте); колонки §37.2.1; пересоздание двух уникальных
+индексов триала с колонкой `Line`; CHECK «не больше одного FK» у очередей; строка «Шерегеш» (идемпотентный `INSERT … WHERE
+NOT EXISTS` по `(Name, Region)`, `SearchName` — по правилу `CitySearch.Normalize`, как `ExpandCityDirectory`); 4 тарифа
+§37.10.1 с фиксированными Guid (`StaysPlans.*SeedId`) + `PlanOptionRules` канала по образцу §448.3 цикла 24; 15 таблиц
+§37.2.2–§37.2.6 с индексами, FK и CHECK; три `EXCLUDE`-ограничения — `migrationBuilder.Sql(...)` (EF их не моделирует, дрейф
+снапшота они не создают).
 
-`Down()` удаляет созданное и возвращает прежние индексы триала. ⚠️ `Down` первой миграции упадёт, если уже выданы триалы
+`Down()` удаляет созданное и возвращает прежние индексы триала. ⚠️ `Down` упадёт, если уже выданы триалы
 «Дома» на номер, у которого есть триал «Записи» (дубль `PhoneKeyHash` в старом индексе) — записать в `DEPLOY.md`
 (DO-37-03), как C24-10.
 
@@ -597,12 +597,11 @@ X ₽…» (`StaysTexts`); фронт формулировок не сочиня
 ### §37.6.6 Публикация дома — `HousePublishRules.Check(...)`
 
 Отказы в порядке: архив → `HouseArchived`; нет цены (`Constant` без `ConstantPriceRub` или `ByDates` без периода,
-оканчивающегося не раньше сегодня) → `NoPrice`; нет `ObjectKind` → `ObjectKindRequired`; `ObjectKind ∈ {GuestHouse,
-OtherAccommodation}` и пустой `RegistryNumber` → `RegistryNumberRequired`; нет заверения в запросе (или `accepted ≠ true`)
-→ `AttestationRequired`; лимит тарифа → **402** строкой (US-37-10).
-Трактовка ЮР-2: «дома без номера публикуем» = дом вида **«жилое помещение»** публикуется без номера под заверением;
-гостевой дом / иное средство размещения требует номер (иначе заверение «либо номер реестра» не имеет смысла). Если
-заказчик имел в виду «публиковать любой вид без номера» — это одна строка в `HousePublishRules` (открытый вопрос §37.19 п. 1).
+оканчивающегося не раньше сегодня) → `NoPrice`; нет `ObjectKind` → `ObjectKindRequired`; нет заверения в запросе (или
+`accepted ≠ true`) → `AttestationRequired`; лимит тарифа → **402** строкой (US-37-10).
+Решение заказчика по ЮР-2 (08.10.2026): дом **любого** вида (в том числе гостевой дом и иное средство размещения)
+публикуется без номера реестра — под заверением владельца, ответственность его. Поэтому `RegistryNumberRequired`
+правилами **не выдаётся** (значение оставлено в перечислении контракта ради совместимости).
 Изменение `ObjectKind`/`RegistryNumber`/`RegistryUrl` у **опубликованного** дома требует нового заверения в том же
 запросе, иначе 409 `AttestationRequired` (инвариант §37.2.8-7).
 
@@ -1141,7 +1140,7 @@ ServiceBooking.Core/
 
 ServiceBooking.Infrastructure/
 ├── Data/AppDbContext.cs       конфигурация, индексы, CHECK, HasPostgresExtension("btree_gist")
-└── Migrations/                *_Cycle37SharedChanges.cs, *_Cycle37StaysTables.cs (EXCLUDE через Sql)
+└── Migrations/                *_Cycle37Stays.cs (одна миграция; EXCLUDE через Sql)
 
 ServiceBooking.API/
 ├── Controllers/Stays/
@@ -1208,7 +1207,7 @@ deploy/nginx/dom.ezbook.conf, deploy/nginx/ezbook.conf (+__dom), deploy/deploy-r
 |---|---|---|---|
 | BE-37-P | Чистые классы + юнит-тесты по векторам: `HousePricing`, `StayRules`, `GuestRules`, `StayMoney`, `StayRefund` (+ валидатор конфигурации шаблонов, запрет слов), `StayStateMachine`, `HousePublishRules`, `StaysBookingGate`, `CheckInInfoRelease`, `StayNotificationPlan`, `StaysSlugPolicy`, `StaysAccess`, `StaysTexts` (запасные тексты §15 обзора) | — | всё |
 | BE-37-1 | `CompanyKind.Stays`; обобщение `CompanyKindGuard`; аудит развилок §37.3.2 + `CompanyKindBranchGuardTests`; `PublicSites` (третий адрес, методы, fail-fast); `kinds-summary`, `GET /api/companies/{slug}`, админ-фильтр; галерея компании для Stays → 409 | — | BE-37-P, BE-37-M |
-| BE-37-M | Сущности, перечисления, `AppDbContext`, **две миграции** (§37.2.7), `ShowcaseOwnership.NeverWritten` — **один разработчик, один коммит** | BE-37-1 (значение enum) | BE-37-P |
+| BE-37-M | Сущности, перечисления, `AppDbContext`, **одна миграция** `Cycle37Stays` (§37.2.7), `ShowcaseOwnership.NeverWritten` — **один разработчик, один коммит** | BE-37-1 (значение enum) | BE-37-P |
 | BE-37-2 | Компания «Дома»: создание (третья ветка `CompanyCreationService`, город, `StaysSettings`), `my`, `slug-check`, `{id}` (+чек-лист, `myPermissions`), `settings`, `payment-details`, `provider` (Т37-03), `slug`, QR; персонал (`position`, `AddMember` для Stays, `PUT …/position`); `PUT /api/companies/{id}` для Stays | BE-37-M | BE-37-3, BE-37-5 |
 | BE-37-3 | Дома: CRUD (`setup`/`content`), архив/удаление, порядок, фото (`PublicArea.Houses`), цены (режим, периоды с `EXCLUDE` → 409), реестр, заверение и публикация (ЮР-2), QR дома, `amenities` | BE-37-M | BE-37-2, BE-37-4a |
 | BE-37-4a | Занятость и бронь гостя: `HouseOccupancyWriter`, `IStaysClock`, `StayPhoneThrottle`, calendar, quote, создание (идемпотентность, капча, гейт, лимиты, ленивое снятие, снимки), страница по токену, подтверждения оплаты (файлы, гонка), отмена гостем с расчётом возврата, `StayBookingEventLog` + ревизия; 6 политик rate limit | BE-37-M, BE-37-P | BE-37-3 |
@@ -1306,8 +1305,9 @@ grep классов §37.16 до объявления готовности.
 
 ## §37.19. Открытые вопросы к заказчику (кодирование не блокируют; по умолчанию — как в скобках)
 
-1. **ЮР-2, трактовка.** Публиковать без номера только дома вида «жилое помещение» (по умолчанию), или любой вид — под
-   заверением? Гостевой дом без номера — прямое нарушение 127-ФЗ собственником.
+1. **ЮР-2, трактовка — решено заказчиком (08.10.2026).** Дом любого вида публикуется без номера под заверением владельца;
+   `RegistryNumberRequired` не выдаётся (§37.6.6). Риск (гостевой дом без номера — нарушение 127-ФЗ собственником)
+   остаётся на владельце и закреплён заверением.
 2. **Выкат dom на машину.** Машина одна (стенд = бой). Когда поднимать `dom.ezbook.ru` (DNS, vhost, сертификат) —
    сразу после цикла как закрытый `noindex`-стенд, или только после вычитки юристом (по умолчанию — файлы готовы, выкат
    отдельным решением)?

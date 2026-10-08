@@ -2471,9 +2471,13 @@ DNS, vhost, certbot и консоль Яндекса делает человек
 - `.env.dev.example`: `SB_DOM_WEB_PORT=5175`, `PublicSites__StaysBaseUrl=http://localhost:5175`. В бою `PublicSites:StaysBaseUrl` = `https://dom.ezbook.ru`
   по умолчанию из `appsettings.json` — новой обязательной переменной нет.
 
-**Порядок первого выката (когда заказчик решит).**
+**⚠️ Миграция `Cycle37Stays` применится при ЛЮБОМ следующем деплое `develop`** на эту машину (стенд = бой), а не только при первом выкате dom:
+миграции накатываются при старте API независимо от того, поднят ли vhost dom. Поэтому пункт «БД: расширение `btree_gist`» ниже проверяется **ДО ближайшего
+деплоя `develop`**, а не до выката dom; DNS, vhost, сертификат и SmartCaptcha можно делать позже, отдельным решением заказчика.
+
+**Порядок проверки и первого выката (когда заказчик решит).**
 1. **DNS.** A-запись `dom.ezbook.ru` → та же машина, что у `ezbook.ru` и `goods.ezbook.ru`.
-2. **БД: расширение `btree_gist`.** Миграция цикла 37 делает `CREATE EXTENSION IF NOT EXISTS btree_gist` (исключающее ограничение занятости,
+2. **БД: расширение `btree_gist` (делается первым, до ближайшего деплоя `develop`).** Миграция `Cycle37Stays` делает `CREATE EXTENSION IF NOT EXISTS btree_gist` (исключающее ограничение занятости,
    §37.5). Расширение «trusted» (PostgreSQL 13+), но **проверьте до выката правами пользователя БД боя**:
    `docker compose exec postgres psql -U <user> -d <db> -c "CREATE EXTENSION IF NOT EXISTS btree_gist;"` — без ошибки и без «permission denied».
    Если не проходит — создать расширение суперпользователем один раз. Миграция падает целиком и откатывается (полу-применённого состояния нет, R37-8).
@@ -2482,7 +2486,7 @@ DNS, vhost, certbot и консоль Яндекса делает человек
    после него снова `certbot`. Заодно обновить `ezbook.conf` (строка `/__dom/`) и перезагрузить nginx.
 4. **SmartCaptcha.** В консоли Yandex Cloud добавить домен `dom.ezbook.ru` в список разрешённых доменов виджета (без этого форма брони для анонима не получит токен).
    Ключ клиента — тот же `VITE_SMARTCAPTCHA_SITEKEY` (общая переменная сборки).
-5. **Деплой `develop`** обычным путём. Применится **миграция цикла 37** (только добавления: таблицы «Домов», город Шерегеш, тарифы «Домов») — безопасно для ezbook и goods;
+5. **Деплой `develop`** обычным путём (если он уже был после слияния цикла 37 — миграция применена тогда, см. выше). Применится **миграция `Cycle37Stays`** (только добавления: таблицы «Домов», город Шерегеш, тарифы «Домов») — безопасно для ezbook и goods;
    сборка dom ляжет в `current/__dom`, но без vhost недоступна.
 6. **Смоук.** `curl -s https://dom.ezbook.ru/ | grep 'id="root"'`, `curl -s -o /dev/null -w '%{http_code}' https://dom.ezbook.ru/api/health/ready` (200),
    `curl -sI https://dom.ezbook.ru/sw.js | grep -i cache-control` (no-cache), `curl -sI https://dom.ezbook.ru/ | grep -i x-robots-tag` (noindex).
