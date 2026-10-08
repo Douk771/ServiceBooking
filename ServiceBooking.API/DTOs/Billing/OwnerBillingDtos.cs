@@ -46,9 +46,10 @@ public record OrdersUsageDto(
 
 /// <summary>An active tariff of the "Заказы" line the owner may ask for — shown ONLY to a signed-in owner, never publicly [legal L14].
 /// Cycle 37 (API_CONTRACT_CYCLE37.md §37.21.4): the same DTO lists the «Дома» plans; <c>MaxHouses</c> (appended) is their house limit — null means
-/// "no limit" for a «Дома» plan and is always null for the other lines.</summary>
+/// "no limit" for a «Дома» plan; for the other lines the field is OMITTED (the schema of cycle 24 is strict about unknown properties).</summary>
 public record AvailablePlanDto(
-    Guid PlanId, string Name, decimal PricePerMonth, string? Description, IReadOnlyList<string> Highlights, string LimitsText, int? MaxHouses = null);
+    Guid PlanId, string Name, decimal PricePerMonth, string? Description, IReadOnlyList<string> Highlights, string LimitsText,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? MaxHouses = null);
 
 public record RejectedRequestDto(string Reason, DateTime RejectedAtUtc);
 

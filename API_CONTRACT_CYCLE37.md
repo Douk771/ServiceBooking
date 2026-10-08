@@ -76,8 +76,8 @@
 
 - `GET /api/billing/subscription?line=Stays` — `OwnerSubscriptionDto`, в конец блок `stays` (`StaysSubscriptionBlockDto`:
   `housesPublished`, `maxHouses`, `isTrial`, `trialEndsAtUtc`, `warningLevel` — `None|TrialEnding3d|TrialEnding1d|Expired|
-  NoPlan|OverLimit`, `text`); `availablePlans` — активные тарифы линейки без триала, у каждого в конце `maxHouses` (null — без
-  ограничения; у тарифов других линеек всегда null); `trial` (салонный) = null.
+  NoPlan|OverLimit`, `text`); `availablePlans` — активные тарифы линейки без триала, у каждого в конце `maxHouses` (поле
+  опускается, если лимита нет: у «Домов» — без ограничения, у тарифов других линеек — не применимо; null не отдаётся); `trial` (салонный) = null.
 - `POST /api/billing/subscription/request` — `line: "Stays"`; тариф другой линейки → 400; правило «одна заявка на аккаунт»
   прежнее.
 - `GET|POST /api/admin/plans`, `PUT /api/admin/plans/{id}` — `line: "Stays"` допустим; поле `maxHouses` (в конец входа и
