@@ -20,6 +20,9 @@ public class TrialGrant
     // "current trial plan" pointer).
     public Guid? PlanConfigId { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.2.1: the product line of the trial (Services = 0 for every pre-cycle-37 row).</summary>
+    public CompanyKind Line { get; set; } = CompanyKind.Services;
+
     public DateTime GrantedAtUtc { get; set; }
     public DateTime EndsAtUtc { get; set; }
     public int DurationDays { get; set; }

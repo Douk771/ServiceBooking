@@ -27,6 +27,23 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<OrderPushSubscription> OrderPushSubscriptions => Set<OrderPushSubscription>();
     public DbSet<CustomerOrderPushNotification> CustomerOrderPushNotifications => Set<CustomerOrderPushNotification>();
     public DbSet<OrdersSubscription> OrdersSubscriptions => Set<OrdersSubscription>();
+
+    // Cycle 37 (ARCHITECTURE_CYCLE37.md §37.2): "Дома".
+    public DbSet<StaysSettings> StaysSettings => Set<StaysSettings>();
+    public DbSet<House> Houses => Set<House>();
+    public DbSet<HousePhoto> HousePhotos => Set<HousePhoto>();
+    public DbSet<HousePricePeriod> HousePricePeriods => Set<HousePricePeriod>();
+    public DbSet<HouseRegistryAttestation> HouseRegistryAttestations => Set<HouseRegistryAttestation>();
+    public DbSet<HouseBlock> HouseBlocks => Set<HouseBlock>();
+    public DbSet<HouseBlockEvent> HouseBlockEvents => Set<HouseBlockEvent>();
+    public DbSet<HouseOccupancy> HouseOccupancies => Set<HouseOccupancy>();
+    public DbSet<StayBooking> StayBookings => Set<StayBooking>();
+    public DbSet<StayBookingCharge> StayBookingCharges => Set<StayBookingCharge>();
+    public DbSet<StayBookingEvent> StayBookingEvents => Set<StayBookingEvent>();
+    public DbSet<StayPaymentProof> StayPaymentProofs => Set<StayPaymentProof>();
+    public DbSet<StayGuestPushSubscription> StayGuestPushSubscriptions => Set<StayGuestPushSubscription>();
+    public DbSet<StayGuestPushNotification> StayGuestPushNotifications => Set<StayGuestPushNotification>();
+    public DbSet<StaysSubscription> StaysSubscriptions => Set<StaysSubscription>();
     public DbSet<OrderMonthlyUsage> OrderMonthlyUsages => Set<OrderMonthlyUsage>();
     public DbSet<CompanyMember> CompanyMembers => Set<CompanyMember>();
     public DbSet<Service> Services => Set<Service>();
@@ -100,6 +117,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        // Cycle 37 (§37.2.7): the EXCLUDE constraints of HouseOccupancies / HousePricePeriods need btree_gist (a trusted extension since PG 13).
+        builder.HasPostgresExtension("btree_gist");
 
         builder.Entity<Company>(e =>
         {
@@ -249,6 +269,209 @@ public class AppDbContext : IdentityDbContext<AppUser>
         });
 
         builder.Entity<OrdersSubscription>(e =>
+        {
+            e.HasOne(s => s.BillingAccount).WithMany().HasForeignKey(s => s.BillingAccountId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(s => s.PlanConfig).WithMany().HasForeignKey(s => s.PlanConfigId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(s => s.BillingAccountId).IsUnique();
+        });
+
+        // ── Cycle 37: "Дома" (ARCHITECTURE_CYCLE37.md §37.2). The three EXCLUDE constraints are created by the migration with raw SQL
+        // (EF cannot model them): EX_HouseOccupancies_NoOverlap and EX_HousePricePeriods_NoOverlap.
+        builder.Entity<StaysSettings>(e =>
+        {
+            e.HasKey(s => s.CompanyId);
+            e.HasOne<Company>().WithOne().HasForeignKey<StaysSettings>(s => s.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(s => s.PaymentDetails).HasMaxLength(1000);
+            e.Property(s => s.PaymentPurpose).HasMaxLength(200);
+            e.Property(s => s.CheckInInfoText).HasMaxLength(2000);
+            e.Property(s => s.ProviderName).HasMaxLength(300);
+            e.Property(s => s.ProviderInn).HasMaxLength(12);
+            e.Property(s => s.ProviderOgrn).HasMaxLength(15);
+            e.Property(s => s.ProviderClaimsAddress).HasMaxLength(500);
+            e.Property(s => s.UpdatedByUserId).HasMaxLength(450);
+            // A DB default on every NOT NULL column: StayBookingEventLog bumps the revision with a raw UPDATE/upsert.
+            e.Property(s => s.BookingsRevision).HasDefaultValue(0L);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_StaysSettings_CheckOutNotAfterCheckIn", "\"CheckOutTime\" <= \"CheckInTime\"");
+                t.HasCheckConstraint("CK_StaysSettings_Nights", "\"MinNights\" BETWEEN 1 AND 30 AND \"MaxNights\" BETWEEN 1 AND 90 AND \"MinNights\" <= \"MaxNights\"");
+            });
+        });
+
+        builder.Entity<House>(e =>
+        {
+            e.HasOne(h => h.Company).WithMany().HasForeignKey(h => h.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(h => h.Slug).HasMaxLength(50);
+            e.Property(h => h.Name).HasMaxLength(100);
+            e.Property(h => h.Description).HasMaxLength(4000);
+            e.Property(h => h.Address).HasMaxLength(500);
+            e.Property(h => h.YandexMapsUrl).HasMaxLength(500);
+            e.Property(h => h.TwoGisUrl).HasMaxLength(500);
+            e.Property(h => h.CheckInInfoText).HasMaxLength(2000);
+            e.Property(h => h.RegistryNumber).HasMaxLength(32);
+            e.Property(h => h.RegistryUrl).HasMaxLength(500);
+            e.HasIndex(h => new { h.CompanyId, h.Slug }).IsUnique();
+            e.HasIndex(h => new { h.CompanyId, h.Position });
+            e.HasIndex(h => h.CompanyId).HasDatabaseName("IX_Houses_Published").HasFilter("\"IsPublished\" AND \"ArchivedAtUtc\" IS NULL");
+            e.ToTable(t => t.HasCheckConstraint("CK_Houses_NotPublishedAndArchived", "NOT (\"IsPublished\" AND \"ArchivedAtUtc\" IS NOT NULL)"));
+        });
+
+        builder.Entity<HousePhoto>(e =>
+        {
+            e.HasOne(p => p.House).WithMany(h => h.Photos).HasForeignKey(p => p.HouseId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(p => p.Url).HasMaxLength(500);
+            e.Property(p => p.ThumbnailUrl).HasMaxLength(500);
+            e.HasIndex(p => new { p.HouseId, p.Position });
+        });
+
+        builder.Entity<HousePricePeriod>(e =>
+        {
+            e.HasOne<House>().WithMany().HasForeignKey(p => p.HouseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(p => new { p.HouseId, p.StartDate }).IsUnique().HasDatabaseName("UX_HousePricePeriods_SingleDay").HasFilter("\"StartDate\" = \"EndDate\"");
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_HousePricePeriods_Dates", "\"StartDate\" <= \"EndDate\" AND \"EndDate\" - \"StartDate\" <= 730");
+                t.HasCheckConstraint("CK_HousePricePeriods_Price", "\"PriceRub\" BETWEEN 1 AND 1000000");
+            });
+        });
+
+        builder.Entity<HouseRegistryAttestation>(e =>
+        {
+            e.HasOne<House>().WithMany().HasForeignKey(a => a.HouseId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(a => a.RegistryNumber).HasMaxLength(32);
+            e.Property(a => a.RegistryUrl).HasMaxLength(500);
+            e.Property(a => a.NoticeVersion).HasMaxLength(80);
+            e.Property(a => a.AttestedByUserId).HasMaxLength(450);
+            e.Property(a => a.IpAddress).HasMaxLength(45);
+            e.HasIndex(a => new { a.HouseId, a.AttestedAtUtc });
+        });
+
+        builder.Entity<HouseBlock>(e =>
+        {
+            e.HasOne<House>().WithMany().HasForeignKey(b => b.HouseId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(b => b.Comment).HasMaxLength(300);
+            e.Property(b => b.CreatedByUserId).HasMaxLength(450);
+            e.HasIndex(b => new { b.CompanyId, b.HouseId });
+            e.ToTable(t => t.HasCheckConstraint("CK_HouseBlocks_Dates", "\"EndDate\" > \"StartDate\""));
+        });
+
+        builder.Entity<HouseBlockEvent>(e =>
+        {
+            e.HasOne<HouseBlock>().WithMany().HasForeignKey(b => b.HouseBlockId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(b => b.ActorUserId).HasMaxLength(450);
+            e.Property(b => b.ActorNameSnapshot).HasMaxLength(200);
+            e.Property(b => b.BeforeJson).HasColumnType("jsonb");
+            e.Property(b => b.AfterJson).HasColumnType("jsonb");
+            e.HasIndex(b => new { b.HouseBlockId, b.OccurredAtUtc });
+        });
+
+        builder.Entity<HouseOccupancy>(e =>
+        {
+            e.HasOne<Company>().WithMany().HasForeignKey(o => o.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<House>().WithMany().HasForeignKey(o => o.HouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<StayBooking>().WithMany().HasForeignKey(o => o.StayBookingId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<HouseBlock>().WithMany().HasForeignKey(o => o.HouseBlockId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(o => o.StayBookingId).IsUnique().HasDatabaseName("UX_HouseOccupancies_Booking").HasFilter("\"StayBookingId\" IS NOT NULL");
+            e.HasIndex(o => o.HouseBlockId).IsUnique().HasDatabaseName("UX_HouseOccupancies_Block").HasFilter("\"HouseBlockId\" IS NOT NULL");
+            e.HasIndex(o => new { o.HouseId, o.EndDate }).HasDatabaseName("IX_HouseOccupancies_Active").HasFilter("\"ReleasedAtUtc\" IS NULL");
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_HouseOccupancies_Dates", "\"EndDate\" > \"StartDate\"");
+                t.HasCheckConstraint("CK_HouseOccupancies_Source", "((\"Source\" = 0) = (\"StayBookingId\" IS NOT NULL)) AND ((\"Source\" = 1) = (\"HouseBlockId\" IS NOT NULL))");
+            });
+        });
+
+        builder.Entity<StayBooking>(e =>
+        {
+            e.HasOne(b => b.Company).WithMany().HasForeignKey(b => b.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(b => b.House).WithMany().HasForeignKey(b => b.HouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppUser>().WithMany().HasForeignKey(b => b.GuestUserId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(b => b.Version).IsConcurrencyToken();
+            e.Property(b => b.PublicToken).HasMaxLength(64);
+            e.Property(b => b.GuestName).HasMaxLength(100);
+            e.Property(b => b.GuestPhone).HasMaxLength(20);
+            e.Property(b => b.Comment).HasMaxLength(500);
+            e.Property(b => b.NightPricesJson).HasColumnType("jsonb");
+            e.Property(b => b.ProviderSnapshotJson).HasColumnType("jsonb");
+            e.Property(b => b.TimeZoneIdSnapshot).HasMaxLength(64);
+            e.Property(b => b.PaymentDetailsSnapshot).HasMaxLength(1000);
+            e.Property(b => b.PaymentPurposeSnapshot).HasMaxLength(200);
+            e.Property(b => b.ConsentPrivacyVersion).HasMaxLength(64);
+            e.Property(b => b.ConsentTermsVersion).HasMaxLength(64);
+            e.Property(b => b.BookingNoticeVersion).HasMaxLength(64);
+            e.Property(b => b.BookingTermsVersion).HasMaxLength(64);
+            e.Property(b => b.CancellationTermsVersion).HasMaxLength(64);
+            e.Property(b => b.MessengerConsentVersion).HasMaxLength(64);
+            e.Property(b => b.StatusReason).HasMaxLength(300);
+            e.Property(b => b.PaymentConfirmedByUserId).HasMaxLength(450);
+            e.Property(b => b.PaymentConfirmedByNameSnapshot).HasMaxLength(200);
+            e.HasIndex(b => b.PublicToken).IsUnique();
+            e.HasIndex(b => new { b.CompanyId, b.IdempotencyKey }).IsUnique();
+            e.HasIndex(b => new { b.CompanyId, b.Status });
+            e.HasIndex(b => new { b.HouseId, b.CheckInDate });
+            e.HasIndex(b => new { b.GuestUserId, b.CreatedAtUtc });
+            e.HasIndex(b => new { b.GuestPhone, b.CreatedAtUtc }).HasDatabaseName("IX_StayBookings_Phone").HasFilter("\"GuestPhone\" IS NOT NULL");
+            e.HasIndex(b => b.HoldExpiresAtUtc).HasDatabaseName("IX_StayBookings_HoldExpiry").HasFilter("\"Status\" = 0");
+            e.HasIndex(b => b.CheckInDate).HasDatabaseName("IX_StayBookings_ConfirmedCheckIn").HasFilter("\"Status\" = 2");
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_StayBookings_Dates", "\"CheckOutDate\" > \"CheckInDate\" AND \"CheckOutDate\" - \"CheckInDate\" <= 366");
+                t.HasCheckConstraint("CK_StayBookings_Nights", "\"Nights\" = \"CheckOutDate\" - \"CheckInDate\"");
+            });
+        });
+
+        builder.Entity<StayBookingCharge>(e =>
+        {
+            e.HasOne<StayBooking>().WithMany(b => b.Charges).HasForeignKey(c => c.StayBookingId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(c => c.Label).HasMaxLength(200);
+            e.HasIndex(c => new { c.StayBookingId, c.Position });
+        });
+
+        builder.Entity<StayBookingEvent>(e =>
+        {
+            e.HasOne<StayBooking>().WithMany().HasForeignKey(v => v.StayBookingId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(v => v.ActorUserId).HasMaxLength(450);
+            e.Property(v => v.ActorNameSnapshot).HasMaxLength(200);
+            e.Property(v => v.Reason).HasMaxLength(300);
+            e.Property(v => v.DetailsJson).HasColumnType("jsonb");
+            e.HasIndex(v => new { v.StayBookingId, v.OccurredAtUtc });
+            e.HasIndex(v => v.OccurredAtUtc);
+        });
+
+        builder.Entity<StayPaymentProof>(e =>
+        {
+            e.HasOne<StayBooking>().WithMany(b => b.PaymentProofs).HasForeignKey(p => p.StayBookingId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(p => p.StorageKey).HasMaxLength(200);
+            e.Property(p => p.ContentType).HasMaxLength(50);
+            e.HasIndex(p => p.StayBookingId);
+        });
+
+        builder.Entity<StayGuestPushSubscription>(e =>
+        {
+            e.HasOne(s => s.StayBooking).WithMany().HasForeignKey(s => s.StayBookingId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(s => s.Endpoint).HasMaxLength(500);
+            e.Property(s => s.KeyId).HasMaxLength(16);
+            e.HasIndex(s => new { s.StayBookingId, s.Endpoint }).IsUnique();
+            e.HasIndex(s => s.CreatedAtUtc);
+        });
+
+        builder.Entity<StayGuestPushNotification>(e =>
+        {
+            e.HasOne(n => n.StayBooking).WithMany().HasForeignKey(n => n.StayBookingId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne<Company>().WithMany().HasForeignKey(n => n.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(n => n.Subscription).WithMany().HasForeignKey(n => n.SubscriptionId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(n => n.Payload).HasMaxLength(1000);
+            e.Property(n => n.ReasonDetail).HasMaxLength(300);
+            e.Property(n => n.IdempotencyKey).HasMaxLength(200);
+            e.HasIndex(n => n.IdempotencyKey).IsUnique();
+            e.HasIndex(n => new { n.ExpiresAtUtc, n.CreatedAt })
+                .HasDatabaseName("IX_StayGuestPushNotifications_Dispatch")
+                .HasFilter("\"Status\" = 0")
+                .IncludeProperties(n => new { n.CompanyId, n.SubscriptionId });
+            e.HasIndex(n => n.StayBookingId);
+        });
+
+        builder.Entity<StaysSubscription>(e =>
         {
             e.HasOne(s => s.BillingAccount).WithMany().HasForeignKey(s => s.BillingAccountId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(s => s.PlanConfig).WithMany().HasForeignKey(s => s.PlanConfigId).OnDelete(DeleteBehavior.SetNull);
@@ -785,6 +1008,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // Cycle 24 (§448.1): a message about an order — OrderId instead of BookingId.
             e.HasOne(n => n.Order).WithMany().HasForeignKey(n => n.OrderId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(n => n.OrderId);
+            // Cycle 37 (§37.2.1): a message about a house booking; at most one subject per row.
+            e.HasOne(n => n.StayBooking).WithMany().HasForeignKey(n => n.StayBookingId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(n => n.StayBookingId);
+            e.ToTable(t => t.HasCheckConstraint("CK_OutboundNotifications_OneSubject",
+                "(CASE WHEN \"BookingId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"OrderId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"StayBookingId\" IS NULL THEN 0 ELSE 1 END) <= 1"));
             e.Property(n => n.RecipientPhone).HasMaxLength(20);
             e.Property(n => n.Body).HasMaxLength(2000);
             e.Property(n => n.ReasonDetail).HasMaxLength(300);
@@ -860,6 +1088,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(n => n.Booking).WithMany().HasForeignKey(n => n.BookingId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(n => n.Order).WithMany().HasForeignKey(n => n.OrderId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(n => n.OrderId);
+            e.HasOne(n => n.StayBooking).WithMany().HasForeignKey(n => n.StayBookingId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(n => n.StayBookingId);
+            e.ToTable(t => t.HasCheckConstraint("CK_StaffPushNotifications_OneSubject",
+                "(CASE WHEN \"BookingId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"OrderId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"StayBookingId\" IS NULL THEN 0 ELSE 1 END) <= 1"));
             e.HasOne(n => n.Subscription).WithMany().HasForeignKey(n => n.SubscriptionId).OnDelete(DeleteBehavior.SetNull);
             e.Property(n => n.Payload).HasMaxLength(1000);
             e.Property(n => n.ReasonDetail).HasMaxLength(300);
@@ -899,6 +1131,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(m => m.Company).WithMany().HasForeignKey(m => m.CompanyId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(m => m.Order).WithMany().HasForeignKey(m => m.OrderId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(m => m.OrderId);
+            e.HasOne(m => m.StayBooking).WithMany().HasForeignKey(m => m.StayBookingId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(m => m.StayBookingId);
             e.Property(m => m.ChatKey).HasMaxLength(64);
             e.Property(m => m.Text).HasMaxLength(2000);
             e.Property(m => m.ReasonDetail).HasMaxLength(300);
@@ -972,7 +1206,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // error message, not for the guarantee itself; this index is what serializes the race of a
             // double-click. Source == SuperAdminOverride (value 2) is deliberately excluded — an
             // emergency regrant may happen more than once, and each stays in history.
-            e.HasIndex(g => g.BillingAccountId).IsUnique()
+            // Cycle 37 (§37.2.1): once per account PER LINE (Line = 0 is every pre-cycle-37 row).
+            e.Property(g => g.Line).HasDefaultValue(CompanyKind.Services);
+            e.HasIndex(g => new { g.BillingAccountId, g.Line }).IsUnique()
                 .HasDatabaseName("UX_TrialGrants_OnePerAccount")
                 .HasFilter("\"Source\" <> 2");
             e.HasIndex(g => g.GrantedAtUtc);
@@ -983,7 +1219,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.Property(r => r.PhoneKeyHash).HasMaxLength(64).IsRequired();
             e.Property(r => r.KeyId).HasMaxLength(16).IsRequired();
-            e.HasIndex(r => r.PhoneKeyHash).IsUnique().HasDatabaseName("UX_TrialPhoneRegistrations_Key");
+            e.Property(r => r.Line).HasDefaultValue(CompanyKind.Services);
+            e.HasIndex(r => new { r.Line, r.PhoneKeyHash }).IsUnique().HasDatabaseName("UX_TrialPhoneRegistrations_Key");
             e.HasIndex(r => r.RegisteredAtUtc);
             e.HasIndex(r => r.KeyId);
         });

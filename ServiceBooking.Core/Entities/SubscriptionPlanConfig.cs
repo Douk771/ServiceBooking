@@ -65,6 +65,9 @@ public class SubscriptionPlanConfig
     /// <summary>Products per shop; null = no tariff limit (the technical ceiling still applies).</summary>
     public int? MaxProductsPerShop { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.2.1: published houses per billing account (Line = Stays only; null = unlimited).</summary>
+    public int? MaxHouses { get; set; }
+
     /// <summary>Orders per calendar month per ACCOUNT; null = unlimited.</summary>
     public int? MaxOrdersPerMonth { get; set; }
 

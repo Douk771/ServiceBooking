@@ -38,6 +38,10 @@ public class OutboundNotification
     public Guid? OrderId { get; set; }
     public Order? Order { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.2.1: a message about a house booking.</summary>
+    public Guid? StayBookingId { get; set; }
+    public StayBooking? StayBooking { get; set; }
+
     public NotificationType Type { get; set; }
 
     public string RecipientPhone { get; set; } = string.Empty;

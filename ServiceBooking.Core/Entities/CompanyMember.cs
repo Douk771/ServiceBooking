@@ -20,6 +20,9 @@ public class CompanyMember
     // true so every existing membership (and the migration backfill) keeps today's visibility.
     public bool ProvidesServices { get; set; } = true;
 
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.2.1: Manager/Housekeeper — only for Role = Master in a "Дома" company.</summary>
+    public StaffPosition? StaffPosition { get; set; }
+
     public Company Company { get; set; } = null!;
     public AppUser User { get; set; } = null!;
 }

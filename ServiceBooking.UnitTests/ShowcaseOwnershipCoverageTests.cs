@@ -106,8 +106,15 @@ public class ShowcaseOwnershipCoverageTests
     }
 
     [Fact]
-    public void OnlyTheNotificationChannelsStayDeclaredNeverWritten_TheShopTablesAreWrittenByTheDemoProfile() =>
-        ShowcaseOwnership.NeverWritten.Keys.Should().Equal("NotificationChannels");
+    public void OnlyTheNotificationChannelsAndTheStaysTablesAreDeclaredNeverWritten_TheShopTablesAreWrittenByTheDemoProfile()
+    {
+        // Cycle 37 (ARCHITECTURE_CYCLE37.md §37.3.2): the 15 tables of the "Дома" vertical are declared never written (no showcase for it).
+        string[] stays = ["StaysSettings", "Houses", "HousePhotos", "HousePricePeriods", "HouseRegistryAttestations", "HouseBlocks", "HouseBlockEvents",
+            "HouseOccupancies", "StayBookings", "StayBookingCharges", "StayBookingEvents", "StayPaymentProofs",
+            "StayGuestPushSubscriptions", "StayGuestPushNotifications", "StaysSubscriptions"];
+        ShowcaseOwnership.NeverWritten.Keys.Where(k => k != "NotificationChannels").Should().BeEquivalentTo(stays);
+        ShowcaseOwnership.NeverWritten.Keys.Should().Contain("NotificationChannels").And.HaveCount(16);
+    }
 
     [Fact]
     public void ErasingNeverTouchesAnUnmarkedRow_EveryStepIsScopedByAMark()
