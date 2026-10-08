@@ -31,7 +31,7 @@ public class AdminChannelsController(AppDbContext db, ChannelFundingReader fundi
         CancellationToken ct)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
-        var query = db.NotificationChannels.AsNoTracking().Include(c => c.Assignments).AsQueryable();
+        var query = db.NotificationChannels.AsNoTracking().AsQueryable();
         if (state.HasValue) query = query.Where(c => c.State == state);
         // ARCHITECTURE_CYCLE9.md §114.3 (US-121) — ?transport= filter, additive.
         if (transport.HasValue) query = query.Where(c => c.Transport == transport);
@@ -68,6 +68,13 @@ public class AdminChannelsController(AppDbContext db, ChannelFundingReader fundi
         var owners = await db.Users.AsNoTracking().Where(u => ownerIds.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id, u => u, ct);
 
+        // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.4.2 #11): the number serves every company of its account — CompanyCount = the account's companies.
+        var pageAccountIds = page1.Where(c => c.BillingAccountId.HasValue).Select(c => c.BillingAccountId!.Value).Distinct().ToList();
+        var companyCounts = pageAccountIds.Count == 0
+            ? new Dictionary<Guid, int>()
+            : await db.Companies.AsNoTracking().Where(c => c.BillingAccountId != null && pageAccountIds.Contains(c.BillingAccountId.Value))
+                .GroupBy(c => c.BillingAccountId!.Value).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(g => g.Key, g => g.Count, ct);
+
         var items = page1.Select(c =>
         {
             var owner = owners.GetValueOrDefault(c.OwnerUserId);
@@ -76,7 +83,7 @@ public class AdminChannelsController(AppDbContext db, ChannelFundingReader fundi
                 c.Id, c.Transport, c.State, ChannelPaymentState.Of(c, f),
                 owner is null ? "" : $"{owner.FirstName} {owner.LastName}",
                 owner?.PhoneNumber is null ? null : PhoneDisplayMask.Mask(owner.PhoneNumber),
-                f?.PaidUntil, c.Assignments.Count, c.IdleSinceUtc, c.RequestedAtUtc,
+                f?.PaidUntil, c.BillingAccountId is { } accountId ? companyCounts.GetValueOrDefault(accountId) : 0, c.IdleSinceUtc, c.RequestedAtUtc,
                 c.Inn, c.LegalEntityForm);
         }).ToList();
 
@@ -96,7 +103,7 @@ public class AdminChannelsController(AppDbContext db, ChannelFundingReader fundi
         //    PaidUntilUtc, else the subscription period) falls within [now, now + 7 days];
         //  - PendingRequests — the owner requested the channel (RequestedAtUtc set) and it is NOT funded
         //    (was: "RequestedAtUtc set and PaidUntilUtc null"). A Replaced row is terminal history, not a
-        //    request — it is never funded (ChannelFunding.Rank skips it), so it is excluded explicitly,
+        //    request — it is never funded (the ranking skips it), so it is excluded explicitly,
         //    or every replacement would count once more per ban.
         var funding = await fundingReader.LoadAsync(channels, ct);
         bool IsFunded(NotificationChannel c) =>

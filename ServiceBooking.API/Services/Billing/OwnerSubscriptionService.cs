@@ -67,9 +67,7 @@ public class OwnerSubscriptionService(
         var companies = await db.Companies.Where(c => c.BillingAccountId == account.Id).ToListAsync();
         var companyIds = companies.Select(c => c.Id).ToList();
         var seatsByCompany = await usageReader.GetCompanySeatsAsync(companyIds);
-        var assignedCompanyIds = (await db.ChannelCompanyAssignments
-            .Where(a => companyIds.Contains(a.CompanyId))
-            .Select(a => a.CompanyId).ToListAsync()).ToHashSet();
+        var hasNumber = await AccountHasWorkingNumberAsync(account.Id);
 
         var status = SubscriptionStatusFor(sub, now);
         var statusText = StatusTextFor(status, sub?.PaidUntil);
@@ -104,7 +102,7 @@ public class OwnerSubscriptionService(
             overLimitCompanies, overLimitEmployees, overLimitText);
 
         var coveredCompanies = companies.Select(c => new CoveredCompanyDto(
-            c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), assignedCompanyIds.Contains(c.Id))).ToList();
+            c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), hasNumber)).ToList();
 
         var planDto = new SubscribedPlanDto(
             sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Бесплатный", sub?.PlanConfig?.Description, sub?.PlanConfig?.PricePerMonth ?? 0m,
@@ -186,8 +184,7 @@ public class OwnerSubscriptionService(
         var shops = await db.Companies.AsNoTracking().Where(c => c.BillingAccountId == account.Id && c.Kind == CompanyKind.Orders).ToListAsync();
         var usage = (await usageReader.GetAsync([account.Id], CompanyKind.Orders)).GetValueOrDefault(account.Id) ?? new AccountUsage(account.Id, 0, 0);
         var seatsByCompany = await usageReader.GetCompanySeatsAsync(shops.Select(c => c.Id).ToList());
-        var assignedIds = (await db.ChannelCompanyAssignments.Where(a => shops.Select(s => s.Id).Contains(a.CompanyId))
-            .Select(a => a.CompanyId).ToListAsync()).ToHashSet();
+        var hasNumber = await AccountHasWorkingNumberAsync(account.Id);
 
         var status = OrdersStatusFor(sub, now);
         var expiresInDays = BillingCalculator.ExpiresInDays(sub?.PaidUntil, now);
@@ -204,7 +201,7 @@ public class OwnerSubscriptionService(
             BillingTexts.ShopSeatsUsedText(usage.SeatsUsed, plan.MaxSeats), BillingTexts.ShopsUsedText(usage.CompaniesUsed, plan.MaxShops),
             numbersPaid, numbersRegistered, numbersText, overShops, overSeats, null);
 
-        var coveredShops = shops.Select(c => new CoveredCompanyDto(c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), assignedIds.Contains(c.Id))).ToList();
+        var coveredShops = shops.Select(c => new CoveredCompanyDto(c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), hasNumber)).ToList();
         var planDto = new SubscribedPlanDto(
             plan.IsFreeTier ? null : plan.PlanId, plan.PlanName, planConfig?.Description, planConfig?.PricePerMonth ?? 0m, OrdersPlanIncludes(plan));
         var totalMonthlyPrice = BillingCalculator.TotalMonthlyPrice(planDto.PricePerMonth, optionDtos.Select(o => o.PricePerMonth));
@@ -274,7 +271,7 @@ public class OwnerSubscriptionService(
         var companies = await db.Companies.AsNoTracking().Where(c => c.BillingAccountId == account.Id && c.Kind == CompanyKind.Stays).ToListAsync();
         var companyIds = companies.Select(c => c.Id).ToList();
         var seatsByCompany = await usageReader.GetCompanySeatsAsync(companyIds);
-        var assignedIds = (await db.ChannelCompanyAssignments.Where(a => companyIds.Contains(a.CompanyId)).Select(a => a.CompanyId).ToListAsync()).ToHashSet();
+        var hasNumber = await AccountHasWorkingNumberAsync(account.Id);
         var staff = seatsByCompany.Values.Sum();
         var numbersRegistered = await db.NotificationChannels.CountAsync(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced);
         var (numbersPaid, numbersText) = await NumbersAsync(account.Id);
@@ -310,7 +307,7 @@ public class OwnerSubscriptionService(
         return new OwnerSubscriptionDto(
             "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays,
             plan.IsTrial && level is "TrialEnding3d" or "TrialEnding1d", usageDto,
-            companies.Select(c => new CoveredCompanyDto(c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), assignedIds.Contains(c.Id))).ToList(),
+            companies.Select(c => new CoveredCompanyDto(c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), hasNumber)).ToList(),
             warning, availableOptions, pendingRequest, CanRequestChanges: true, LastRejectedRequest: lastRejected, Trial: null,
             Line: nameof(CompanyKind.Stays), Orders: null, AvailablePlans: availablePlans,
             Stays: new StaysSubscriptionBlockDto(published, plan.MaxHouses, plan.IsTrial, plan.IsTrial ? plan.PaidUntilUtc : null, level, text));
@@ -418,6 +415,11 @@ public class OwnerSubscriptionService(
 
     /// <summary>ARCHITECTURE_CYCLE40.md §40.31 / §40.33.8 — <c>usage.numbersPaid</c> = the number of paid transports (0…2); <c>usage.numbersText</c> = one
     /// entry per SHOWN transport (it is sold, or the account has its number or its payment), joined by "; ".</summary>
+    /// <summary>Cycle 40 (§40.4.2 #9): a number serves EVERY company of the account, so <c>hasNumber</c> of a company is "the account has a
+    /// working number" (a routable transport whose first number is connected, the service on), not "this company was assigned".</summary>
+    private async Task<bool> AccountHasWorkingNumberAsync(Guid accountId) =>
+        (await messagingReader.ForAccountAsync(accountId)) is { } state && state.Transports.Any(t => t.Working);
+
     private async Task<(int Paid, string Text)> NumbersAsync(Guid accountId)
     {
         var state = await messagingReader.ForAccountAsync(accountId);
