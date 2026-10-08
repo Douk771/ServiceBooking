@@ -41,6 +41,9 @@ public static class StayRefund
         DateOnly checkInDate, TimeOnly checkInTime, string timeZoneId, DateTime atUtc, bool cancelledByOwner,
         IReadOnlyDictionary<StayCancellationPolicy, StayCancellationRule>? rules = null)
     {
+        // A booking in a final status cannot be cancelled any more: there is no "refund at least X" to promise (QA CY37: not «К возврату не меньше 0 ₽ …»).
+        if (StayStateMachine.IsTerminal(status))
+            return new(StayRefundKind.NothingPaid, 0, 0, StaysTexts.RefundNotApplicable);
         if (status == StayBookingStatus.Held || prepayRub <= 0)
             return new(StayRefundKind.NothingPaid, 0, 0, StaysTexts.RefundNothingPaid);
         if (cancelledByOwner) return Full(prepayRub);

@@ -17,6 +17,8 @@ public static class StaysTexts
     public const string PageUnavailable = "Страница недоступна";
     public const string HouseUnavailable = "Дом недоступен для бронирования";
     public const string RefundNothingPaid = "Бронь не оплачена — отмена без последствий";
+    /// <summary>The refund line of a booking in a final status (expired, payment rejected, cancelled): nothing to cancel, no amount to promise.</summary>
+    public const string RefundNotApplicable = "Бронь уже не действует — отменять нечего";
     public const string DatesUnavailable = "Эти даты уже заняты. Выберите другие";
     public const string CannotCancelAlready = "Бронь уже отменена";
 

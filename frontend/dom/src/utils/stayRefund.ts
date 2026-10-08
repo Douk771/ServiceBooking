@@ -42,7 +42,11 @@ export function refundBoundaryUtcMs(
   return zonedWallToUtcMs(checkInDate, policy === 'Standard' ? '00:00' : checkInTime, timeZoneId)
 }
 
+const TERMINAL: readonly StayBookingStatus[] = ['ExpiredUnpaid', 'PaymentRejected', 'CancelledByGuest', 'CancelledByOwner']
+
 export function computeRefund(input: RefundInput): RefundResult {
+  // A booking in a final status cannot be cancelled: no amount is promised (same as the server).
+  if (TERMINAL.includes(input.status)) return NOTHING
   // Nothing was paid: a held booking, or a booking without a prepayment.
   if (input.status === 'Held' || input.prepayRub <= 0) return NOTHING
   if (input.cancelledBy === 'Owner') return { kind: 'Full', refundAtLeastRub: input.prepayRub, maxDeductionRub: 0 }
