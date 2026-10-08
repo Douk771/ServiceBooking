@@ -278,7 +278,8 @@ public class StayBookingCreationService(
         booking.GuestName = guestName;
         booking.GuestPhone = phone;
         booking.Comment = comment;
-        booking.NotifyByMessenger = dto.NotifyGuest && settings.GuestMessengerEnabled;
+        // No messenger consent snapshot exists for a guest the staff typed in (Т37-12: the separate tick is the guest's own) — so no messenger notices.
+        booking.NotifyByMessenger = false;
         booking.PrepayPercentSnapshot = 0;
         booking.PrepayRub = 0;
         var charges = ChargesOf(booking.Id, money);

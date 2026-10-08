@@ -15,6 +15,8 @@ describe('safeReturnTo', () => {
     expect(safeReturnTo('/\\evil.example')).toBe('/')
     expect(safeReturnTo('javascript:alert(1)')).toBe('/')
     expect(safeReturnTo('/a\nb')).toBe('/')
+    expect(safeReturnTo('/a\\b')).toBe('/')
+    expect(safeReturnTo('/\\/evil.example')).toBe('/')
   })
   it('honours a custom fallback', () => {
     expect(safeReturnTo('x', '/home')).toBe('/home')

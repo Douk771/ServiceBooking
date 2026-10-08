@@ -251,3 +251,29 @@ describe('BookingPage — confirmed and final', () => {
     expect(screen.getByText(/Цена указана без туристического налога/)).toBeInTheDocument()
   })
 })
+
+describe('BookingPage — final statuses promise no refund', () => {
+  for (const status of ['ExpiredUnpaid', 'PaymentRejected', 'CancelledByGuest', 'CancelledByOwner'] as const) {
+    it(`${status}: no «К возврату не меньше» and no cancel button`, async () => {
+      api.get.mockResolvedValue(
+        bookingFixture({
+          status,
+          displayStatus: status,
+          holdExpiresAtUtc: null,
+          payment: null,
+          cancellation: {
+            policy: 'Standard',
+            summary: '',
+            canCancel: false,
+            refund: { kind: 'NothingPaid', refundAtLeastRub: 0, maxDeductionRub: 0, text: 'Бронь уже не действует — отменять нечего' },
+            cannotCancelText: null,
+          },
+        }),
+      )
+      renderPage()
+      await screen.findByTestId('booking-status')
+      expect(document.body.textContent ?? '').not.toMatch(/К возврату не меньше/)
+      expect(screen.queryByRole('button', { name: 'Отменить бронь' })).not.toBeInTheDocument()
+    })
+  }
+})

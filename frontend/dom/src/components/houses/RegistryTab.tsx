@@ -20,7 +20,14 @@ import { useHouseTab } from './houseContext'
  * words the owner attests to. It is printed as text, never as HTML.
  */
 function RegistryNoticeText({ text }: { text: string }) {
-  return <p className="whitespace-pre-line text-sm leading-relaxed text-ink-soft">{text}</p>
+  const paragraphs = text.split(/\r?\n/).filter((l) => l.trim() !== '')
+  return (
+    <div className="flex flex-col gap-2 text-sm leading-relaxed text-ink-soft" data-testid="registry-notice">
+      {paragraphs.map((l, i) => (
+        <p key={i}>{l}</p>
+      ))}
+    </div>
+  )
 }
 
 /**

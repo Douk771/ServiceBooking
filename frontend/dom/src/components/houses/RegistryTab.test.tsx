@@ -121,3 +121,18 @@ describe('RegistryTab — ЮР-2: publication under the owner’s attestation', 
     expect(screen.queryByRole('button', { name: 'Опубликовать' })).not.toBeInTheDocument()
   })
 })
+
+describe('RegistryTab — the attestation text is plain text', () => {
+  it('prints line breaks as paragraphs and never interprets markup', async () => {
+    const house = houseManageFixture({ publishProblems: ['AttestationRequired'], registryNotice: { version: 'v1', text: 'Первый абзац.\nВторой <b>абзац</b><img src=x onerror=alert(1)>' } })
+    renderTab(house)
+    fireEvent.click(screen.getByRole('button', { name: 'Опубликовать' }))
+    const dialog = await screen.findByRole('dialog')
+    const box = within(dialog).getByTestId('registry-notice')
+    const paragraphs = box.querySelectorAll('p')
+    expect(paragraphs).toHaveLength(2)
+    expect(paragraphs[0]).toHaveTextContent('Первый абзац.')
+    expect(paragraphs[1].textContent).toBe('Второй <b>абзац</b><img src=x onerror=alert(1)>')
+    expect(box.querySelector('b, img')).toBeNull()
+  })
+})

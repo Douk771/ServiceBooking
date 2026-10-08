@@ -14,9 +14,8 @@ interface DomRoutes {
 const routes = routesJson as DomRoutes
 
 const firstSegment = (path: string) => path.split('/').filter(Boolean)[0]
-// Routes of DomApp that are not in `spaRoutes` on purpose: the two address patterns, the not-found catch-all, and the index of a company's
-// cabinet (`/cabinet/:companyId` redirects to the board or the schedule — the first segment `cabinet` is reserved like every cabinet route).
-const EXTRA = new Set([routes.companyPagePattern, routes.housePagePattern, '*', '/cabinet/:companyId'])
+// Routes of DomApp that are not in `spaRoutes` on purpose: the two address patterns and the not-found catch-all.
+const EXTRA = new Set([routes.companyPagePattern, routes.housePagePattern, '*'])
 
 describe('DomApp routes vs contracts/cycle37/dom-routes.json', () => {
   it('has a <Route> for every spaRoute', () => {
@@ -31,7 +30,7 @@ describe('DomApp routes vs contracts/cycle37/dom-routes.json', () => {
 
   it('reserves the first segment of every route, so a company address can never shadow it', () => {
     const reserved = new Set(routes.reservedSlugs)
-    for (const path of [...routes.spaRoutes, '/cabinet/:companyId']) {
+    for (const path of routes.spaRoutes) {
       const seg = firstSegment(path)
       if (seg) expect(reserved.has(seg), `first segment "${seg}" of ${path} must be in reservedSlugs`).toBe(true)
     }

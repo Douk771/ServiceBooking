@@ -22,9 +22,6 @@ public class StayNotificationPlanner(
     public virtual async Task OnEventAsync(StayBooking booking, StayBookingEvent ev, CancellationToken ct = default)
     {
         var entries = StayNotificationPlan.ForEvent(ev.Kind, booking.IsManual).ToList();
-        // A manual booking tells the guest only when the staff asked for it (a phone and "notify" were given).
-        if (ev.Kind == StayBookingEventKind.Created && booking.IsManual && booking.NotifyByMessenger)
-            entries.Add(new PlannedNotification(NotificationType.StayGuestCreated, StayAudience.Guest));
         // Only the FIRST proof notifies the staff.
         if (ev.Kind == StayBookingEventKind.PaymentProofUploaded && ev.DetailsJson is { } d && !d.Contains("\"proofNumber\":1")) return;
         if (entries.Count == 0) return;

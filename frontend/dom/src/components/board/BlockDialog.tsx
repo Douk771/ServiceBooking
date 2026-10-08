@@ -179,7 +179,6 @@ export function BlockDialog({
             onChange={(e) => setComment(e.target.value)}
             className="rounded-xl border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep"
           />
-          {editing && <p className="text-xs text-muted">Прежний комментарий здесь не показывается; новый текст заменит его.</p>}
           {errors.comment && <p className="text-xs text-danger">{errors.comment}</p>}
           <StayNotice textKey="StayMigrationOwnerNotice" id="block-notice" />
         </div>

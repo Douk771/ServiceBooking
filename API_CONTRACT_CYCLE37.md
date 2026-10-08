@@ -495,7 +495,7 @@ revision, serverTimeUtc, today}` без массивов. Иначе `StaysBoard
   366 ночей», «Нельзя блокировать прошедшие даты» (начало < сегодня; при правке — только для новых ночей).
 - 409 `StaysConflictDto`: `BlockConflictsWithBooking` «Даты заняты бронью {имя гостя}, {дд.мм}–{дд.мм}» + `conflicts[]`
   (`{bookingId, checkInDate, checkOutDate, guestName, status}`); `BlockOverlapsBlock` «Даты пересекаются с другой
-  блокировкой» (соприкосновение допустимо).
+  блокировкой» (соприкосновение допустимо); `HouseArchived` «Дом в архиве — блокировать даты нельзя» (только POST).
 - `HouseBlockDto`: `id`, `houseId`, `startDate`, `endDate`, `kind`, `kindText`, `comment`, `createdByName`, `createdAtUtc`,
   `updatedAtUtc`.
 
@@ -547,7 +547,7 @@ P1 показа), `messages[]` (P1: отправленные гостю увед
 - `POST …/bookings` `ManualStayBookingInput` `{houseId, checkIn, checkOut, adults, children, dogs, needCot, guestName,
   guestPhone?, notifyGuest, totalOverrideRub?, comment?}` → 201 `StaffStayBookingCardDto` (`Confirmed`, `isManual`,
   `prepayRub` = 0). Занятость — те же проверки и ограничение БД (409 `StayRefusalDto`). `notifyGuest` без телефона → 400
-  «Чтобы уведомить гостя, укажите телефон». `totalOverrideRub` 0…10 000 000 — заменяет расчётные строки одной строкой
+  «Чтобы уведомить гостя, укажите телефон». Мессенджер-уведомления гостю ручной брони не отправляются никогда (нет снимка согласия гостя, Т37-12), `notifyByMessenger` = false; флаг `notifyGuest` принимается ради совместимости и на отправку не влияет. `totalOverrideRub` 0…10 000 000 — заменяет расчётные строки одной строкой
   `ManualTotal` «Итог изменён вручную».
 
 ---

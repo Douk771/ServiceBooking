@@ -51,7 +51,10 @@ public class StaysBoardController(
         var error = HouseBlockWriter.Validate(input.StartDate, input.EndDate, comment, today, previousStart: null);
         if (error is not null) return BadRequest(error);
         if (!Enum.IsDefined(input.Kind)) return BadRequest("Неизвестный тип блокировки");
-        if (input.HouseId is not { } houseId || !await db.Houses.AsNoTracking().AnyAsync(h => h.Id == houseId && h.CompanyId == companyId, ct)) return NotFound();
+        if (input.HouseId is not { } houseId) return NotFound();
+        var house = await db.Houses.AsNoTracking().Where(h => h.Id == houseId && h.CompanyId == companyId).Select(h => new { h.ArchivedAtUtc }).FirstOrDefaultAsync(ct);
+        if (house is null) return NotFound();
+        if (house.ArchivedAtUtc is not null) return Conflict(new StaysConflictDto("HouseArchived", "Дом в архиве — блокировать даты нельзя"));
 
         var actor = await actors.ResolveStaffAsync(User, ct);
         var result = await blocks.CreateAsync(company, houseId, input.StartDate!.Value, input.EndDate!.Value, input.Kind, comment, actor, ct);
