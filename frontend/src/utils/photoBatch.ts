@@ -45,8 +45,9 @@ export function photoRejectText(reason: PhotoRejectReason): string {
   return reason === 'size' ? 'Файл больше 5 МБ' : 'Формат не поддерживается: нужен JPEG, PNG или WEBP'
 }
 
-export function overLimitText(files: readonly File[]): string {
-  return `Не добавлено ${files.length} фото: в галерее не больше ${PHOTO_MAX_PHOTOS} фото: ${files.map((f) => f.name).join(', ')}`
+/** `max` defaults to the company gallery limit; a house (cycle 37) passes its own (15). */
+export function overLimitText(files: readonly File[], max: number = PHOTO_MAX_PHOTOS): string {
+  return `Не добавлено ${files.length} фото: в галерее не больше ${max} фото: ${files.map((f) => f.name).join(', ')}`
 }
 
 /** API_CONTRACT_CYCLE31.md §31.26 п. 6 — worth a retry: 429, no response at all (network/timeout), 5xx. */
