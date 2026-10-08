@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.Services.Orders.Notifications;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Demo;
 using ServiceBooking.API.Services.Notifications.WebPush;
@@ -17,7 +18,7 @@ namespace ServiceBooking.API.Services.Stays;
 /// </summary>
 public class StayNotificationPlanner(
     AppDbContext db, StayStaffPushQueue staffPush, StayStaffMaxQueue staffMax, StayGuestPushQueue guestPush, StayMessageScheduler messenger,
-    PublicSiteLinks links, IOptions<DemoModeOptions> demo, IOptions<WebPushOptions> webPush, StaffMaxAvailability maxAvailability)
+    PublicSiteLinks links, IOptions<DemoModeOptions> demo, IOptions<WebPushOptions> webPush, StaffMaxAvailability maxAvailability, ArrivalReminderService reminders)
 {
     public virtual async Task OnEventAsync(StayBooking booking, StayBookingEvent ev, CancellationToken ct = default)
     {
@@ -134,6 +135,20 @@ public class StayNotificationPlanner(
                 var url = links.StaysCabinetBookingUrl(booking.CompanyId, booking.Id);
                 if (staffPushOn) await staffPush.QueueAsync(booking, ParseId(marker), type, StayNotificationTexts.StaffPush(type, facts, booking.Id, url), ct);
                 if (maxOn) await staffMax.QueueAsync(booking, ParseId(marker), type, StayNotificationTexts.StaffMax(type, facts, booking.Id, url), ct);
+                continue;
+            }
+            if (type == NotificationType.StayGuestArrivalReminder)
+            {
+                // ARCHITECTURE_CYCLE39.md §39.11: the owner's template (NULL = the text of cycle 37 byte for byte); the push carries the template only when the owner switched it on.
+                var reminderFacts = await reminders.FactsAsync(booking, company, unsubscribeUrl: null, ct);
+                if (settings.GuestWebPushEnabled && platformPush)
+                {
+                    var push = ArrivalReminderTemplate.Render(settings.ArrivalReminderTemplate, reminderFacts, ReminderMode.Push, settings.ArrivalReminderPushText);
+                    await guestPush.QueueAsync(booking, marker, type, new PushPayload(StayNotificationTexts.GuestPushTitle, push.Text, $"sg-{booking.Id}", $"/b/{booking.PublicToken}"), ct);
+                }
+                if (booking.NotifyByMessenger && settings.GuestMessengerEnabled)
+                    await messenger.QueueAsync(StayNotificationSubject.Of(booking), booking.GuestPhone, booking.GuestName, booking.GuestUserId, booking.PersonalDataErased, company, marker, type,
+                        unsub => ArrivalReminderTemplate.Render(settings.ArrivalReminderTemplate, reminderFacts with { UnsubscribeUrl = unsub }, ReminderMode.Messenger).Text, ct);
                 continue;
             }
             if (settings.GuestWebPushEnabled && platformPush && type != NotificationType.StayGuestCreated)
