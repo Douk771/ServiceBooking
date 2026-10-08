@@ -62,7 +62,8 @@ public class StaysCompanyService(AppDbContext db, StaysPlanResolver plans, Publi
     public StaysSettingsDto ToDto(StaysSettings s, Company company) => new(
         StayFormat.Time(s.CheckInTime), StayFormat.Time(s.CheckOutTime), s.MinNights, s.MaxNights, s.HorizonDays, s.AllowGapFill,
         s.AllowSameDayCheckIn, s.HoldMinutes, s.PrepayPercent, s.CancellationPolicy, s.DogFeeRub, s.CotFeeRub, StayFormat.Time(s.CheckInInfoSendTime),
-        s.CheckInInfoText, s.CheckInInfoSendFullText, s.ArrivalReminderEnabled, s.HousekeeperSeesGuestComment, company.ShowInPublicListing);
+        s.CheckInInfoText, s.CheckInInfoSendFullText, s.ArrivalReminderEnabled, s.HousekeeperSeesGuestComment, company.ShowInPublicListing,
+        s.AcceptServiceOrdersWithoutStay);
 
     public async Task<StaysCompanyManageDto> BuildManageAsync(Company company, StaysMyRole role, CancellationToken ct = default)
     {
@@ -77,7 +78,8 @@ public class StaysCompanyService(AppDbContext db, StaysPlanResolver plans, Publi
         var (level, text) = StaysPlanResolver.Warning(plan, published, now);
         var anyPublished = await db.Houses.AsNoTracking().AnyAsync(h => h.CompanyId == company.Id && h.IsPublished && h.ArchivedAtUtc == null, ct);
         int? awaiting = role == StaysMyRole.Housekeeper ? null
-            : await db.StayBookings.AsNoTracking().CountAsync(b => b.CompanyId == company.Id && b.Status == StayBookingStatus.AwaitingPaymentCheck, ct);
+            : await db.StayBookings.AsNoTracking().CountAsync(b => b.CompanyId == company.Id && b.Status == StayBookingStatus.AwaitingPaymentCheck, ct)
+              + await db.StayServiceOrders.AsNoTracking().CountAsync(o => o.CompanyId == company.Id && o.Status == StayBookingStatus.AwaitingPaymentCheck, ct);
 
         var checklist = new List<ChecklistItemDto>
         {

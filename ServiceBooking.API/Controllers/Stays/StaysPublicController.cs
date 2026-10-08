@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using ServiceBooking.API.DTOs.Stays;
+using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services.Stays;
 
 namespace ServiceBooking.API.Controllers.Stays;
@@ -13,7 +14,9 @@ namespace ServiceBooking.API.Controllers.Stays;
 [ApiController]
 [Route("api/stays/public")]
 public class StaysPublicController(
-    StaysCatalogService catalog, StaysHousePageService pages, StayBookingCreationService creation, StayDtoMapper mapper) : ControllerBase
+    StaysCatalogService catalog, StaysHousePageService pages, StayBookingCreationService creation, StayDtoMapper mapper,
+    ServiceBooking.Infrastructure.Data.AppDbContext db, ServiceCatalogService serviceCatalog, StaysCompanyService companyService,
+    Microsoft.Extensions.Options.IOptions<StaysOptions> options) : ControllerBase
 {
     [HttpGet("amenities")]
     [EnableRateLimiting("stays-public")]
@@ -35,7 +38,11 @@ public class StaysPublicController(
         string slug, [FromQuery] string? checkIn, [FromQuery] string? checkOut, [FromQuery] int guests = 1, CancellationToken ct = default)
     {
         var company = await catalog.CompanyPageAsync(slug, checkIn, checkOut, guests, ct);
-        return company is null ? NotFound() : Ok(company);
+        if (company is null) return NotFound();
+        var entity = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstAsync(db.Companies.AsNoTracking(), c => c.Id == company.Id, ct);
+        var settings = await companyService.LoadSettingsAsync(entity.Id, ct: ct);
+        var gate = await companyService.EvaluateGateAsync(entity, settings, ct);
+        return Ok(company with { Services = await serviceCatalog.SummariesAsync(entity, settings, gate, ct), AcceptsServiceOrdersWithoutStay = settings.AcceptServiceOrdersWithoutStay });
     }
 
     [HttpGet("companies/{slug}/houses/{houseSlug}")]
@@ -43,7 +50,9 @@ public class StaysPublicController(
     public async Task<ActionResult<PublicHouseDto>> House(string slug, string houseSlug, CancellationToken ct)
     {
         var house = await pages.HouseAsync(slug, houseSlug, ct);
-        return house is null ? NotFound() : Ok(house);
+        if (house is null) return NotFound();
+        var entity = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstAsync(db.Companies.AsNoTracking(), c => c.Slug == slug, ct);
+        return Ok(house with { ServicesForStay = await serviceCatalog.ServicesForStayAsync(entity, ct) });
     }
 
     [HttpGet("houses/{houseId:guid}/calendar")]
@@ -63,9 +72,19 @@ public class StaysPublicController(
         if (input.Adults is < 1 or > 30) return BadRequest("Взрослых — от 1 до 30");
         if (input.Children is < 0 or > 30) return BadRequest("Детей — от 0 до 30");
         if (input.Dogs is < 0 or > 20) return BadRequest("Собак — от 0 до 20");
+        if (input.Services is { Count: > 0 })
+        {
+            if (input.Services.Count > options.Value.Services.MaxSessionsInBookingForm) return BadRequest(ServiceTexts.TooManySessions(options.Value.Services.MaxSessionsInBookingForm));
+            foreach (var chosen in input.Services)
+            {
+                if (chosen.ServiceId is null) return BadRequest("Выберите услугу");
+                var formError = ServiceOrderCreationService.ValidateSelection(chosen.BusinessDate, chosen.StartMinute, chosen.Hours, chosen.Items, out _);
+                if (formError is not null) return BadRequest(formError);
+            }
+        }
         var ctx = await creation.FindPublicHouseAsync(houseId, ct);
         if (ctx is null) return NotFound();
-        return Ok(await creation.QuoteAsync(ctx, new StayStayInput(input.CheckIn.Value, input.CheckOut.Value, input.Adults, input.Children, input.Dogs, input.NeedCot), checkGate: true, ct));
+        return Ok(await creation.QuoteAsync(ctx, new StayStayInput(input.CheckIn.Value, input.CheckOut.Value, input.Adults, input.Children, input.Dogs, input.NeedCot), checkGate: true, ct, input.Services));
     }
 
     [HttpPost("houses/{houseId:guid}/bookings")]

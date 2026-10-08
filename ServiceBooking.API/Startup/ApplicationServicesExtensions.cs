@@ -125,6 +125,7 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceDtoMapper>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceSessionAddService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceCatalogService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ArrivalReminderService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceScheduleWriter>();
 
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopManageMapper>();
