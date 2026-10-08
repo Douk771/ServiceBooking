@@ -11,3 +11,5 @@ export const BTN_SECONDARY =
 export const CHECK_ITEM = 'flex items-start gap-3 text-[15px] leading-[1.6] text-ink'
 export const FOCUS_RING =
   'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-dark'
+/** Контейнер секций в ветке шапки с панелью (ARCHITECTURE_CYCLE41.md §41.3.2). */
+export const CONTAINER = 'max-w-[1180px] mx-auto px-4 sm:px-8'

@@ -1,4 +1,4 @@
-import type { HouseCalendarDto, HouseManageDto, PublicHouseDto, PublicStayBookingDto, StaffStayBookingCardDto, StayQuoteDto, StaysCompanyManageDto } from '../types'
+import type { HouseCalendarDto, StayCatalogItemDto, StayCatalogPage, HouseManageDto, PublicHouseDto, PublicStayBookingDto, StaffStayBookingCardDto, StayQuoteDto, StaysCompanyManageDto } from '../types'
 import { addDays, nightDates } from '../utils/stayDates'
 
 /** Test data shaped like the cycle-37 contract (never imported by app code). */
@@ -273,4 +273,30 @@ export function staffCardFixture(over: Partial<StaffStayBookingCardDto> = {}): S
     messages: [],
     ...over,
   }
+}
+
+export function catalogItemFixture(over: Partial<StayCatalogItemDto> = {}): StayCatalogItemDto {
+  return {
+    houseId: 'house-1',
+    houseName: 'Дом у склона',
+    companyName: 'Лесной',
+    url: '/lesnoy/dom-1',
+    capacity: 4,
+    extraBedsMax: 0,
+    dogsForbidden: false,
+    address: 'Шерегеш, ул. Лесная, 1',
+    registryNumber: null,
+    coverUrl: null,
+    coverThumbUrl: null,
+    priceFromRub: 5000,
+    totalRub: null,
+    nights: null,
+    averageNightRub: null,
+    availableForDates: null,
+    ...over,
+  }
+}
+
+export function catalogPageFixture(items: StayCatalogItemDto[] = [catalogItemFixture()], over: Partial<StayCatalogPage> = {}): StayCatalogPage {
+  return { items, totalCount: items.length, page: 1, pageSize: 12, ...over }
 }

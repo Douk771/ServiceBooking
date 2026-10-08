@@ -1,4 +1,4 @@
-import type { FaqItems, LandingConfig, ThreeSteps } from './types'
+import type { FaqItems, LandingConfig, LandingPanelConfig, ThreeSteps } from './types'
 
 /** Конфиг для тестов шаблона (не конфиг сервиса). */
 export const steps = (p: string): ThreeSteps => [
@@ -49,6 +49,29 @@ export function makeConfig(over: Partial<LandingConfig> = {}): LandingConfig {
       stepsPanel: { title: 'Шаги бизнеса', titleId: 'b-steps', steps: steps('b') },
     },
     faq: { items: faqItems },
+    ...over,
+  }
+}
+
+/** Конфиг с шапкой-панелью для тестов шаблона (ARCHITECTURE_CYCLE41.md §41.3). */
+export function makePanelConfig(over: Partial<LandingPanelConfig> = {}): LandingPanelConfig {
+  const rest: Omit<LandingConfig, 'hero'> & { hero?: unknown } = { ...makeConfig() }
+  delete rest.hero
+  return {
+    ...rest,
+    hero: {
+      layout: 'panel',
+      eyebrow: 'Эйбро',
+      title: { lead: 'Заголовок,', accent: 'акцент' },
+      intro: 'Интро',
+      howTo: { kind: 'anchor', href: '#c-title', label: 'Как' },
+      facts: [
+        { icon: 'map-pin', text: 'Факт 1' },
+        { icon: 'calendar', text: 'Факт 2' },
+        { icon: 'credit-card', text: 'Факт 3' },
+      ],
+      backdrop: 'mountains',
+    },
     ...over,
   }
 }

@@ -35,8 +35,8 @@ export function HouseCard({ item, filters }: { item: StayCatalogItemDto; filters
         )}
       </div>
       <div className="flex flex-1 flex-col gap-1.5 p-5">
-        <p className="text-xs font-medium uppercase tracking-wide text-gold-dark">{item.companyName}</p>
-        <h3 className="font-serif text-xl leading-snug text-ink">{item.houseName}</h3>
+        <p className="text-xs font-medium uppercase tracking-wide text-gold-dark break-words [overflow-wrap:anywhere]">{item.companyName}</p>
+        <h3 className="font-serif text-xl leading-snug text-ink break-words [overflow-wrap:anywhere]">{item.houseName}</h3>
         <p className="flex items-center gap-1.5 text-sm text-ink-soft">
           <Icon name="users" size={14} strokeWidth={1.6} />
           до {guests} {guests === 1 ? 'гостя' : 'гостей'}
@@ -45,7 +45,7 @@ export function HouseCard({ item, filters }: { item: StayCatalogItemDto; filters
         {item.address && (
           <p className="flex items-start gap-1.5 text-sm text-ink-soft">
             <Icon name="map-pin" size={14} strokeWidth={1.6} className="mt-0.5 shrink-0" />
-            <span className="line-clamp-2">{item.address}</span>
+            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{item.address}</span>
           </p>
         )}
         {item.registryNumber && <p className="text-xs text-muted">Номер в реестре: {item.registryNumber}</p>}
