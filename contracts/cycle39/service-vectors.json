@@ -225,7 +225,13 @@
       { "id": "RT12", "_note": "без сеансов строка с {Услуги} выпадает", "template": "Ждём вас в «{Дом}»!\nУслуги: {Услуги}", "pushTextEnabled": true, "factsOverride": { "sessions": [] },
         "expected": { "push": "Ждём вас в «Кедр»!", "pushDropped": [ { "line": 2, "reason": "EmptyValue" } ] } },
       { "id": "RT13", "_note": "время из подстановки не роняет строку (фильтр — по тексту владельца)", "template": "Заезд {ДатаЗаезда} с {ВремяЗаезда}, выезд {ДатаВыезда} до {ВремяВыезда}", "pushTextEnabled": true,
-        "expected": { "push": "Заезд 15 янв с 14:00, выезд 18 янв до 12:00" } }
+        "expected": { "push": "Заезд 15 янв с 14:00, выезд 18 янв до 12:00" } },
+      { "id": "RT14", "_note": "«задать» — не «задаток»", "template": "Не стесняйтесь задать вопросы, {Компания} на связи", "pushTextEnabled": true,
+        "expected": { "push": "Не стесняйтесь задать вопросы, Кедр Парк на связи", "validation": { "errors": [], "confirmationRequired": false, "warnings": [] } } },
+      { "id": "RT15", "_note": "мессенджерные ссылки и сокращатели", "template": "Пишите в t.me/kedr\nВот wa.me/79001112233\nСмотрите bit.ly/abc\nСсылка vk.cc/xyz", "pushTextEnabled": true,
+        "expected": { "push": "Завтра заезд — откройте бронь", "pushDropped": [ { "line": 1, "reason": "Link" }, { "line": 2, "reason": "Digits" }, { "line": 3, "reason": "Link" }, { "line": 4, "reason": "Link" } ] } },
+      { "id": "RT16", "_note": "wi-fi с неразрывным дефисом и через пробел", "template": "Wi\u2011Fi в доме\nвай фай бесплатный\nДо встречи!", "pushTextEnabled": true,
+        "expected": { "push": "До встречи!", "pushDropped": [ { "line": 1, "reason": "CodeWord" }, { "line": 2, "reason": "CodeWord" } ] } }
     ],
     "pushLength": { "_rule": "Push длиннее 180 символов обрезается до 179 символов + «…» (суррогатные пары не режутся).", "maxLength": 180 }
   }

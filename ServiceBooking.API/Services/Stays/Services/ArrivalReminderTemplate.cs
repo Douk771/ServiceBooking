@@ -73,12 +73,12 @@ public static class ArrivalReminderTemplate
     private static readonly Regex PlaceholderRx = new(@"\{[^{}\n]*\}", RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly Regex DigitsRx = new(@"\d(?:[\s\-]?\d){3,}", RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly Regex LinkRx = new(
-        @"https?://|www\.|(?<![@\p{L}\d.\-])[\p{L}\d\-]+(?:\.[\p{L}\d\-]+)*\.(?:ru|рф|com|net|org|su|io)\b",
+        @"https?://|www\.|(?<![@\p{L}\d.\-])[\p{L}\d\-]+(?:\.[\p{L}\d\-]+)*\.(?:ru|рф|com|net|org|su|io|me|ly|cc|gl|co|by|kz|ua|app|site|online|info|tv|to|link|xyz|ru\.com)\b|(?<![@\p{L}\d.\-])[\p{L}\d\-]+\.[\p{L}]{2,}/\S",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex EmailRx = new(@"[\p{L}\d._%+\-]+@[\p{L}\d.\-]+", RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly Regex PhoneRx = new(@"(?:\+7|(?<![\d])8)[\s\-(]*\d", RegexOptions.CultureInvariant | RegexOptions.Compiled);
-    private static readonly Regex CodeWordRx = new(@"\bкод|парол|wi-?fi|вай-?фай|ключниц|сейф|домофон", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex ForbiddenWordsRx = new(@"задат|невозвратн|депозит", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex CodeWordRx = new(@"\bкод|парол|wi[\s\-\u2010-\u2015\u2212]?fi|вай[\s\-\u2010-\u2015\u2212]?фай|ключниц|сейф|домофон", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex ForbiddenWordsRx = new(@"задат(?:ок|к)|невозвратн|депозит", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex CancellationWordsRx = new(@"штраф|неустойк|не\s+возвращ", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex PassportWordRx = new(@"паспорт", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex CardRx = new(@"(?<!\d)(?:\d[ \-]?){12,18}\d(?!\d)", RegexOptions.CultureInvariant | RegexOptions.Compiled);
