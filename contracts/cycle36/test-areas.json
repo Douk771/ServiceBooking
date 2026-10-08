@@ -92,6 +92,7 @@
         "src/utils/webPushEncoding",
         "src/utils/notificationError",
         "src/utils/channelBanner",
+        "src/utils/channelRules",
         "src/api/push",
         "src/pages/admin/NotificationsAdminTab",
         "goods/src/utils/goodsPush",

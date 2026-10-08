@@ -37,6 +37,7 @@
     "types:api:cycle33": "openapi-typescript ../contracts/cycle33/openapi.yaml -o src/types/api-cycle33.generated.ts",
     "types:api:cycle32": "openapi-typescript ../contracts/cycle32/openapi.yaml -o src/types/api-cycle32.generated.ts",
     "types:api:cycle37": "openapi-typescript ../contracts/cycle37/openapi.yaml -o src/types/api-cycle37.generated.ts",
+    "types:api:cycle40": "openapi-typescript ../contracts/cycle40/openapi.yaml -o src/types/api-cycle40.generated.ts",
     "contracts:json": "node scripts/contracts-to-json.mjs"
   },
   "dependencies": {
