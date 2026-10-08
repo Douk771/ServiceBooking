@@ -34,14 +34,17 @@ describe('MyBookingsPage (P1)', () => {
     expect(screen.queryByRole('link', { name: /Дом 2/ })).not.toBeInTheDocument()
   })
 
-  it('empty, and failed with a retry', async () => {
-    my.mockResolvedValueOnce([])
-    const { unmount } = renderPage()
+  it('says so when there are none', async () => {
+    my.mockResolvedValue([])
+    renderPage()
     expect(await screen.findByText('Броней пока нет')).toBeInTheDocument()
-    unmount()
-    my.mockReset().mockImplementation(() => Promise.reject(httpError(500, '')))
+  })
+
+  it('a failed load is an alert with a retry', async () => {
+    my.mockRejectedValueOnce(httpError(500, ''))
     renderPage()
     expect(await screen.findByRole('alert')).toHaveTextContent('Сервер временно недоступен')
+    expect(screen.getByRole('button', { name: 'Повторить' })).toBeInTheDocument()
   })
 
   it('follows only same-origin /b/ addresses', () => {
