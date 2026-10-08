@@ -58,6 +58,9 @@ public sealed class NotificationOptions
 
     public DispatchOptions Dispatch { get; set; } = new();
 
+    /// <summary>ARCHITECTURE_CYCLE40.md §40.8 — the automatic check message after a number is bound.</summary>
+    public TestMessageOptions TestMessage { get; set; } = new();
+
     /// <summary>Random spread (±minutes) applied to a reminder's due time so many reminders due at the
     /// same lead time do not all become due in the same instant (§34.1). Deterministic per row, from the
     /// row's id — see <c>NotificationTiming</c>.</summary>
@@ -97,6 +100,17 @@ public sealed class NotificationOptions
         /// provider pick silently.</summary>
         public string ServerCountry { get; set; } = "";
 
+        /// <summary>ARCHITECTURE_CYCLE40.md §40.7.4 — expected server country per transport
+        /// (<c>ServerCountryByTransport:WhatsApp|Max</c>); a transport without an entry falls back to <see cref="ServerCountry"/>.</summary>
+        public Dictionary<string, string> ServerCountryByTransport { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The server country expected for <paramref name="transport"/>: its own entry, else <see cref="ServerCountry"/>
+        /// (empty = nothing configured).</summary>
+        public string ExpectedServerCountry(Core.Enums.NotificationTransport transport) =>
+            ServerCountryByTransport.TryGetValue(transport.ToString(), out var own) && !string.IsNullOrWhiteSpace(own)
+                ? own.Trim()
+                : ServerCountry ?? "";
+
         /// <summary>ARCHITECTURE_CYCLE5.md §52.1 — ПЛ1 (does the partner API even expose a country
         /// parameter) was not confirmed at the time this flag was wired in; real instance creation stays
         /// OFF by default until it is. <c>false</c> makes <c>POST /api/notification-channels/{id}/connect</c>
@@ -126,6 +140,13 @@ public sealed class NotificationOptions
         /// product/account (§104.1/§104.9). Same "must be empty outside Production" rule as
         /// <see cref="PartnerToken"/>, enforced by <c>DeploymentSafetyChecks.ValidateNotificationSecrets</c>.</summary>
         public string? PartnerToken { get; set; }
+    }
+
+    public sealed class TestMessageOptions
+    {
+        /// <summary>Send the check message even when the bound number is the owner's own phone. Off by default (a message from
+        /// a number to itself proves nothing and is not delivered); switched on after the real MAX number is checked (M40-02).</summary>
+        public bool AllowSameNumber { get; set; }
     }
 
     public sealed class DispatchOptions

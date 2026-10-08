@@ -79,9 +79,9 @@ public static class ChannelPresentation
         riskAccepted && paymentState == ChannelPaymentStatus.Paid &&
         (state == ChannelState.NotConnected || state == ChannelState.NeedsReconnect || state == ChannelState.DisabledByOwner);
 
-    /// <summary>"Replace number" only makes sense for a banned channel (API_CONTRACT_CYCLE4.md §27's
-    /// 409 rule) — every other state either doesn't need a replacement or isn't terminal yet.</summary>
-    public static bool CanReplace(ChannelState state) => state == ChannelState.Blocked;
+    /// <summary>Cycle 40 (API_CONTRACT_CYCLE40.md §40.22.1, §40.28.3): a number can be replaced from any state except a number that was never bound
+    /// (<see cref="ChannelState.NotConnected"/>) and one that is already replaced. (Before cycle 40 only a banned number could.)</summary>
+    public static bool CanReplace(ChannelState state) => state is not (ChannelState.NotConnected or ChannelState.Replaced);
 
     /// <summary>ARCHITECTURE_CYCLE9.md §114.1 example — the display name printed next to the messenger
     /// picker on the channel-request screen. Russian text collected here, in ONE place, same convention

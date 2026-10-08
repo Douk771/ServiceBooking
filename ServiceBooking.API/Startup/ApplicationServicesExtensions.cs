@@ -61,6 +61,10 @@ internal static class ApplicationServicesExtensions
     // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.3): the one reader of "paid / open / working" per account; ChannelFundingReader is its façade.
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.AccountMessagingReader>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.ChannelFundingReader>();
+    // Cycle 40 (§40.8): the automatic check message after a number is bound, and the owner's "Numbers" screen.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.ChannelTestMessageService>();
+    builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.ChannelTestMessageTask>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.NumbersOverviewBuilder>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingEventLog>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingActorResolver>();
     // Cycle 22 P5 (ARCHITECTURE_CYCLE22.md §378): the body of POST /api/bookings, moved out of

@@ -1,3 +1,4 @@
+using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.Core.Enums;
 
@@ -36,7 +37,19 @@ public record ChannelDto(
     // T5-B4 (API_CONTRACT_CYCLE5.md §50.2) — owner-only in practice: this DTO is never returned to
     // anyone but the channel's own owner (LoadOwnedChannelAsync) or SuperAdmin's admin view.
     string? Inn = null,
-    LegalEntityForm? LegalEntityForm = null);
+    LegalEntityForm? LegalEntityForm = null,
+    // Cycle 40 (API_CONTRACT_CYCLE40.md §40.22.1) — appended, nothing above changes. displayStatus/displayText/action: the three-state
+    // presentation (null status only for a Replaced number); lastTest: the automatic check message; isTrial: paid by the trial;
+    // paymentPending: "Оплата на проверке".
+    ChannelDisplayStatus? DisplayStatus = null,
+    string? DisplayText = null,
+    ChannelAction? Action = null,
+    ChannelTestDto? LastTest = null,
+    bool IsTrial = false,
+    bool PaymentPending = false);
+
+/// <summary>API_CONTRACT_CYCLE40.md §40.22.2 — the last (automatic or manual) check message of a number.</summary>
+public record ChannelTestDto(ChannelTestResult Result, DateTime AtUtc, string Text);
 
 public record ChannelCompanyDto(Guid CompanyId, string CompanyName, bool IsActive);
 
@@ -52,7 +65,13 @@ public record OfferAcceptedDto(string? Version);
 /// beats a generic ProblemDetails blob. ARCHITECTURE_CYCLE9.md §104.2/§114.2 (US-119): <see cref="Transport"/>
 /// is additive and optional — absent (null) means <see cref="NotificationTransport.WhatsApp"/>, so a
 /// pre-cycle-9 caller that never sends it keeps requesting exactly what it always requested.</summary>
-public record CreateChannelRequestDto(LegalEntityForm? LegalEntityForm, string? Inn, OfferAcceptedDto? OfferAccepted, NotificationTransport? Transport = null);
+public record CreateChannelRequestDto(
+    LegalEntityForm? LegalEntityForm, string? Inn, OfferAcceptedDto? OfferAccepted, NotificationTransport? Transport = null,
+    // Cycle 40 (API_CONTRACT_CYCLE40.md §40.24): the risk notice version the wizard shows (optional; present → must be the current one)
+    // and the step flag — true (default, old tabs) is the payment request, false is the "Terms" step of an already paid transport.
+    RiskAcceptedDto? RiskAccepted = null, bool PaymentRequest = true);
+
+public record RiskAcceptedDto(string? Version);
 
 /// <summary>API_CONTRACT_CYCLE9.md §114.1 — GET /api/notification-channels/offer, reshaped from the
 /// cycle-4/5 form (Available/Currency/IdleDays dropped: Available was always exactly
@@ -67,7 +86,10 @@ public record ChannelOfferDto(decimal? PricePerMonth, bool AllowedByPlan, string
 /// <see cref="ConnectionNotice"/> is server-composed Russian text (§6 convention) the owner must see
 /// BEFORE requesting that transport — never sent as a version/flag the frontend fills in its own
 /// wording for.</summary>
-public record TransportOfferDto(NotificationTransport Transport, string DisplayName, bool Available, string? ConnectionNotice);
+public record TransportOfferDto(
+    NotificationTransport Transport, string DisplayName, bool Available, string? ConnectionNotice,
+    // Cycle 40 (API_CONTRACT_CYCLE40.md §40.28.2) — appended.
+    decimal? PricePerMonth = null, string? PriceText = null);
 
 /// <summary>API_CONTRACT_CYCLE4.md §23 — POST .../accept-risk.</summary>
 public record AcceptRiskDto(string Version);
@@ -86,3 +108,48 @@ public record AssignCompanyDto(Guid CompanyId, bool WarningAcknowledged);
 
 /// <summary>API_CONTRACT_CYCLE4.md §27 — POST .../replace (B8, US-63).</summary>
 public record ReplaceChannelResponseDto(Guid NewChannelId, DateTime? PaidUntil, int CompaniesMoved);
+
+// ---- Cycle 40: GET /api/notification-channels/overview (API_CONTRACT_CYCLE40.md §40.23) ----
+
+public record OverviewCompanyDto(Guid Id, string Name, string Kind, bool IsActive);
+
+public record OfferRefDto(string Version, string Url);
+
+public record RiskRefDto(string Version, string Html, string Url);
+
+public record PrefillDto(LegalEntityForm? LegalEntityForm, string? Inn);
+
+public record TransportNumbersDto(
+    NotificationTransport Transport,
+    string DisplayName,
+    bool Open,
+    decimal? PricePerMonth,
+    string? PriceText,
+    bool Sellable,
+    string? UnavailableText,
+    bool Paid,
+    DateTime? PaidUntil,
+    bool IsTrial,
+    bool PaymentPending,
+    bool CanRequestPayment,
+    bool TermsAccepted,
+    ChannelWizardStep WizardStep,
+    ChannelDisplayStatus? DisplayStatus,
+    string? DisplayText,
+    ChannelAction? Action,
+    ChannelDto? Channel,
+    IReadOnlyList<ChannelDto> ExtraChannels,
+    string? ConnectionNotice,
+    IReadOnlyList<string> QrInstruction,
+    PrefillDto? Prefill);
+
+public record NumbersOverviewDto(
+    bool MessagingEnabled,
+    string? MessagingDisabledText,
+    string Note,
+    IReadOnlyList<OverviewCompanyDto> Companies,
+    string CompaniesText,
+    OfferRefDto Offer,
+    RiskRefDto Risk,
+    string StatusNotice,
+    IReadOnlyList<TransportNumbersDto> Transports);

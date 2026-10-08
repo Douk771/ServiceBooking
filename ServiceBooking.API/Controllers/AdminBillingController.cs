@@ -39,6 +39,12 @@ public class AdminBillingController(
     private static DateTime? KeepStoredDateIfSameDay(DateTime? stored, DateOnly? submitted) =>
         stored is { } value && submitted is { } day && DateOnly.FromDateTime(value) == day ? stored : ToUtc(submitted);
 
+    /// <summary>An untouched trial line of a channel option: the row was granted by the trial, still has no paid-until date of its
+    /// own, is not ending, and the submitted quantity is the stored one. The admin screen sends such a row back as it was read, so
+    /// it must neither be refused for the missing date nor be turned into a bought row without a date.</summary>
+    public static bool IsUnchangedTrialLine(AccountSubscriptionOption? row, AssignOptionInput line) =>
+        row is { GrantedByTrial: true, PaidUntilUtc: null, EndsAtUtc: null } && line.PaidUntil is null && row.Quantity == line.Quantity;
+
     /// <summary>
     /// ARCHITECTURE_CYCLE40.md §40.13 (API_CONTRACT_CYCLE40.md §40.31.6) — the lines of the two channel options (<c>notifications.whatsapp</c>,
     /// <c>notifications.max</c>) in an assignment: the paid-until date is mandatory (400); the tariff's option rule is not consulted; and
@@ -51,14 +57,16 @@ public class AdminBillingController(
         var channelLines = optionLines.Where(l => ChannelOptionLog.IsChannelOption(options.First(o => o.Id == l.OptionId).Code)).ToList();
         if (channelLines.Count == 0) return null;
 
-        if (channelLines.Any(l => l.PaidUntil is null))
-            return BadRequest("Для опций WhatsApp и MAX укажите дату окончания оплаты");
-
         var lineOptionIds = channelLines.Select(l => l.OptionId).ToList();
         var existing = await db.AccountSubscriptionOptions.AsNoTracking()
             .Where(o => o.BillingAccountId == accountId && lineOptionIds.Contains(o.OptionId)).ToListAsync();
+
+        if (channelLines.Any(l => l.PaidUntil is null && !IsUnchangedTrialLine(existing.FirstOrDefault(o => o.OptionId == l.OptionId), l)))
+            return BadRequest("Для опций WhatsApp и MAX укажите дату окончания оплаты");
+
         foreach (var line in channelLines)
         {
+            if (IsUnchangedTrialLine(existing.FirstOrDefault(o => o.OptionId == line.OptionId), line)) continue;
             var transport = AccountMessagingReader.TransportOf(options.First(o => o.Id == line.OptionId).Code)!.Value;
             var row = existing.FirstOrDefault(o => o.OptionId == line.OptionId);
             var verdict = ChannelOptionAssignmentRules.Evaluate(
@@ -417,6 +425,7 @@ public class AdminBillingController(
         {
             var row = existingOptions.FirstOrDefault(o => o.OptionId == line.OptionId);
             var optionCode = options.First(o => o.Id == line.OptionId).Code;
+            if (ChannelOptionLog.IsChannelOption(optionCode) && IsUnchangedTrialLine(row, line)) continue;
             if (row is null)
             {
                 db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
@@ -650,6 +659,7 @@ public class AdminBillingController(
         {
             var row = existingOptions.FirstOrDefault(o => o.OptionId == line.OptionId);
             var optionCode = options.First(o => o.Id == line.OptionId).Code;
+            if (ChannelOptionLog.IsChannelOption(optionCode) && IsUnchangedTrialLine(row, line)) continue;
             if (row is null)
             {
                 db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
