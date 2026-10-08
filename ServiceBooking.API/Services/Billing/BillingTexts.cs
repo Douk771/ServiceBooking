@@ -26,6 +26,12 @@ public static class BillingTexts
     public static string ShopLimitReached(string planName, int limit) =>
         $"По тарифу «{planName}» можно открыть не больше {limit} {ShopsWord(limit)}. Чтобы открыть ещё, смените тариф в разделе «Подписка»";
 
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.10.4 — 402 on publishing a house over the limit of the «Дома» tariff.</summary>
+    public static string HouseLimitReached(string planName, int limit) =>
+        $"Тариф «{planName}» позволяет опубликовать {limit} {Stays.StaysTexts.Plural(limit, "дом", "дома", "домов")}. Снимите дом с публикации или смените тариф.";
+
+    public const string HouseNoPlan = "Выберите тариф, чтобы публиковать дома";
+
     /// <summary>402 of <c>CompanyMembersController.Add</c> for a shop.</summary>
     public static string ShopSeatLimitReached(string planName, int limit) =>
         $"По тарифу «{planName}» в магазинах может быть не больше {limit} участников, включая владельца";
