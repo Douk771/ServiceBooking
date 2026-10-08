@@ -1,0 +1,69 @@
+{
+  "_comment": "ЕДИНСТВЕННЫЙ источник карты маршрутов dom.ezbook.ru и политики адресов компании «Дома» и дома (ARCHITECTURE_CYCLE37.md §37.4, §37.14.5; API_CONTRACT_CYCLE37.md §37.37). Читают: бэкенд (Services/Stays/StaysSlugPolicy.cs — embedded resource, как contracts/cycle23/goods-routes.json), фронтенд dom (тест dom/src/domRoutes.test.ts против DomApp.tsx) и QA. Добавлять маршрут dom можно ТОЛЬКО вместе с новым словом в reservedSlugs — иначе он может совпасть с адресом уже существующей компании (пространство slug общее для всей платформы).",
+
+  "slugPattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+  "slugMinLength": 3,
+  "slugMaxLength": 50,
+
+  "_houseSlugComment": "Адрес дома — второй сегмент /<slug>/<houseSlug>, уникален внутри компании. Резерва нет: под страницей компании других маршрутов dom нет.",
+  "houseSlugPattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+  "houseSlugMinLength": 2,
+  "houseSlugMaxLength": 50,
+
+  "companyPagePattern": "/:slug",
+  "housePagePattern": "/:slug/:houseSlug",
+  "bookingPagePattern": "/b/:token",
+
+  "_catalogQueryComment": "Корень / — каталог. Фильтры — в query (ссылкой можно поделиться): checkIn, checkOut (YYYY-MM-DD), guests, maxPrice, page. Страница дома принимает checkIn, checkOut, adults, children.",
+  "catalogQueryParams": ["checkIn", "checkOut", "guests", "maxPrice", "page"],
+  "houseQueryParams": ["checkIn", "checkOut", "adults", "children"],
+
+  "_spaRoutesComment": "Маршруты SPA dom, кроме /:slug и /:slug/:houseSlug. Первый сегмент каждого обязан быть в reservedSlugs (тест фронта и юнит-тест бэкенда).",
+  "spaRoutes": [
+    "/",
+    "/login",
+    "/register",
+    "/b/:token",
+    "/bookings",
+    "/profile",
+    "/profile/consents",
+    "/notices",
+    "/cabinet",
+    "/cabinet/new",
+    "/cabinet/subscription",
+    "/cabinet/:companyId/board",
+    "/cabinet/:companyId/bookings",
+    "/cabinet/:companyId/bookings/:bookingId",
+    "/cabinet/:companyId/houses",
+    "/cabinet/:companyId/houses/new",
+    "/cabinet/:companyId/houses/:houseId",
+    "/cabinet/:companyId/schedule",
+    "/cabinet/:companyId/settings",
+    "/cabinet/:companyId/staff",
+    "/cabinet/:companyId/notifications",
+    "/cabinet/:companyId/link",
+    "/privacy",
+    "/terms",
+    "/terms-owner",
+    "/pdn-consent",
+    "/channel-risk",
+    "/offer-channel",
+    "/payment-terms",
+    "/data-request"
+  ],
+
+  "_reservedComment": "Слова, которые нельзя занять адресом компании «Дома». Включают все маршруты dom, служебные пути nginx/API, слова goods (единый словарь платформы) и слова, заранее занятые под цикл 2 (услуги, бани, календарь, iCal) и регионы. Короткие слова (<3 символов) недостижимы по длине, но перечислены как полная карта первых сегментов.",
+  "reservedSlugs": [
+    "about", "account", "accounts", "admin", "api", "app", "apartments", "assets", "auth",
+    "b", "bani", "banya", "billing", "board", "book", "booking", "bookings",
+    "cabinet", "calendar", "cart", "catalog", "channel-risk", "checkout", "cities", "city",
+    "company", "companies", "contacts", "data-request", "dom", "doma", "embed", "extras", "ezbook",
+    "faq", "favicon", "goods", "guest", "guests", "health", "help", "house", "houses",
+    "ical", "index", "legal", "login", "logout", "manifest", "max", "me", "my", "new", "notices",
+    "o", "offer-channel", "order", "orders", "owner", "payment", "payment-terms", "payments",
+    "pdn-consent", "pricing", "privacy", "profile", "region", "regions", "register", "robots",
+    "s", "schedule", "search", "services", "settings", "sheregesh", "shop", "shops", "signup", "sitemap",
+    "static", "status", "stay", "stays", "support", "sw", "terms", "terms-owner",
+    "u", "uploads", "well-known", "www"
+  ]
+}

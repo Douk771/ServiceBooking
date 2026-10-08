@@ -1,0 +1,2923 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 37
+# («Дома», цикл 1: посуточная аренда домов в Шерегеше на dom.ezbook.ru).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл, порядок проверок и тексты — API_CONTRACT_CYCLE37.md (§37.20–§37.39),
+# решения — ARCHITECTURE_CYCLE37.md (§37.0–§37.19), требования — SPEC_CYCLE37_STAYS_HOUSES.md, правовые решения —
+# LEGAL_REVIEW_CYCLE37.md + §37.0a архитектуры. При расхождении по ФОРМЕ прав ЭТОТ файл.
+#
+# Рядом:
+#   contracts/cycle37/dom-routes.json    — маршруты dom, резерв слов, формат адресов компании и дома
+#   contracts/cycle37/stay-vectors.json  — эталон расчётов (деньги, цена ночи, возврат, доступность дат)
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle37/openapi.yaml --port 4037
+#             npm run types:api:cycle37   (openapi-typescript -> src/types/api-cycle37.generated.ts)
+#   QA        schemathesis run contracts/cycle37/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle37/openapi.yaml
+#             npm run types:api:cycle37 && git diff --exit-code src/types/api-cycle37.generated.ts
+#             npm run contracts:json (cycle37 -> openapi.json для ServiceBooking.Tests/Infrastructure/OpenApiContract.cs)
+#
+# Описаны ВСЕ маршруты, которые добавляет цикл, и те существующие, у которых меняется форма. У изменённых ответов больших
+# существующих DTO схема описывает только новые и значимые поля и стоит с additionalProperties: true. Изменение ПОВЕДЕНИЯ
+# салонных маршрутов для компании «Дома» (409 строкой) — API_CONTRACT_CYCLE37.md §37.21.1.
+
+info:
+  title: ServiceBooking API — цикл 37 (Дома, цикл 1)
+  version: "37.1.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ:
+      * camelCase; enum — строками (имена членов C#); DateTime — ISO-8601 UTC; DateOnly — "YYYY-MM-DD";
+        время суток — "HH:mm";
+      * ДЕНЬГИ ВЕРТИКАЛИ — ЦЕЛЫЕ РУБЛИ (integer, суффикс Rub);
+      * тела осознанных 400/402/429 — ГОЛАЯ СТРОКА (text/plain) по-русски; 401/403 — пустое тело; 404 — пустое тело;
+      * 451 — гейты правовых документов;
+      * текст, который видит человек (статусы, причины, отказы, суммы возврата, строки суммы), собирает СЕРВЕР.
+
+    ИСКЛЮЧЕНИЕ, КАК У ЗАКАЗОВ: все 409 маршрутов /api/stays/* — JSON с машиночитаемым code и готовым message
+    (StayRefusalDto, StayGuestConflictDto, StayStaffConflictDto, StaysConflictDto).
+
+    ГЛАВНЫЕ ПРАВИЛА, КОТОРЫЕ СХЕМА ЗАКРЕПЛЯЕТ ФОРМОЙ:
+      1. Ночь D начинается в дату D; период [startDate, endDate) — endDate это дата выезда.
+      2. Реквизиты для оплаты есть ТОЛЬКО в PublicStayBookingDto (по токену брони) и в PaymentDetailsDto (владельцу).
+         Ни один публичный DTO дома/компании/каталога их не содержит (Т37-04).
+      3. ФИО исполнителя-физлица — только в ProviderFullDto (страница брони, кабинет владельца); публично — ProviderPublicDto.
+      4. Сумма возврата — «не меньше X» (StayRefundViewDto.refundAtLeastRub), считает сервер (ЮР-1).
+      5. Действия персонала над бронью несут expectedVersion; чужое изменение → 409 VersionMismatch с актуальной карточкой.
+      6. Ссылка на бронь — токен не короче 43 символов base64url (256 бит). Неизвестный токен → 404 с пустым телом.
+      7. График (StaysScheduleDto) не содержит телефонов, сумм и файлов; comment = null, если скрыт от горничной.
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4037
+    description: prism mock по этой схеме
+
+tags:
+  - name: shared
+    description: Изменения общих маршрутов (компании, персонал, биллинг) под третий вид компании.
+  - name: stays-public
+    description: Каталог, страницы компании и дома, календарь, расчёт и создание брони — анонимно.
+  - name: stays-booking-public
+    description: Бронь глазами гостя по ссылке — страница, подтверждения оплаты, отмена, push; «Мои брони».
+  - name: stays-company
+    description: Кабинет компании «Дома» — создание, настройки, реквизиты, исполнитель, адрес, QR, уведомления, триал.
+  - name: stays-houses
+    description: Дома — карточка, фото, цены двух режимов, реестр и заверение, публикация, архив.
+  - name: stays-board
+    description: Шахматка и блокировки дат.
+  - name: stays-staff-bookings
+    description: Брони в кабинете — список, карточка, проверка оплаты, отмена, ручная бронь.
+  - name: stays-schedule
+    description: График уборок и заездов (в том числе для горничной).
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CompanyId:
+      name: companyId
+      in: path
+      required: true
+      description: Id компании «Дома» (Company.Id, Kind = Stays). Салон/магазин/чужая → 404.
+      schema: { type: string, format: uuid }
+    HouseId:
+      name: houseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    BookingId:
+      name: bookingId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PeriodId:
+      name: periodId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PhotoId:
+      name: photoId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    BlockId:
+      name: blockId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ProofId:
+      name: proofId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Slug:
+      name: slug
+      in: path
+      required: true
+      description: Адрес компании (dom-routes.json → slugPattern).
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    HouseSlug:
+      name: houseSlug
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    BookingToken:
+      name: token
+      in: path
+      required: true
+      description: Неугадываемый токен брони из ссылки /b/<token>.
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    CheckInQuery:
+      name: checkIn
+      in: query
+      required: false
+      schema: { type: string, format: date }
+    CheckOutQuery:
+      name: checkOut
+      in: query
+      required: false
+      schema: { type: string, format: date }
+    GuestsQuery:
+      name: guests
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 60, default: 1 }
+    Page:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+
+  responses:
+    PlainTextError:
+      description: Осознанный отказ — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    TooManyRequests:
+      description: Лимит частоты (политика или лимит номера) — строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    Unauthorized:
+      description: Нет или недействителен токен. Тело пустое.
+    Forbidden:
+      description: Член компании без нужного права. Тело пустое.
+    NotFound:
+      description: Не существует или не ваше — неотличимо. Тело пустое.
+    NoContent:
+      description: Успех без тела.
+    StaysConflict:
+      description: Конфликт в кабинете.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StaysConflictDto' }
+    StayRefusal:
+      description: Отказ расчёта/создания брони.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StayRefusalDto' }
+    StaffConflict:
+      description: Действие персонала не применено.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StayStaffConflictDto' }
+    GuestConflict:
+      description: Действие гостя не применено.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StayGuestConflictDto' }
+    PngImage:
+      description: PNG (QR-код).
+      content:
+        image/png:
+          schema: { type: string, format: binary }
+    PaymentProofFile:
+      description: |
+        Файл подтверждения оплаты. Заголовки: Cache-Control: private, no-store; X-Content-Type-Options: nosniff;
+        Content-Security-Policy: sandbox; PDF — Content-Disposition: attachment.
+      content:
+        application/pdf:
+          schema: { type: string, format: binary }
+        image/jpeg:
+          schema: { type: string, format: binary }
+        image/png:
+          schema: { type: string, format: binary }
+        image/webp:
+          schema: { type: string, format: binary }
+
+  schemas:
+    # ───────────── перечисления ─────────────
+    CompanyKind:
+      type: string
+      enum: [Services, Orders, Stays]
+    StaffPosition:
+      type: string
+      enum: [Manager, Housekeeper]
+    StaysMyRole:
+      type: string
+      enum: [Owner, Manager, Housekeeper, SuperAdmin]
+    StaysPermission:
+      type: string
+      enum: [ManageCompany, ManageHouses, EditHouseContent, ViewBookings, ManageBookings, ManageBlocks, ViewSchedule, ViewCabinet]
+    StayBookingStatus:
+      type: string
+      enum: [Held, AwaitingPaymentCheck, Confirmed, ExpiredUnpaid, PaymentRejected, CancelledByGuest, CancelledByOwner]
+    StayDisplayStatus:
+      type: string
+      description: Статус для показа; Completed — вычисляемый вид Confirmed после выезда.
+      enum: [Held, AwaitingPaymentCheck, Confirmed, Completed, ExpiredUnpaid, PaymentRejected, CancelledByGuest, CancelledByOwner]
+    StayCancellationPolicy:
+      type: string
+      description: ЮР-1 — три законных шаблона (LEGAL_REVIEW_CYCLE37.md §6.2).
+      enum: [Standard, Flexible, NoDeductions]
+    StayRefundKind:
+      type: string
+      enum: [NothingPaid, Full, Partial]
+    HousePriceMode:
+      type: string
+      enum: [Constant, ByDates]
+    HouseObjectKind:
+      type: string
+      enum: [GuestHouse, OtherAccommodation, Residential]
+    HouseAmenity:
+      type: string
+      enum: [Wifi, Kitchen, Parking, Sauna, Bbq, WashingMachine, Tv, Fireplace, GearDryer, SkiStorage, LiftTransfer, Dishwasher, Terrace]
+    HouseBlockKind:
+      type: string
+      enum: [Repair, Personal, Other]
+    StayProviderStatus:
+      type: string
+      enum: [Organization, IndividualEntrepreneur, SelfEmployed, Individual]
+    CalendarDayState:
+      type: string
+      enum: [Free, MayFreeUp, Occupied, Unavailable]
+    StayChargeKind:
+      type: string
+      description: Строки суммы брони. Цикл 2 допишет ServiceSlot, ServiceItem.
+      enum: [Nights, ExtraBeds, Dogs, Cot, ManualTotal]
+    StayRefusalCode:
+      type: string
+      enum: [InvalidDates, CheckInInPast, SameDayNotAllowed, BeyondHorizon, MaxNightsExceeded, DatesUnavailable, MinNightsNotMet, TooManyGuests, DogsNotAllowed, CotNotAvailable, NoPriceForNights, NotAcceptingBookings, PriceChanged]
+    NotAcceptingReason:
+      type: string
+      enum: [CompanyBlocked, NoPlan, OverHouseLimit, NoPaymentDetails, NoProviderInfo, HouseNotPublished]
+    StayGuestConflictCode:
+      type: string
+      enum: [HoldExpired, ProofLimitReached, ProofNotAllowed, CancelNotAllowed]
+    StayStaffConflictCode:
+      type: string
+      enum: [VersionMismatch, InvalidTransition]
+    StaysConflictCode:
+      type: string
+      enum: [SlugInvalid, SlugReserved, SlugTaken, NoPrice, ObjectKindRequired, RegistryNumberRequired, AttestationRequired, HouseArchived, HouseHasBookings, PhotoLimitReached, PricePeriodOverlap, BlockConflictsWithBooking, BlockOverlapsBlock, MessengerUnavailable]
+    StayGuestAction:
+      type: string
+      enum: [AttachProof, Cancel]
+    StaffStayAction:
+      type: string
+      enum: [ConfirmPayment, RejectPayment, Cancel]
+    StaysWarningLevel:
+      type: string
+      enum: [None, TrialEnding3d, TrialEnding1d, Expired, NoPlan, OverLimit]
+    BoardItemKind:
+      type: string
+      enum: [Booking, Block, External]
+    BoardItemState:
+      type: string
+      enum: [Held, AwaitingPaymentCheck, Confirmed, Block, External]
+    TimeOfDay:
+      type: string
+      pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+      example: "14:00"
+
+    # ───────────── общее ─────────────
+    DateRangeDto:
+      type: object
+      required: [startDate, endDate]
+      properties:
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date, description: дата выезда (полуинтервал) }
+    HouseAmenityDto:
+      type: object
+      required: [code, label]
+      properties:
+        code: { $ref: '#/components/schemas/HouseAmenity' }
+        label: { type: string }
+    GateDto:
+      type: object
+      required: [accepting]
+      properties:
+        accepting: { type: boolean }
+        reasonCode: { allOf: [ { $ref: '#/components/schemas/NotAcceptingReason' } ], nullable: true }
+        reasonText: { type: string, nullable: true }
+    ProviderPublicDto:
+      type: object
+      nullable: true
+      description: Публично. У SelfEmployed/Individual name, ogrn, claimsAddress = null (ЮР-3).
+      required: [status, statusLabel, inn]
+      properties:
+        status: { $ref: '#/components/schemas/StayProviderStatus' }
+        statusLabel: { type: string }
+        name: { type: string, nullable: true }
+        inn: { type: string }
+        ogrn: { type: string, nullable: true }
+        claimsAddress: { type: string, nullable: true }
+    ProviderFullDto:
+      type: object
+      nullable: true
+      required: [status, statusLabel, name, inn, claimsAddress]
+      properties:
+        status: { $ref: '#/components/schemas/StayProviderStatus' }
+        statusLabel: { type: string }
+        name: { type: string }
+        inn: { type: string }
+        ogrn: { type: string, nullable: true }
+        claimsAddress: { type: string }
+    NightPriceDto:
+      type: object
+      required: [date, priceRub]
+      properties:
+        date: { type: string, format: date }
+        priceRub: { type: integer }
+    StayChargeLineDto:
+      type: object
+      required: [kind, label, quantity, unitPriceRub, nights, amountRub, prepayEligible]
+      properties:
+        kind: { $ref: '#/components/schemas/StayChargeKind' }
+        label: { type: string, description: подпись строки (сервер) }
+        quantity: { type: integer }
+        unitPriceRub: { type: integer }
+        nights: { type: integer }
+        amountRub: { type: integer }
+        prepayEligible: { type: boolean }
+    StayRefundViewDto:
+      type: object
+      required: [kind, refundAtLeastRub, maxDeductionRub, text]
+      properties:
+        kind: { $ref: '#/components/schemas/StayRefundKind' }
+        refundAtLeastRub: { type: integer }
+        maxDeductionRub: { type: integer }
+        text: { type: string, description: «К возврату не меньше X ₽…» — сервер }
+    ProblemDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/StayRefusalCode' }
+        message: { type: string }
+
+    # ───────────── ошибки 409 ─────────────
+    StayRefusalDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/StayRefusalCode' }
+        message: { type: string }
+        reasonCode: { allOf: [ { $ref: '#/components/schemas/NotAcceptingReason' } ], nullable: true }
+        quote: { allOf: [ { $ref: '#/components/schemas/StayQuoteDto' } ], nullable: true, description: только у PriceChanged }
+    StayGuestConflictDto:
+      type: object
+      required: [code, message, booking]
+      properties:
+        code: { $ref: '#/components/schemas/StayGuestConflictCode' }
+        message: { type: string }
+        booking: { $ref: '#/components/schemas/PublicStayBookingDto' }
+    StayStaffConflictDto:
+      type: object
+      required: [code, message, booking]
+      properties:
+        code: { $ref: '#/components/schemas/StayStaffConflictCode' }
+        message: { type: string }
+        booking: { $ref: '#/components/schemas/StaffStayBookingCardDto' }
+    StaysConflictDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/StaysConflictCode' }
+        message: { type: string }
+        conflictingPeriod: { allOf: [ { $ref: '#/components/schemas/PricePeriodDto' } ], nullable: true }
+        conflicts:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/BlockBookingConflictDto' }
+    BlockBookingConflictDto:
+      type: object
+      required: [bookingId, checkInDate, checkOutDate, status]
+      properties:
+        bookingId: { type: string, format: uuid }
+        checkInDate: { type: string, format: date }
+        checkOutDate: { type: string, format: date }
+        guestName: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/StayBookingStatus' }
+
+    # ───────────── общие маршруты (изменения) ─────────────
+    CompanyKindSummaryItemDto:
+      type: object
+      required: [count, siteUrl]
+      properties:
+        count: { type: integer }
+        siteUrl: { type: string }
+    CompanyKindsSummaryDto:
+      type: object
+      required: [services, orders, stays]
+      properties:
+        services: { $ref: '#/components/schemas/CompanyKindSummaryItemDto' }
+        orders: { $ref: '#/components/schemas/CompanyKindSummaryItemDto' }
+        stays: { $ref: '#/components/schemas/CompanyKindSummaryItemDto' }
+    AddMemberInput:
+      type: object
+      additionalProperties: true
+      description: Существующий AddMemberDto + position в конце.
+      required: [phone, role]
+      properties:
+        phone: { type: string }
+        role: { type: string }
+        position: { allOf: [ { $ref: '#/components/schemas/StaffPosition' } ], nullable: true }
+    MemberDtoCycle37:
+      type: object
+      additionalProperties: true
+      description: Существующий MemberDto + position в конце.
+      required: [id, role]
+      properties:
+        id: { type: string, format: uuid }
+        role: { type: string }
+        position: { allOf: [ { $ref: '#/components/schemas/StaffPosition' } ], nullable: true }
+    MemberPositionInput:
+      type: object
+      additionalProperties: false
+      required: [position]
+      properties:
+        position: { $ref: '#/components/schemas/StaffPosition' }
+    StaysSubscriptionBlockDto:
+      type: object
+      required: [housesPublished, isTrial, warningLevel]
+      properties:
+        housesPublished: { type: integer }
+        maxHouses: { type: integer, nullable: true }
+        isTrial: { type: boolean }
+        trialEndsAtUtc: { type: string, format: date-time, nullable: true }
+        warningLevel: { $ref: '#/components/schemas/StaysWarningLevel' }
+        text: { type: string, nullable: true }
+    OwnerSubscriptionDtoCycle37:
+      type: object
+      additionalProperties: true
+      description: Существующий OwnerSubscriptionDto; при line=Stays заполнен блок stays.
+      properties:
+        stays: { allOf: [ { $ref: '#/components/schemas/StaysSubscriptionBlockDto' } ], nullable: true }
+
+    # ───────────── публичное ─────────────
+    StayCatalogItemDto:
+      type: object
+      required: [houseId, url, houseName, companyName, capacity, extraBedsMax, dogsForbidden]
+      properties:
+        houseId: { type: string, format: uuid }
+        url: { type: string, description: относительный путь /<companySlug>/<houseSlug> }
+        houseName: { type: string }
+        companyName: { type: string }
+        coverUrl: { type: string, nullable: true }
+        coverThumbUrl: { type: string, nullable: true }
+        capacity: { type: integer }
+        extraBedsMax: { type: integer }
+        dogsForbidden: { type: boolean }
+        address: { type: string, nullable: true }
+        registryNumber: { type: string, nullable: true }
+        priceFromRub: { type: integer, nullable: true }
+        totalRub: { type: integer, nullable: true, description: стоимость ночей за выбранные даты }
+        averageNightRub: { type: integer, nullable: true }
+        nights: { type: integer, nullable: true }
+        availableForDates: { type: boolean, nullable: true, description: только на странице компании при выбранных датах }
+    StayCatalogPage:
+      type: object
+      required: [items, totalCount, page, pageSize]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/StayCatalogItemDto' }
+        totalCount: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+    PublicStaysCompanyDto:
+      type: object
+      required: [id, slug, name, available, acceptingBookings, houses, today]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        logoUrl: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        available: { type: boolean }
+        notAvailableText: { type: string, nullable: true }
+        acceptingBookings: { type: boolean }
+        notAcceptingText: { type: string, nullable: true }
+        provider: { $ref: '#/components/schemas/ProviderPublicDto' }
+        houses:
+          type: array
+          items: { $ref: '#/components/schemas/StayCatalogItemDto' }
+        today: { type: string, format: date }
+    HousePhotoDto:
+      type: object
+      required: [id, url, position]
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string }
+        thumbnailUrl: { type: string, nullable: true }
+        position: { type: integer }
+    ExtraBedsDto:
+      type: object
+      required: [enabled, max, priceRub]
+      properties:
+        enabled: { type: boolean }
+        max: { type: integer }
+        priceRub: { type: integer }
+    PublicRegistryDto:
+      type: object
+      nullable: true
+      required: [objectKind, objectKindLabel]
+      properties:
+        objectKind: { $ref: '#/components/schemas/HouseObjectKind' }
+        objectKindLabel: { type: string }
+        registryNumber: { type: string, nullable: true }
+        registryUrl: { type: string, nullable: true }
+    PublicStayRulesDto:
+      type: object
+      required: [checkInTime, checkOutTime, minNights, maxNights, horizonDays, allowGapFill, allowSameDayCheckIn, holdMinutes, prepayPercent, cancellationPolicy, cancellationSummary]
+      properties:
+        checkInTime: { $ref: '#/components/schemas/TimeOfDay' }
+        checkOutTime: { $ref: '#/components/schemas/TimeOfDay' }
+        minNights: { type: integer }
+        maxNights: { type: integer }
+        horizonDays: { type: integer }
+        allowGapFill: { type: boolean }
+        allowSameDayCheckIn: { type: boolean }
+        holdMinutes: { type: integer }
+        prepayPercent: { type: integer }
+        cancellationPolicy: { $ref: '#/components/schemas/StayCancellationPolicy' }
+        cancellationSummary: { type: string }
+    PublicCompanyRefDto:
+      type: object
+      required: [slug, name, url]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        phone: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true }
+        url: { type: string }
+    PublicHouseDto:
+      type: object
+      description: НЕ содержит реквизитов для оплаты (Т37-04).
+      required: [id, slug, name, photos, capacity, extraBeds, dogsForbidden, dogFeeRub, hasCot, cotFeeRub, amenities, company, rules, acceptingBookings, available, today, timeZoneId]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        photos:
+          type: array
+          items: { $ref: '#/components/schemas/HousePhotoDto' }
+        capacity: { type: integer }
+        extraBeds: { $ref: '#/components/schemas/ExtraBedsDto' }
+        dogsForbidden: { type: boolean }
+        dogFeeRub: { type: integer }
+        hasCot: { type: boolean }
+        cotFeeRub: { type: integer }
+        amenities:
+          type: array
+          items: { $ref: '#/components/schemas/HouseAmenityDto' }
+        address: { type: string, nullable: true }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+        registry: { $ref: '#/components/schemas/PublicRegistryDto' }
+        company: { $ref: '#/components/schemas/PublicCompanyRefDto' }
+        provider: { $ref: '#/components/schemas/ProviderPublicDto' }
+        rules: { $ref: '#/components/schemas/PublicStayRulesDto' }
+        priceFromRub: { type: integer, nullable: true }
+        acceptingBookings: { type: boolean }
+        notAcceptingText: { type: string, nullable: true }
+        available: { type: boolean }
+        notAvailableText: { type: string, nullable: true }
+        today: { type: string, format: date }
+        timeZoneId: { type: string }
+    CalendarDayDto:
+      type: object
+      required: [date, state]
+      properties:
+        date: { type: string, format: date }
+        state: { $ref: '#/components/schemas/CalendarDayState' }
+        priceRub: { type: integer, nullable: true }
+    HouseCalendarDto:
+      type: object
+      required: [houseId, today, from, to, minNights, maxNights, allowGapFill, allowSameDayCheckIn, lastNight, days]
+      properties:
+        houseId: { type: string, format: uuid }
+        today: { type: string, format: date }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        minNights: { type: integer }
+        maxNights: { type: integer }
+        allowGapFill: { type: boolean }
+        allowSameDayCheckIn: { type: boolean }
+        lastNight: { type: string, format: date }
+        days:
+          type: array
+          items: { $ref: '#/components/schemas/CalendarDayDto' }
+    StayQuoteInput:
+      type: object
+      additionalProperties: false
+      required: [checkIn, checkOut, adults, children, dogs, needCot]
+      properties:
+        checkIn: { type: string, format: date }
+        checkOut: { type: string, format: date }
+        adults: { type: integer, minimum: 1, maximum: 30 }
+        children: { type: integer, minimum: 0, maximum: 30 }
+        dogs: { type: integer, minimum: 0, maximum: 20 }
+        needCot: { type: boolean }
+    StayQuoteDto:
+      type: object
+      required: [ok, problems, nights, nightPrices, lines, extraBeds, totalRub, prepayPercent, prepayRub, dueAtCheckInRub, averageNightRub, holdMinutes, checkInTime, checkOutTime, cancellationPolicy, cancellationSummary, acceptingBookings]
+      properties:
+        ok: { type: boolean }
+        problems:
+          type: array
+          items: { $ref: '#/components/schemas/ProblemDto' }
+        nights: { type: integer }
+        nightPrices:
+          type: array
+          items: { $ref: '#/components/schemas/NightPriceDto' }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/StayChargeLineDto' }
+        extraBeds: { type: integer }
+        totalRub: { type: integer }
+        prepayPercent: { type: integer }
+        prepayRub: { type: integer }
+        dueAtCheckInRub: { type: integer }
+        averageNightRub: { type: integer }
+        holdMinutes: { type: integer }
+        checkInTime: { $ref: '#/components/schemas/TimeOfDay' }
+        checkOutTime: { $ref: '#/components/schemas/TimeOfDay' }
+        cancellationPolicy: { $ref: '#/components/schemas/StayCancellationPolicy' }
+        cancellationSummary: { type: string }
+        acceptingBookings: { type: boolean }
+        notAcceptingText: { type: string, nullable: true }
+    CreateStayBookingInput:
+      type: object
+      additionalProperties: false
+      required: [checkIn, checkOut, adults, children, dogs, needCot, guestName, notifyByMessenger, expectedTotalRub, idempotencyKey]
+      properties:
+        checkIn: { type: string, format: date }
+        checkOut: { type: string, format: date }
+        adults: { type: integer, minimum: 1, maximum: 30 }
+        children: { type: integer, minimum: 0, maximum: 30 }
+        dogs: { type: integer, minimum: 0, maximum: 20 }
+        needCot: { type: boolean }
+        guestName: { type: string, minLength: 1, maxLength: 100 }
+        guestPhone: { type: string, nullable: true, description: обязателен для анонима; у вошедшего игнорируется }
+        arrivalTime: { allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ], nullable: true }
+        comment: { type: string, maxLength: 500, nullable: true }
+        notifyByMessenger: { type: boolean }
+        expectedTotalRub: { type: integer, minimum: 0 }
+        idempotencyKey: { type: string, format: uuid }
+        captchaToken: { type: string, nullable: true }
+    CreateStayBookingResponse:
+      type: object
+      required: [token, bookingUrl, booking]
+      properties:
+        token: { type: string, minLength: 43 }
+        bookingUrl: { type: string }
+        booking: { $ref: '#/components/schemas/PublicStayBookingDto' }
+
+    # ───────────── бронь глазами гостя ─────────────
+    BookingHouseRefDto:
+      type: object
+      required: [name, url]
+      properties:
+        name: { type: string }
+        url: { type: string }
+        coverUrl: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+    BookingCompanyRefDto:
+      type: object
+      required: [name, url]
+      properties:
+        name: { type: string }
+        phone: { type: string, nullable: true }
+        url: { type: string }
+    PaymentInstructionsDto:
+      type: object
+      nullable: true
+      required: [amountRub]
+      properties:
+        details: { type: string, nullable: true }
+        purpose: { type: string, nullable: true }
+        amountRub: { type: integer }
+    PaymentProofDto:
+      type: object
+      required: [id, contentType, sizeBytes, uploadedAtUtc, purged]
+      properties:
+        id: { type: string, format: uuid }
+        contentType: { type: string, enum: [application/pdf, image/jpeg, image/png, image/webp] }
+        sizeBytes: { type: integer }
+        uploadedAtUtc: { type: string, format: date-time }
+        purged: { type: boolean }
+    ProofRulesDto:
+      type: object
+      required: [canAttach, maxCount, maxBytes, acceptedTypes]
+      properties:
+        canAttach: { type: boolean }
+        maxCount: { type: integer }
+        maxBytes: { type: integer }
+        acceptedTypes:
+          type: array
+          items: { type: string }
+    BookingCancellationDto:
+      type: object
+      required: [policy, summary, canCancel, refund]
+      properties:
+        policy: { $ref: '#/components/schemas/StayCancellationPolicy' }
+        summary: { type: string }
+        canCancel: { type: boolean }
+        refund: { $ref: '#/components/schemas/StayRefundViewDto' }
+        cannotCancelText: { type: string, nullable: true }
+    CheckInInfoDto:
+      type: object
+      nullable: true
+      properties:
+        companyText: { type: string, nullable: true }
+        houseText: { type: string, nullable: true }
+    WebPushInfoDto:
+      type: object
+      required: [available]
+      properties:
+        available: { type: boolean }
+        publicKey: { type: string, nullable: true }
+    BookingNotificationsDto:
+      type: object
+      required: [webPush, messengerSelected]
+      properties:
+        webPush: { $ref: '#/components/schemas/WebPushInfoDto' }
+        messengerSelected: { type: boolean }
+    PublicStayBookingDto:
+      type: object
+      required: [status, displayStatus, statusText, serverTimeUtc, house, company, checkInDate, checkOutDate, checkInTime, checkOutTime, nights, adults, children, dogs, needCot, extraBeds, guestName, guestPhoneMasked, lines, nightPrices, totalRub, prepayPercent, prepayRub, dueAtCheckInRub, paymentProofs, proofs, cancellation, notifications, availableActions]
+      properties:
+        status: { $ref: '#/components/schemas/StayBookingStatus' }
+        displayStatus: { $ref: '#/components/schemas/StayDisplayStatus' }
+        statusText: { type: string }
+        serverTimeUtc: { type: string, format: date-time }
+        holdExpiresAtUtc: { type: string, format: date-time, nullable: true }
+        house: { $ref: '#/components/schemas/BookingHouseRefDto' }
+        company: { $ref: '#/components/schemas/BookingCompanyRefDto' }
+        provider: { $ref: '#/components/schemas/ProviderFullDto' }
+        checkInDate: { type: string, format: date }
+        checkOutDate: { type: string, format: date }
+        checkInTime: { $ref: '#/components/schemas/TimeOfDay' }
+        checkOutTime: { $ref: '#/components/schemas/TimeOfDay' }
+        nights: { type: integer }
+        adults: { type: integer }
+        children: { type: integer }
+        dogs: { type: integer }
+        needCot: { type: boolean }
+        extraBeds: { type: integer }
+        arrivalTime: { allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ], nullable: true }
+        guestName: { type: string, nullable: true }
+        guestPhoneMasked: { type: string, nullable: true }
+        comment: { type: string, nullable: true }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/StayChargeLineDto' }
+        nightPrices:
+          type: array
+          items: { $ref: '#/components/schemas/NightPriceDto' }
+        totalRub: { type: integer }
+        prepayPercent: { type: integer }
+        prepayRub: { type: integer }
+        dueAtCheckInRub: { type: integer }
+        payment: { $ref: '#/components/schemas/PaymentInstructionsDto' }
+        paymentConfirmedAtUtc: { type: string, format: date-time, nullable: true }
+        paymentProofs:
+          type: array
+          items: { $ref: '#/components/schemas/PaymentProofDto' }
+        proofs: { $ref: '#/components/schemas/ProofRulesDto' }
+        cancellation: { $ref: '#/components/schemas/BookingCancellationDto' }
+        statusReason: { type: string, nullable: true }
+        outcomeText: { type: string, nullable: true }
+        checkInInfo: { $ref: '#/components/schemas/CheckInInfoDto' }
+        notifications: { $ref: '#/components/schemas/BookingNotificationsDto' }
+        availableActions:
+          type: array
+          items: { $ref: '#/components/schemas/StayGuestAction' }
+    PushSubscriptionInput:
+      type: object
+      additionalProperties: false
+      required: [endpoint, keys]
+      properties:
+        endpoint: { type: string, maxLength: 2048 }
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh: { type: string }
+            auth: { type: string }
+        deviceLabel: { type: string, nullable: true, maxLength: 100 }
+    PushSubscriptionRemoveInput:
+      type: object
+      additionalProperties: false
+      required: [endpoint]
+      properties:
+        endpoint: { type: string, maxLength: 2048 }
+    StayMyBookingDto:
+      type: object
+      required: [bookingUrl, houseName, companyName, checkInDate, checkOutDate, status, displayStatus, statusText, totalRub]
+      properties:
+        bookingUrl: { type: string }
+        houseName: { type: string }
+        companyName: { type: string }
+        checkInDate: { type: string, format: date }
+        checkOutDate: { type: string, format: date }
+        status: { $ref: '#/components/schemas/StayBookingStatus' }
+        displayStatus: { $ref: '#/components/schemas/StayDisplayStatus' }
+        statusText: { type: string }
+        totalRub: { type: integer }
+
+    # ───────────── кабинет: компания ─────────────
+    StaysCompanyCreateInput:
+      type: object
+      additionalProperties: false
+      required: [name, phone, ownerTermsVersion]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        slug: { type: string, nullable: true, maxLength: 50 }
+        description: { type: string, nullable: true, maxLength: 2000 }
+        phone: { type: string }
+        ownerTermsVersion: { type: string }
+        trialTermsVersion: { type: string, nullable: true }
+    StaysTrialOutcomeDto:
+      type: object
+      required: [granted]
+      properties:
+        granted: { type: boolean }
+        refusalCode: { type: string, nullable: true }
+        message: { type: string, nullable: true }
+        endsAtUtc: { type: string, format: date-time, nullable: true }
+    StaysTrialStateDto:
+      type: object
+      required: [offered, eligible, durationDays]
+      properties:
+        offered: { type: boolean }
+        eligible: { type: boolean }
+        refusalCode: { type: string, nullable: true }
+        message: { type: string, nullable: true }
+        termsVersion: { type: string, nullable: true }
+        termsText: { type: string, nullable: true }
+        durationDays: { type: integer }
+        endsAtUtc: { type: string, format: date-time, nullable: true }
+    StaysTrialInput:
+      type: object
+      additionalProperties: false
+      required: [termsVersion]
+      properties:
+        termsVersion: { type: string }
+    StaysCompanyCreatedDto:
+      type: object
+      required: [company, token]
+      properties:
+        company: { $ref: '#/components/schemas/StaysCompanyManageDto' }
+        token: { type: string }
+        trial: { allOf: [ { $ref: '#/components/schemas/StaysTrialOutcomeDto' } ], nullable: true }
+    StaysCompanyListItemDto:
+      type: object
+      required: [id, name, slug, publicUrl, myRole, acceptingBookings]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        logoUrl: { type: string, nullable: true }
+        publicUrl: { type: string }
+        myRole: { $ref: '#/components/schemas/StaysMyRole' }
+        acceptingBookings: { type: boolean }
+        awaitingPaymentCount: { type: integer, nullable: true }
+    StaysSlugCheckDto:
+      type: object
+      required: [suggested, available]
+      properties:
+        suggested: { type: string }
+        available: { type: boolean }
+        conflict: { allOf: [ { $ref: '#/components/schemas/StaysConflictDto' } ], nullable: true }
+    StaysSettingsDto:
+      type: object
+      required: [checkInTime, checkOutTime, minNights, maxNights, horizonDays, allowGapFill, allowSameDayCheckIn, holdMinutes, prepayPercent, cancellationPolicy, dogFeeRub, cotFeeRub, checkInInfoSendTime, checkInInfoSendFullText, arrivalReminderEnabled, housekeeperSeesGuestComment, showInCatalog]
+      properties:
+        checkInTime: { $ref: '#/components/schemas/TimeOfDay' }
+        checkOutTime: { $ref: '#/components/schemas/TimeOfDay' }
+        minNights: { type: integer, minimum: 1, maximum: 30 }
+        maxNights: { type: integer, minimum: 1, maximum: 90 }
+        horizonDays: { type: integer, minimum: 30, maximum: 730 }
+        allowGapFill: { type: boolean }
+        allowSameDayCheckIn: { type: boolean }
+        holdMinutes: { type: integer, minimum: 10, maximum: 180 }
+        prepayPercent: { type: integer, minimum: 0, maximum: 100 }
+        cancellationPolicy: { $ref: '#/components/schemas/StayCancellationPolicy' }
+        dogFeeRub: { type: integer, minimum: 0, maximum: 100000 }
+        cotFeeRub: { type: integer, minimum: 0, maximum: 100000 }
+        checkInInfoSendTime: { $ref: '#/components/schemas/TimeOfDay' }
+        checkInInfoText: { type: string, nullable: true, maxLength: 2000 }
+        checkInInfoSendFullText: { type: boolean, description: ЮР-4, по умолчанию false — в мессенджер уходит ссылка }
+        arrivalReminderEnabled: { type: boolean }
+        housekeeperSeesGuestComment: { type: boolean, description: ЮР-5, по умолчанию false }
+        showInCatalog: { type: boolean }
+    PaymentDetailsDto:
+      type: object
+      required: [paymentDetails, paymentPurpose]
+      properties:
+        paymentDetails: { type: string, nullable: true, maxLength: 1000 }
+        paymentPurpose: { type: string, nullable: true, maxLength: 200 }
+    ProviderInput:
+      type: object
+      additionalProperties: false
+      required: [status, name, inn, claimsAddress]
+      properties:
+        status: { $ref: '#/components/schemas/StayProviderStatus' }
+        name: { type: string, minLength: 1, maxLength: 300 }
+        inn: { type: string, pattern: '^\d{10}(\d{2})?$' }
+        ogrn: { type: string, nullable: true, pattern: '^\d{13}(\d{2})?$' }
+        claimsAddress: { type: string, minLength: 1, maxLength: 500 }
+    SlugInput:
+      type: object
+      additionalProperties: false
+      required: [slug]
+      properties:
+        slug: { type: string, maxLength: 50 }
+    ChecklistItemDto:
+      type: object
+      required: [code, done, text]
+      properties:
+        code: { type: string, enum: [ProfileFilled, PaymentDetails, ProviderInfo, HousePublished, Plan] }
+        done: { type: boolean }
+        text: { type: string }
+    StaysPlanSummaryDto:
+      type: object
+      required: [isTrial, housesPublished, warningLevel]
+      properties:
+        planName: { type: string, nullable: true }
+        isTrial: { type: boolean }
+        paidUntilUtc: { type: string, format: date-time, nullable: true }
+        maxHouses: { type: integer, nullable: true }
+        housesPublished: { type: integer }
+        warningLevel: { $ref: '#/components/schemas/StaysWarningLevel' }
+        text: { type: string, nullable: true }
+    StaysCompanyManageDto:
+      type: object
+      required: [id, name, slug, cityName, timeZoneId, isActive, showInCatalog, publicUrl, myRole, myPermissions, gate, checklist, plan]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+        cityName: { type: string }
+        timeZoneId: { type: string }
+        isActive: { type: boolean }
+        showInCatalog: { type: boolean }
+        publicUrl: { type: string }
+        myRole: { $ref: '#/components/schemas/StaysMyRole' }
+        myPermissions:
+          type: array
+          items: { $ref: '#/components/schemas/StaysPermission' }
+        settings: { allOf: [ { $ref: '#/components/schemas/StaysSettingsDto' } ], nullable: true, description: null для горничной }
+        paymentDetails: { allOf: [ { $ref: '#/components/schemas/PaymentDetailsDto' } ], nullable: true, description: только при ManageCompany }
+        provider: { $ref: '#/components/schemas/ProviderFullDto' }
+        gate: { $ref: '#/components/schemas/GateDto' }
+        checklist:
+          type: array
+          items: { $ref: '#/components/schemas/ChecklistItemDto' }
+        plan: { $ref: '#/components/schemas/StaysPlanSummaryDto' }
+        awaitingPaymentCount: { type: integer, nullable: true }
+    StaysNotificationSettingsDto:
+      type: object
+      required: [staffPushEnabled, staffMaxEnabled, guestWebPushEnabled, guestMessengerEnabled, messengerAvailable]
+      properties:
+        staffPushEnabled: { type: boolean }
+        staffMaxEnabled: { type: boolean }
+        guestWebPushEnabled: { type: boolean }
+        guestMessengerEnabled: { type: boolean }
+        messengerAvailable: { type: boolean, readOnly: true }
+        deliveryMode: { type: string, nullable: true }
+        priorityTransport: { type: string, nullable: true }
+    StaysNotificationSettingsInput:
+      type: object
+      additionalProperties: false
+      required: [staffPushEnabled, staffMaxEnabled, guestWebPushEnabled, guestMessengerEnabled]
+      properties:
+        staffPushEnabled: { type: boolean }
+        staffMaxEnabled: { type: boolean }
+        guestWebPushEnabled: { type: boolean }
+        guestMessengerEnabled: { type: boolean }
+        deliveryMode: { type: string, nullable: true }
+        priorityTransport: { type: string, nullable: true }
+
+    # ───────────── кабинет: дома ─────────────
+    HouseListItemDto:
+      type: object
+      required: [id, slug, name, capacity, isPublished, isArchived, priceMode, position, publicUrl, publishProblems]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        coverUrl: { type: string, nullable: true }
+        capacity: { type: integer }
+        isPublished: { type: boolean }
+        isArchived: { type: boolean }
+        priceMode: { $ref: '#/components/schemas/HousePriceMode' }
+        priceFromRub: { type: integer, nullable: true }
+        position: { type: integer }
+        publicUrl: { type: string }
+        publishProblems:
+          type: array
+          items: { $ref: '#/components/schemas/StaysConflictCode' }
+    HouseCreateInput:
+      type: object
+      additionalProperties: false
+      required: [name, capacity]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        capacity: { type: integer, minimum: 1, maximum: 50 }
+    HouseSetupInput:
+      type: object
+      additionalProperties: false
+      required: [name, slug, capacity, extraBedsEnabled, extraBedsMax, extraBedPriceRub, dogsForbidden, hasCot]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        slug: { type: string, minLength: 2, maxLength: 50 }
+        capacity: { type: integer, minimum: 1, maximum: 50 }
+        extraBedsEnabled: { type: boolean }
+        extraBedsMax: { type: integer, minimum: 0, maximum: 10 }
+        extraBedPriceRub: { type: integer, minimum: 0, maximum: 100000 }
+        dogsForbidden: { type: boolean }
+        hasCot: { type: boolean }
+    HouseContentInput:
+      type: object
+      additionalProperties: false
+      required: [amenities]
+      properties:
+        description: { type: string, nullable: true, maxLength: 4000 }
+        amenities:
+          type: array
+          items: { $ref: '#/components/schemas/HouseAmenity' }
+        address: { type: string, nullable: true, maxLength: 500 }
+        yandexMapsUrl: { type: string, nullable: true, maxLength: 500 }
+        twoGisUrl: { type: string, nullable: true, maxLength: 500 }
+        checkInInfoText: { type: string, nullable: true, maxLength: 2000 }
+    HousePricingInput:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode: { $ref: '#/components/schemas/HousePriceMode' }
+        constantPriceRub: { type: integer, nullable: true, minimum: 1, maximum: 1000000 }
+    PricePeriodDto:
+      type: object
+      required: [id, startDate, endDate, priceRub]
+      properties:
+        id: { type: string, format: uuid }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date, description: включительно }
+        priceRub: { type: integer }
+    PricePeriodInput:
+      type: object
+      additionalProperties: false
+      required: [startDate, endDate, priceRub]
+      properties:
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date, description: включительно; равна startDate — цена на одну дату }
+        priceRub: { type: integer, minimum: 1, maximum: 1000000 }
+    AttestationInput:
+      type: object
+      additionalProperties: false
+      required: [accepted, noticeVersion]
+      properties:
+        accepted: { type: boolean, enum: [true] }
+        noticeVersion: { type: string, description: HouseManageDto.registryNotice.version }
+    HouseRegistryInput:
+      type: object
+      additionalProperties: false
+      required: [objectKind]
+      properties:
+        objectKind: { $ref: '#/components/schemas/HouseObjectKind' }
+        registryNumber: { type: string, nullable: true, pattern: '^[0-9A-Za-zА-Яа-яЁё\-]{5,32}$' }
+        registryUrl: { type: string, nullable: true, maxLength: 500 }
+        attestation: { allOf: [ { $ref: '#/components/schemas/AttestationInput' } ], nullable: true, description: обязательно, если дом опубликован }
+    HousePublishInput:
+      type: object
+      additionalProperties: false
+      required: [attestation]
+      properties:
+        attestation: { $ref: '#/components/schemas/AttestationInput' }
+    IdsOrderInput:
+      type: object
+      additionalProperties: false
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          items: { type: string, format: uuid }
+    EmptyInput:
+      type: object
+      additionalProperties: false
+    LastAttestationDto:
+      type: object
+      nullable: true
+      required: [attestedAtUtc, attestedByName, objectKind]
+      properties:
+        attestedAtUtc: { type: string, format: date-time }
+        attestedByName: { type: string }
+        objectKind: { $ref: '#/components/schemas/HouseObjectKind' }
+        registryNumber: { type: string, nullable: true }
+    RegistryNoticeDto:
+      type: object
+      required: [version, text]
+      properties:
+        version: { type: string }
+        text: { type: string }
+    HouseRegistryDto:
+      type: object
+      properties:
+        objectKind: { allOf: [ { $ref: '#/components/schemas/HouseObjectKind' } ], nullable: true }
+        registryNumber: { type: string, nullable: true }
+        registryUrl: { type: string, nullable: true }
+        lastAttestation: { $ref: '#/components/schemas/LastAttestationDto' }
+    HouseManageDto:
+      type: object
+      required: [id, slug, name, capacity, extraBeds, dogsForbidden, hasCot, amenities, priceMode, registry, registryNotice, isPublished, isArchived, position, photos, publicUrl, uncoveredDates, publishProblems, hasBookings]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        capacity: { type: integer }
+        extraBeds: { $ref: '#/components/schemas/ExtraBedsDto' }
+        dogsForbidden: { type: boolean }
+        hasCot: { type: boolean }
+        amenities:
+          type: array
+          items: { $ref: '#/components/schemas/HouseAmenity' }
+        address: { type: string, nullable: true }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+        checkInInfoText: { type: string, nullable: true }
+        priceMode: { $ref: '#/components/schemas/HousePriceMode' }
+        constantPriceRub: { type: integer, nullable: true }
+        registry: { $ref: '#/components/schemas/HouseRegistryDto' }
+        registryNotice: { $ref: '#/components/schemas/RegistryNoticeDto' }
+        isPublished: { type: boolean }
+        isArchived: { type: boolean }
+        position: { type: integer }
+        photos:
+          type: array
+          items: { $ref: '#/components/schemas/HousePhotoDto' }
+        publicUrl: { type: string }
+        uncoveredDates:
+          type: array
+          items: { $ref: '#/components/schemas/DateRangeDto' }
+        publishProblems:
+          type: array
+          items: { $ref: '#/components/schemas/StaysConflictCode' }
+        hasBookings: { type: boolean }
+
+    # ───────────── шахматка, блокировки ─────────────
+    BoardHouseDto:
+      type: object
+      required: [id, name, isPublished, isArchived]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        isPublished: { type: boolean }
+        isArchived: { type: boolean }
+    BoardItemDto:
+      type: object
+      required: [kind, id, houseId, startDate, endDate, state, stateText, label, needsAction]
+      properties:
+        kind: { $ref: '#/components/schemas/BoardItemKind' }
+        id: { type: string, format: uuid }
+        houseId: { type: string, format: uuid }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        state: { $ref: '#/components/schemas/BoardItemState' }
+        stateText: { type: string }
+        label: { type: string }
+        holdExpiresAtUtc: { type: string, format: date-time, nullable: true }
+        blockKind: { allOf: [ { $ref: '#/components/schemas/HouseBlockKind' } ], nullable: true }
+        needsAction: { type: boolean }
+    StaysBoardDto:
+      type: object
+      required: [changed, revision, serverTimeUtc, today]
+      properties:
+        changed: { type: boolean }
+        revision: { type: integer, format: int64 }
+        serverTimeUtc: { type: string, format: date-time }
+        today: { type: string, format: date }
+        from: { type: string, format: date, nullable: true }
+        days: { type: integer, nullable: true }
+        houses:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/BoardHouseDto' }
+        items:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/BoardItemDto' }
+        awaitingPaymentCount: { type: integer, nullable: true }
+    HouseBlockInput:
+      type: object
+      additionalProperties: false
+      required: [houseId, startDate, endDate, kind]
+      properties:
+        houseId: { type: string, format: uuid }
+        startDate: { type: string, format: date, description: первая ночь }
+        endDate: { type: string, format: date, description: дата «по» как дата выезда (первая свободная) }
+        kind: { $ref: '#/components/schemas/HouseBlockKind' }
+        comment: { type: string, nullable: true, maxLength: 300 }
+    HouseBlockDto:
+      type: object
+      required: [id, houseId, startDate, endDate, kind, kindText, createdByName, createdAtUtc]
+      properties:
+        id: { type: string, format: uuid }
+        houseId: { type: string, format: uuid }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        kind: { $ref: '#/components/schemas/HouseBlockKind' }
+        kindText: { type: string }
+        comment: { type: string, nullable: true }
+        createdByName: { type: string }
+        createdAtUtc: { type: string, format: date-time }
+        updatedAtUtc: { type: string, format: date-time, nullable: true }
+
+    # ───────────── брони в кабинете ─────────────
+    StaffStayBookingListItemDto:
+      type: object
+      required: [id, houseId, houseName, checkInDate, checkOutDate, nights, status, displayStatus, statusText, totalRub, prepayRub, isManual, createdAtUtc]
+      properties:
+        id: { type: string, format: uuid }
+        houseId: { type: string, format: uuid }
+        houseName: { type: string }
+        checkInDate: { type: string, format: date }
+        checkOutDate: { type: string, format: date }
+        nights: { type: integer }
+        guestName: { type: string, nullable: true }
+        guestPhone: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/StayBookingStatus' }
+        displayStatus: { $ref: '#/components/schemas/StayDisplayStatus' }
+        statusText: { type: string }
+        totalRub: { type: integer }
+        prepayRub: { type: integer }
+        holdExpiresAtUtc: { type: string, format: date-time, nullable: true }
+        firstProofUploadedAtUtc: { type: string, format: date-time, nullable: true }
+        isManual: { type: boolean }
+        createdAtUtc: { type: string, format: date-time }
+    StaffStayBookingPage:
+      type: object
+      required: [items, totalCount, page, pageSize]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/StaffStayBookingListItemDto' }
+        totalCount: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+    PaymentConfirmedDto:
+      type: object
+      nullable: true
+      required: [atUtc, byName]
+      properties:
+        atUtc: { type: string, format: date-time }
+        byName: { type: string }
+    StayBookingEventDto:
+      type: object
+      required: [occurredAtUtc, kind, text, actorText]
+      properties:
+        occurredAtUtc: { type: string, format: date-time }
+        kind: { type: string }
+        text: { type: string }
+        actorText: { type: string }
+        reason: { type: string, nullable: true }
+    StayMessageLogDto:
+      type: object
+      required: [type, channel, status, createdAtUtc]
+      properties:
+        type: { type: string }
+        channel: { type: string }
+        status: { type: string }
+        createdAtUtc: { type: string, format: date-time }
+    StaffStayBookingCardDto:
+      type: object
+      required: [id, version, status, displayStatus, statusText, house, checkInDate, checkOutDate, checkInTime, checkOutTime, nights, adults, children, dogs, needCot, extraBeds, guestKind, lines, nightPrices, totalRub, prepayPercent, prepayRub, dueAtCheckInRub, cancellationPolicy, paymentProofs, isManual, availableActions, events]
+      properties:
+        id: { type: string, format: uuid }
+        version: { type: integer }
+        status: { $ref: '#/components/schemas/StayBookingStatus' }
+        displayStatus: { $ref: '#/components/schemas/StayDisplayStatus' }
+        statusText: { type: string }
+        holdExpiresAtUtc: { type: string, format: date-time, nullable: true }
+        house:
+          type: object
+          required: [id, name]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+        checkInDate: { type: string, format: date }
+        checkOutDate: { type: string, format: date }
+        checkInTime: { $ref: '#/components/schemas/TimeOfDay' }
+        checkOutTime: { $ref: '#/components/schemas/TimeOfDay' }
+        nights: { type: integer }
+        adults: { type: integer }
+        children: { type: integer }
+        dogs: { type: integer }
+        needCot: { type: boolean }
+        extraBeds: { type: integer }
+        arrivalTime: { allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ], nullable: true }
+        guestName: { type: string, nullable: true }
+        guestPhone: { type: string, nullable: true }
+        guestKind: { type: string, enum: [Guest, Customer, Staff] }
+        comment: { type: string, nullable: true }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/StayChargeLineDto' }
+        nightPrices:
+          type: array
+          items: { $ref: '#/components/schemas/NightPriceDto' }
+        totalRub: { type: integer }
+        prepayPercent: { type: integer }
+        prepayRub: { type: integer }
+        dueAtCheckInRub: { type: integer }
+        cancellationPolicy: { $ref: '#/components/schemas/StayCancellationPolicy' }
+        ownerCancelRefundText: { type: string, nullable: true }
+        paymentProofs:
+          type: array
+          items: { $ref: '#/components/schemas/PaymentProofDto' }
+        paymentConfirmed: { $ref: '#/components/schemas/PaymentConfirmedDto' }
+        paymentProofsPurgedAtUtc: { type: string, format: date-time, nullable: true }
+        statusReason: { type: string, nullable: true }
+        isManual: { type: boolean }
+        availableActions:
+          type: array
+          items: { $ref: '#/components/schemas/StaffStayAction' }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/StayBookingEventDto' }
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/StayMessageLogDto' }
+    ExpectedVersionInput:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer }
+    ExpectedVersionReasonInput:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: { type: integer }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+    StaffStayQuoteInput:
+      type: object
+      additionalProperties: false
+      required: [houseId, checkIn, checkOut, adults, children, dogs, needCot]
+      properties:
+        houseId: { type: string, format: uuid }
+        checkIn: { type: string, format: date }
+        checkOut: { type: string, format: date }
+        adults: { type: integer, minimum: 1, maximum: 30 }
+        children: { type: integer, minimum: 0, maximum: 30 }
+        dogs: { type: integer, minimum: 0, maximum: 20 }
+        needCot: { type: boolean }
+    ManualStayBookingInput:
+      type: object
+      additionalProperties: false
+      required: [houseId, checkIn, checkOut, adults, children, dogs, needCot, guestName, notifyGuest]
+      properties:
+        houseId: { type: string, format: uuid }
+        checkIn: { type: string, format: date }
+        checkOut: { type: string, format: date }
+        adults: { type: integer, minimum: 1, maximum: 30 }
+        children: { type: integer, minimum: 0, maximum: 30 }
+        dogs: { type: integer, minimum: 0, maximum: 20 }
+        needCot: { type: boolean }
+        guestName: { type: string, minLength: 1, maxLength: 100 }
+        guestPhone: { type: string, nullable: true }
+        notifyGuest: { type: boolean }
+        totalOverrideRub: { type: integer, nullable: true, minimum: 0, maximum: 10000000 }
+        comment: { type: string, nullable: true, maxLength: 500 }
+
+    # ───────────── график ─────────────
+    ScheduleDepartureDto:
+      type: object
+      required: [bookingId, houseId, houseName, checkOutTime, sameDayTurnover]
+      properties:
+        bookingId: { type: string, format: uuid }
+        houseId: { type: string, format: uuid }
+        houseName: { type: string }
+        checkOutTime: { $ref: '#/components/schemas/TimeOfDay' }
+        sameDayTurnover: { type: boolean }
+    ScheduleArrivalDto:
+      type: object
+      description: Без телефона, сумм, файлов. comment = null, если скрыт от горничной (ЮР-5).
+      required: [bookingId, houseId, houseName, checkInTime, adults, children, extraBeds, dogs, needCot, paymentUnconfirmed, sameDayTurnover]
+      properties:
+        bookingId: { type: string, format: uuid }
+        houseId: { type: string, format: uuid }
+        houseName: { type: string }
+        checkInTime: { $ref: '#/components/schemas/TimeOfDay' }
+        arrivalTime: { allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ], nullable: true }
+        guestName: { type: string, nullable: true }
+        adults: { type: integer }
+        children: { type: integer }
+        extraBeds: { type: integer }
+        dogs: { type: integer }
+        needCot: { type: boolean }
+        comment: { type: string, nullable: true }
+        paymentUnconfirmed: { type: boolean }
+        sameDayTurnover: { type: boolean }
+        turnoverText: { type: string, nullable: true }
+    ScheduleDayDto:
+      type: object
+      required: [date, label, departures, arrivals]
+      properties:
+        date: { type: string, format: date }
+        label: { type: string }
+        departures:
+          type: array
+          items: { $ref: '#/components/schemas/ScheduleDepartureDto' }
+        arrivals:
+          type: array
+          items: { $ref: '#/components/schemas/ScheduleArrivalDto' }
+    StaysScheduleDto:
+      type: object
+      required: [today, days]
+      properties:
+        today: { type: string, format: date }
+        days:
+          type: array
+          items: { $ref: '#/components/schemas/ScheduleDayDto' }
+
+paths:
+  # ═════════════ общие маршруты (изменения формы) ═════════════
+  /api/companies/kinds-summary:
+    get:
+      tags: [shared]
+      operationId: companiesKindsSummaryCycle37
+      summary: Число компаний пользователя по видам (в конец добавлен stays).
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Сводка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyKindsSummaryDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/Companies/{id}/members:
+    post:
+      tags: [shared]
+      operationId: companyMembersAddCycle37
+      summary: Добавить участника (в тело добавлен position — для компании «Дома» обязателен).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddMemberInput' }
+      responses:
+        '200':
+          description: Участник.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemberDtoCycle37' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { $ref: '#/components/responses/PlainTextError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/PlainTextError' }
+
+  /api/Companies/{id}/members/{memberId}/position:
+    put:
+      tags: [shared]
+      operationId: companyMembersSetPosition
+      summary: Сменить должность сотрудника компании «Дома» (управляющий / горничная).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: memberId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MemberPositionInput' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/PlainTextError' }
+
+  /api/billing/subscription:
+    get:
+      tags: [shared]
+      operationId: billingSubscriptionCycle37
+      summary: Подписка владельца по линейке (line=Stays — блок stays).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: line
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/CompanyKind' }
+      responses:
+        '200':
+          description: Подписка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnerSubscriptionDtoCycle37' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ═════════════ публичное ═════════════
+  /api/stays/public/amenities:
+    get:
+      tags: [stays-public]
+      operationId: staysPublicAmenities
+      summary: Справочник удобств с подписями.
+      responses:
+        '200':
+          description: Справочник.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/HouseAmenityDto' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/public/catalog:
+    get:
+      tags: [stays-public]
+      operationId: staysPublicCatalog
+      summary: Каталог домов Шерегеша с фильтрами по датам, гостям и цене.
+      parameters:
+        - { $ref: '#/components/parameters/CheckInQuery' }
+        - { $ref: '#/components/parameters/CheckOutQuery' }
+        - { $ref: '#/components/parameters/GuestsQuery' }
+        - name: maxPricePerNight
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200':
+          description: Страница каталога.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StayCatalogPage' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/public/companies/{slug}:
+    get:
+      tags: [stays-public]
+      operationId: staysPublicCompany
+      summary: Страница компании «Дома» по адресу (ссылка, QR).
+      parameters:
+        - { $ref: '#/components/parameters/Slug' }
+        - { $ref: '#/components/parameters/CheckInQuery' }
+        - { $ref: '#/components/parameters/CheckOutQuery' }
+        - { $ref: '#/components/parameters/GuestsQuery' }
+      responses:
+        '200':
+          description: Компания и её дома.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicStaysCompanyDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/public/companies/{slug}/houses/{houseSlug}:
+    get:
+      tags: [stays-public]
+      operationId: staysPublicHouse
+      summary: Страница дома.
+      parameters:
+        - { $ref: '#/components/parameters/Slug' }
+        - { $ref: '#/components/parameters/HouseSlug' }
+      responses:
+        '200':
+          description: Дом.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicHouseDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/public/houses/{houseId}/calendar:
+    get:
+      tags: [stays-public]
+      operationId: staysPublicCalendar
+      summary: Календарь занятости и цен дома по ночам.
+      parameters:
+        - { $ref: '#/components/parameters/HouseId' }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Календарь.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HouseCalendarDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/public/houses/{houseId}/quote:
+    post:
+      tags: [stays-public]
+      operationId: staysPublicQuote
+      summary: Расчёт стоимости и проверка дат (ничего не резервирует, всегда 200).
+      parameters:
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StayQuoteInput' }
+      responses:
+        '200':
+          description: Расчёт.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StayQuoteDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/public/houses/{houseId}/bookings:
+    post:
+      tags: [stays-public]
+      operationId: staysCreateBooking
+      summary: Создать бронь (гость без входа или вошедший). Идемпотентно по idempotencyKey.
+      security: [ {}, { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateStayBookingInput' }
+      responses:
+        '200':
+          description: Повтор с тем же ключом — существующая бронь.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateStayBookingResponse' }
+        '201':
+          description: Бронь создана (Held или Confirmed при предоплате 0 %).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateStayBookingResponse' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StayRefusal' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ═════════════ бронь глазами гостя ═════════════
+  /api/stays/bookings/public/{token}:
+    get:
+      tags: [stays-booking-public]
+      operationId: staysGetPublicBooking
+      summary: Страница брони по ссылке.
+      parameters:
+        - { $ref: '#/components/parameters/BookingToken' }
+      responses:
+        '200':
+          description: Бронь.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicStayBookingDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/bookings/public/{token}/payment-proofs:
+    post:
+      tags: [stays-booking-public]
+      operationId: staysUploadPaymentProof
+      summary: Приложить подтверждение оплаты (PDF, JPEG, PNG, WebP; до 10 МБ; до 3 файлов).
+      parameters:
+        - { $ref: '#/components/parameters/BookingToken' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Файл принят; бронь в актуальном состоянии.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicStayBookingDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/GuestConflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/bookings/public/{token}/payment-proofs/{proofId}:
+    get:
+      tags: [stays-booking-public]
+      operationId: staysGetPublicPaymentProof
+      summary: Скачать/посмотреть своё подтверждение оплаты.
+      parameters:
+        - { $ref: '#/components/parameters/BookingToken' }
+        - { $ref: '#/components/parameters/ProofId' }
+      responses:
+        '200': { $ref: '#/components/responses/PaymentProofFile' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/bookings/public/{token}/cancel:
+    post:
+      tags: [stays-booking-public]
+      operationId: staysCancelByGuest
+      summary: Отменить бронь гостем (до момента заезда).
+      parameters:
+        - { $ref: '#/components/parameters/BookingToken' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmptyInput' }
+      responses:
+        '200':
+          description: Отменена.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicStayBookingDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/GuestConflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/bookings/public/{token}/push-subscription:
+    post:
+      tags: [stays-booking-public]
+      operationId: staysGuestPushSubscribe
+      summary: Подписать браузер на уведомления о брони.
+      parameters:
+        - { $ref: '#/components/parameters/BookingToken' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PushSubscriptionInput' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/PlainTextError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/bookings/public/{token}/push-subscription/remove:
+    post:
+      tags: [stays-booking-public]
+      operationId: staysGuestPushUnsubscribe
+      summary: Отписать браузер (идемпотентно).
+      parameters:
+        - { $ref: '#/components/parameters/BookingToken' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PushSubscriptionRemoveInput' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/bookings/my:
+    get:
+      tags: [stays-booking-public]
+      operationId: staysMyBookings
+      summary: Мои брони домов (вошедший гость, P1).
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Брони аккаунта.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StayMyBookingDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ═════════════ кабинет: компания ═════════════
+  /api/stays/companies:
+    post:
+      tags: [stays-company]
+      operationId: staysCreateCompany
+      summary: Создать компанию «Дома» (город — Шерегеш; при trialTermsVersion — попытка триала).
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StaysCompanyCreateInput' }
+      responses:
+        '201':
+          description: Создана.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysCompanyCreatedDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: Адрес занят/неверен (StaysConflictDto) или соглашение обновлено (строка).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysConflictDto' }
+            text/plain:
+              schema: { type: string }
+        '503': { $ref: '#/components/responses/PlainTextError' }
+
+  /api/stays/companies/my:
+    get:
+      tags: [stays-company]
+      operationId: staysMyCompanies
+      summary: Компании «Дома», где пользователь участник.
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Список.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StaysCompanyListItemDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/stays/slug-check:
+    get:
+      tags: [stays-company]
+      operationId: staysSlugCheck
+      summary: Предложить и проверить адрес компании (всегда 200).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema: { type: string, maxLength: 200 }
+        - name: slug
+          in: query
+          required: false
+          schema: { type: string, maxLength: 50 }
+        - name: companyId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Результат.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysSlugCheckDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/stays/trial:
+    get:
+      tags: [stays-company]
+      operationId: staysTrialState
+      summary: Состояние и условия пробного периода линейки «Дома».
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Состояние.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysTrialStateDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [stays-company]
+      operationId: staysTrialActivate
+      summary: Активировать пробный период «Домов».
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StaysTrialInput' }
+      responses:
+        '200':
+          description: Выдан.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysTrialOutcomeDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: Отказ (granted false, refusalCode, message).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysTrialOutcomeDto' }
+
+  /api/stays/companies/{companyId}:
+    get:
+      tags: [stays-company]
+      operationId: staysGetCompany
+      summary: Компания в кабинете (настройки, права, гейт, чек-лист, тариф).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      responses:
+        '200':
+          description: Компания.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysCompanyManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/settings:
+    put:
+      tags: [stays-company]
+      operationId: staysUpdateSettings
+      summary: Правила компании (полная замена; действует на новые брони).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StaysSettingsDto' }
+      responses:
+        '200':
+          description: Компания.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysCompanyManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/payment-details:
+    put:
+      tags: [stays-company]
+      operationId: staysUpdatePaymentDetails
+      summary: Реквизиты для оплаты и назначение платежа.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentDetailsDto' }
+      responses:
+        '200':
+          description: Компания.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysCompanyManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/provider:
+    put:
+      tags: [stays-company]
+      operationId: staysUpdateProvider
+      summary: Сведения об исполнителе (ЮР-3).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProviderInput' }
+      responses:
+        '200':
+          description: Компания.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysCompanyManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/slug:
+    put:
+      tags: [stays-company]
+      operationId: staysUpdateCompanySlug
+      summary: Сменить адрес компании (старые ссылки и QR перестанут работать).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SlugInput' }
+      responses:
+        '200':
+          description: Компания.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysCompanyManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysConflict' }
+
+  /api/stays/companies/{companyId}/qr:
+    get:
+      tags: [stays-company]
+      operationId: staysCompanyQr
+      summary: QR-код страницы компании (PNG для печати).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      responses:
+        '200': { $ref: '#/components/responses/PngImage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/notification-settings:
+    get:
+      tags: [stays-company]
+      operationId: staysGetNotificationSettings
+      summary: Уведомления персоналу и гостям.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      responses:
+        '200':
+          description: Настройки.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysNotificationSettingsDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [stays-company]
+      operationId: staysUpdateNotificationSettings
+      summary: Изменить уведомления (владелец).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StaysNotificationSettingsInput' }
+      responses:
+        '200':
+          description: Настройки.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysNotificationSettingsDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysConflict' }
+
+  # ═════════════ кабинет: дома ═════════════
+  /api/stays/companies/{companyId}/houses:
+    get:
+      tags: [stays-houses]
+      operationId: staysListHouses
+      summary: Дома компании (с архивными).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      responses:
+        '200':
+          description: Список.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/HouseListItemDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [stays-houses]
+      operationId: staysCreateHouse
+      summary: Завести дом (неопубликован).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HouseCreateInput' }
+      responses:
+        '201':
+          description: Дом.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HouseManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/houses/order:
+    put:
+      tags: [stays-houses]
+      operationId: staysOrderHouses
+      summary: Порядок домов (полный список неархивных).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdsOrderInput' }
+      responses:
+        '200':
+          description: Список.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/HouseListItemDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}:
+    get:
+      tags: [stays-houses]
+      operationId: staysGetHouse
+      summary: Карточка дома в кабинете.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+      responses:
+        '200':
+          description: Дом.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HouseManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [stays-houses]
+      operationId: staysDeleteHouse
+      summary: Удалить дом без броней.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysConflict' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}/setup:
+    put:
+      tags: [stays-houses]
+      operationId: staysUpdateHouseSetup
+      summary: Название, адрес дома, вместимость, доп. места, собаки, манеж (владелец).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HouseSetupInput' }
+      responses:
+        '200':
+          description: Дом.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HouseManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysConflict' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}/content:
+    put:
+      tags: [stays-houses]
+      operationId: staysUpdateHouseContent
+      summary: Описание, удобства, адрес, ссылки на карты, текст к заселению (владелец и управляющий).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HouseContentInput' }
+      responses:
+        '200':
+          description: Дом.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HouseManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}/pricing:
+    put:
+      tags: [stays-houses]
+      operationId: staysUpdateHousePricing
+      summary: Режим цены и постоянная цена.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HousePricingInput' }
+      responses:
+        '200':
+          description: Дом.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HouseManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysConflict' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}/price-periods:
+    get:
+      tags: [stays-houses]
+      operationId: staysListPricePeriods
+      summary: Периоды цен дома.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+        - name: includePast
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Периоды.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PricePeriodDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [stays-houses]
+      operationId: staysCreatePricePeriod
+      summary: Добавить период цены (или цену на одну дату).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PricePeriodInput' }
+      responses:
+        '201':
+          description: Период.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricePeriodDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysConflict' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}/price-periods/{periodId}:
+    put:
+      tags: [stays-houses]
+      operationId: staysUpdatePricePeriod
+      summary: Изменить период цены.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+        - { $ref: '#/components/parameters/PeriodId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PricePeriodInput' }
+      responses:
+        '200':
+          description: Период.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricePeriodDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysConflict' }
+    delete:
+      tags: [stays-houses]
+      operationId: staysDeletePricePeriod
+      summary: Удалить период цены.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+        - { $ref: '#/components/parameters/PeriodId' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}/registry:
+    put:
+      tags: [stays-houses]
+      operationId: staysUpdateHouseRegistry
+      summary: Вид объекта, номер и ссылка реестра (у опубликованного — с заверением).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HouseRegistryInput' }
+      responses:
+        '200':
+          description: Дом.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HouseManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysConflict' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}/publish:
+    post:
+      tags: [stays-houses]
+      operationId: staysPublishHouse
+      summary: Опубликовать дом (заверение по StayRegistryOwnerNotice обязательно).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HousePublishInput' }
+      responses:
+        '200':
+          description: Дом опубликован.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HouseManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { $ref: '#/components/responses/PlainTextError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysConflict' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}/unpublish:
+    post:
+      tags: [stays-houses]
+      operationId: staysUnpublishHouse
+      summary: Снять дом с публикации.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmptyInput' }
+      responses:
+        '200':
+          description: Дом.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HouseManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}/archive:
+    post:
+      tags: [stays-houses]
+      operationId: staysArchiveHouse
+      summary: Архивировать дом (брони сохраняются, из тарифа и публичных страниц пропадает).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmptyInput' }
+      responses:
+        '200':
+          description: Дом.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HouseManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}/photos:
+    post:
+      tags: [stays-houses]
+      operationId: staysUploadHousePhoto
+      summary: Загрузить фото дома (до 15).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Фото.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HousePhotoDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysConflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}/photos/order:
+    put:
+      tags: [stays-houses]
+      operationId: staysOrderHousePhotos
+      summary: Порядок фото (первое — обложка).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdsOrderInput' }
+      responses:
+        '200':
+          description: Фото.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/HousePhotoDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}/photos/{photoId}:
+    delete:
+      tags: [stays-houses]
+      operationId: staysDeleteHousePhoto
+      summary: Удалить фото дома.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+        - { $ref: '#/components/parameters/PhotoId' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/companies/{companyId}/houses/{houseId}/qr:
+    get:
+      tags: [stays-houses]
+      operationId: staysHouseQr
+      summary: QR-код страницы дома.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/HouseId' }
+      responses:
+        '200': { $ref: '#/components/responses/PngImage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ═════════════ шахматка и блокировки ═════════════
+  /api/stays/companies/{companyId}/board:
+    get:
+      tags: [stays-board]
+      operationId: staysBoard
+      summary: Шахматка «дома × даты» с дешёвым опросом по ревизии.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: days
+          in: query
+          required: false
+          schema: { type: integer, minimum: 7, maximum: 62, default: 30 }
+        - name: sinceRevision
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Шахматка (или changed false).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysBoardDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/companies/{companyId}/blocks:
+    post:
+      tags: [stays-board]
+      operationId: staysCreateBlock
+      summary: Заблокировать даты дома.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HouseBlockInput' }
+      responses:
+        '201':
+          description: Блокировка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HouseBlockDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysConflict' }
+
+  /api/stays/companies/{companyId}/blocks/{blockId}:
+    put:
+      tags: [stays-board]
+      operationId: staysUpdateBlock
+      summary: Изменить блокировку.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/BlockId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HouseBlockInput' }
+      responses:
+        '200':
+          description: Блокировка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HouseBlockDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysConflict' }
+    delete:
+      tags: [stays-board]
+      operationId: staysDeleteBlock
+      summary: Снять блокировку.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/BlockId' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ═════════════ брони в кабинете ═════════════
+  /api/stays/companies/{companyId}/bookings:
+    get:
+      tags: [stays-staff-bookings]
+      operationId: staysListBookings
+      summary: Брони компании (по умолчанию «Ожидают проверки оплаты», от старых к новым).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - name: status
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/StayBookingStatus' }
+        - name: houseId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200':
+          description: Страница.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffStayBookingPage' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [stays-staff-bookings]
+      operationId: staysCreateManualBooking
+      summary: Ручная бронь из кабинета (P1) — сразу «Подтверждена».
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ManualStayBookingInput' }
+      responses:
+        '201':
+          description: Бронь.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffStayBookingCardDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StayRefusal' }
+
+  /api/stays/companies/{companyId}/bookings/quote:
+    post:
+      tags: [stays-staff-bookings]
+      operationId: staysManualQuote
+      summary: Расчёт для ручной брони (P1; минимум, максимум и горизонт не действуют).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StaffStayQuoteInput' }
+      responses:
+        '200':
+          description: Расчёт.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StayQuoteDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/bookings/{bookingId}:
+    get:
+      tags: [stays-staff-bookings]
+      operationId: staysGetBookingCard
+      summary: Карточка брони (журнал, файлы, доступные действия).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/BookingId' }
+      responses:
+        '200':
+          description: Карточка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffStayBookingCardDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/bookings/{bookingId}/confirm-payment:
+    post:
+      tags: [stays-staff-bookings]
+      operationId: staysConfirmPayment
+      summary: «Оплата прошла» → Подтверждена.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/BookingId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpectedVersionInput' }
+      responses:
+        '200':
+          description: Карточка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffStayBookingCardDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaffConflict' }
+
+  /api/stays/companies/{companyId}/bookings/{bookingId}/reject-payment:
+    post:
+      tags: [stays-staff-bookings]
+      operationId: staysRejectPayment
+      summary: Отклонить оплату с причиной → даты свободны.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/BookingId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpectedVersionReasonInput' }
+      responses:
+        '200':
+          description: Карточка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffStayBookingCardDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaffConflict' }
+
+  /api/stays/companies/{companyId}/bookings/{bookingId}/cancel:
+    post:
+      tags: [stays-staff-bookings]
+      operationId: staysCancelByOwner
+      summary: Отменить бронь владельцем/управляющим с причиной.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/BookingId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpectedVersionReasonInput' }
+      responses:
+        '200':
+          description: Карточка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffStayBookingCardDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaffConflict' }
+
+  /api/stays/companies/{companyId}/bookings/{bookingId}/payment-proofs/{proofId}:
+    get:
+      tags: [stays-staff-bookings]
+      operationId: staysGetStaffPaymentProof
+      summary: Открыть подтверждение оплаты (пишет событие просмотра).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/BookingId' }
+        - { $ref: '#/components/parameters/ProofId' }
+      responses:
+        '200': { $ref: '#/components/responses/PaymentProofFile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ═════════════ график ═════════════
+  /api/stays/companies/{companyId}/schedule:
+    get:
+      tags: [stays-schedule]
+      operationId: staysSchedule
+      summary: График уборок и заездов (сегодня, завтра и далее до 15 дней).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: days
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 15, default: 15 }
+      responses:
+        '200':
+          description: График.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysScheduleDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
