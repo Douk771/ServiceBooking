@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { Button } from '@/components/ui/Button'
 import { InlineError } from '@/components/ui/InlineError'
 import { staysCompaniesApi } from '../../api/staysCompanies'
-import type { StaysCompanyManageDto, StaysSettingsDto } from '../../types'
+import type { StaysCompanyManageWithServices, StaysSettingsWithServices } from '../../types'
 import {
   CANCELLATION_TEMPLATES,
   HALF_HOURS,
@@ -23,13 +23,13 @@ const TIME_OPTIONS = HALF_HOURS.map((t) => ({ value: t, label: t }))
  * Rules of the company (§37.2.2 groups: stay, prepayment, cancellation, options, check-in information, catalog). One `PUT …/settings`
  * with the full object. A change applies to NEW bookings only — the snapshot in each booking keeps what the guest saw.
  */
-export function RulesCard({ company, onSaved }: { company: StaysCompanyManageDto; onSaved: () => void }) {
-  const [s, setS] = useState<StaysSettingsDto>(() => company.settings!)
+export function RulesCard({ company, onSaved }: { company: StaysCompanyManageWithServices; onSaved: () => void }) {
+  const [s, setS] = useState<StaysSettingsWithServices>(() => company.settings!)
   const [errors, setErrors] = useState<SettingsErrors>({})
   const [formError, setFormError] = useState('')
   const [saved, setSaved] = useState(false)
 
-  const set = <K extends keyof StaysSettingsDto>(key: K, value: StaysSettingsDto[K]) => {
+  const set = <K extends keyof StaysSettingsWithServices>(key: K, value: StaysSettingsWithServices[K]) => {
     setS((v) => ({ ...v, [key]: value }))
     setSaved(false)
   }
@@ -167,7 +167,16 @@ export function RulesCard({ company, onSaved }: { company: StaysCompanyManageDto
           <SwitchRow label="Отправлять текст целиком" hint="Выключено: в мессенджер уходит только ссылка на бронь" checked={s.checkInInfoSendFullText} onChange={(v) => set('checkInInfoSendFullText', v)} />
           <StayNotice textKey="StayCheckInInfoOwnerNotice" className="mt-2" />
         </div>
-        <SwitchRow label="Напоминание накануне заезда" hint="Гость получит напоминание в 18:00 накануне" checked={s.arrivalReminderEnabled} onChange={(v) => set('arrivalReminderEnabled', v)} />
+        <SwitchRow label="Напоминание накануне заезда" hint="Время и текст — в блоке «Напоминание о заезде» ниже" checked={s.arrivalReminderEnabled} onChange={(v) => set('arrivalReminderEnabled', v)} />
+      </SectionCard>
+
+      <SectionCard title="Услуги" description="Баня, чан и другие услуги на время. К брони дома их можно добавлять всегда; заказ без проживания — только если вы его разрешите.">
+        <SwitchRow
+          label="Принимать заказы услуг без проживания"
+          hint="Гость сможет заказать услугу отдельно, без брони дома. Для этого нужны полные сведения об исполнителе"
+          checked={s.acceptServiceOrdersWithoutStay === true}
+          onChange={(v) => set('acceptServiceOrdersWithoutStay', v)}
+        />
       </SectionCard>
 
       <SectionCard title="Сотрудники и каталог">

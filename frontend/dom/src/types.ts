@@ -203,3 +203,7 @@ export type StaffStayBookingCardWithServices = StaffStayBookingCardDto & S39['St
 export type ProofRulesDto = S39['ProofRulesDto']
 /** The 409 of `POST …/houses/{id}/bookings` with a refused session names the service by its index in `services[]` (§39.24.4). */
 export type StayRefusalWithService = StayRefusalDto & { serviceIndex?: number | null }
+export type WeeklyDayDto = S39['WeeklyDayDto']
+export type PriceMatrixRowDto = S39['PriceMatrixRowDto']
+export type ReminderPlaceholderDto = S39['ReminderPlaceholderDto']
+export type BoundaryRangeDto = S39['BoundaryRangeDto']
