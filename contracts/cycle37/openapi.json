@@ -2557,16 +2557,14 @@
           },
           "checkInInfoSendFullText": {
             "type": "boolean",
-            "description": "ЮР-4",
-            "по умолчанию false — в мессенджер уходит ссылка": null
+            "description": "ЮР-4: по умолчанию false — в мессенджер уходит ссылка"
           },
           "arrivalReminderEnabled": {
             "type": "boolean"
           },
           "housekeeperSeesGuestComment": {
             "type": "boolean",
-            "description": "ЮР-5",
-            "по умолчанию false": null
+            "description": "ЮР-5: по умолчанию false"
           },
           "showInCatalog": {
             "type": "boolean"
@@ -3174,8 +3172,7 @@
               }
             ],
             "nullable": true,
-            "description": "обязательно",
-            "если дом опубликован": null
+            "description": "обязательно, если дом опубликован"
           }
         }
       },

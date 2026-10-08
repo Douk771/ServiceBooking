@@ -1546,10 +1546,10 @@ export interface components {
             cotFeeRub: number;
             checkInInfoSendTime: components["schemas"]["TimeOfDay"];
             checkInInfoText?: string | null;
-            /** @description ЮР-4 */
+            /** @description ЮР-4: по умолчанию false — в мессенджер уходит ссылка */
             checkInInfoSendFullText: boolean;
             arrivalReminderEnabled: boolean;
-            /** @description ЮР-5 */
+            /** @description ЮР-5: по умолчанию false */
             housekeeperSeesGuestComment: boolean;
             showInCatalog: boolean;
         };
@@ -1702,7 +1702,7 @@ export interface components {
             objectKind: components["schemas"]["HouseObjectKind"];
             registryNumber?: string | null;
             registryUrl?: string | null;
-            /** @description обязательно */
+            /** @description обязательно, если дом опубликован */
             attestation?: components["schemas"]["AttestationInput"] | null;
         };
         HousePublishInput: {

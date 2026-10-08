@@ -937,9 +937,9 @@ components:
         cotFeeRub: { type: integer, minimum: 0, maximum: 100000 }
         checkInInfoSendTime: { $ref: '#/components/schemas/TimeOfDay' }
         checkInInfoText: { type: string, nullable: true, maxLength: 2000 }
-        checkInInfoSendFullText: { type: boolean, description: ЮР-4, по умолчанию false — в мессенджер уходит ссылка }
+        checkInInfoSendFullText: { type: boolean, description: 'ЮР-4: по умолчанию false — в мессенджер уходит ссылка' }
         arrivalReminderEnabled: { type: boolean }
-        housekeeperSeesGuestComment: { type: boolean, description: ЮР-5, по умолчанию false }
+        housekeeperSeesGuestComment: { type: boolean, description: 'ЮР-5: по умолчанию false' }
         showInCatalog: { type: boolean }
     PaymentDetailsDto:
       type: object
@@ -1126,7 +1126,7 @@ components:
         objectKind: { $ref: '#/components/schemas/HouseObjectKind' }
         registryNumber: { type: string, nullable: true, pattern: '^[0-9A-Za-zА-Яа-яЁё\-]{5,32}$' }
         registryUrl: { type: string, nullable: true, maxLength: 500 }
-        attestation: { allOf: [ { $ref: '#/components/schemas/AttestationInput' } ], nullable: true, description: обязательно, если дом опубликован }
+        attestation: { allOf: [ { $ref: '#/components/schemas/AttestationInput' } ], nullable: true, description: 'обязательно, если дом опубликован' }
     HousePublishInput:
       type: object
       additionalProperties: false
