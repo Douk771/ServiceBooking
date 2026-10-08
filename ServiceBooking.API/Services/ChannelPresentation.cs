@@ -55,13 +55,12 @@ public static class ChannelPresentation
         _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
     };
 
-    /// <summary>US-31 p.1's four blocking reasons for the notification-settings screen
+    /// <summary>US-31 p.1's blocking reasons (cycle 40, §40.3.4: the tariff-flag reason is gone, three remain) for the notification-settings screen
     /// (API_CONTRACT_CYCLE4.md §28.1) — order matters, it's the priority a caller should be told about
     /// the blocker in. <see langword="null"/> means the option is fully effective for this company.</summary>
     public static string? SettingsBlockedReason(
-        bool planAllowsChannel, bool companyHasAssignment, ChannelPaymentStatus? paymentState, ChannelState? channelState)
+        bool companyHasAssignment, ChannelPaymentStatus? paymentState, ChannelState? channelState)
     {
-        if (!planAllowsChannel) return "Недоступно на вашем тарифе";
         if (!companyHasAssignment) return "Салон не привязан к каналу";
         if (paymentState != ChannelPaymentStatus.Paid) return "Канал не оплачен";
         if (channelState != ChannelState.Connected) return "Канал отвалился";

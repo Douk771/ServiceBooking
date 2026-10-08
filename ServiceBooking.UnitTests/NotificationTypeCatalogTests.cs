@@ -61,7 +61,7 @@ public class NotificationTypeCatalogTests
     // ── the gate: the salon mask concerns booking types only ────────────────────────────────────────
 
     private static NotificationGateResult Gate(NotificationType type, int mask) => NotificationGate.Evaluate(
-        EffectivePlan.Free with { AllowNotificationChannel = true, PaidNotificationNumbers = 1 }, type, true, new NotificationChannel(),
+        accountHasPaidTransport: true, type, true, new NotificationChannel(),
         new CompanyNotificationSettings { EnabledTypeMask = mask }, false, Now, Now.AddHours(2), channelIsFunded: true);
 
     [Fact]
@@ -85,7 +85,7 @@ public class NotificationTypeCatalogTests
     {
         // MinLeadMinutes (default 120) concerns reminders only; an order message queued a minute before its "deadline" still goes.
         var result = NotificationGate.Evaluate(
-            EffectivePlan.Free with { AllowNotificationChannel = true, PaidNotificationNumbers = 1 }, NotificationType.OrderReady, true,
+            accountHasPaidTransport: true, NotificationType.OrderReady, true,
             new NotificationChannel(), new CompanyNotificationSettings { MinLeadMinutes = 720 }, false, Now, Now.AddMinutes(1), channelIsFunded: true);
         result.Outcome.Should().Be(NotificationGateOutcome.Allowed);
     }
@@ -93,9 +93,9 @@ public class NotificationTypeCatalogTests
     [Fact]
     public void Gate_OrderType_StillBlockedByOptOutAndByNoPaidNumber()
     {
-        NotificationGate.Evaluate(EffectivePlan.Free with { PaidNotificationNumbers = 1 }, NotificationType.OrderReady, true, new NotificationChannel(),
+        NotificationGate.Evaluate(accountHasPaidTransport: true, NotificationType.OrderReady, true, new NotificationChannel(),
             null, recipientOptedOut: true, Now, Now.AddHours(2), true).Reason.Should().Be(NotificationReason.RecipientOptedOut);
-        NotificationGate.Evaluate(EffectivePlan.Free, NotificationType.OrderReady, true, new NotificationChannel(),
+        NotificationGate.Evaluate(accountHasPaidTransport: false, NotificationType.OrderReady, true, new NotificationChannel(),
             null, false, Now, Now.AddHours(2), true).Reason.Should().Be(NotificationReason.NotOnPaidPlan);
     }
 }

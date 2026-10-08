@@ -94,19 +94,10 @@ public class ChannelPresentationTests
     }
 
     [Fact]
-    public void SettingsBlockedReason_PlanDeniedTakesPriorityOverEverythingElse()
+    public void SettingsBlockedReason_NoAssignment()
     {
         var reason = ChannelPresentation.SettingsBlockedReason(
-            planAllowsChannel: false, companyHasAssignment: true, paymentState: ChannelPaymentStatus.Paid, channelState: ChannelState.Connected);
-
-        reason.Should().Be("Недоступно на вашем тарифе");
-    }
-
-    [Fact]
-    public void SettingsBlockedReason_NoAssignment_WhenPlanAllows()
-    {
-        var reason = ChannelPresentation.SettingsBlockedReason(
-            planAllowsChannel: true, companyHasAssignment: false, paymentState: null, channelState: null);
+            companyHasAssignment: false, paymentState: null, channelState: null);
 
         reason.Should().Be("Салон не привязан к каналу");
     }
@@ -115,7 +106,7 @@ public class ChannelPresentationTests
     public void SettingsBlockedReason_NotPaid()
     {
         var reason = ChannelPresentation.SettingsBlockedReason(
-            planAllowsChannel: true, companyHasAssignment: true, paymentState: ChannelPaymentStatus.NotPaid, channelState: ChannelState.NotConnected);
+            companyHasAssignment: true, paymentState: ChannelPaymentStatus.NotPaid, channelState: ChannelState.NotConnected);
 
         reason.Should().Be("Канал не оплачен");
     }
@@ -124,7 +115,7 @@ public class ChannelPresentationTests
     public void SettingsBlockedReason_PaidButNotConnected()
     {
         var reason = ChannelPresentation.SettingsBlockedReason(
-            planAllowsChannel: true, companyHasAssignment: true, paymentState: ChannelPaymentStatus.Paid, channelState: ChannelState.Disconnected);
+            companyHasAssignment: true, paymentState: ChannelPaymentStatus.Paid, channelState: ChannelState.Disconnected);
 
         reason.Should().Be("Канал отвалился");
     }
@@ -133,7 +124,7 @@ public class ChannelPresentationTests
     public void SettingsBlockedReason_EverythingOk_ReturnsNull()
     {
         var reason = ChannelPresentation.SettingsBlockedReason(
-            planAllowsChannel: true, companyHasAssignment: true, paymentState: ChannelPaymentStatus.Paid, channelState: ChannelState.Connected);
+            companyHasAssignment: true, paymentState: ChannelPaymentStatus.Paid, channelState: ChannelState.Connected);
 
         reason.Should().BeNull();
     }

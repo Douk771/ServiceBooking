@@ -36,7 +36,7 @@ public static class NotificationGate
     // granted anything, §52.3's AccountsOnly row); true/false means the caller already looked up the
     // recipient's current PdnConsent/ProviderDelivery grant via ConsentLedger.
     public static NotificationGateResult Evaluate(
-        EffectivePlan plan,
+        bool accountHasPaidTransport,
         NotificationType type,
         bool companyHasAssignment,
         NotificationChannel? channel,
@@ -47,8 +47,7 @@ public static class NotificationGate
         // Cycle 7 (ARCHITECTURE_CYCLE7.md §45.3 p.3, §47.2): made an explicit, mandatory parameter
         // instead of an internal ChannelPaymentState.Of(channel, now) call — every caller must now say
         // out loud where it got "is this number funded" from, rather than the gate quietly re-deriving
-        // it. Callers compute this via Services.Billing.ChannelFunding.Rank over the account's live
-        // channels and plan.PaidNotificationNumbers (§47.1's N-vs-M rule) — no channel-level payment
+        // it. Callers take this from AccountMessagingState.FundingOf (§40.3.2) — no channel-level payment
         // read is left in this gate.
         bool channelIsFunded,
         ProviderDeliveryConsentMode providerDeliveryConsentMode = ProviderDeliveryConsentMode.AccountsOnly,
@@ -74,11 +73,9 @@ public static class NotificationGate
         if (blockedByProviderDeliveryConsent)
             return NotificationGateResult.Block(NotificationReason.NoProviderDeliveryConsent);
 
-        // §47.2: "not on a paid plan" now means "the account has 0 paid notification numbers" — the
-        // separate AllowNotificationChannel flag only gates whether the PLAN may buy the option at all,
-        // which is a distinct question from whether it currently has any bought (see EffectivePlan's
-        // own doc comment on the two fields).
-        if (plan.PaidNotificationNumbers == 0)
+        // §47.2 / §40.3: "not on a paid plan" means "the account has no paid transport" (WhatsApp or MAX) — a tariff flag takes
+        // no part (ARCHITECTURE_CYCLE40.md §40.3.4).
+        if (!accountHasPaidTransport)
             return NotificationGateResult.Block(NotificationReason.NotOnPaidPlan);
 
         if (!companyHasAssignment || channel is null)

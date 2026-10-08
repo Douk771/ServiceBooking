@@ -58,6 +58,8 @@ internal static class ApplicationServicesExtensions
     // this developer's file this cycle.
     builder.Services.AddScoped<ServiceBooking.API.Services.NotificationScheduler>();
     // Cycle 22 (ARCHITECTURE_CYCLE22.md §375 F14, §379): channel funding, batched across billing accounts.
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.3): the one reader of "paid / open / working" per account; ChannelFundingReader is its façade.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.AccountMessagingReader>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.ChannelFundingReader>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingEventLog>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingActorResolver>();
@@ -128,7 +130,6 @@ internal static class ApplicationServicesExtensions
 
     // ARCHITECTURE_CYCLE24.md §464 — time, availability, notifications and tariffs of shops.
     builder.Services.AddScoped<ServiceBooking.API.Services.Billing.OrdersPlanResolver>();
-    builder.Services.AddScoped<ServiceBooking.API.Services.Billing.ChannelEligibility>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopGateLoader>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.DailyMenuService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopChannelReader>();

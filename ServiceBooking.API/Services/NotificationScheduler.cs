@@ -29,7 +29,7 @@ namespace ServiceBooking.API.Services;
 /// </summary>
 public sealed class NotificationScheduler(
     AppDbContext db,
-    SubscriptionResolver subscriptionResolver,
+    AccountMessagingReader messagingReader,
     ConsentLedger consentLedger,
     IOptions<NotificationOptions> options,
     IOptions<DemoModeOptions> demoOptions)
@@ -37,13 +37,9 @@ public sealed class NotificationScheduler(
     /// <param name="booking">The booking just created (not yet saved).</param>
     /// <param name="serviceNames">The visit's service names, known at Create time.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <param name="plan">The company's effective plan when the caller already resolved it in this same
-    /// request (BookingsController.Create does, for its own 402 gate — §375 F17); null resolves it here.
-    /// A hand-over within one request, not a cache.</param>
-    public async Task OnBookingCreatedAsync(Booking booking, IReadOnlyList<string>? serviceNames, CancellationToken ct,
-        EffectivePlan? plan = null)
+    public async Task OnBookingCreatedAsync(Booking booking, IReadOnlyList<string>? serviceNames, CancellationToken ct)
     {
-        var ctx = await BuildContextAsync(booking, serviceNames, ct, plan);
+        var ctx = await BuildContextAsync(booking, serviceNames, ct);
         if (ctx is null) return;
 
         var nowUtc = DateTime.UtcNow;
@@ -105,7 +101,7 @@ public sealed class NotificationScheduler(
     // ── Shared plumbing ──────────────────────────────────────────────────────────────────────────
 
     private sealed record SchedulingContext(
-        Company Company, EffectivePlan Plan,
+        Company Company, AccountMessagingState Messaging,
         // ARCHITECTURE_CYCLE9.md §104.3/§104.5: a company may hold one assignment PER TRANSPORT now —
         // every live channel is carried, not an arbitrary single one. Empty means "no assignment at all",
         // same meaning the old nullable Channel's null carried.
@@ -123,9 +119,7 @@ public sealed class NotificationScheduler(
     /// falls back to the single legacy Booking.ServiceId lookup if that table somehow has no rows yet
     /// (defensive only — the migration backfill guarantees at least one row for every booking).</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <param name="knownPlan">Already-resolved effective plan of the booking's company, if any.</param>
-    private async Task<SchedulingContext?> BuildContextAsync(Booking booking, IReadOnlyList<string>? serviceNames, CancellationToken ct,
-        EffectivePlan? knownPlan = null)
+    private async Task<SchedulingContext?> BuildContextAsync(Booking booking, IReadOnlyList<string>? serviceNames, CancellationToken ct)
     {
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == booking.CompanyId, ct);
         var master = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == booking.MasterId, ct);
@@ -155,7 +149,8 @@ public sealed class NotificationScheduler(
             }
         }
 
-        var plan = knownPlan ?? await subscriptionResolver.GetEffectivePlanAsync(company.Id);
+        // ARCHITECTURE_CYCLE40.md §40.3.3: what is paid on the company's billing account — per transport, no tariff flag.
+        var messaging = await messagingReader.ForCompanyAsync(company.Id, ct: ct);
 
         // ARCHITECTURE_CYCLE9.md §104.3: every live assignment, one per transport at most — not an
         // arbitrary FirstOrDefault. N9: ordered by Transport so ctx.Channels[0] (the "representative"
@@ -202,58 +197,14 @@ public sealed class NotificationScheduler(
         var optedOut = recipientPhone is not null &&
             await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == recipientPhone, ct);  // SUBJECT-PHONE-GATE: not-account-scoped — dispatch-time check against the notification's own recipient phone (already resolved upstream), not an account reading another subject's data (ARCHITECTURE_CYCLE16.md §245.3)
 
-        return new SchedulingContext(company, plan, channels, settings, names, master,
+        return new SchedulingContext(company, messaging, channels, settings, names, master,
             recipientPhone, recipientName, optedOut, recipientUserId);
     }
 
-    private async Task<bool> IsChannelFundedAsync(NotificationChannel? channel, EffectivePlan plan, CancellationToken ct)
-    {
-        if (channel is null) return false;
-        if (channel.BillingAccountId is not { } accountId)
-        {
-            // Pre-cycle-5-backfill edge case (no BillingAccountId yet on this channel row) — fail
-            // closed rather than guess at funding for a number that isn't tied to an account yet.
-            return false;
-        }
-
-        var siblings = await db.NotificationChannels.AsNoTracking()
-            .Where(c => c.BillingAccountId == accountId)
-            .ToListAsync(ct);
-        var ranking = ChannelFunding.Rank(siblings, plan.PaidNotificationNumbers);
-        return ranking.TryGetValue(channel.Id, out var state) && state == ChannelFundingState.Funded;
-    }
-
-    /// <summary>N10: <see cref="IsChannelFundedAsync"/> called once per channel of <paramref name="channels"/>
-    /// re-fetches every sibling channel on that channel's billing account EACH time — for a company with
-    /// two assigned transports (WhatsApp + MAX) that is 2 full-account queries to rank funding for one
-    /// event, every time an event is queued. Ranking only depends on the DISTINCT billing accounts behind
-    /// <paramref name="channels"/> (almost always exactly one), so this groups by account and ranks each
-    /// account's siblings exactly once.</summary>
-    private async Task<Dictionary<Guid, bool>> BuildFundingLookupAsync(
-        IReadOnlyList<NotificationChannel> channels, EffectivePlan plan, CancellationToken ct)
-    {
-        var result = new Dictionary<Guid, bool>();
-        var accountIds = channels
-            .Where(c => c.BillingAccountId is not null)
-            .Select(c => c.BillingAccountId!.Value)
-            .Distinct()
-            .ToList();
-        if (accountIds.Count == 0) return result;
-
-        var siblings = await db.NotificationChannels.AsNoTracking()
-            .Where(c => c.BillingAccountId != null && accountIds.Contains(c.BillingAccountId!.Value))
-            .ToListAsync(ct);
-
-        foreach (var accountId in accountIds)
-        {
-            var accountSiblings = siblings.Where(c => c.BillingAccountId == accountId).ToList();
-            var ranking = ChannelFunding.Rank(accountSiblings, plan.PaidNotificationNumbers);
-            foreach (var (channelId, state) in ranking)
-                result[channelId] = state == ChannelFundingState.Funded;
-        }
-
-        return result;
-    }
+    /// <summary>Per-channel "funded" verdict (§40.3.2) from the account state read once in <see cref="BuildContextAsync"/>:
+    /// the first live number of a PAID transport is funded; a surplus number, or a transport that is not paid, is not.</summary>
+    private static Dictionary<Guid, bool> BuildFundingLookup(IReadOnlyList<NotificationChannel> channels, AccountMessagingState messaging) =>
+        channels.ToDictionary(c => c.Id, c => messaging.FundingOf(c) == ChannelFundingState.Funded);
 
     private static DateTime ComputeVisitStartUtc(SchedulingContext ctx, Booking booking) =>
         NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, ctx.Company.TimeZoneId);
@@ -306,7 +257,7 @@ public sealed class NotificationScheduler(
         }
 
         // ARCHITECTURE_CYCLE9.md §104.5/§104.6: channel-INDEPENDENT gate checks first — opt-out, provider
-        // consent, plan.PaidNotificationNumbers == 0, "no assignment at all", type disabled, lead time.
+        // consent, "nothing paid on the account", "no assignment at all", type disabled, lead time.
         // channelIsFunded is forced TRUE here deliberately: NotificationGate.Evaluate's funding branch
         // reuses the same NotOnPaidPlan reason as the account-wide "zero paid numbers" branch (its own
         // doc comment says so), so forcing true here guarantees that if NotOnPaidPlan still comes back,
@@ -314,7 +265,7 @@ public sealed class NotificationScheduler(
         // (per §104.5) an unfunded/unusable PRIORITY channel is reported as PriorityChannelUnavailable,
         // not NotOnPaidPlan — a deliberate, routing-aware reason, not a WhatsApp-era reason repurposed.
         var globalGate = NotificationGate.Evaluate(
-            ctx.Plan, type, companyHasAssignment: ctx.Channels.Count > 0,
+            accountHasPaidTransport: ctx.Messaging.AnyPaid, type, companyHasAssignment: ctx.Channels.Count > 0,
             channel: ctx.Channels.Count > 0 ? ctx.Channels[0] : null,
             ctx.Settings, ctx.RecipientOptedOut, nowUtc, visitStartUtc,
             channelIsFunded: true,
@@ -347,7 +298,7 @@ public sealed class NotificationScheduler(
         // "load every sibling channel on this billing account" query PER channel — ranking only depends
         // on which billing account(s) ctx.Channels sit on, computed once here rather than once per
         // candidate (this scales with distinct accounts, almost always 1, not with channel count).
-        var fundedByChannelId = await BuildFundingLookupAsync(ctx.Channels, ctx.Plan, ct);
+        var fundedByChannelId = BuildFundingLookup(ctx.Channels, ctx.Messaging);
         var candidates = ctx.Channels
             .Select(channel => new NotificationRouting.Candidate(
                 channel.Id, channel.Transport, fundedByChannelId.GetValueOrDefault(channel.Id)))

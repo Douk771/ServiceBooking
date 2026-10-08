@@ -363,7 +363,7 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
         await db.StaysSubscriptions.CountAsync(s => s.PlanConfigId == planId && s.IsActive);
 
     // contracts/cycle7/openapi.yaml AdminPlanDto: projects the entity onto the contract shape rather than
-    // returning it directly — the entity also carries AllowNotificationChannel and CreatedAt (neither
+    // returning it directly — the entity also carries the unread AllowNotificationChannel column and CreatedAt (neither
     // in the schema, which sets additionalProperties: false) and stores Highlights as a single
     // newline-separated string rather than the array the schema requires. `options` is now the real
     // PlanOptionRule matrix for this plan (cycle-07 backend report fixes the earlier always-`[]` gap);

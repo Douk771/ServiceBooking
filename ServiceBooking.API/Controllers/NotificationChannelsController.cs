@@ -30,13 +30,11 @@ public class NotificationChannelsController(
     INotificationTransportRegistry transportRegistry,
     IMemoryCache cache,
     IOptions<NotificationOptions> options,
-    SubscriptionResolver subscriptionResolver,
     BillingAccountProvisioner billingAccountProvisioner,
     PlatformSettings platformSettings,
     LegalDocumentProvider legalProvider,
     ConsentLedger ledger,
     ChannelFundingReader fundingReader,
-    ChannelEligibility eligibility,
     ILogger<NotificationChannelsController> logger) : ControllerBase
 {
     private const string TestMessageText =
@@ -69,10 +67,6 @@ public class NotificationChannelsController(
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await IsAnyCompanyOwnerAsync(userId)) return Forbid();
 
-        var accountId = await BillingAccountProvisioner.FindAccountIdAsync(db, userId);
-        var plan = accountId.HasValue
-            ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
-            : EffectivePlan.Free;
         var price = await platformSettings.GetChannelPricePerMonthAsync(ct);
 
         // B12 (§104.8): riskText/riskVersion now come from the SAME ChannelRiskNotice legal document the
@@ -92,7 +86,7 @@ public class NotificationChannelsController(
         };
 
         return Ok(new ChannelOfferDto(
-            PricePerMonth: price, AllowedByPlan: await eligibility.IsAllowedAsync(accountId, plan, ct),
+            PricePerMonth: price, AllowedByPlan: true,
             RiskText: riskDoc.ContentHtml, RiskVersion: riskDoc.Version, Transports: transports));
     }
 
@@ -120,11 +114,9 @@ public class NotificationChannelsController(
             return Conflict("Соглашение владельца было обновлено ещё раз — перечитайте и примите новую редакцию.");
 
         var accountId = await BillingAccountProvisioner.FindAccountIdAsync(db, userId);
-        var plan = accountId.HasValue
-            ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
-            : EffectivePlan.Free;
-        if (!await eligibility.IsAllowedAsync(accountId, plan))
-            return StatusCode(402, "Подключение канала недоступно на вашем тарифе");
+
+        // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.4): the tariff flag no longer gates the purchase (no 402 "недоступно на вашем тарифе");
+        // availability of the option is the platform switch (§40.7.1), checked by the wizard's POST (BE-40-3).
 
         // N21, §59/§47.3: `notifications.channel.price-per-month` no longer controls anything — the
         // channel is priced through the `notifications.whatsapp` subscription option now, not this
@@ -137,9 +129,7 @@ public class NotificationChannelsController(
         // compare against.
         var requestedTransport = dto.Transport ?? NotificationTransport.WhatsApp;
 
-        // accountId is guaranteed here — GetOffer/AllowNotificationChannel above already required a
-        // usable plan, and a usable plan requires an AccountSubscription, which requires an account
-        // (BillingAccountProvisioner.EnsureAccountAsync is idempotent if one already exists).
+        // EnsureAccountAsync is idempotent if the account already exists.
         var ownerAccountId = accountId ?? await billingAccountProvisioner.EnsureAccountAsync(userId);
 
         // §114.2 (N8): "у аккаунта уже есть канал этого транспорта в живом состоянии" → 409. "Живое"
@@ -225,20 +215,10 @@ public class NotificationChannelsController(
         var channel = await LoadOwnedChannelAsync(id, forUpdate: true);
         if (channel is null) return NotFound();
 
-        // Reviewer note / SPEC US-31 п. 7: the plan could have downgraded since the channel was
-        // purchased (channel and AccountSubscription are billed independently, §33) — Connect must not
-        // let a since-downgraded owner keep reconnecting a channel their current plan no longer allows.
-        var accountId = await BillingAccountProvisioner.FindAccountIdAsync(db, userId);
-        var plan = accountId.HasValue
-            ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
-            : EffectivePlan.Free;
-        if (!await eligibility.IsAllowedAsync(accountId, plan))
-            return StatusCode(402, "Подключение канала недоступно на вашем тарифе");
-
         var nowUtc = DateTime.UtcNow;
-        // §47.3: Connect can only bind a FUNDED number — ChannelFunding.Rank over the account's own
-        // live channels (the channel row has no paid period of its own).
-        var funded = await fundingReader.IsFundedAsync(channel, plan);
+        // §40.3: Connect can only bind a FUNDED number — the first live number of a paid transport (the channel row has no
+        // paid period of its own). The tariff flag is gone (§40.3.4): there is no 402 "недоступно на вашем тарифе".
+        var funded = await fundingReader.IsFundedAsync(channel);
         var paymentState = funded ? ChannelPaymentStatus.Paid : ChannelPaymentStatus.NotPaid;
         if (!funded)
             return StatusCode(402, "Канал не оплачен");
@@ -819,7 +799,7 @@ public class NotificationChannelsController(
     {
         var (fundingState, fundingText, subscriptionPaidUntil) = funding.TryGetValue(channel.Id, out var f)
             ? f
-            : new ChannelFundingInfo(ChannelFundingState.NotPaid, BillingTexts.FundingText(ChannelFundingState.NotPaid, 0, 1, null), null);
+            : new ChannelFundingInfo(ChannelFundingState.NotPaid, MessengerTexts.FundingText(ChannelFundingState.NotPaid, channel.Transport, new TransportPaymentView(null, false), null), null);
         var paymentState = fundingState switch
         {
             ChannelFundingState.Funded => ChannelPaymentStatus.Paid,
