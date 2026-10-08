@@ -22,21 +22,39 @@ public static class StayStaffRecipients
             (cm.Role == UserRole.CompanyOwner || (cm.Role == UserRole.Master && cm.StaffPosition == StaffPosition.Manager)), ct);
 }
 
+/// <summary>
+/// What a notification is about: a booking of a house OR a stand-alone order of a service (ARCHITECTURE_CYCLE39.md §39.9.2). The queues write exactly one of the two keys
+/// (the CHECK constraints of the tables allow at most one subject).
+/// </summary>
+public readonly record struct StayNotificationSubject(Guid CompanyId, string? GuestUserId, Guid? StayBookingId, Guid? StayServiceOrderId)
+{
+    public static StayNotificationSubject Of(StayBooking b) => new(b.CompanyId, b.GuestUserId, b.Id, null);
+
+    public static StayNotificationSubject Of(StayServiceOrder o) => new(o.CompanyId, o.GuestUserId, null, o.Id);
+
+    /// <summary>The key part that tells subjects apart in an idempotency key of a message.</summary>
+    public string KeyPart => StayBookingId is not null ? "stay" : "so";
+}
+
 /// <summary>Push to the devices of the owner and managers — every device of the recipient (cycle 33); the key is one row per event and device.</summary>
 public sealed class StayStaffPushQueue(AppDbContext db, IStaysClock clock)
 {
     public static readonly TimeSpan Ttl = TimeSpan.FromHours(1);
 
-    public async Task QueueAsync(StayBooking booking, Guid eventId, NotificationType type, PushPayload payload, CancellationToken ct)
+    public Task QueueAsync(StayBooking booking, Guid eventId, NotificationType type, PushPayload payload, CancellationToken ct) =>
+        QueueAsync(StayNotificationSubject.Of(booking), eventId, type, payload, ct);
+
+    public async Task QueueAsync(StayNotificationSubject subject, Guid eventId, NotificationType type, PushPayload payload, CancellationToken ct)
     {
-        var userIds = await StayStaffRecipients.UserIdsAsync(db, booking.CompanyId, booking.GuestUserId, ct);
+        var userIds = await StayStaffRecipients.UserIdsAsync(db, subject.CompanyId, subject.GuestUserId, ct);
         if (userIds.Count == 0) return;
         var subscriptions = await db.PushSubscriptions.AsNoTracking().Where(s => userIds.Contains(s.UserId)).ToListAsync(ct);
         var now = clock.UtcNow;
         foreach (var subscription in subscriptions)
             db.StaffPushNotifications.Add(new StaffPushNotification
             {
-                Id = Guid.NewGuid(), UserId = subscription.UserId, CompanyId = booking.CompanyId, StayBookingId = booking.Id, SubscriptionId = subscription.Id, Type = type,
+                Id = Guid.NewGuid(), UserId = subscription.UserId, CompanyId = subject.CompanyId, StayBookingId = subject.StayBookingId, StayServiceOrderId = subject.StayServiceOrderId,
+                SubscriptionId = subscription.Id, Type = type,
                 // the url is absolute (a push may be opened by the worker of another site)
                 Payload = StaffPushPayloadJson.Build(payload.Title, payload.Body, payload.Tag, payload.Url),
                 Status = NotificationStatus.Pending, ExpiresAtUtc = now.Add(Ttl), CreatedAt = now,
@@ -49,9 +67,12 @@ public sealed class StayStaffMaxQueue(AppDbContext db, IStaysClock clock)
 {
     public static readonly TimeSpan Ttl = TimeSpan.FromHours(1);
 
-    public async Task QueueAsync(StayBooking booking, Guid eventId, NotificationType type, string text, CancellationToken ct)
+    public Task QueueAsync(StayBooking booking, Guid eventId, NotificationType type, string text, CancellationToken ct) =>
+        QueueAsync(StayNotificationSubject.Of(booking), eventId, type, text, ct);
+
+    public async Task QueueAsync(StayNotificationSubject subject, Guid eventId, NotificationType type, string text, CancellationToken ct)
     {
-        var userIds = await StayStaffRecipients.UserIdsAsync(db, booking.CompanyId, booking.GuestUserId, ct);
+        var userIds = await StayStaffRecipients.UserIdsAsync(db, subject.CompanyId, subject.GuestUserId, ct);
         if (userIds.Count == 0) return;
         var chatKeys = await db.StaffMaxLinks.AsNoTracking().Where(l => userIds.Contains(l.UserId) && l.Status == StaffMaxLinkStatus.Active)
             .Select(l => l.ChatKey).Distinct().ToListAsync(ct);
@@ -62,7 +83,7 @@ public sealed class StayStaffMaxQueue(AppDbContext db, IStaysClock clock)
             if (await db.StaffMaxMessages.AnyAsync(m => m.IdempotencyKey == key, ct)) continue;
             db.StaffMaxMessages.Add(new StaffMaxMessage
             {
-                Id = Guid.NewGuid(), CompanyId = booking.CompanyId, StayBookingId = booking.Id, ChatKey = chatKey, Type = type, Text = text,
+                Id = Guid.NewGuid(), CompanyId = subject.CompanyId, StayBookingId = subject.StayBookingId, StayServiceOrderId = subject.StayServiceOrderId, ChatKey = chatKey, Type = type, Text = text,
                 Status = NotificationStatus.Pending, ExpiresAtUtc = now.Add(Ttl), CreatedAt = now, IdempotencyKey = key,
             });
         }
@@ -74,9 +95,14 @@ public sealed class StayGuestPushQueue(AppDbContext db, IStaysClock clock)
 {
     public static readonly TimeSpan Ttl = TimeSpan.FromHours(2);
 
-    public async Task QueueAsync(StayBooking booking, string marker, NotificationType type, PushPayload payload, CancellationToken ct)
+    public Task QueueAsync(StayBooking booking, string marker, NotificationType type, PushPayload payload, CancellationToken ct) =>
+        QueueAsync(StayNotificationSubject.Of(booking), marker, type, payload, ct);
+
+    public async Task QueueAsync(StayNotificationSubject subject, string marker, NotificationType type, PushPayload payload, CancellationToken ct)
     {
-        var subscriptions = await db.StayGuestPushSubscriptions.AsNoTracking().Where(s => s.StayBookingId == booking.Id).ToListAsync(ct);
+        var subscriptions = subject.StayBookingId is { } bookingId
+            ? await db.StayGuestPushSubscriptions.AsNoTracking().Where(s => s.StayBookingId == bookingId).ToListAsync(ct)
+            : await db.StayGuestPushSubscriptions.AsNoTracking().Where(s => s.StayServiceOrderId == subject.StayServiceOrderId).ToListAsync(ct);
         if (subscriptions.Count == 0) return;
         var now = clock.UtcNow;
         var body = JsonSerializer.Serialize(new { title = payload.Title, body = payload.Body, tag = payload.Tag, url = payload.Url }, StaffPushPayloadJson.Options);
@@ -86,7 +112,8 @@ public sealed class StayGuestPushQueue(AppDbContext db, IStaysClock clock)
             if (await db.StayGuestPushNotifications.AnyAsync(n => n.IdempotencyKey == key, ct)) continue;
             db.StayGuestPushNotifications.Add(new StayGuestPushNotification
             {
-                Id = Guid.NewGuid(), StayBookingId = booking.Id, CompanyId = booking.CompanyId, SubscriptionId = subscription.Id, Type = type, Payload = body,
+                Id = Guid.NewGuid(), StayBookingId = subject.StayBookingId, StayServiceOrderId = subject.StayServiceOrderId, CompanyId = subject.CompanyId, SubscriptionId = subscription.Id,
+                Type = type, Payload = body,
                 Status = NotificationStatus.Pending, ExpiresAtUtc = now.Add(Ttl), CreatedAt = now, IdempotencyKey = key,
             });
         }

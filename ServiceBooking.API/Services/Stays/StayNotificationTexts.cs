@@ -7,7 +7,7 @@ namespace ServiceBooking.API.Services.Stays;
 public sealed record StayTextFacts(
     string CompanyName, string HouseName, DateOnly CheckIn, DateOnly CheckOut, int Nights, int PrepayRub, int DueRub, string? Address,
     string? CompanyPhone, string? Reason, string? PaymentDetails, string? PaymentPurpose, DateTime? HoldExpiresLocal, string CheckInTime,
-    string? CheckInInfoFull);
+    string? CheckInInfoFull, int ServicesCount = 0);
 
 /// <summary>
 /// ARCHITECTURE_CYCLE37.md §37.12, API_CONTRACT_CYCLE37.md §37.33 — fixed texts of every notification of «Дома». Staff messages carry NO name or phone of the guest;
@@ -31,7 +31,7 @@ public static class StayNotificationTexts
         var tail = $"«{f.HouseName}» · {Range(f.CheckIn, f.CheckOut)}";
         var body = type switch
         {
-            NotificationType.StaffStayCreated => $"Новая бронь · {tail} · {StaysTexts.NightsText(f.Nights)}",
+            NotificationType.StaffStayCreated => $"Новая бронь · {tail} · {StaysTexts.NightsText(f.Nights)}" + (f.ServicesCount > 0 ? $" · услуги: {f.ServicesCount}" : string.Empty),
             NotificationType.StaffStayPaymentProofUploaded => $"Приложено подтверждение оплаты · {tail}",
             _ => $"Гость отменил бронь · {tail}",
         };
@@ -53,6 +53,7 @@ public static class StayNotificationTexts
             NotificationType.StayGuestHoldExpiring => "Осталось 10 минут, чтобы приложить подтверждение оплаты",
             NotificationType.StayGuestCheckInInfo => "Информация к заселению готова",
             NotificationType.StayGuestArrivalReminder => "Завтра заезд — откройте бронь",
+            NotificationType.StayGuestSessionAdded => "Услуга добавлена к брони — откройте бронь",
             _ => "Статус вашей брони изменился",
         };
         return new PushPayload(GuestPushTitle, body, $"sg-{bookingId}", $"/b/{token}");

@@ -22,11 +22,15 @@ public class StaysCompanyService(AppDbContext db, StaysPlanResolver plans, Publi
     public static StayProviderFacts ProviderFacts(StaysSettings s) =>
         new(s.ProviderStatus, s.ProviderName, s.ProviderInn, s.ProviderOgrn, s.ProviderClaimsAddress);
 
-    public async Task<GateResult> EvaluateGateAsync(Company company, StaysSettings settings, CancellationToken ct = default)
+    public Task<GateResult> EvaluateGateAsync(Company company, StaysSettings settings, CancellationToken ct = default) =>
+        EvaluateGateAsync(company, settings, settings.PrepayPercent, ct);
+
+    /// <summary>The gate for a given prepayment: a stand-alone service has its own percent (<c>StandalonePrepayPercent ?? 0</c>), a session added to a booking has none (ARCHITECTURE_CYCLE39.md §39.7).</summary>
+    public async Task<GateResult> EvaluateGateAsync(Company company, StaysSettings settings, int prepayPercent, CancellationToken ct = default)
     {
         var plan = await plans.GetForCompanyAsync(company, clock.UtcNow, ct);
         var published = await plans.CountPublishedHousesForCompanyAsync(company, ct);
-        return StaysBookingGate.Evaluate(company.IsActive, plan.HasActivePlan, published, plan.MaxHouses, settings.PrepayPercent, settings.PaymentDetails, ProviderFacts(settings));
+        return StaysBookingGate.Evaluate(company.IsActive, plan.HasActivePlan, published, plan.MaxHouses, prepayPercent, settings.PaymentDetails, ProviderFacts(settings));
     }
 
     public static ProviderFullDto? ProviderFull(StaysSettings s) =>

@@ -577,6 +577,18 @@ public static class DeploymentSafetyChecks
             throw new InvalidOperationException("Invalid Stays cancellation configuration: " + string.Join(" ", errors));
     }
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE39.md §39.8, R39-10 — the services of «Дома»: the boundary of full refund 1 ≤ Min ≤ Default ≤ Max ≤ 24 h, a deduction of at most the first hour (ЮР39-1),
+    /// only known template names, the border of the business day within 00:00…12:00 on the hour. An unlawful value never starts the application.
+    /// </summary>
+    public static void ValidateStaysServices(IConfiguration configuration)
+    {
+        var options = configuration.GetSection(Stays.StaysOptions.SectionName).Get<Stays.StaysOptions>() ?? new Stays.StaysOptions();
+        var errors = options.Services.ConfigurationErrors();
+        if (errors.Count > 0)
+            throw new InvalidOperationException("Invalid Stays services configuration: " + string.Join(" ", errors));
+    }
+
     // ARCHITECTURE_CYCLE19.md §388.1/§388.4 — ValidateAddressVerification (the geocoder's own startup
     // check) is removed целиком along with the geocoder. Address saving has no comparable licence
     // ceiling to enforce (§413.1).
