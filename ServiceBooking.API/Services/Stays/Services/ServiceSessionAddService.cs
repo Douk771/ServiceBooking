@@ -86,6 +86,9 @@ public class ServiceSessionAddService(
 
         if (StayStateMachine.IsTerminal(booking.Status) || now >= StayTime.ToUtc(booking.TimeZoneIdSnapshot, booking.CheckOutDate, booking.CheckOutTimeSnapshot))
             return Refuse(ServiceRefusalCode.BookingNotActive, ServiceTexts.BookingNotActive);
+        // A hold whose timer has run out is not an active booking any more (the task has only not reached it yet): refuse instead of racing the release.
+        if (booking.Status == StayBookingStatus.Held && booking.HoldExpiresAtUtc <= now)
+            return Refuse(ServiceRefusalCode.BookingNotActive, ServiceTexts.BookingHoldExpired);
         var max = options.Value.Services.MaxSessionsPerBooking;
         if (await db.StayServiceSessions.CountAsync(s => s.StayBookingId == booking.Id && s.State == StayServiceSessionState.Active, ct) >= max)
             return Refuse(ServiceRefusalCode.TooManySessions, ServiceTexts.TooManySessions(max));

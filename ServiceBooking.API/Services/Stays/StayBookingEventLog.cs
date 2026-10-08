@@ -28,7 +28,5 @@ public class StayBookingEventLog(AppDbContext db, StayNotificationPlanner planne
     }
 
     /// <summary>Also used by HouseBlockWriter: the board polls this counter (`changed: false` costs one PK lookup).</summary>
-    public Task BumpRevisionAsync(Guid companyId) =>
-        db.Database.ExecuteSqlInterpolatedAsync(
-            $"""UPDATE "StaysSettings" SET "BookingsRevision" = "BookingsRevision" + 1 WHERE "CompanyId" = {companyId}""");
+    public Task BumpRevisionAsync(Guid companyId) => db.BumpRevisionAsync(companyId);
 }

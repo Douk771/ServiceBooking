@@ -272,6 +272,8 @@ public class StayBookingCreationService(
 
         // 7. The house lock: lazy release → occupancy → rules → money.
         await occupancy.LockHouseAsync(house.Id);
+        // The locks of the chosen services come RIGHT AFTER the house lock and before anything that writes (§39.5.2: house → services ascending → rows → revision).
+        if (dto.Services is { Count: > 0 }) await sessionWriter.LockServicesAsync(dto.Services.Where(c => c.ServiceId is not null).Select(c => c.ServiceId!.Value));
         await expirer.ExpireOverlappingAsync(house.Id, input.CheckIn, input.CheckOut, now, ct);
         var eval = await EvaluateAsync(ctx, input, manual: false, now, ct);
         if (eval.Problems.Count > 0) return Refuse(eval.Problems[0].Code, eval.Problems[0].Message);

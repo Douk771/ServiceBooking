@@ -127,6 +127,33 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<PlatformNotice> PlatformNotices => Set<PlatformNotice>();
     public DbSet<PlatformNoticeAcknowledgement> PlatformNoticeAcknowledgements => Set<PlatformNoticeAcknowledgement>();
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE39.md §39.5.2 — "the board revision is ALWAYS the last lock". Inside a transaction the bump of StaysSettings.BookingsRevision is only REMEMBERED here and
+    /// executed right before the next SaveChanges (the write of the transaction), so a lazy release or any journal append no longer holds the settings row while the transaction
+    /// goes on taking the locks of services, orders and bookings (that order of locks was the 40P01 of the review).
+    /// </summary>
+    public HashSet<Guid> PendingRevisionBumps { get; } = [];
+
+    public async Task BumpRevisionAsync(Guid companyId)
+    {
+        if (Database.CurrentTransaction is null) await ExecuteBumpAsync(companyId);
+        else PendingRevisionBumps.Add(companyId);
+    }
+
+    private Task<int> ExecuteBumpAsync(Guid companyId) =>
+        Database.ExecuteSqlInterpolatedAsync($"""UPDATE "StaysSettings" SET "BookingsRevision" = "BookingsRevision" + 1 WHERE "CompanyId" = {companyId}""");
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        if (PendingRevisionBumps.Count > 0)
+        {
+            var pending = PendingRevisionBumps.OrderBy(i => i).ToList();
+            PendingRevisionBumps.Clear();
+            foreach (var id in pending) await ExecuteBumpAsync(id);
+        }
+        return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);

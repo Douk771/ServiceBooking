@@ -21,6 +21,7 @@ public static class ServiceTexts
     public const string NoPriceForHours = "На часть выбранного времени нет цены — выберите другое время";
     public const string SlotTaken = "Это время уже занято. Выберите другое";
     public const string BookingNotActive = "Бронь завершена — добавить услугу нельзя";
+    public const string BookingHoldExpired = "Время на оплату брони истекло — добавить услугу нельзя";
     public const string ProviderRequiredForServiceOrders = "Заполните сведения об исполнителе — без них заказы услуг не принимаются";
     public const string RefundTerminal = "Заказ уже завершён — отменять нечего";
     public const string RefundNothingPaid = "Сеанс не оплачен — отмена без последствий";

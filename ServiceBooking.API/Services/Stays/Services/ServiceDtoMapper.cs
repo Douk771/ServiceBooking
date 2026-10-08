@@ -121,6 +121,7 @@ public class ServiceDtoMapper(
         var now = clock.UtcNow;
         string? reason = null;
         if (StayStateMachine.IsTerminal(b.Status)) reason = ServiceTexts.BookingFinished;
+        else if (b.Status == StayBookingStatus.Held && b.HoldExpiresAtUtc <= now) reason = ServiceTexts.BookingHoldExpired;
         else if (now >= StayTime.ToUtc(b.TimeZoneIdSnapshot, b.CheckOutDate, b.CheckOutTimeSnapshot)) reason = ServiceTexts.CheckOutPassed;
         else if (await db.StayServiceSessions.AsNoTracking().CountAsync(s => s.StayBookingId == b.Id && s.State == StayServiceSessionState.Active, ct) >= options.Value.Services.MaxSessionsPerBooking)
             reason = ServiceTexts.TooManySessions(options.Value.Services.MaxSessionsPerBooking);
