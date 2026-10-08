@@ -1794,6 +1794,8 @@ export interface components {
             holdExpiresAtUtc?: string | null;
             blockKind?: components["schemas"]["HouseBlockKind"] | null;
             needsAction: boolean;
+            /** @description комментарий блокировки (только kind = Block) — для правки блокировки без потери комментария; у броней и внешних периодов null */
+            comment?: string | null;
         };
         StaysBoardDto: {
             changed: boolean;

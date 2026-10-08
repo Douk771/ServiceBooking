@@ -1246,6 +1246,7 @@ components:
         holdExpiresAtUtc: { type: string, format: date-time, nullable: true }
         blockKind: { allOf: [ { $ref: '#/components/schemas/HouseBlockKind' } ], nullable: true }
         needsAction: { type: boolean }
+        comment: { type: string, nullable: true, description: 'комментарий блокировки (только kind = Block) — для правки блокировки без потери комментария; у броней и внешних периодов null' }
     StaysBoardDto:
       type: object
       required: [changed, revision, serverTimeUtc, today]

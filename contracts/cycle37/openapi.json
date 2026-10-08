@@ -3520,6 +3520,11 @@
           },
           "needsAction": {
             "type": "boolean"
+          },
+          "comment": {
+            "type": "string",
+            "nullable": true,
+            "description": "комментарий блокировки (только kind = Block) — для правки блокировки без потери комментария; у броней и внешних периодов null"
           }
         }
       },

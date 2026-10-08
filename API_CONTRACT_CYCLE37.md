@@ -479,7 +479,8 @@ revision, serverTimeUtc, today}` без массивов. Иначе `StaysBoard
 `from`, `days`, `houses[]` (`{id, name, isPublished, isArchived}` — неархивные + архивные с бронями в окне), `items[]`
 (`BoardItemDto`: `kind` — `Booking`/`Block`/`External`, `id`, `houseId`, `startDate`, `endDate` (дата выезда), `state` —
 `Held`/`AwaitingPaymentCheck`/`Confirmed`/`Block`/`External`, `stateText`, `label` (имя гостя / тип блокировки),
-`holdExpiresAtUtc`, `blockKind`, `needsAction` (true у `AwaitingPaymentCheck`)), `awaitingPaymentCount`. Истёкшие, но не
+`holdExpiresAtUtc`, `blockKind`, `needsAction` (true у `AwaitingPaymentCheck`), `comment` (комментарий блокировки — только у
+`Block`, чтобы диалог правки не терял его; у броней и внешних периодов null)), `awaitingPaymentCount`. Истёкшие, но не
 снятые удержания и конечные брони в `items` не попадают.
 
 ### §37.29.2 Блокировки (`ManageBlocks`)

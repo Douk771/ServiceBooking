@@ -72,7 +72,7 @@ export function BoardPage() {
   const reload = () => void qc.invalidateQueries({ queryKey: ['stays-board', company.id] })
   const openBlock = (item: BoardItemDto) => {
     if (!canBlock || item.kind !== 'Block') return
-    setBlockTarget({ block: { id: item.id, houseId: item.houseId, startDate: item.startDate, endDate: item.endDate, kind: item.blockKind ?? 'Other' } })
+    setBlockTarget({ block: { id: item.id, houseId: item.houseId, startDate: item.startDate, endDate: item.endDate, kind: item.blockKind ?? 'Other', comment: item.comment ?? null } })
   }
   const houses = board?.houses ?? []
   const awaiting = board?.awaitingPaymentCount ?? company.awaitingPaymentCount ?? 0

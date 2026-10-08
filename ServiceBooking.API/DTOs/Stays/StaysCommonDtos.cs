@@ -213,9 +213,10 @@ public record HouseManageDto(
 // ── board, blocks ──
 public record BoardHouseDto(Guid Id, string Name, bool IsPublished, bool IsArchived);
 
+/// <summary><c>Comment</c> (appended) — the owner's note of a block, so the edit dialog keeps it; null for bookings and external periods.</summary>
 public record BoardItemDto(
     BoardItemKind Kind, Guid Id, Guid HouseId, DateOnly StartDate, DateOnly EndDate, BoardItemState State, string StateText, string Label,
-    DateTime? HoldExpiresAtUtc, HouseBlockKind? BlockKind, bool NeedsAction);
+    DateTime? HoldExpiresAtUtc, HouseBlockKind? BlockKind, bool NeedsAction, string? Comment = null);
 
 public enum BoardItemKind { Booking, Block, External }
 

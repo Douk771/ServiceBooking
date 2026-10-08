@@ -13,7 +13,7 @@ import { StayNotice } from '../StayNotice'
 
 export interface BlockDialogTarget {
   /** An existing block (edit/delete), or null for a new one. */
-  block: { id: string; houseId: string; startDate: string; endDate: string; kind: HouseBlockKind } | null
+  block: { id: string; houseId: string; startDate: string; endDate: string; kind: HouseBlockKind; comment?: string | null } | null
   houseId?: string
   firstNight?: string
 }
@@ -53,7 +53,8 @@ export function BlockDialog({
   const [firstNight, setFirstNight] = useState(target.block?.startDate ?? target.firstNight ?? '')
   const [lastNight, setLastNight] = useState(target.block ? toLastNight(target.block.endDate) : (target.firstNight ?? ''))
   const [kind, setKind] = useState<HouseBlockKind>(target.block?.kind ?? 'Repair')
-  const [comment, setComment] = useState('')
+  // The board item carries the block's comment (`BoardItemDto.comment`): an edit keeps it instead of silently erasing it.
+  const [comment, setComment] = useState(target.block?.comment ?? '')
   const [errors, setErrors] = useState<{ dates?: string; comment?: string; houses?: string }>({})
   const [formError, setFormError] = useState('')
   const [conflicts, setConflicts] = useState<NonNullable<StaysConflictDto['conflicts']>>([])

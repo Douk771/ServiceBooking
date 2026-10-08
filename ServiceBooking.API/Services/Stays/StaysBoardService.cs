@@ -53,7 +53,7 @@ public class StaysBoardService(AppDbContext db, IStaysClock clock)
             }
             else if (o.HouseBlockId is { } kid && blocks.TryGetValue(kid, out var block))
                 items.Add(new BoardItemDto(BoardItemKind.Block, block.Id, o.HouseId, o.StartDate, o.EndDate, BoardItemState.Block, "Блокировка",
-                    StaysTexts.BlockKindText(block.Kind), null, block.Kind, false));
+                    StaysTexts.BlockKindText(block.Kind), null, block.Kind, false, block.Comment));
             else if (o.Source == OccupancySource.ExternalCalendar)
                 items.Add(new BoardItemDto(BoardItemKind.External, o.Id, o.HouseId, o.StartDate, o.EndDate, BoardItemState.External, "Внешний календарь", "Внешний календарь", null, null, false));
         }
