@@ -101,6 +101,14 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysHousePageService>();
     builder.Services.AddSingleton<ServiceBooking.API.Services.Stays.StayProofIpLimiter>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.HouseBlockWriter>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayStaffPushQueue>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayStaffMaxQueue>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayGuestPushQueue>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayMessageScheduler>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.StayGuestPushSubscriptionWriter>();
+    builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaysHoldExpiryTask>();
+    builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaysScheduledMessagesTask>();
+    builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaysGuestPushDispatchTask>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysBoardService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysScheduleService>();
 

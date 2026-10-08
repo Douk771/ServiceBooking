@@ -19,7 +19,8 @@ namespace ServiceBooking.API.Controllers.Stays;
 [Route("api/stays/bookings")]
 public class StayBookingsPublicController(
     AppDbContext db, StayDtoMapper mapper, StayPaymentProofService proofs, StayBookingTransitionService transitions, StayActorResolver actors,
-    StayProofIpLimiter proofIpLimiter, IStaysClock clock) : ControllerBase
+    StayProofIpLimiter proofIpLimiter, IStaysClock clock, ServiceBooking.API.Services.Notifications.StayGuestPushSubscriptionWriter pushWriter,
+    Microsoft.Extensions.Options.IOptions<ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions> webPush) : ControllerBase
 {
     private const int MaxTokenLength = 100;
 
@@ -80,6 +81,41 @@ public class StayBookingsPublicController(
         if (result.Outcome == TransitionOutcome.Ok) return Ok(dto);
         var message = dto.Cancellation.CannotCancelText ?? StaysTexts.CannotCancelAlready;
         return Conflict(new StayGuestConflictDto("CancelNotAllowed", message, dto));
+    }
+
+    public const string CompanyNoPush = "Компания отключила уведомления о бронях";
+    public const string BookingFinished = "Бронь завершена — уведомления не нужны";
+    public const string PlatformNoPush = "Уведомления временно недоступны";
+
+    /// <summary>API_CONTRACT_CYCLE37.md §37.26.5 — subscribe the guest's browser to the booking's notifications. Token → 404; body → 400; then the 409 strings. 204.</summary>
+    [HttpPost("public/{token}/push-subscription")]
+    [EnableRateLimiting("stay-push")]
+    public async Task<IActionResult> SubscribePush(string token, PushSubscriptionInput input, CancellationToken ct)
+    {
+        var booking = await FindAsync(token, ct);
+        if (booking is null) return NotFound();
+        if (!ServiceBooking.API.Services.Notifications.WebPush.PushEndpointValidator.IsValid(input.Endpoint)) return BadRequest("Некорректный адрес подписки (endpoint).");
+        if (input.Keys is null || string.IsNullOrWhiteSpace(input.Keys.P256dh) || input.Keys.P256dh.Length > 200) return BadRequest("Некорректный ключ подписки (p256dh).");
+        if (string.IsNullOrWhiteSpace(input.Keys.Auth) || input.Keys.Auth.Length > 100) return BadRequest("Некорректный ключ подписки (auth).");
+        if (input.DeviceLabel is { Length: > 100 }) return BadRequest("Слишком длинное название устройства.");
+
+        var enabled = await db.StaysSettings.AsNoTracking().Where(s => s.CompanyId == booking.CompanyId).Select(s => (bool?)s.GuestWebPushEnabled).FirstOrDefaultAsync(ct) ?? true;
+        if (!enabled) return Conflict(CompanyNoPush);
+        if (StayStateMachine.IsTerminal(booking.Status)) return Conflict(BookingFinished);
+        if (!string.Equals(webPush.Value.Provider, "web-push", StringComparison.OrdinalIgnoreCase)) return Conflict(PlatformNoPush);
+        await pushWriter.UpsertAsync(booking.Id, input.Endpoint!, input.Keys.P256dh, input.Keys.Auth, ct);
+        return NoContent();
+    }
+
+    [HttpPost("public/{token}/push-subscription/remove")]
+    [EnableRateLimiting("stay-push")]
+    public async Task<IActionResult> UnsubscribePush(string token, PushSubscriptionRemoveInput input, CancellationToken ct)
+    {
+        var booking = await FindAsync(token, ct);
+        if (booking is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(input.Endpoint) || input.Endpoint.Length > 2048) return BadRequest("Некорректный адрес подписки (endpoint).");
+        await pushWriter.RemoveAsync(booking.Id, input.Endpoint, ct);
+        return NoContent();
     }
 
     /// <summary>"Мои брони" (P1): the signed-in account's own bookings, active first, then the past 12 months. Bookings made as a guest on the same number are NOT pulled in.</summary>

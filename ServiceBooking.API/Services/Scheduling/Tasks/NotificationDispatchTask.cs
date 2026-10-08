@@ -127,6 +127,15 @@ public sealed class NotificationDispatchTask(
                 : (await db.ShopSettings.AsNoTracking().Where(s => orderShopIds.Contains(s.CompanyId) && !s.CustomerMessengerEnabled)
                     .Select(s => s.CompanyId).ToListAsync(linkedCt)).ToHashSet();
 
+            // ARCHITECTURE_CYCLE37.md §37.12.3: a message about a house booking is held back if messenger messages were switched off (company flag, or the
+            // booking's own choice/consent was withdrawn) since it was queued.
+            var stayIds = candidates.Where(n => n.StayBookingId != null).Select(n => n.StayBookingId!.Value).Distinct().ToList();
+            var stayMessengerOffBookings = stayIds.Count == 0
+                ? new HashSet<Guid>()
+                : (await db.StayBookings.AsNoTracking()
+                    .Where(b => stayIds.Contains(b.Id) && (!b.NotifyByMessenger || !db.StaysSettings.Any(s => s.CompanyId == b.CompanyId && s.GuestMessengerEnabled)))
+                    .Select(b => b.Id).ToListAsync(linkedCt)).ToHashSet();
+
             // ARCHITECTURE_CYCLE28.md §576 — the safety net behind the queueing guard: a row of a showcase company (or any row on the demo
             // stand) that got into the queue anyway is never handed to a transport.
             var showcaseCompanyIds = await showcaseGuard.SuppressedCompanyIdsAsync(companyIds, linkedCt);
@@ -154,7 +163,8 @@ public sealed class NotificationDispatchTask(
                 {
                     row.Status = NotificationStatus.Expired;
                     // For an order row VisitStartUtc is "the moment the message is outdated" (queued + 2 h), not a visit.
-                    row.Reason = row.OrderId != null ? NotificationReason.OrderMessageOutdated : NotificationReason.VisitAlreadyStarted;
+                    row.Reason = row.OrderId != null ? NotificationReason.OrderMessageOutdated
+                        : row.StayBookingId != null ? NotificationReason.StayMessageOutdated : NotificationReason.VisitAlreadyStarted;
                     expired++;
                     continue;
                 }
@@ -163,6 +173,14 @@ public sealed class NotificationDispatchTask(
                 {
                     row.Status = NotificationStatus.Skipped;
                     row.Reason = NotificationReason.MessengerDisabledByShop;
+                    skipped++;
+                    continue;
+                }
+
+                if (row.StayBookingId is { } stayId && stayMessengerOffBookings.Contains(stayId))
+                {
+                    row.Status = NotificationStatus.Skipped;
+                    row.Reason = NotificationReason.StayMessengerDisabled;
                     skipped++;
                     continue;
                 }
