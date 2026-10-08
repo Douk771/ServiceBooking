@@ -1,3 +1,4 @@
+import { MessengerAddonLines } from '../components/pricing/MessengerAddonLines'
 import { useEffect, useState } from 'react'
 import { AxiosError } from 'axios'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -279,6 +280,8 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
           {formatMonthlyPrice(data.plan.pricePerMonth)} тариф
           {options.length > 0 && ` + ${options.length} опц.`}
         </p>
+
+        <MessengerAddonLines addons={data.messengerAddons} note={data.messengerAddonsNote} />
 
         <dl className="grid gap-2 text-sm text-ink-soft mb-2">
           <div className="flex justify-between">

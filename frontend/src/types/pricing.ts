@@ -7,6 +7,9 @@
  * this file should be replaced by the generated one and callers re-checked against it.
  */
 
+import type { components as Cycle40Components } from './api-cycle40.generated'
+type Cycle40Schemas = Cycle40Components['schemas']
+
 export interface PricingPlanDto {
   id: string
   name: string
@@ -58,4 +61,7 @@ export interface PublicPricingDto {
   notice: string
   /** Появится после юридической вычитки (API_CONTRACT_CYCLE7.md §39) — отсутствует/`null` до тех пор. */
   legalNotice?: string | null
+  /** Cycle 40 (API_CONTRACT_CYCLE40.md §40.32): только продаваемые мессенджеры; пусто/отсутствует — строк нет. */
+  messengerAddons?: Cycle40Schemas['MessengerAddonDto'][]
+  messengerAddonsNote?: Cycle40Schemas['MessengerAddonsNoteDto'] | null
 }

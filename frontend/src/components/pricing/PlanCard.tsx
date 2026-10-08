@@ -1,6 +1,7 @@
 import { Icon } from '../ui/Icon'
 import { formatIncludedLimitLine, formatMonthlyPrice } from '../../utils/pricingFormat'
 import type { PricingPlanDto } from '../../types/pricing'
+import { MessengerAddonLines, type MessengerAddonDto, type MessengerAddonsNoteDto } from './MessengerAddonLines'
 
 interface Props {
   plan: PricingPlanDto
@@ -8,9 +9,12 @@ interface Props {
    *  honest way to guide the eye without a comparison table (ARCHITECTURE_CYCLE7.md §56.2 rules out
    *  a table outright). Not "recommended": the contract has no such flag. */
   featured?: boolean
+  /** Cycle 40 (Т40-L-11): серверные строки мессенджеров; только платные тарифы, как их передаёт страница. */
+  messengerAddons?: MessengerAddonDto[] | null
+  messengerAddonsNote?: MessengerAddonsNoteDto | null
 }
 
-export function PlanCard({ plan, featured = false }: Props) {
+export function PlanCard({ plan, featured = false, messengerAddons, messengerAddonsNote }: Props) {
   return (
     <div
       className={`flex flex-col min-w-0 rounded-[22px] p-7 xl:p-6 border transition-shadow ${
@@ -57,6 +61,7 @@ export function PlanCard({ plan, featured = false }: Props) {
           </li>
         ))}
       </ul>
+      <MessengerAddonLines addons={messengerAddons} note={messengerAddonsNote} inverted={featured} />
     </div>
   )
 }

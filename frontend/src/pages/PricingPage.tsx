@@ -92,7 +92,13 @@ export function PricingPage() {
 
       <div className={`${PRICING_GRID} mb-16`}>
         {sortedPlans.map((plan) => (
-          <PlanCard key={plan.id} plan={plan} featured={plan.id === featuredPlanId} />
+          <PlanCard
+            key={plan.id}
+            plan={plan}
+            featured={plan.id === featuredPlanId}
+            messengerAddons={plan.isFree || plan.isTrial ? undefined : data.messengerAddons}
+            messengerAddonsNote={plan.isFree || plan.isTrial ? undefined : data.messengerAddonsNote}
+          />
         ))}
       </div>
 
