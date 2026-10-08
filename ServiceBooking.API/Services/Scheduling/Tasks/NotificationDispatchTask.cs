@@ -23,6 +23,7 @@ public sealed class NotificationDispatchTask(
     IConfiguration configuration,
     IOptions<NotificationOptions> options,
     AccountMessagingReader messagingReader,
+    PlatformSettings platformSettings,
     INotificationClock clock,
     ShowcaseOutboundGuard showcaseGuard,
     ILogger<NotificationDispatchTask> logger) : IScheduledTask
@@ -33,6 +34,12 @@ public sealed class NotificationDispatchTask(
     // Row is retried at AttemptCount-1's index once (AttemptCount is incremented BEFORE this is read),
     // so a first failure (AttemptCount becomes 1) waits 1 minute, a second 5, and so on — US-28 p.9.
     private static readonly int[] BackoffMinutes = [1, 5, 15, 60, 180];
+
+    private static void Skip(OutboundNotification row, NotificationReason reason)
+    {
+        row.Status = NotificationStatus.Skipped;
+        row.Reason = reason;
+    }
 
     public async Task<ScheduledTaskOutcome> ExecuteAsync(CancellationToken ct)
     {
@@ -102,6 +109,10 @@ public sealed class NotificationDispatchTask(
             var messagingByAccount = await messagingReader.LoadAsync(accountIds, now, linkedCt);
 
             var companyIds = candidates.Select(n => n.CompanyId).Distinct().ToList();
+            // §40.5.4 step 2: the number must belong to the SAME billing account as the company the row is about.
+            var accountByCompany = await db.Companies.AsNoTracking().Where(c => companyIds.Contains(c.Id))
+                .Select(c => new { c.Id, c.BillingAccountId }).ToDictionaryAsync(c => c.Id, c => c.BillingAccountId, linkedCt);
+            var platformEnabled = await platformSettings.IsCustomerMessagingEnabledAsync(linkedCt);
             var settingsByCompany = await db.CompanyNotificationSettings
                 .Where(s => companyIds.Contains(s.CompanyId))
                 .ToDictionaryAsync(s => s.CompanyId, linkedCt);
@@ -175,27 +186,58 @@ public sealed class NotificationDispatchTask(
                 var channel = row.ChannelId.HasValue && channelById.TryGetValue(row.ChannelId.Value, out var found) ? found : null;
                 settingsByCompany.TryGetValue(row.CompanyId, out var settings);
                 var optedOut = optedOutPhones.Contains(row.RecipientPhone);
-                // §40.3.2: ranked once per account above (messagingByAccount), consulted per row here.
-                var accountMessaging = channel?.BillingAccountId is { } accountId
-                    ? messagingByAccount.GetValueOrDefault(accountId)
-                    : null;
-                var channelIsFunded = channel is not null && accountMessaging?.FundingOf(channel) == ChannelFundingState.Funded;
 
-                var gate = NotificationGate.Evaluate(
-                    accountMessaging?.AnyPaid ?? false, row.Type, companyHasAssignment: channel is not null, channel, settings, optedOut, now, row.VisitStartUtc,
-                    channelIsFunded);
-
-                if (gate.Outcome == NotificationGateOutcome.Blocked)
+                // ARCHITECTURE_CYCLE40.md §40.5.4 — the triage, in this order. Consent is NOT asked again: it was decided when the row was
+                // queued (a withdrawal by a signed-in client cancels their Pending rows by the existing path of cycle 5).
+                // 1. the platform switch (the global kill switch also stops rows queued before it was thrown);
+                if (!platformEnabled)
                 {
-                    row.Status = NotificationStatus.Skipped;
-                    row.Reason = gate.Reason;
+                    Skip(row, NotificationReason.PlatformMessagingDisabled);
+                    skipped++;
+                    continue;
+                }
+
+                var accountMessaging = channel?.BillingAccountId is { } accountId ? messagingByAccount.GetValueOrDefault(accountId) : null;
+
+                // 2. the number must belong to the company's account;
+                if (channel is not null && channel.BillingAccountId != accountByCompany.GetValueOrDefault(row.CompanyId))
+                {
+                    Skip(row, NotificationReason.ChannelAccountMismatch);
+                    skipped++;
+                    continue;
+                }
+
+                // 3. not the funded first number of a paid transport, or suspended by an admin (a suspension STOPS sending; a replaced number is
+                //    never ranked and falls to step 4);
+                if (channel is { State: not ChannelState.Replaced } && accountMessaging is not null &&
+                    (accountMessaging.FundingOf(channel) != ChannelFundingState.Funded || channel.IsSuspendedByAdmin))
+                {
+                    Skip(row, NotificationReason.NotOnPaidPlan);
+                    skipped++;
+                    continue;
+                }
+
+                // 4. switched off by its owner / replaced by another number.
+                if (channel is null || channel.State is ChannelState.DisabledByOwner or ChannelState.Replaced || accountMessaging is null)
+                {
+                    Skip(row, NotificationReason.NoUsableChannel);
+                    skipped++;
+                    continue;
+                }
+
+                // 5. as before: unsubscribe, the company's own type switch, the lead-time threshold (the facts of steps 1-4 are settled above).
+                var gate = NotificationGate.Evaluate(
+                    row.Type, new MessagingAvailability(true, true, true), settings, optedOut, MessengerConsentDecision.Allowed, now, row.VisitStartUtc);
+                if (!gate.IsAllowed)
+                {
+                    Skip(row, MessagingQueueing.ToReason(gate.Reason!.Value));
                     skipped++;
                     continue;
                 }
 
                 // §30.2: an unconnected channel HOLDS the row rather than discarding it — Gate
                 // deliberately does not check connectivity, that is this task's own job.
-                if (channel is null || channel.State != ChannelState.Connected)
+                if (channel.State != ChannelState.Connected)
                     continue;
 
                 readyToSend.Add(row);

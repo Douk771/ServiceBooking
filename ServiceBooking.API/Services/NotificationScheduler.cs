@@ -30,7 +30,7 @@ namespace ServiceBooking.API.Services;
 public sealed class NotificationScheduler(
     AppDbContext db,
     AccountMessagingReader messagingReader,
-    ConsentLedger consentLedger,
+    MessengerConsentResolver consentResolver,
     IOptions<NotificationOptions> options,
     IOptions<DemoModeOptions> demoOptions)
 {
@@ -101,11 +101,8 @@ public sealed class NotificationScheduler(
     // ── Shared plumbing ──────────────────────────────────────────────────────────────────────────
 
     private sealed record SchedulingContext(
-        Company Company, AccountMessagingState Messaging,
-        // ARCHITECTURE_CYCLE9.md §104.3/§104.5: a company may hold one assignment PER TRANSPORT now —
-        // every live channel is carried, not an arbitrary single one. Empty means "no assignment at all",
-        // same meaning the old nullable Channel's null carried.
-        IReadOnlyList<NotificationChannel> Channels, CompanyNotificationSettings? Settings,
+        // ARCHITECTURE_CYCLE40.md §40.4: the numbers of the company are those of its billing account (Messaging).
+        Company Company, AccountMessagingState Messaging, CompanyNotificationSettings? Settings,
         // US-67 (ARCHITECTURE_CYCLE6.md §47.2): the visit's service names, in visit order — one element
         // for a pre-cycle single-service booking, several for a multi-service one. The template renders
         // them joined by ", " (NotificationScheduler.RenderBodyAsync).
@@ -152,17 +149,6 @@ public sealed class NotificationScheduler(
         // ARCHITECTURE_CYCLE40.md §40.3.3: what is paid on the company's billing account — per transport, no tariff flag.
         var messaging = await messagingReader.ForCompanyAsync(company.Id, ct: ct);
 
-        // ARCHITECTURE_CYCLE9.md §104.3: every live assignment, one per transport at most — not an
-        // arbitrary FirstOrDefault. N9: ordered by Transport so ctx.Channels[0] (the "representative"
-        // channel used for the journal's ChannelId on Expired/Skipped rows, see QueueAsync) is stable
-        // across passes instead of depending on whatever order the database happens to return.
-        var channels = await db.ChannelCompanyAssignments.AsNoTracking()
-            .Include(a => a.Channel)
-            .Where(a => a.CompanyId == booking.CompanyId)
-            .OrderBy(a => a.Transport)
-            .Select(a => a.Channel)
-            .ToListAsync(ct);
-
         var settings = await db.CompanyNotificationSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.CompanyId == booking.CompanyId, ct);
 
@@ -197,24 +183,12 @@ public sealed class NotificationScheduler(
         var optedOut = recipientPhone is not null &&
             await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == recipientPhone, ct);  // SUBJECT-PHONE-GATE: not-account-scoped — dispatch-time check against the notification's own recipient phone (already resolved upstream), not an account reading another subject's data (ARCHITECTURE_CYCLE16.md §245.3)
 
-        return new SchedulingContext(company, messaging, channels, settings, names, master,
+        return new SchedulingContext(company, messaging, settings, names, master,
             recipientPhone, recipientName, optedOut, recipientUserId);
     }
 
-    /// <summary>Per-channel "funded" verdict (§40.3.2) from the account state read once in <see cref="BuildContextAsync"/>:
-    /// the first live number of a PAID transport is funded; a surplus number, or a transport that is not paid, is not.</summary>
-    private static Dictionary<Guid, bool> BuildFundingLookup(IReadOnlyList<NotificationChannel> channels, AccountMessagingState messaging) =>
-        channels.ToDictionary(c => c.Id, c => messaging.FundingOf(c) == ChannelFundingState.Funded);
-
     private static DateTime ComputeVisitStartUtc(SchedulingContext ctx, Booking booking) =>
         NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, ctx.Company.TimeZoneId);
-
-    // DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode already fails startup on an unrecognized
-    // value (runs unconditionally, every environment) — the AccountsOnly fallback here is unreachable in
-    // any process that actually started, not a silent behavior change for a bad config.
-    private static ProviderDeliveryConsentMode ParseProviderDeliveryConsentMode(string raw) =>
-        Enum.TryParse<ProviderDeliveryConsentMode>(raw, ignoreCase: true, out var mode)
-            ? mode : ProviderDeliveryConsentMode.AccountsOnly;
 
     /// <summary>ARCHITECTURE_CYCLE9.md §104.5's "до → после" table — the transport is now part of the
     /// key. Applied to EVERY row this method writes, not only Pending ones (Expired/Skipped rows use the
@@ -234,96 +208,31 @@ public sealed class NotificationScheduler(
 
         var nowUtc = DateTime.UtcNow;
         var priorityTransport = ctx.Settings?.PriorityTransport ?? new CompanyNotificationSettings().PriorityTransport;
-        var representativeChannelId = ctx.Channels.Count > 0 ? ctx.Channels[0].Id : (Guid?)null;
 
         if (NotificationTiming.IsExpired(visitStartUtc, nowUtc))
         {
             await AddSingleRowIfNotAlreadyQueuedAsync(ctx, booking, type, "", dueAtUtc, visitStartUtc, generation,
-                priorityTransport, representativeChannelId, NotificationStatus.Expired, NotificationReason.VisitAlreadyStarted, ct);
+                priorityTransport, ctx.Messaging.RepresentativeChannelId, NotificationStatus.Expired, NotificationReason.VisitAlreadyStarted, ct);
             return;
         }
 
-        // T-24 (ARCHITECTURE_CYCLE5.md §52.3): only looked up for recipients WITH an account — a guest
-        // (RecipientUserId null) passes null through unchanged, which NotificationGate reads as "no
-        // account" and never blocks under the shipped AccountsOnly default. One extra indexed read here,
-        // not on the dispatcher's hot path (§45.1: this method already reads the booking/company/settings).
-        bool? recipientHasProviderDeliveryConsent = null;
-        if (ctx.RecipientUserId is not null)
-        {
-            var consentState = await consentLedger.CurrentAsync(
-                ConsentSubject.ForUser(ctx.RecipientUserId), LegalDocumentType.PdnConsent.ToString(),
-                ConsentPurpose.ProviderDelivery, ct);
-            recipientHasProviderDeliveryConsent = consentState is not null;
-        }
-
-        // ARCHITECTURE_CYCLE9.md §104.5/§104.6: channel-INDEPENDENT gate checks first — opt-out, provider
-        // consent, "nothing paid on the account", "no assignment at all", type disabled, lead time.
-        // channelIsFunded is forced TRUE here deliberately: NotificationGate.Evaluate's funding branch
-        // reuses the same NotOnPaidPlan reason as the account-wide "zero paid numbers" branch (its own
-        // doc comment says so), so forcing true here guarantees that if NotOnPaidPlan still comes back,
-        // it can ONLY be the account-wide reason — per-CHANNEL funding is routing's own job below, and
-        // (per §104.5) an unfunded/unusable PRIORITY channel is reported as PriorityChannelUnavailable,
-        // not NotOnPaidPlan — a deliberate, routing-aware reason, not a WhatsApp-era reason repurposed.
-        var globalGate = NotificationGate.Evaluate(
-            accountHasPaidTransport: ctx.Messaging.AnyPaid, type, companyHasAssignment: ctx.Channels.Count > 0,
-            channel: ctx.Channels.Count > 0 ? ctx.Channels[0] : null,
-            ctx.Settings, ctx.RecipientOptedOut, nowUtc, visitStartUtc,
-            channelIsFunded: true,
-            ParseProviderDeliveryConsentMode(options.Value.ProviderDeliveryConsent), recipientHasProviderDeliveryConsent);
-
-        if (globalGate.Outcome == NotificationGateOutcome.Blocked)
+        // ARCHITECTURE_CYCLE40.md §40.5.5: consent (MessengerConsentRule: the booking's own mark; without one only an account with a
+        // current ProviderDelivery grant) → the gate (platform switch, unsubscribe, consent, paid, routable, type, lead time) → routing over
+        // the ROUTABLE transports. ChannelState Connected is NOT required here: an unconnected number HOLDS the row, the dispatcher sends
+        // it once the number is back (§30.2) — queueing must not turn a reconnect window into a lost message.
+        var consent = await consentResolver.DecideAsync(booking.NotifyByMessenger, ctx.RecipientUserId, ctx.RecipientPhone, ct);
+        var decision = MessagingQueueing.Decide(type, ctx.Messaging, ctx.Settings, ctx.RecipientOptedOut, consent, nowUtc, visitStartUtc);
+        if (decision.IsSkipped)
         {
             await AddSingleRowIfNotAlreadyQueuedAsync(ctx, booking, type, "", dueAtUtc, visitStartUtc, generation,
-                priorityTransport, representativeChannelId, NotificationStatus.Skipped, globalGate.Reason, ct);
-            return;
-        }
-
-        // Past the global gate — route to one or more specific channels (§104.5/US-125). "Usable" here is
-        // deliberately FUNDING ONLY, not "funded AND Connected": ChannelState is NOT checked here, on
-        // purpose, and this is a conscious, documented departure from §104.5's own listed "негоден"
-        // bullets (which name "не Connected" alongside "не оплачен"). Reason: NotificationGate's
-        // pre-cycle-9 contract (its own doc comment) is explicit that queueing must NEVER regress a
-        // channel that is mid-reconnect — "unconnected doesn't discard queued rows, it just doesn't
-        // dispatch them yet" is the DISPATCHER's job, not the queue's — and this is exactly what
-        // NotificationQueueingTests' SeedConnectedAssignedChannelAsync helper is built and commented
-        // around (it seeds State = Disconnected on purpose, specifically because "NotificationGate.Evaluate
-        // deliberately does not look at ChannelState at all"). Checking Connected here would silently
-        // turn a transient reconnect window into a lost message (Skipped/PriorityChannelUnavailable)
-        // instead of "stays Pending, sends once reconnected" — a real behavior change for every existing
-        // single-channel company that §104.5's own П12 promises NOT to make. The UI-facing
-        // connectedTransports/priorityChannelHealthy fields (CompanyNotificationsController) still check
-        // Connected — that is a live STATUS signal for the owner, deliberately more conservative than
-        // what actually gates a send.
-        // N10: one batched funding lookup for the whole event instead of one full
-        // "load every sibling channel on this billing account" query PER channel — ranking only depends
-        // on which billing account(s) ctx.Channels sit on, computed once here rather than once per
-        // candidate (this scales with distinct accounts, almost always 1, not with channel count).
-        var fundedByChannelId = BuildFundingLookup(ctx.Channels, ctx.Messaging);
-        var candidates = ctx.Channels
-            .Select(channel => new NotificationRouting.Candidate(
-                channel.Id, channel.Transport, fundedByChannelId.GetValueOrDefault(channel.Id)))
-            .ToList();
-
-        var mode = ctx.Settings?.DeliveryMode ?? new CompanyNotificationSettings().DeliveryMode;
-        var routing = NotificationRouting.SelectTargets(mode, priorityTransport, candidates);
-
-        if (routing.Targets.Count == 0)
-        {
-            // AllChannels with zero usable candidates has no routing-specific reason (§104.5 doesn't name
-            // one for it) — NotOnPaidPlan is this method's own choice, reusing the existing "nothing
-            // usable" vocabulary rather than inventing a new NotificationReason member for a case the
-            // architecture doesn't call out by name.
-            var reason = routing.SkipReason ?? NotificationReason.NotOnPaidPlan;
-            var channelId = routing.UnavailableChannelId ?? representativeChannelId;
-            await AddSingleRowIfNotAlreadyQueuedAsync(ctx, booking, type, "", dueAtUtc, visitStartUtc, generation,
-                priorityTransport, channelId, NotificationStatus.Skipped, reason, ct);
+                priorityTransport, decision.RepresentativeChannelId, NotificationStatus.Skipped, decision.SkipReason, ct);
             return;
         }
 
         // §104.5: "Строк на событие: 1 в режиме PriorityChannel, по 1 на транспорт в режиме AllChannels."
         // Idempotency is checked PER TARGET, independently — not once for the whole event.
         var body = await RenderBodyAsync(ctx, booking, type);
-        foreach (var target in routing.Targets)
+        foreach (var target in decision.Targets)
         {
             var idempotencyKey = BuildIdempotencyKey(type, booking.Id, ctx.RecipientPhone, generation, target.Transport);
             var alreadyQueued = await db.OutboundNotifications.AnyAsync(n => n.IdempotencyKey == idempotencyKey, ct);

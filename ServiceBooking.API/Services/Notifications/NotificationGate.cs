@@ -3,18 +3,6 @@ using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.Services.Notifications;
 
-public enum NotificationGateOutcome
-{
-    Allowed,
-    Blocked,
-}
-
-public readonly record struct NotificationGateResult(NotificationGateOutcome Outcome, NotificationReason? Reason)
-{
-    public static readonly NotificationGateResult Allow = new(NotificationGateOutcome.Allowed, null);
-    public static NotificationGateResult Block(NotificationReason reason) => new(NotificationGateOutcome.Blocked, reason);
-}
-
 /// <summary>
 /// "Can this notification be queued/sent at all?" — one rule, used everywhere the question comes up
 /// (ARCHITECTURE_CYCLE4.md §23.2, SPEC §4.0): the HTTP 402 gates, queueing (→ <c>Skipped</c>), and the
@@ -27,91 +15,8 @@ public readonly record struct NotificationGateResult(NotificationGateOutcome Out
 /// </summary>
 public static class NotificationGate
 {
-    // providerDeliveryConsentMode: T-24 (ARCHITECTURE_CYCLE5.md §52.3) — a config parameter, not a
-    // hardcoded branch; see ProviderDeliveryConsentMode for what each value means. Defaults to
-    // AccountsOnly so every existing caller (and every existing test) that doesn't pass it explicitly
-    // keeps today's behavior for guests (never blocked) and gains the new check only for recipients WITH
-    // an account.
-    // recipientHasProviderDeliveryConsent: null means "no account" (a guest — structurally cannot have
-    // granted anything, §52.3's AccountsOnly row); true/false means the caller already looked up the
-    // recipient's current PdnConsent/ProviderDelivery grant via ConsentLedger.
-    public static NotificationGateResult Evaluate(
-        bool accountHasPaidTransport,
-        NotificationType type,
-        bool companyHasAssignment,
-        NotificationChannel? channel,
-        CompanyNotificationSettings? settings,
-        bool recipientOptedOut,
-        DateTime nowUtc,
-        DateTime visitStartUtc,
-        // Cycle 7 (ARCHITECTURE_CYCLE7.md §45.3 p.3, §47.2): made an explicit, mandatory parameter
-        // instead of an internal ChannelPaymentState.Of(channel, now) call — every caller must now say
-        // out loud where it got "is this number funded" from, rather than the gate quietly re-deriving
-        // it. Callers take this from AccountMessagingState.FundingOf (§40.3.2) — no channel-level payment
-        // read is left in this gate.
-        bool channelIsFunded,
-        ProviderDeliveryConsentMode providerDeliveryConsentMode = ProviderDeliveryConsentMode.AccountsOnly,
-        bool? recipientHasProviderDeliveryConsent = null)
-    {
-        if (recipientOptedOut)
-            return NotificationGateResult.Block(NotificationReason.RecipientOptedOut);
-
-        // T-24 (ARCHITECTURE_CYCLE5.md §52.3). Off: never checked here — reliance is on named disclosure
-        // alone (§52.4 step 1 requires D4 to be rewritten before this value is ever used). AccountsOnly:
-        // a guest (recipientHasProviderDeliveryConsent == null) is never blocked — nobody asked them,
-        // the contractual basis for the booking itself covers delivery; an account holder who has NOT
-        // granted (or has revoked) the purpose IS blocked. Strict: even a guest is blocked, since they
-        // structurally cannot satisfy "has an explicit, current grant" — §52.4's "ужесточение", a
-        // deliberate product decision the flag alone does not soften.
-        var blockedByProviderDeliveryConsent = providerDeliveryConsentMode switch
-        {
-            ProviderDeliveryConsentMode.Off => false,
-            ProviderDeliveryConsentMode.AccountsOnly => recipientHasProviderDeliveryConsent == false,
-            ProviderDeliveryConsentMode.Strict => recipientHasProviderDeliveryConsent != true,
-            _ => throw new ArgumentOutOfRangeException(nameof(providerDeliveryConsentMode))
-        };
-        if (blockedByProviderDeliveryConsent)
-            return NotificationGateResult.Block(NotificationReason.NoProviderDeliveryConsent);
-
-        // §47.2 / §40.3: "not on a paid plan" means "the account has no paid transport" (WhatsApp or MAX) — a tariff flag takes
-        // no part (ARCHITECTURE_CYCLE40.md §40.3.4).
-        if (!accountHasPaidTransport)
-            return NotificationGateResult.Block(NotificationReason.NotOnPaidPlan);
-
-        if (!companyHasAssignment || channel is null)
-            return NotificationGateResult.Block(NotificationReason.NoUsableChannel);
-
-        // §47.2: an Unfunded channel (M > N, this one lost the ranking) blocks with the same reason as
-        // "account not paid at all" — NotificationReason is append-only (§59) and NotOnPaidPlan already
-        // honestly covers both "never paid" and "paid for fewer numbers than are configured".
-        if (!channelIsFunded)
-            return NotificationGateResult.Block(NotificationReason.NotOnPaidPlan);
-
-        // ARCHITECTURE_CYCLE24.md §457.1: the salon mask concerns the BOOKING types only. Whether messages about orders are sent is the shop's own
-        // flag (ShopSettings.CustomerMessengerEnabled, checked when they are queued and again when they are sent) — otherwise saving a salon form
-        // (which builds the mask from booking types) could silently switch them off.
-        var enabledTypeMask = settings?.EnabledTypeMask ?? CompanyNotificationSettings.DefaultEnabledTypeMask;
-        if (NotificationTypeCatalog.IsBookingType(type) && (enabledTypeMask & (1 << (int)type)) == 0)
-            return NotificationGateResult.Block(NotificationReason.TypeDisabledByCompany);
-
-        // B3 / SPEC US-31 п. 2: the "less than N minutes before the visit" threshold is a safety valve
-        // against dumping an accumulated reminder queue after a reconnect — it does NOT apply to
-        // confirmation, cancellation or reschedule, which are reactions to the salon's own action right
-        // now and must go out regardless of how close the visit is.
-        if (type == NotificationType.Reminder)
-        {
-            var minLeadMinutes = settings?.MinLeadMinutes ?? new CompanyNotificationSettings().MinLeadMinutes;
-            if (NotificationTiming.IsBelowMinimumLeadTime(visitStartUtc, nowUtc, minLeadMinutes))
-                return NotificationGateResult.Block(NotificationReason.BelowMinimumLeadTime);
-        }
-
-        return NotificationGateResult.Allow;
-    }
-
-    // ---- Cycle 40 (ARCHITECTURE_CYCLE40.md §40.5.3) ----
-
     /// <summary>
-    /// The cycle-40 gate: no plan, no assignment, no per-channel funding — those questions moved to
+    /// The gate (ARCHITECTURE_CYCLE40.md §40.5.3): no plan, no assignment, no per-channel funding — those questions moved to
     /// <see cref="MessagingAvailability"/>. Order: platform switch → unsubscribe (checked HERE, not by
     /// <see cref="MessengerConsentRule"/>, and stronger than any opt-in mark) → client declined → no consent →
     /// nothing paid → nothing routable → type disabled by the company → lead time. Pure.

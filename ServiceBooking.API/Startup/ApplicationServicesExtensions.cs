@@ -61,6 +61,8 @@ internal static class ApplicationServicesExtensions
     // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.3): the one reader of "paid / open / working" per account; ChannelFundingReader is its façade.
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.AccountMessagingReader>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.ChannelFundingReader>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.MessengerConsentResolver>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.PendingRebinder>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingEventLog>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingActorResolver>();
     // Cycle 22 P5 (ARCHITECTURE_CYCLE22.md §378): the body of POST /api/bookings, moved out of
@@ -214,7 +216,7 @@ internal static class ApplicationServicesExtensions
     {
     // ── Подтверждение телефона через MAX (ARCHITECTURE_CYCLE14.md §140-§158) ──────────────────────────────
     // R5/§144.1: a PLATFORM subsystem, deliberately with NO reference anywhere in this block to
-    // Notifications:*/NotificationChannel/ChannelCompanyAssignment/LegalOptionGuards — own top-level config
+    // Notifications:*/NotificationChannel/LegalOptionGuards — own top-level config
     // section, own secrets, own registry, its own named HttpClient.
     builder.Services.Configure<ServiceBooking.API.Services.PhoneVerification.PhoneVerificationOptions>(
         builder.Configuration.GetSection(ServiceBooking.API.Services.PhoneVerification.PhoneVerificationOptions.SectionName));
