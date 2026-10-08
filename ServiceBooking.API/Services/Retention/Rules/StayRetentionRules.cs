@@ -36,7 +36,7 @@ public sealed class StayPaymentProofRule(AppDbContext db, FileStorage storage) :
             foreach (var b in batch)
             {
                 // the exact moment (the check-out time in the zone of the booking) is decided here, not by the coarse date filter
-                if (ctx.NowUtc <= StayTime.ToUtc(b.TimeZoneIdSnapshot, b.CheckOutDate, b.CheckOutTimeSnapshot).AddDays(days) && (b.TerminalAtUtc is null || b.TerminalAtUtc >= cutoff)) continue;
+                if (ctx.NowUtc <= StayTime.ToUtc(b.TimeZoneIdSnapshot, b.CheckOutDate, b.CheckOutTimeSnapshot).AddDays(days) || (b.TerminalAtUtc is not null && b.TerminalAtUtc >= cutoff)) continue;
                 scanned++;
                 var proofs = await db.StayPaymentProofs.Where(p => p.StayBookingId == b.Id && p.StorageKey != null).ToListAsync(ct);
                 foreach (var p in proofs)
@@ -129,7 +129,9 @@ public sealed class StayGuestPushSubscriptionRule(AppDbContext db) : IRetentionR
 
     public Task<RetentionOutcome> ApplyAsync(RetentionContext ctx, CancellationToken ct)
     {
-        var cutoff = ctx.NowUtc.AddDays(-ctx.Periods.StayGuestPushSubscriptionDays);
+        var days = ctx.Periods.StayGuestPushSubscriptionDays;
+        if (days <= 0) return Task.FromResult(new RetentionOutcome(Name, 0, 0, $"retention[{(ctx.DryRun ? "dry" : "live")}] {Name}: срок хранения не настроен, правило пропущено") { Skipped = true });
+        var cutoff = ctx.NowUtc.AddDays(-days);
         var cutoffDate = DateOnly.FromDateTime(cutoff);
         IQueryable<StayGuestPushSubscription> Query(Guid cursor) => db.StayGuestPushSubscriptions
             .Where(s => s.Id > cursor && (s.StayBooking.CheckOutDate < cutoffDate || (s.StayBooking.TerminalAtUtc != null && s.StayBooking.TerminalAtUtc < cutoff)))
@@ -144,7 +146,9 @@ public sealed class StayGuestPushNotificationRule(AppDbContext db) : IRetentionR
 
     public Task<RetentionOutcome> ApplyAsync(RetentionContext ctx, CancellationToken ct)
     {
-        var cutoff = ctx.NowUtc.AddDays(-ctx.Periods.StayGuestPushNotificationDays);
+        var days = ctx.Periods.StayGuestPushNotificationDays;
+        if (days <= 0) return Task.FromResult(new RetentionOutcome(Name, 0, 0, $"retention[{(ctx.DryRun ? "dry" : "live")}] {Name}: срок хранения не настроен, правило пропущено") { Skipped = true });
+        var cutoff = ctx.NowUtc.AddDays(-days);
         IQueryable<StayGuestPushNotification> Query(Guid cursor) => db.StayGuestPushNotifications.Where(n => n.Id > cursor && n.CreatedAt < cutoff).OrderBy(n => n.Id);
         return RetentionRuleRunner.RunAsync(Name, Query, n => n.Id, n => db.StayGuestPushNotifications.Remove(n), ctx, db, ct, dateOf: n => n.CreatedAt);
     }
