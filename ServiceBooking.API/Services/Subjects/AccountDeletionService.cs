@@ -216,6 +216,7 @@ public sealed class AccountDeletionService(
         if (erasedStayIds.Count > 0)
         {
             foreach (var e in await db.StayBookingEvents.Where(e => erasedStayIds.Contains(e.StayBookingId)).ToListAsync()) Stays.StayPersonalData.TombstoneGuestEvent(e);
+            foreach (var session in await db.StayServiceSessions.Where(s => s.StayBookingId != null && erasedStayIds.Contains(s.StayBookingId.Value)).ToListAsync()) Stays.StayPersonalData.TombstoneSessionAuthor(session);
             db.StayGuestPushSubscriptions.RemoveRange(await db.StayGuestPushSubscriptions.Where(s => s.StayBookingId != null && erasedStayIds.Contains(s.StayBookingId.Value)).ToListAsync());
         }
 
@@ -244,6 +245,7 @@ public sealed class AccountDeletionService(
         if (erasedSvcOrderIds.Count > 0)
         {
             foreach (var e in await db.StayServiceOrderEvents.Where(e => erasedSvcOrderIds.Contains(e.StayServiceOrderId)).ToListAsync()) Stays.StayPersonalData.TombstoneGuestEvent(e);
+            foreach (var session in await db.StayServiceSessions.Where(s => s.StayServiceOrderId != null && erasedSvcOrderIds.Contains(s.StayServiceOrderId.Value)).ToListAsync()) Stays.StayPersonalData.TombstoneSessionAuthor(session);
             db.StayGuestPushSubscriptions.RemoveRange(await db.StayGuestPushSubscriptions.Where(s => s.StayServiceOrderId != null && erasedSvcOrderIds.Contains(s.StayServiceOrderId.Value)).ToListAsync());
         }
 

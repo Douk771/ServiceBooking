@@ -79,7 +79,13 @@ public sealed class StayUnpaidPersonalizationRule(AppDbContext db) : IRetentionR
         IQueryable<StayBooking> Query(Guid cursor) => db.StayBookings
             .Where(b => b.Id > cursor && !b.PersonalDataErased && b.Status == StayBookingStatus.ExpiredUnpaid && b.TerminalAtUtc != null && b.TerminalAtUtc < cutoff)
             .OrderBy(b => b.Id);
-        return RetentionRuleRunner.RunAsync(Name, Query, b => b.Id, StayPersonalData.Erase, ctx, db, ct, dateOf: b => b.TerminalAtUtc!.Value);
+        return RetentionRuleRunner.RunAsync(Name, Query, b => b.Id,
+            mutate: b =>
+            {
+                StayPersonalData.Erase(b);
+                foreach (var s in db.StayServiceSessions.Where(s => s.StayBookingId == b.Id)) StayPersonalData.TombstoneSessionAuthor(s);
+            },
+            ctx, db, ct, dateOf: b => b.TerminalAtUtc!.Value);
     }
 }
 
@@ -102,6 +108,7 @@ public sealed class StayBookingPersonalizationRule(AppDbContext db) : IRetention
             {
                 StayPersonalData.Erase(b);
                 foreach (var e in db.StayBookingEvents.Where(e => e.StayBookingId == b.Id)) StayPersonalData.TombstoneGuestEvent(e);
+                foreach (var s in db.StayServiceSessions.Where(s => s.StayBookingId == b.Id)) StayPersonalData.TombstoneSessionAuthor(s);
             },
             ctx, db, ct, dateOf: b => b.TerminalAtUtc ?? b.CheckOutDate.ToDateTime(TimeOnly.MinValue));
     }
@@ -224,7 +231,13 @@ public sealed class StayServiceOrderUnpaidPersonalizationRule(AppDbContext db) :
         var cutoff = ctx.NowUtc.AddDays(-days);
         IQueryable<StayServiceOrder> Query(Guid cursor) => db.StayServiceOrders
             .Where(o => o.Id > cursor && !o.PersonalDataErased && o.Status == StayBookingStatus.ExpiredUnpaid && o.TerminalAtUtc != null && o.TerminalAtUtc < cutoff).OrderBy(o => o.Id);
-        return RetentionRuleRunner.RunAsync(Name, Query, o => o.Id, StayPersonalData.EraseOrder, ctx, db, ct, dateOf: o => o.TerminalAtUtc!.Value);
+        return RetentionRuleRunner.RunAsync(Name, Query, o => o.Id,
+            mutate: o =>
+            {
+                StayPersonalData.EraseOrder(o);
+                foreach (var s in db.StayServiceSessions.Where(s => s.StayServiceOrderId == o.Id)) StayPersonalData.TombstoneSessionAuthor(s);
+            },
+            ctx, db, ct, dateOf: o => o.TerminalAtUtc!.Value);
     }
 }
 
@@ -246,6 +259,7 @@ public sealed class StayServiceOrderPersonalizationRule(AppDbContext db) : IRete
             {
                 StayPersonalData.EraseOrder(o);
                 foreach (var e in db.StayServiceOrderEvents.Where(e => e.StayServiceOrderId == o.Id)) StayPersonalData.TombstoneGuestEvent(e);
+                foreach (var s in db.StayServiceSessions.Where(s => s.StayServiceOrderId == o.Id)) StayPersonalData.TombstoneSessionAuthor(s);
             },
             ctx, db, ct, dateOf: o => o.TerminalAtUtc ?? o.CreatedAtUtc);
     }

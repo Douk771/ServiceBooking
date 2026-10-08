@@ -35,6 +35,19 @@ public static class StayPersonalData
         o.PersonalDataErased = true;
     }
 
+    /// <summary>
+    /// A session added by the GUEST keeps the name and the account of its author (<c>AddedByNameSnapshot</c>, <c>AddedByUserId</c>) — they are the guest's personal data and go with the booking / order
+    /// (US-39-27). A session added by the staff names an employee, not the subject: untouched.
+    /// </summary>
+    public static void TombstoneSessionAuthor(StayServiceSession s)
+    {
+        if (s.AddedByKind is StayActorKind.Guest or StayActorKind.Customer)
+        {
+            s.AddedByUserId = null;
+            s.AddedByNameSnapshot = DeletedUserName;
+        }
+    }
+
     public static void TombstoneGuestEvent(StayServiceOrderEvent e)
     {
         if (e.ActorKind is StayActorKind.Guest or StayActorKind.Customer)
