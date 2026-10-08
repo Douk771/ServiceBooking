@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "dev:goods": "vite --config vite.goods.config.ts",
+    "dev:dom": "vite --config vite.dom.config.ts",
     "build": "tsc && vite build",
     "build:goods": "tsc -p tsconfig.goods.json && vite build --config vite.goods.config.ts",
-    "build:release": "npm run build && npm run build:goods && node scripts/merge-goods-dist.mjs",
+    "build:dom": "tsc -p tsconfig.dom.json && vite build --config vite.dom.config.ts",
+    "build:release": "npm run build && npm run build:goods && npm run build:dom && node scripts/merge-site-dist.mjs goods dom",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
@@ -34,6 +36,7 @@
     "types:api:cycle35": "openapi-typescript ../contracts/cycle35/openapi.yaml -o src/types/api-cycle35.generated.ts",
     "types:api:cycle33": "openapi-typescript ../contracts/cycle33/openapi.yaml -o src/types/api-cycle33.generated.ts",
     "types:api:cycle32": "openapi-typescript ../contracts/cycle32/openapi.yaml -o src/types/api-cycle32.generated.ts",
+    "types:api:cycle37": "openapi-typescript ../contracts/cycle37/openapi.yaml -o src/types/api-cycle37.generated.ts",
     "contracts:json": "node scripts/contracts-to-json.mjs"
   },
   "dependencies": {

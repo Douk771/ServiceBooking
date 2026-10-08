@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@dom/*": ["dom/src/*"]
+    }
+  },
+  "include": ["dom/src", "src"],
+  "exclude": ["**/shots.test.ts", "**/seed-goods-demo.test.ts", "**/BuyersBlock.qa.test.tsx", "**/UpdateBanner.acceptance.test.tsx"]
+}
