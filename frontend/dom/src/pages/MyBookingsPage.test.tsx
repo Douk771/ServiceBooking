@@ -39,7 +39,7 @@ describe('MyBookingsPage (P1)', () => {
     const { unmount } = renderPage()
     expect(await screen.findByText('Броней пока нет')).toBeInTheDocument()
     unmount()
-    my.mockReset().mockRejectedValue(httpError(500, ''))
+    my.mockReset().mockImplementation(() => Promise.reject(httpError(500, '')))
     renderPage()
     expect(await screen.findByRole('alert')).toHaveTextContent('Сервер временно недоступен')
   })
