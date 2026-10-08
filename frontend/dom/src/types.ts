@@ -200,3 +200,4 @@ export type StaysSettingsWithServices = StaysSettingsDto & { acceptServiceOrders
 export type StaysCompanyManageWithServices = StaysCompanyManageDto & S39['StaysCompanyManageServicesPart']
 export type StaysBoardWithServices = StaysBoardDto & S39['StaysBoardServicesPart']
 export type StaffStayBookingCardWithServices = StaffStayBookingCardDto & S39['StaffStayBookingCardServicesPart']
+export type ProofRulesDto = S39['ProofRulesDto']

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/Icon'
 import { CompanyLogoMark } from '@/components/company/CompanyLogoMark'
 import { formatPhone, telHref } from '@/utils/phone'
+import { formatRub } from '@/utils/money'
 import { publicStaysApi } from '../api/publicStays'
 import { HouseCard } from '../components/HouseCard'
 import { ProviderBlock } from '../components/ProviderBlock'
@@ -137,6 +138,41 @@ export function CompanyPage() {
           </ul>
         )}
       </section>
+
+      {company.services && company.services.length > 0 && (
+        <section className="mt-10" aria-labelledby="services-title" data-testid="company-services">
+          <h2 id="services-title" className="mb-4 font-serif text-2xl text-ink">
+            Услуги
+          </h2>
+          <ul className="grid gap-4 sm:grid-cols-2">
+            {company.services.map((s) => (
+              <li key={s.id}>
+                <Link
+                  to={s.url}
+                  className="flex h-full items-center gap-4 rounded-2xl border border-line bg-white p-4 !text-ink transition-colors hover:border-line-strong"
+                >
+                  {s.coverThumbUrl || s.coverUrl ? (
+                    <img src={s.coverThumbUrl ?? s.coverUrl ?? undefined} alt="" loading="lazy" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
+                  ) : (
+                    <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-cream-deep">
+                      <Icon name="calendar" size={22} strokeWidth={1.4} className="text-muted" />
+                    </span>
+                  )}
+                  <span className="min-w-0">
+                    <span className="block font-serif text-lg leading-snug text-ink">{s.name}</span>
+                    <span className="block text-sm text-ink-soft">
+                      {s.priceFromRub != null ? `от ${formatRub(s.priceFromRub)} в час · ` : ''}от {s.minHours} ч
+                    </span>
+                    <span className="block text-xs text-muted">
+                      {s.canOrderWithoutStay ? 'Можно заказать отдельно' : 'Можно добавить к брони дома'}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <ProviderBlock provider={company.provider} className="mt-10 max-w-[760px]" />
     </main>
