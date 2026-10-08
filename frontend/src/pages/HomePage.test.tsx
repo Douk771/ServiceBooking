@@ -231,7 +231,6 @@ describe('HomePage — единый шаблон (T38-10)', () => {
       items: [company({ name: LONG, slug: 'long' })], page: 1, pageSize: 20, total: 1, hasNext: false,
     })
   })
-  const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
 
   it('catalog lives in #companies, anchors lead to #companies and #clients-title, no footer', async () => {
     const { container } = renderPage()
@@ -244,12 +243,10 @@ describe('HomePage — единый шаблон (T38-10)', () => {
     expect(container.querySelectorAll('h1')).toHaveLength(1)
   })
 
-  it('salon photo comes after #companies, lazy; reminder wording stays (Q38-6); long name is not truncated', async () => {
+  it('no media block; reminder wording stays (Q38-6); long name is not truncated', async () => {
     const { container } = renderPage()
     await screen.findByText(LONG)
-    const img = container.querySelector('img[alt="Интерьер салона"]') as HTMLImageElement
-    expect(img.getAttribute('loading')).toBe('lazy')
-    expect(follows(container.querySelector('#companies') as Element, img)).toBe(true)
+    expect(container.querySelector('img[alt="Интерьер салона"]')).toBeNull()
     expect(container.textContent).toContain('напоминание накануне визита')
     const h3 = screen.getByText(LONG)
     expect(h3.className).not.toContain('truncate')

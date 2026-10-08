@@ -4,7 +4,6 @@ import { useAuthStore } from '../../store/authStore'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
-import { pickFeaturedPlanId } from '../../utils/pricingFormat'
 import type { AuthRouteAction } from '../landing/types'
 import { PlanCard } from './PlanCard'
 import { OptionRow } from './OptionRow'
@@ -85,9 +84,6 @@ export function PricingPageBody({ line, documentTitle, cta }: Props) {
 
   const sortedPlans = [...data.plans].sort((a, b) => a.sortOrder - b.sortOrder || a.pricePerMonth - b.pricePerMonth)
   const sortedOptions = [...data.options].sort((a, b) => a.sortOrder - b.sortOrder || a.pricePerMonth - b.pricePerMonth)
-  // The first PAID plan (not the free one, not the trial) gets the visual accent — a stand-in for "recommended"
-  // without inventing a field the contract doesn't have.
-  const featuredPlanId = pickFeaturedPlanId(sortedPlans)
 
   return (
     <div className={PRICING_CONTAINER}>
@@ -99,7 +95,7 @@ export function PricingPageBody({ line, documentTitle, cta }: Props) {
 
       <div className={`${gridClass(sortedPlans.length)} mb-16`}>
         {sortedPlans.map((plan) => (
-          <PlanCard key={plan.id} plan={plan} featured={plan.id === featuredPlanId} />
+          <PlanCard key={plan.id} plan={plan} />
         ))}
       </div>
 
