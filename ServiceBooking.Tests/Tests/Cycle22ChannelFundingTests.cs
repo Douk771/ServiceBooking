@@ -29,8 +29,9 @@ namespace ServiceBooking.Tests.Tests;
 /// <list type="bullet">
 /// <item><c>FarFuture</c> — option paid through +60 days: funded, not expiring.</item>
 /// <item><c>Expiring</c> — option paid through +3 days: funded, counts in ExpiringIn7Days.</item>
-/// <item><c>Requested</c> — channel requested, no option row bought yet: not funded; paid-until falls
-/// back to the subscription's own period (reader semantics).</item>
+/// <item><c>Requested</c> — channel requested, no option row bought yet: not funded; no paid-until.
+/// Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.1): a transport without its option row has no payment at all — the
+/// fallback to the subscription's period is kept only for a LEGACY row of the option without its own date.</item>
 /// <item><c>Expired</c> — option paid through −2 days: not funded; paid-until is that past date.</item>
 /// <item><c>NoSubscription</c> — no AccountSubscription at all: not funded, no paid-until.</item>
 /// </list>
@@ -177,10 +178,9 @@ public class Cycle22ChannelFundingTests(TestDatabaseFixture fixture) : Notificat
     /// <summary>Review of cycle 22 (debt C22-5): the reader's WhatsApp-option filter runs on the "now" the
     /// caller hands it — ChannelHealthTask hands its <see cref="ServiceBooking.API.Services.Notifications.INotificationClock"/>
     /// instant — not on the wall clock. A <see cref="FakeClock"/> moved past the option's EndsAtUtc drops
-    /// the option: paid-until falls back to the subscription's period. The funding STATE (what the idle
-    /// computation reads) comes from plan resolution, which still runs on the wall clock and so stays
-    /// Funded here — the part of C22-5 that remains open; this assertion flips when the resolver takes
-    /// "now" too.</summary>
+    /// the option as a source of payment. Cycle 40 (§40.3.1, <c>AccountMessagingReader</c>): the SAME instant drives the whole
+    /// rule — an option ended by the caller's clock is not paid (state NotPaid) and its paid-until is its own end date; the
+    /// part of C22-5 that remained open (plan resolution on the wall clock) is closed, plan resolution no longer takes part.</summary>
     [Fact, TestCase("CY22-04b")]
     public async Task FundingReader_OptionFilter_UsesCallersClock()
     {
@@ -207,13 +207,13 @@ public class Cycle22ChannelFundingTests(TestDatabaseFixture fixture) : Notificat
         before.PaidUntil.Should().BeCloseTo(s.ExpectedPaidUntil!.Value, DbPrecision);
         (await reader.LoadAsync([channel]))[channel.Id].PaidUntil.Should().BeCloseTo(s.ExpectedPaidUntil!.Value, DbPrecision);
 
-        // Clock moved past EndsAtUtc: the option is filtered out by the CALLER's clock.
+        // Clock moved past EndsAtUtc: the option is ended by the CALLER's clock — not paid, paid-until = its own end date.
+        var endsAt = option.EndsAtUtc!.Value;
         clock.Advance(TimeSpan.FromDays(2));
         var after = (await reader.LoadAsync([channel], nowUtc: clock.UtcNow))[channel.Id];
-        after.PaidUntil.Should().BeCloseTo(subscriptionPaidUntil.Value, DbPrecision,
-            "an option ended by the caller's clock no longer supplies paid-until");
-        after.State.Should().Be(ServiceBooking.API.Services.Billing.ChannelFundingState.Funded,
-            "C22-5 remainder: plan resolution (paid numbers → funding state) still reads the wall clock");
+        after.PaidUntil.Should().BeCloseTo(endsAt, DbPrecision, "an option ended by the caller's clock shows its own end date");
+        after.State.Should().Be(ServiceBooking.API.Services.Billing.ChannelFundingState.NotPaid,
+            "the funding state follows the caller's clock too (C22-5 closed by AccountMessagingReader)");
     }
 
     // ── CY22-05: replacing a blocked channel ──────────────────────────────────────────────────────
@@ -308,9 +308,8 @@ public class Cycle22ChannelFundingTests(TestDatabaseFixture fixture) : Notificat
                 funded = funding != Funding.Expired;
                 break;
             case Funding.Requested:
-                // Nothing bought yet: the reader falls back to the subscription's own paid period.
-                expectedPaidUntil = await db.AccountSubscriptions.Where(s => s.BillingAccountId == accountId)
-                    .Select(s => s.PaidUntil).SingleAsync();
+                // Nothing bought yet: no option row — no payment and no paid-until (cycle 40, §40.3.1).
+                expectedPaidUntil = null;
                 break;
             case Funding.NoSubscription:
                 db.AccountSubscriptions.RemoveRange(await db.AccountSubscriptions
