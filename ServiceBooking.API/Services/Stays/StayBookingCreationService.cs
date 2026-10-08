@@ -33,8 +33,8 @@ public sealed record StayCreateResult(ActionResult? Error, StayBooking? Booking 
 /// data than the guest confirmed: every refusal is a JSON 409 and nothing is written.
 /// </summary>
 public class StayBookingCreationService(
-    AppDbContext db, CaptchaService captcha, SubjectScopeResolver subjectScope, HouseOccupancyWriter occupancy, StayPhoneThrottle throttle,
-    StayBookingEventLog eventLog, StayHoldExpirer expirer, LegalDocumentProvider legalProvider, IOptions<StaysOptions> options, IStaysClock clock,
+    AppDbContext db, CaptchaService captcha, HouseOccupancyWriter occupancy, StayPhoneThrottle throttle,
+    StayBookingEventLog eventLog, StayHoldExpirer expirer, LegalDocumentProvider legalProvider, IStaysClock clock,
     StaysCompanyService companyService, ShopChannelReader channelReader, StayActorResolver actors, CheckInInfoReleaser checkInInfo)
 {
     private const string IdempotencyIndex = "IX_StayBookings_CompanyId_IdempotencyKey";

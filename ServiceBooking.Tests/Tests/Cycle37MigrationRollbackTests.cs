@@ -51,9 +51,9 @@ public class Cycle37MigrationRollbackTests(TestDatabaseFixture fixture) : Cycle3
             // один и тот же телефон с пробным периодом «Записей» (Line 0) и «Домов» (Line 2): Down() обязан убрать вторую запись ДО восстановления
             // прежнего уникального индекса по ключу телефона, иначе откат упадёт на дубликате (DEPLOY.md DO-37-03)
             var hash = new string('a', 64);
-            await db.Database.ExecuteSqlRawAsync($"""
+            await db.Database.ExecuteSqlAsync($"""
                 INSERT INTO "TrialPhoneRegistrations" ("Id", "Line", "PhoneKeyHash", "RegisteredAtUtc", "KeyId")
-                VALUES (gen_random_uuid(), 0, '{hash}', now(), 'qa'), (gen_random_uuid(), 2, '{hash}', now(), 'qa');
+                VALUES (gen_random_uuid(), 0, {hash}, now(), 'qa'), (gen_random_uuid(), 2, {hash}, now(), 'qa');
                 """);
 
             // ── откат ──

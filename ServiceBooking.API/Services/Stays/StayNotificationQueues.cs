@@ -23,7 +23,7 @@ public static class StayStaffRecipients
 }
 
 /// <summary>Push to the devices of the owner and managers — every device of the recipient (cycle 33); the key is one row per event and device.</summary>
-public sealed class StayStaffPushQueue(AppDbContext db, StaffPushLinks links, IStaysClock clock)
+public sealed class StayStaffPushQueue(AppDbContext db, IStaysClock clock)
 {
     public static readonly TimeSpan Ttl = TimeSpan.FromHours(1);
 

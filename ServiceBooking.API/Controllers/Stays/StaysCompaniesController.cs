@@ -28,7 +28,7 @@ namespace ServiceBooking.API.Controllers.Stays;
 public class StaysCompaniesController(
     AppDbContext db, CompanyCreationService companyCreation, StaysAccessResolver access, StaysCompanyService companyService,
     PublicSiteLinks links, StaysTrialService trial, BillingAccountProvisioner accounts, ShopChannelReader channelReader,
-    StaysPlanResolver plans, IStaysClock clock) : ControllerBase
+    IStaysClock clock) : ControllerBase
 {
     public const string MessengerUnavailableText = "Подключите канал WhatsApp или MAX, чтобы отправлять сообщения гостям";
 

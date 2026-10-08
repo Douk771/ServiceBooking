@@ -17,7 +17,7 @@ namespace ServiceBooking.API.Services.Stays;
 /// </summary>
 public class StayNotificationPlanner(
     AppDbContext db, StayStaffPushQueue staffPush, StayStaffMaxQueue staffMax, StayGuestPushQueue guestPush, StayMessageScheduler messenger,
-    PublicSiteLinks links, IOptions<DemoModeOptions> demo, IOptions<WebPushOptions> webPush, StaffMaxAvailability maxAvailability, IStaysClock clock)
+    PublicSiteLinks links, IOptions<DemoModeOptions> demo, IOptions<WebPushOptions> webPush, StaffMaxAvailability maxAvailability)
 {
     public virtual async Task OnEventAsync(StayBooking booking, StayBookingEvent ev, CancellationToken ct = default)
     {
