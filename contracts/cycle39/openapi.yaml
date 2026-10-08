@@ -32,10 +32,8 @@ info:
   description: "Конвенции цикла 37 без изменений: camelCase; enum — строками; DateTime — ISO-8601 UTC; DateOnly — YYYY-MM-DD; деньги — целые рубли (суффикс Rub); тела осознанных 400/402/429 — голая строка text/plain; 401/403/404 — пустое тело; все 409 маршрутов /api/stays/* — JSON с code и message. Время суток услуги — минуты от 00:00 даты бизнес-дня (startMinute, endMinute; 360…1800). Тексты для людей (подписи времени, статусы, суммы возврата, тексты напоминания) собирает сервер: гостю — календарными датами, персоналу — на бизнес-дне старта."
 
 servers:
-  - url: http://localhost:5000
-    description: dev (dotnet run)
-  - url: http://localhost:4039
-    description: prism mock по этой схеме
+  - url: https://dom.ezbook.ru
+    description: production
 
 security:
   - bearerAuth: []
@@ -516,6 +514,7 @@ components:
         accepting: { type: boolean }
         reasonCode:
           allOf: [ { $ref: '#/components/schemas/NotAcceptingReason' } ]
+          type: string
           nullable: true
         reasonText: { type: string, nullable: true }
     JournalEventDto:
@@ -580,9 +579,11 @@ components:
         message: { type: string }
         reasonCode:
           allOf: [ { $ref: '#/components/schemas/NotAcceptingReason' } ]
+          type: string
           nullable: true
         quote:
           allOf: [ { $ref: '#/components/schemas/ServiceQuoteDto' } ]
+          type: object
           nullable: true
           description: Только у PriceChanged.
     ServiceOrderGuestConflictDto:
@@ -614,6 +615,7 @@ components:
         message: { type: string }
         conflictingRule:
           allOf: [ { $ref: '#/components/schemas/PriceRuleDto' } ]
+          type: object
           nullable: true
         markers:
           type: array
@@ -632,6 +634,7 @@ components:
         message: { type: string }
         reasonCode:
           allOf: [ { $ref: '#/components/schemas/NotAcceptingReason' } ]
+          type: string
           nullable: true
         quote:
           type: object
@@ -696,6 +699,7 @@ components:
         prepayPercent: { type: integer, nullable: true }
         cancellationPolicy:
           allOf: [ { $ref: '#/components/schemas/StayServiceCancellationPolicy' } ]
+          type: string
           nullable: true
         cancellationBoundaryHours: { type: integer, nullable: true }
         cancellationSummary: { type: string, nullable: true }
@@ -802,6 +806,7 @@ components:
           items: { $ref: '#/components/schemas/StartDto' }
         reason:
           allOf: [ { $ref: '#/components/schemas/StartsReason' } ]
+          type: string
           nullable: true
         noStartsText:
           type: string
@@ -836,6 +841,7 @@ components:
           items: { $ref: '#/components/schemas/ProblemDto' }
         time:
           allOf: [ { $ref: '#/components/schemas/ServiceTimeDto' } ]
+          type: object
           nullable: true
         hourPrices:
           type: array
@@ -1285,9 +1291,11 @@ components:
       properties:
         weekly:
           allOf: [ { $ref: '#/components/schemas/WeeklyScheduleDto' } ]
+          type: object
           nullable: true
         day:
           allOf: [ { $ref: '#/components/schemas/ServiceMonthDayDto' } ]
+          type: object
           nullable: true
         outsideSessions:
           type: array
@@ -1392,6 +1400,7 @@ components:
         guestPhone: { type: string, nullable: true }
         orderStatus:
           allOf: [ { $ref: '#/components/schemas/StayBookingStatus' } ]
+          type: string
           nullable: true
         state: { $ref: '#/components/schemas/StayServiceSessionState' }
         statusText: { type: string }
@@ -1426,6 +1435,7 @@ components:
         name: { type: string, nullable: true }
         requestBasis:
           allOf: [ { $ref: '#/components/schemas/StayServiceRequestBasis' } ]
+          type: string
           nullable: true
         text:
           type: string
@@ -1464,9 +1474,11 @@ components:
         state: { $ref: '#/components/schemas/StayServiceSessionState' }
         orderStatus:
           allOf: [ { $ref: '#/components/schemas/StayBookingStatus' } ]
+          type: string
           nullable: true
         displayStatus:
           allOf: [ { $ref: '#/components/schemas/StayDisplayStatus' } ]
+          type: string
           nullable: true
         statusText: { type: string }
         holdExpiresAtUtc: { type: string, format: date-time, nullable: true }
@@ -1477,6 +1489,7 @@ components:
         addedBy: { $ref: '#/components/schemas/SessionAddedByDto' }
         cancellationPolicy:
           allOf: [ { $ref: '#/components/schemas/StayServiceCancellationPolicy' } ]
+          type: string
           nullable: true
         ownerCancelRefundText: { type: string, nullable: true }
         paymentProofs:
@@ -1825,6 +1838,7 @@ components:
         guestPhone: { type: string, nullable: true }
         arrivalTime:
           allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ]
+          type: string
           nullable: true
         comment: { type: string, maxLength: 500, nullable: true }
         notifyByMessenger: { type: boolean }
@@ -1971,6 +1985,7 @@ components:
           items: { $ref: '#/components/schemas/StaysPermission' }
         settings:
           allOf: [ { $ref: '#/components/schemas/StaysSettingsDto' } ]
+          type: object
           nullable: true
         gate: { $ref: '#/components/schemas/GateDto' }
         awaitingPaymentCount: { type: integer, nullable: true }

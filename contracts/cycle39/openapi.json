@@ -11,12 +11,8 @@
   },
   "servers": [
     {
-      "url": "http://localhost:5000",
-      "description": "dev (dotnet run)"
-    },
-    {
-      "url": "http://localhost:4039",
-      "description": "prism mock по этой схеме"
+      "url": "https://dom.ezbook.ru",
+      "description": "production"
     }
   ],
   "security": [
@@ -1163,6 +1159,7 @@
                 "$ref": "#/components/schemas/NotAcceptingReason"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "reasonText": {
@@ -1315,6 +1312,7 @@
                 "$ref": "#/components/schemas/NotAcceptingReason"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "quote": {
@@ -1323,6 +1321,7 @@
                 "$ref": "#/components/schemas/ServiceQuoteDto"
               }
             ],
+            "type": "object",
             "nullable": true,
             "description": "Только у PriceChanged."
           }
@@ -1404,6 +1403,7 @@
                 "$ref": "#/components/schemas/PriceRuleDto"
               }
             ],
+            "type": "object",
             "nullable": true
           },
           "markers": {
@@ -1440,6 +1440,7 @@
                 "$ref": "#/components/schemas/NotAcceptingReason"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "quote": {
@@ -1582,6 +1583,7 @@
                 "$ref": "#/components/schemas/StayServiceCancellationPolicy"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "cancellationBoundaryHours": {
@@ -1865,6 +1867,7 @@
                 "$ref": "#/components/schemas/StartsReason"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "noStartsText": {
@@ -1951,6 +1954,7 @@
                 "$ref": "#/components/schemas/ServiceTimeDto"
               }
             ],
+            "type": "object",
             "nullable": true
           },
           "hourPrices": {
@@ -3163,6 +3167,7 @@
                 "$ref": "#/components/schemas/WeeklyScheduleDto"
               }
             ],
+            "type": "object",
             "nullable": true
           },
           "day": {
@@ -3171,6 +3176,7 @@
                 "$ref": "#/components/schemas/ServiceMonthDayDto"
               }
             ],
+            "type": "object",
             "nullable": true
           },
           "outsideSessions": {
@@ -3463,6 +3469,7 @@
                 "$ref": "#/components/schemas/StayBookingStatus"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "state": {
@@ -3565,6 +3572,7 @@
                 "$ref": "#/components/schemas/StayServiceRequestBasis"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "text": {
@@ -3675,6 +3683,7 @@
                 "$ref": "#/components/schemas/StayBookingStatus"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "displayStatus": {
@@ -3683,6 +3692,7 @@
                 "$ref": "#/components/schemas/StayDisplayStatus"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "statusText": {
@@ -3717,6 +3727,7 @@
                 "$ref": "#/components/schemas/StayServiceCancellationPolicy"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "ownerCancelRefundText": {
@@ -4639,6 +4650,7 @@
                 "$ref": "#/components/schemas/TimeOfDay"
               }
             ],
+            "type": "string",
             "nullable": true
           },
           "comment": {
@@ -5007,6 +5019,7 @@
                 "$ref": "#/components/schemas/StaysSettingsDto"
               }
             ],
+            "type": "object",
             "nullable": true
           },
           "gate": {
