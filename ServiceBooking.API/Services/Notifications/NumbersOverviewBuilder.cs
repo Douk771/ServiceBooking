@@ -114,7 +114,7 @@ public sealed class NumbersOverviewBuilder(
             channel.IdleSinceUtc?.AddDays(ctx.IdleDays), ctx.IdleDays);
     }
 
-    public ChannelDto BuildChannel(NotificationChannel channel, NumbersContext ctx)
+    public static ChannelDto BuildChannel(NotificationChannel channel, NumbersContext ctx)
     {
         var state = StateOf(channel, ctx);
         var transport = state.For(channel.Transport);

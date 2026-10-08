@@ -58,7 +58,7 @@ public class NotificationChannelsController(
             .ToListAsync(ct);
 
         var ctx = await overviewBuilder.LoadAsync(channels.Select(c => c.BillingAccountId ?? Guid.Empty), userId, ct);
-        return Ok(new ChannelListDto(channels.Select(c => overviewBuilder.BuildChannel(c, ctx)).ToList()));
+        return Ok(new ChannelListDto(channels.Select(c => NumbersOverviewBuilder.BuildChannel(c, ctx)).ToList()));
     }
 
     /// <summary>API_CONTRACT_CYCLE40.md §40.23 — everything the "Numbers" block and its wizard need in one answer.</summary>
