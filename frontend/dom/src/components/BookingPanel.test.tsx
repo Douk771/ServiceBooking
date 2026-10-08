@@ -12,6 +12,8 @@ const api = vi.hoisted(() => ({
   createBooking: vi.fn(),
 }))
 vi.mock('../api/publicStays', () => ({ publicStaysApi: api }))
+// Cycle 40: the shared MessengerOptIn reads the lawyer's text through the shared client; a failure = the verbatim fallback.
+vi.mock('@/api/client', () => ({ api: { get: () => Promise.reject(Object.assign(new Error('404'), { response: { status: 404 } })) } }))
 vi.mock('../api/legalTexts', () => ({ stayLegalTextsApi: { get: () => Promise.reject(httpError(404, '')) } }))
 
 function Where() {
@@ -100,13 +102,28 @@ describe('BookingPanel', () => {
     expect(api.createBooking).toHaveBeenCalledTimes(1)
   })
 
-  it('the messenger consent is a separate, unchecked box that travels only when ticked', async () => {
+  const offered = { offered: true, transports: ['Max' as const], checkboxLabel: 'Получать уведомления о брони в MAX' }
+
+  it('cycle 40: no messenger box when the server does not offer it, and the request carries false', async () => {
     api.createBooking.mockResolvedValue({ token: 't', bookingUrl: 'u', booking: {} })
     renderPanel({ checkIn: '2027-01-05', checkOut: '2027-01-08' })
     await screen.findByText('Проживание, 3 ночи')
-    const boxes = screen.getAllByRole('checkbox')
-    const messenger = boxes[boxes.length - 1]
+    expect(screen.queryByTestId('messenger-opt-in')).toBeNull()
+    await fillGuest()
+    const button = screen.getByRole('button', { name: /Забронировать/ })
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
+    await waitFor(() => expect(api.createBooking).toHaveBeenCalled())
+    expect((api.createBooking.mock.calls[0][1] as CreateStayBookingInput).notifyByMessenger).toBe(false)
+  })
+
+  it('cycle 40: the offered messenger consent is a separate, unchecked box with the server label that travels only when ticked', async () => {
+    api.createBooking.mockResolvedValue({ token: 't', bookingUrl: 'u', booking: {} })
+    renderPanel({ checkIn: '2027-01-05', checkOut: '2027-01-08' }, houseFixture({ messenger: offered }))
+    await screen.findByText('Проживание, 3 ночи')
+    const messenger = await screen.findByRole('checkbox', { name: 'Получать уведомления о брони в MAX' })
     expect(messenger).not.toBeChecked()
+    expect(screen.getByText(/Текст согласия/)).toBeInTheDocument() // fallback §6.2
     fireEvent.click(messenger)
     await fillGuest()
     const button = screen.getByRole('button', { name: /Забронировать/ })

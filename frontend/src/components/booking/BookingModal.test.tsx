@@ -50,6 +50,13 @@ vi.mock('../../api/legal', () => ({
   legalApi: { getText: (...args: unknown[]) => getText(...args) },
 }))
 
+// Cycle 40: the profile default of the opt-in box and its legal text are not under test here (own tests) — a plain profile, fallback texts.
+const getPreferences = vi.fn()
+vi.mock('../../api/notifications', () => ({ notificationsApi: { getPreferences: (...a: unknown[]) => getPreferences(...a) } }))
+vi.mock('../../hooks/useMessengerLegalText', () => ({
+  useMessengerLegalText: (_key: string, fallback: { shortHtml: string; fullHtml: string | null }) => ({ ...fallback, version: null }),
+}))
+
 vi.mock('./SmartCaptcha', () => ({ smartCaptchaEnabled: false, SmartCaptcha: () => null }))
 
 const BOOKING_NOTICE_HTML = `<p>Meta.</p>
@@ -170,6 +177,7 @@ beforeEach(() => {
   createBooking.mockReset().mockResolvedValue({})
   getByCompany.mockReset().mockResolvedValue([])
   getText.mockReset()
+  getPreferences.mockReset().mockResolvedValue({ enabled: true, providerDeliveryConsent: false })
   useAuthStore.setState({ user: null, token: null })
 
   getMasters.mockResolvedValue([master()])
@@ -626,5 +634,94 @@ describe('BookingModal — regression fix: guest legal consent footer (ст.18 +
 
     expect(await screen.findByText('пользовательским соглашением')).toBeInTheDocument()
     expect(screen.getByText('политикой обработки персональных данных')).toBeInTheDocument()
+  })
+})
+
+describe('BookingModal — cycle 40 messenger opt-in (US-40-07/08)', () => {
+  const offeredCompany: Company = {
+    ...company,
+    customerMessaging: { offered: true, transports: ['Max'], checkboxLabel: 'Получать уведомления о записи в MAX' },
+  }
+
+  function renderWith(c: Company) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <BookingModal service={service} company={c} onClose={() => {}} allowMultipleServices={false} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+  }
+
+  async function reachGuestInfo(c: Company, staffMode = false) {
+    const user = userEvent.setup()
+    const dateStr = futureDateInCurrentMonth()
+    getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'Available' }, { staffMode }))
+    getSlots.mockResolvedValue([{ start: '10:00:00', end: '10:30:00' }])
+    renderWith(c)
+    await screen.findByText('Выберите дату')
+    await reachInfoStep(user, dateStr)
+    return user
+  }
+
+  async function fillGuest(user: ReturnType<typeof userEvent.setup>, nameLabel = 'Ваше имя *') {
+    await user.type(screen.getByLabelText(nameLabel), 'Анна')
+    await user.type(screen.getByLabelText('Телефон *'), '+79991234567')
+  }
+
+  it('a guest sees the box unchecked with the server label; ticking sends true', async () => {
+    const user = await reachGuestInfo(offeredCompany)
+    const box = await screen.findByRole('checkbox', { name: 'Получать уведомления о записи в MAX' })
+    expect(box).not.toBeChecked()
+    await fillGuest(user)
+    await user.click(box)
+    await user.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
+    await waitFor(() => expect(createBooking).toHaveBeenCalled())
+    expect(createBooking.mock.calls[0][0].notifyByMessenger).toBe(true)
+  })
+
+  it('a guest who leaves the box alone sends an explicit false', async () => {
+    const user = await reachGuestInfo(offeredCompany)
+    await screen.findByRole('checkbox', { name: 'Получать уведомления о записи в MAX' })
+    await fillGuest(user)
+    await user.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
+    await waitFor(() => expect(createBooking).toHaveBeenCalled())
+    expect(createBooking.mock.calls[0][0].notifyByMessenger).toBe(false)
+  })
+
+  it('shows no box and sends no field when the server does not offer messages (or an old server omits the block)', async () => {
+    const user = await reachGuestInfo(company)
+    await fillGuest(user)
+    expect(screen.queryByTestId('messenger-opt-in')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
+    await waitFor(() => expect(createBooking).toHaveBeenCalled())
+    expect(createBooking.mock.calls[0][0].notifyByMessenger).toBeUndefined()
+  })
+
+  it('staff recording a client gets the separate «Клиент согласился…» tick, unchecked, and not the client box', async () => {
+    useAuthStore.setState({ user: { id: 'u1', firstName: 'Иван', lastName: 'Мастеров' } as never, token: 't' })
+    const user = await reachGuestInfo(offeredCompany, true)
+    await user.click(screen.getByRole('button', { name: 'Записать клиента' }))
+    const tick = await screen.findByRole('checkbox', { name: 'Клиент согласился получать сообщения об этой записи в MAX' })
+    expect(tick).not.toBeChecked()
+    expect(screen.queryByTestId('messenger-opt-in')).toBeNull()
+    await fillGuest(user, 'Имя клиента *')
+    await user.click(tick)
+    const submit = screen.getAllByRole('button', { name: 'Записать клиента' })
+    await user.click(submit[submit.length - 1])
+    await waitFor(() => expect(createBooking).toHaveBeenCalled())
+    expect(createBooking.mock.calls[0][0].notifyByMessenger).toBe(true)
+  })
+
+  it('staff without the tick sends no field at all', async () => {
+    useAuthStore.setState({ user: { id: 'u1', firstName: 'Иван', lastName: 'Мастеров' } as never, token: 't' })
+    const user = await reachGuestInfo(offeredCompany, true)
+    await user.click(screen.getByRole('button', { name: 'Записать клиента' }))
+    await fillGuest(user, 'Имя клиента *')
+    const submit = screen.getAllByRole('button', { name: 'Записать клиента' })
+    await user.click(submit[submit.length - 1])
+    await waitFor(() => expect(createBooking).toHaveBeenCalled())
+    expect(createBooking.mock.calls[0][0].notifyByMessenger).toBeUndefined()
   })
 })

@@ -4,6 +4,7 @@ import type { components as Cycle14Components } from './api-cycle14.generated'
 import type { components as Cycle31Components } from './api-cycle31.generated'
 import type { components as Cycle33Components } from './api-cycle33.generated'
 import type { components as Cycle37Components } from './api-cycle37.generated'
+import type { components as Cycle40Components } from './api-cycle40.generated'
 
 // ── Cycle 19 (ARCHITECTURE_CYCLE19.md §388.5, API_CONTRACT_CYCLE19.md §413): automatic address checking removed,
 // only the notice-acknowledgement result survives from cycle 13's address types. Read straight off
@@ -51,10 +52,21 @@ export type PhoneVerificationRef = Cycle14Components['schemas']['PhoneVerificati
 export type CompanyKind = Cycle37Components['schemas']['CompanyKind']
 export type CompanyKindsSummary = Cycle37Components['schemas']['CompanyKindsSummaryDto']
 
+/** API_CONTRACT_CYCLE40.md §40.22.3 — «Рассылки работают» для клиента; наружу только булево, транспорты и подпись. */
+/** `GET /api/notifications/preferences` (§40.30.6): `providerDeliveryConsent` — active PdnConsent/ProviderDelivery; absent on older servers. */
+export interface NotificationPreferences {
+  enabled: boolean
+  providerDeliveryConsent?: boolean
+}
+
+export type CustomerMessagingOffer = Cycle40Components['schemas']['CustomerMessagingOfferDto']
+
 export interface Company {
   id: string
   name: string
   slug: string
+  /** Cycle 40 (§40.30.1) — only `GET /api/companies/{slug}`; `null`/absent in lists and on older servers = not offered. */
+  customerMessaging?: CustomerMessagingOffer | null
   /** Cycle 23 — `Services` (salon) or `Orders` (goods.ezbook.ru shop). Absent on older servers = `Services`. */
   kind?: CompanyKind
   /** Cycle 23 — canonical public address of this company on its own site; ezbook redirects `Orders` here. */
@@ -596,6 +608,10 @@ export type LegalTextKey =
   | 'ShowcaseNotice'
   | 'ShowcaseBookingClosed'
   | 'DemoBanner'
+  /** API_CONTRACT_CYCLE40.md §40.33.13 — cycle 40 keys OUTSIDE `LegalTextKey.All`: 404 until the lawyer's text is published,
+   *  the frontend then shows its verbatim fallback (`utils/messengerOptIn.ts`, LEGAL_REVIEW_CYCLE40.md §5.3, §7.3). */
+  | 'BookingMessengerConsent'
+  | 'StaffBookingMessengerConsentHint'
 export type ConsentPurpose = 'ProviderDelivery' | 'WorkPhotos' | 'HealthData' | 'ChannelOffer'
 type ConsentAct = 'Acknowledged' | 'Accepted' | 'Consented' | 'Confirmed'
 export type ConsentSource =

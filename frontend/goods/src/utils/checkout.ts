@@ -64,8 +64,20 @@ export function maskPhone(canonical: string | null | undefined): string {
   return `+7 (${digits[1]}**) ***-**-${digits.slice(9)}`
 }
 
-/** The fallback consent line when `OrderMessengerConsent` has no text yet (API_CONTRACT_CYCLE24.md §478.3). */
-export function messengerConsentFallback(canonical: string | null | undefined): string {
-  const mask = maskPhone(canonical)
-  return `Присылать статус заказа в MAX/WhatsApp на номер ${mask || 'из этого заказа'}`
+/**
+ * Cycle 40 (API_CONTRACT_CYCLE40.md §40.30.2): the shop's messenger offer from `storefront.customerNotifications`. `messengerOffered`
+ * is the server's decision; `messengerTransports`/`messengerLabel` are cycle-40 additions (absent on an older server → offered
+ * without a label, the component then builds the neutral one).
+ */
+export function storefrontMessengerOffer(shop: {
+  customerNotifications?: { messengerOffered?: boolean; messengerTransports?: string[]; messengerLabel?: string | null }
+}): { offered: boolean; transports: ('WhatsApp' | 'Max')[]; checkboxLabel: string | null } {
+  const n = shop.customerNotifications
+  const offered = n?.messengerOffered === true
+  if (!offered) return { offered: false, transports: [], checkboxLabel: null }
+  return {
+    offered: true,
+    transports: (n?.messengerTransports ?? []).filter((t): t is 'WhatsApp' | 'Max' => t === 'WhatsApp' || t === 'Max'),
+    checkboxLabel: n?.messengerLabel ?? null,
+  }
 }
