@@ -382,6 +382,17 @@ internal static class ApplicationServicesExtensions
         ServiceBooking.API.Services.Retention.Rules.StayGuestPushSubscriptionRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.StayGuestPushNotificationRule>();
+    // ARCHITECTURE_CYCLE39.md §39.13.3 — retention of stand-alone orders of services.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayServiceOrderPaymentProofRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayServiceOrderUnpaidPersonalizationRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayServiceOrderPersonalizationRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayServiceOrderEventRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayServiceScheduleEventRule>();
     // ARCHITECTURE_CYCLE23.md §398.5 — order-personalization (does nothing while Retention:OrderPersonalDataDays is 0).
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.OrderPersonalizationRule>();

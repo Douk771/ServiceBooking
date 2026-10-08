@@ -263,11 +263,34 @@ public sealed class SubjectDataExporter(
         var stayIds = stayRows.Select(b => b.Id).ToList();
         var stayEvents = (await db.StayBookingEvents.AsNoTracking().Where(e => stayIds.Contains(e.StayBookingId) && e.Kind != StayBookingEventKind.PaymentProofViewed)
             .OrderBy(e => e.OccurredAtUtc).ToListAsync(ct)).ToLookup(e => e.StayBookingId);
+        var staySessions = (await db.StayServiceSessions.AsNoTracking().Where(s => s.StayBookingId != null && stayIds.Contains(s.StayBookingId.Value)).OrderBy(s => s.StartUtc).ToListAsync(ct))
+            .ToLookup(s => s.StayBookingId!.Value);
         var stayExport = stayRows.Select(b => new ExportStayBookingDto(
             b.Company.Name, b.House.Name, b.CheckInDate, b.CheckOutDate, b.Status.ToString(), b.Adults, b.Children, b.Dogs, b.NeedCot, ServiceBooking.API.Services.Stays.StayFormat.Time(b.ArrivalTime),
             b.GuestName, b.GuestPhone, b.Comment, b.TotalRub, b.PrepayRub, b.StatusReason, stayLinks.StayBookingPageUrl(b.PublicToken),
             b.PaymentProofs.OrderBy(p => p.UploadedAtUtc).Select(p => new ExportStayPaymentProofDto(p.UploadedAtUtc, p.ContentType, p.SizeBytes, p.PurgedAtUtc != null || p.StorageKey == null)).ToList(),
-            stayEvents[b.Id].Select(e => new ExportStayEventDto(e.OccurredAtUtc, ServiceBooking.API.Services.Stays.StaysTexts.EventText(e.Kind))).ToList())).ToList();
+            stayEvents[b.Id].Select(e => new ExportStayEventDto(e.OccurredAtUtc, ServiceBooking.API.Services.Stays.StaysTexts.EventText(e.Kind))).ToList(),
+            staySessions[b.Id].Select(s => new ExportStaySessionDto(s.ServiceNameSnapshot, ServiceBooking.API.Services.Stays.ServiceTimeFormat.Guest(s.BusinessDate, s.StartMinute, s.Hours),
+                ServiceBooking.API.Services.Stays.ServiceDtoMapper.ItemsOf(s), s.TotalRub, s.State.ToString())).ToList(), b.ArrivalReminderPageText)).ToList();
+
+        // ARCHITECTURE_CYCLE39.md §39.13.1: stand-alone orders of services — the account's own, and guest orders on a PROVEN number only (the same gate).
+        var svcOrderRows = await db.StayServiceOrders.AsNoTracking().Include(o => o.PaymentProofs)
+            .Where(o => o.GuestUserId == userId || (guestMatchPhone != null && o.GuestKind == StayActorKind.Guest && o.GuestPhone == guestMatchPhone && !db.Companies.Any(c => c.Id == o.CompanyId && c.IsShowcase)))  // SUBJECT-PHONE-GATE: gated — cycle 39, stand-alone service orders follow the same gate as house bookings (ARCHITECTURE_CYCLE39.md §39.13.1)
+            .OrderByDescending(o => o.CreatedAtUtc).ToListAsync(ct);
+        var svcOrderIds = svcOrderRows.Select(o => o.Id).ToList();
+        var svcOrderSessions = (await db.StayServiceSessions.AsNoTracking().Where(s => s.StayServiceOrderId != null && svcOrderIds.Contains(s.StayServiceOrderId.Value)).ToListAsync(ct)).ToDictionary(s => s.StayServiceOrderId!.Value);
+        var svcOrderEvents = (await db.StayServiceOrderEvents.AsNoTracking().Where(e => svcOrderIds.Contains(e.StayServiceOrderId) && e.Kind != StayServiceOrderEventKind.PaymentProofViewed)
+            .OrderBy(e => e.OccurredAtUtc).ToListAsync(ct)).ToLookup(e => e.StayServiceOrderId);
+        var companyNames = await db.Companies.AsNoTracking().Where(c => svcOrderRows.Select(o => o.CompanyId).Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+        var serviceOrderExport = svcOrderRows.Where(o => svcOrderSessions.ContainsKey(o.Id)).Select(o =>
+        {
+            var s = svcOrderSessions[o.Id];
+            return new ExportStayServiceOrderDto(companyNames.GetValueOrDefault(o.CompanyId, string.Empty), s.ServiceNameSnapshot,
+                ServiceBooking.API.Services.Stays.ServiceTimeFormat.Guest(s.BusinessDate, s.StartMinute, s.Hours), s.Hours, ServiceBooking.API.Services.Stays.ServiceDtoMapper.ItemsOf(s),
+                o.TotalRub, o.PrepayRub, o.Status.ToString(), o.GuestName, o.GuestPhone, o.Comment, o.StatusReason, stayLinks.StayServiceOrderPageUrl(o.PublicToken),
+                o.PaymentProofs.OrderBy(p => p.UploadedAtUtc).Select(p => new ExportStayPaymentProofDto(p.UploadedAtUtc, p.ContentType, p.SizeBytes, p.PurgedAtUtc != null || p.StorageKey == null)).ToList(),
+                svcOrderEvents[o.Id].Select(e => new ExportStayEventDto(e.OccurredAtUtc, ServiceBooking.API.Services.Stays.ServiceTexts.StaffEventText(e.Kind))).ToList());
+        }).ToList();
 
         var export = new ProfileExportDto(
             DateTime.UtcNow,
@@ -280,7 +303,7 @@ public sealed class SubjectDataExporter(
             "компания — контакты и адрес каждой такой компании перечислены в разделе «operators» этой " +
             "выгрузки. Запрос об их предоставлении, уточнении или удалении направляйте ей напрямую. По " +
             "вопросам обработки ваших данных платформой обращайтесь в поддержку сервиса.",
-            operators, notifications, optOut, healthNotesExport, phoneVerification, guestDataGate, orderExport, staffMaxLink, shopCustomerNotes, stayExport);
+            operators, notifications, optOut, healthNotesExport, phoneVerification, guestDataGate, orderExport, staffMaxLink, shopCustomerNotes, stayExport, serviceOrderExport);
 
         return export;
     }

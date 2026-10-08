@@ -187,6 +187,14 @@ internal static class LoggingExtensions
 
         // ARCHITECTURE_CYCLE37.md §37.13.2 — the same for the 256-bit booking token of «Дома» (page, proof files, cancellation, push).
         const string stayPublicPrefix = "/api/stays/bookings/public/";
+        // ARCHITECTURE_CYCLE39.md §39.13.2 — and the token of a stand-alone service order.
+        const string serviceOrderPublicPrefix = "/api/stays/service-orders/public/";
+        if (path.StartsWith(serviceOrderPublicPrefix, StringComparison.Ordinal) && path.Length > serviceOrderPublicPrefix.Length)
+        {
+            var orderSlash = path.IndexOf('/', serviceOrderPublicPrefix.Length);
+            return serviceOrderPublicPrefix + "***" + (orderSlash < 0 ? string.Empty : path[orderSlash..]);
+        }
+
         if (path.StartsWith(stayPublicPrefix, StringComparison.Ordinal) && path.Length > stayPublicPrefix.Length)
         {
             var slash = path.IndexOf('/', stayPublicPrefix.Length);

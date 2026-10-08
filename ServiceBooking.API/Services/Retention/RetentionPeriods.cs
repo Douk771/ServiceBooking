@@ -112,6 +112,20 @@ public sealed class RetentionPeriods
     /// <summary>Rows of the guest web-push queue are deleted this many days after creation. Default 90.</summary>
     public int StayGuestPushNotificationDays { get; set; } = 90;
 
+    // ── Cycle 39 (ARCHITECTURE_CYCLE39.md §39.13.3, ЮР39-9) — services of «Дома» ──
+
+    /// <summary>A stand-alone order "Снят: не оплачен" is depersonalised this many days after it was removed. Default 30.</summary>
+    public int StayServiceOrderUnpaidDays { get; set; } = 30;
+
+    /// <summary>Other orders are depersonalised this many days after the later of the end of the session and the final status. Default 1095.</summary>
+    public int StayServiceOrderPersonalDataDays { get; set; } = 1095;
+
+    /// <summary>Journal events of an order are deleted this many days after they happened. Default 1095.</summary>
+    public int StayServiceOrderEventDays { get; set; } = 1095;
+
+    /// <summary>The journal of the schedule of a service (it names employees) is deleted this many days after each event. Default 1095.</summary>
+    public int StayServiceScheduleEventDays { get; set; } = 1095;
+
     /// <summary>ARCHITECTURE_CYCLE25.md §508 [legal L20]. Days a staff MAX link stays after the bot was stopped (so the cabinet can say so), then it is deleted. Default 30.</summary>
     public int StaffMaxStoppedLinkDays { get; set; } = 30;
 
