@@ -187,7 +187,8 @@ public class ServiceSlotService(AppDbContext db, IOptions<StaysOptions> options,
         if (diagnose is { } code) problems.Add(new ServiceProblem(code, SlotMessage(code, scope, input, sel)));
 
         var items = new List<ResolvedItem>();
-        foreach (var chosen in sel.Items.Where(i => i.Quantity > 0))
+        // The same position listed twice is ONE position with the summed quantity: «максимум на сеанс» is a limit of the position, not of one line of the request.
+        foreach (var chosen in sel.Items.Where(i => i.Quantity > 0).GroupBy(i => i.ItemId).Select(g => new ItemSelectionInput(g.Key, g.Sum(x => x.Quantity))))
         {
             var item = catalog.FirstOrDefault(i => i.Id == chosen.ItemId);
             if (item is null || !item.IsActive) { problems.Add(new ServiceProblem(ServiceRefusalCode.ItemUnavailable, ServiceTexts.ItemUnavailable(item?.Name ?? "—"))); continue; }
