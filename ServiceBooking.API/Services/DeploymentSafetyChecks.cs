@@ -547,7 +547,7 @@ public static class DeploymentSafetyChecks
     public static void ValidatePublicSites(IConfiguration configuration, string environmentName)
     {
         var developer = IsDeveloperEnvironment(environmentName);
-        foreach (var key in new[] { "ServicesBaseUrl", "OrdersBaseUrl" })
+        foreach (var key in new[] { "ServicesBaseUrl", "OrdersBaseUrl", "StaysBaseUrl" })
         {
             var value = configuration[$"{PublicSites.PublicSitesOptions.SectionName}:{key}"];
             // Not configured (no appsettings.json at all, or a blank value): PublicSitesOptions/PublicSiteLinks fall back to the

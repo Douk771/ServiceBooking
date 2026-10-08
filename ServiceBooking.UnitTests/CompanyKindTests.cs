@@ -20,14 +20,14 @@ public class CompanyKindTests
     [Fact]
     public void RejectShop_Shop_Is409WithFixedText()
     {
-        var result = CompanyKindGuard.RejectShop(CompanyKind.Orders);
+        var result = CompanyKindGuard.RejectNonSalon(CompanyKind.Orders);
         result.Should().NotBeNull();
         result!.StatusCode.Should().Be(409);
         result.Value.Should().Be("Это магазин: записи, услуги и расписание для него недоступны.");
     }
 
     [Fact]
-    public void RejectShop_Salon_IsNull() => CompanyKindGuard.RejectShop(CompanyKind.Services).Should().BeNull();
+    public void RejectShop_Salon_IsNull() => CompanyKindGuard.RejectNonSalon(CompanyKind.Services).Should().BeNull();
 
     [Theory]
     [InlineData(null, CompanyKind.Services)]

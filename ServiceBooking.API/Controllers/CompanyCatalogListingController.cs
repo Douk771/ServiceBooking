@@ -52,7 +52,7 @@ public class CompanyCatalogListingController(AppDbContext db, SubscriptionResolv
     {
         var company = await db.Companies.FindAsync([id], ct);
         if (company is null || !await CompanyAccess.CanManageCompanyAsync(db, User, id)) return (null, NotFound());
-        var shopRefusal = CompanyKindGuard.RejectShop(company.Kind);
+        var shopRefusal = CompanyKindGuard.RejectNonSalon(company.Kind);
         return shopRefusal is not null ? (null, shopRefusal) : (company, null);
     }
 

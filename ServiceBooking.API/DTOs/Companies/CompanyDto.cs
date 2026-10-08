@@ -205,4 +205,4 @@ public record CompanyPhotoUsageDto(
 
 // ARCHITECTURE_CYCLE23.md §408.3 — GET /api/companies/kinds-summary.
 public record CompanyKindSummaryItemDto(int Count, string SiteUrl);
-public record CompanyKindsSummaryDto(CompanyKindSummaryItemDto Services, CompanyKindSummaryItemDto Orders);
+public record CompanyKindsSummaryDto(CompanyKindSummaryItemDto Services, CompanyKindSummaryItemDto Orders, CompanyKindSummaryItemDto Stays);

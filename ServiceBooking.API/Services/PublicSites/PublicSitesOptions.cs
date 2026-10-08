@@ -14,4 +14,7 @@ public sealed class PublicSitesOptions
 
     /// <summary>goods.ezbook.ru — shops, without a trailing slash.</summary>
     public string OrdersBaseUrl { get; set; } = "https://goods.ezbook.ru";
+
+    /// <summary>dom.ezbook.ru — "Дома" (ARCHITECTURE_CYCLE37.md §37.15.3), without a trailing slash. A committed default: no new mandatory variable.</summary>
+    public string StaysBaseUrl { get; set; } = "https://dom.ezbook.ru";
 }

@@ -16,9 +16,14 @@ public sealed class PublicSiteLinks(IOptions<PublicSitesOptions> options)
     /// <summary>Base address of the site that serves companies of this kind (no trailing slash).</summary>
     public string SiteBaseUrl(CompanyKind kind)
     {
-        var configured = kind == CompanyKind.Orders ? _options.OrdersBaseUrl : _options.ServicesBaseUrl;
+        var (configured, fallback) = kind switch
+        {
+            CompanyKind.Services => (_options.ServicesBaseUrl, Defaults.ServicesBaseUrl),
+            CompanyKind.Orders => (_options.OrdersBaseUrl, Defaults.OrdersBaseUrl),
+            CompanyKind.Stays => (_options.StaysBaseUrl, Defaults.StaysBaseUrl),
+            _ => throw new System.Diagnostics.UnreachableException()
+        };
         // A blank value (an empty environment variable) means "not configured": the production defaults apply.
-        var fallback = kind == CompanyKind.Orders ? Defaults.OrdersBaseUrl : Defaults.ServicesBaseUrl;
         return Trim(string.IsNullOrWhiteSpace(configured) ? fallback : configured);
     }
 
@@ -27,9 +32,26 @@ public sealed class PublicSiteLinks(IOptions<PublicSitesOptions> options)
     /// <summary>Salon: {Services}/company/{slug}; shop: {Orders}/{slug}.</summary>
     public string CompanyPageUrl(Company company) => CompanyPageUrl(company.Kind, company.Slug);
 
-    public string CompanyPageUrl(CompanyKind kind, string slug) => kind == CompanyKind.Orders
-        ? $"{SiteBaseUrl(kind)}/{slug}"
-        : $"{SiteBaseUrl(kind)}/company/{slug}";
+    public string CompanyPageUrl(CompanyKind kind, string slug) => kind switch
+    {
+        CompanyKind.Services => $"{SiteBaseUrl(kind)}/company/{slug}",
+        CompanyKind.Orders or CompanyKind.Stays => $"{SiteBaseUrl(kind)}/{slug}",
+        _ => throw new System.Diagnostics.UnreachableException()
+    };
+
+    // ── Cycle 37 (ARCHITECTURE_CYCLE37.md §37.3.2): dom.ezbook.ru ──
+
+    /// <summary>{Stays}/b/{token} — the booking page by link.</summary>
+    public string StayBookingPageUrl(string token) => $"{SiteBaseUrl(CompanyKind.Stays)}/b/{token}";
+
+    /// <summary>{Stays}/cabinet/{companyId}/bookings/{bookingId} — the staff's booking card (absolute: a push may open it from another site's worker).</summary>
+    public string StaysCabinetBookingUrl(Guid companyId, Guid bookingId) => $"{SiteBaseUrl(CompanyKind.Stays)}/cabinet/{companyId}/bookings/{bookingId}";
+
+    /// <summary>{Stays}/cabinet/subscription.</summary>
+    public string StaysSubscriptionUrl() => $"{SiteBaseUrl(CompanyKind.Stays)}/cabinet/subscription";
+
+    /// <summary>{Stays}/{companySlug}/{houseSlug}.</summary>
+    public string HousePageUrl(string companySlug, string houseSlug) => $"{SiteBaseUrl(CompanyKind.Stays)}/{companySlug}/{houseSlug}";
 
     /// <summary>ARCHITECTURE_CYCLE25.md §499.2 — the staff's order card in the cabinet: {Orders}/cabinet/{shopId}/orders?order={orderId}.</summary>
     public string StaffOrdersUrl(Guid shopId, Guid orderId) => $"{SiteBaseUrl(CompanyKind.Orders)}/cabinet/{shopId}/orders?order={orderId}";

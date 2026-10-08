@@ -64,7 +64,7 @@ public class CompanyMembersController(
     {
         if (!await CanManageCompany(id)) return Forbid();
         // §389.2: a shop has no services/commission — rights first, kind second.
-        if (await CompanyKindGuard.RejectShopAsync(db, id) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, id) is { } shopRefusal) return shopRefusal;
 
         var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
         if (member is null) return NotFound();
@@ -95,7 +95,7 @@ public class CompanyMembersController(
     {
         if (!await CanManageCompany(id)) return Forbid();
         // §389.2: a shop has no services/commission — rights first, kind second.
-        if (await CompanyKindGuard.RejectShopAsync(db, id) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, id) is { } shopRefusal) return shopRefusal;
 
         var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
         if (member is null) return NotFound();
@@ -288,7 +288,7 @@ public class CompanyMembersController(
     {
         if (!await CanManageCompany(id)) return Forbid();
         // §389.2: a shop has no services/commission — rights first, kind second.
-        if (await CompanyKindGuard.RejectShopAsync(db, id) is { } shopRefusal) return shopRefusal;
+        if (await CompanyKindGuard.RejectNonSalonAsync(db, id) is { } shopRefusal) return shopRefusal;
 
         var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
         if (member is null) return NotFound();
