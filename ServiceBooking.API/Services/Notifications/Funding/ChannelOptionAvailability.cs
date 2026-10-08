@@ -22,15 +22,15 @@ public static class ChannelOptionAvailability
     public static bool Sellable(bool open, bool isActive, decimal? pricePerMonth, bool termsOwnerPublished) =>
         open && isActive && pricePerMonth is not null && termsOwnerPublished;
 
-    public static OptionAvailability Evaluate(
+    public static OptionAvailabilityState Evaluate(
         string? settingValue, bool configDefault, bool isActive, decimal? pricePerMonth, bool termsOwnerPublished)
     {
         var open = IsOpen(settingValue, configDefault);
-        return new OptionAvailability(open, Sellable(open, isActive, pricePerMonth, termsOwnerPublished));
+        return new OptionAvailabilityState(open, Sellable(open, isActive, pricePerMonth, termsOwnerPublished));
     }
 
     /// <summary>Platform-setting key of a transport's availability switch (§40.7.1).</summary>
     public static string SettingKey(NotificationTransport transport) => PlatformSettings.OptionOpenKey(transport);
 }
 
-public readonly record struct OptionAvailability(bool Open, bool Sellable);
+public readonly record struct OptionAvailabilityState(bool Open, bool Sellable);
