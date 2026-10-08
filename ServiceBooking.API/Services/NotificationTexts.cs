@@ -44,6 +44,19 @@ public static class NotificationTexts
         NotificationType.StayGuestCancelledByOwner => "Бронь отменена компанией",
         NotificationType.StayGuestArrivalReminder => "Напоминание о заезде",
         NotificationType.StayGuestCheckInInfo => "Информация к заселению",
+        // ARCHITECTURE_CYCLE39.md §39.9.1 — time-slot services.
+        NotificationType.StaffStaySessionAdded => "Уведомление сотруднику: услуга добавлена к брони",
+        NotificationType.StaffServiceOrderCreated => "Уведомление сотруднику: новый заказ услуги",
+        NotificationType.StaffServiceOrderPaymentProofUploaded => "Уведомление сотруднику: приложено подтверждение оплаты услуги",
+        NotificationType.StaffServiceSessionCancelledByGuest => "Уведомление сотруднику: гость отменил сеанс",
+        NotificationType.ServiceGuestOrderCreated => "Заказ услуги создан",
+        NotificationType.ServiceGuestHoldExpiring => "Скоро истечёт время на оплату заказа",
+        NotificationType.ServiceGuestHoldExpired => "Время на оплату заказа истекло",
+        NotificationType.ServiceGuestConfirmed => "Заказ услуги подтверждён",
+        NotificationType.ServiceGuestPaymentRejected => "Оплата заказа не подтверждена",
+        NotificationType.ServiceGuestCancelledByOwner => "Заказ услуги отменён компанией",
+        NotificationType.StayGuestSessionAdded => "Услуга добавлена к брони",
+        NotificationType.StayGuestSessionCancelledByOwner => "Сеанс отменён компанией",
         _ => "Уведомление",
     };
 

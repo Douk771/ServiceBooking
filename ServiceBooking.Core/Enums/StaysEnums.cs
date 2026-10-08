@@ -33,7 +33,14 @@ public enum StayBookingEventKind
     CancelledByOwner = 7,
     CheckInInfoReleased = 8,
     PaymentProofsPurged = 9,
-    PersonalDataErased = 10
+    PersonalDataErased = 10,
+
+    // ARCHITECTURE_CYCLE39.md §39.2.2 — sessions of services inside a booking and the arrival reminder.
+    ServiceSessionAdded = 11,
+    ServiceSessionCancelledByGuest = 12,
+    ServiceSessionCancelledByOwner = 13,
+    ServiceSessionsReleased = 14,
+    ArrivalReminderSent = 15
 }
 
 public enum StayActorKind
@@ -59,7 +66,11 @@ public enum StayChargeKind
     ExtraBeds = 1,
     Dogs = 2,
     Cot = 3,
-    ManualTotal = 4
+    ManualTotal = 4,
+
+    // ARCHITECTURE_CYCLE39.md §39.2.2 — never PrepayEligible (CK_StayBookingCharges_ServiceNotPrepaid).
+    ServiceSlot = 5,
+    ServiceItem = 6
 }
 
 public enum StayProviderStatus
@@ -121,4 +132,51 @@ public enum OccupancySource
     OwnerBlock = 1,
     /// <summary>Reserved for the iCal import of cycle 2 (§37.5.5).</summary>
     ExternalCalendar = 2
+}
+
+// ── ARCHITECTURE_CYCLE39.md §39.2.3–§39.2.4 — time-slot services (bath, hot tub, furaco). Persisted as numbers: append-only. ──
+
+/// <summary>ЮР39-1: two lawful templates of a stand-alone session. A «Standard» template does not exist in any form.</summary>
+public enum StayServiceCancellationPolicy
+{
+    NoDeductions = 0,
+    PreparationCosts = 1
+}
+
+public enum StayServiceSessionState
+{
+    Active = 0,
+    CancelledByGuest = 1,
+    CancelledByOwner = 2,
+    ReleasedWithBooking = 3,
+    ReleasedWithOrder = 4
+}
+
+/// <summary>ЮР39-6: how the guest asked the staff to add a session (mandatory when the staff adds it).</summary>
+public enum StayServiceRequestBasis
+{
+    Phone = 0,
+    InPerson = 1,
+    Messenger = 2
+}
+
+public enum StayServiceOrderEventKind
+{
+    Created = 0,
+    PaymentProofUploaded = 1,
+    PaymentProofViewed = 2,
+    PaymentConfirmed = 3,
+    HoldExpired = 4,
+    PaymentRejected = 5,
+    CancelledByGuest = 6,
+    CancelledByOwner = 7,
+    PaymentProofsPurged = 8,
+    PersonalDataErased = 9
+}
+
+public enum StayServiceScheduleEventKind
+{
+    WeeklyTemplateChanged = 0,
+    DateOverrideSet = 1,
+    DateOverrideRemoved = 2
 }

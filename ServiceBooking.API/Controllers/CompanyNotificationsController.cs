@@ -507,10 +507,12 @@ public class CompanyNotificationsController(
     private Task<bool> IsChannelFundedAsync(NotificationChannel? channel, EffectivePlan plan) =>
         fundingReader.IsFundedAsync(channel, plan);
 
-    private static int BuildMask(IReadOnlyList<NotificationType> types)
+    internal static int BuildMask(IReadOnlyList<NotificationType> types)
     {
         var mask = 0;
-        foreach (var type in types) mask |= 1 << (int)type;
+        // ARCHITECTURE_CYCLE39.md §39.9.1: only the salon types have a bit. A type from the body outside BookingTypes is ignored — in C# `1 << 32 == 1`,
+        // so a value ≥ 32 would otherwise flip the bit of BookingConfirmed.
+        foreach (var type in types.Where(NotificationTypeCatalog.IsBookingType)) mask |= 1 << (int)type;
         return mask;
     }
 

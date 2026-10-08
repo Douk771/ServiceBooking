@@ -79,7 +79,7 @@ public class StaysCompanyService(AppDbContext db, StaysPlanResolver plans, Publi
         {
             new("ProfileFilled", !string.IsNullOrWhiteSpace(company.Name) && !string.IsNullOrWhiteSpace(company.Phone), "Заполните название и телефон для гостей"),
             new("PaymentDetails", settings.PrepayPercent == 0 || !string.IsNullOrWhiteSpace(settings.PaymentDetails), "Заполните реквизиты для оплаты — без них гости не могут бронировать с предоплатой"),
-            new("ProviderInfo", settings.PrepayPercent == 0 || StaysBookingGate.ProviderComplete(ProviderFacts(settings)), "Заполните сведения об исполнителе"),
+            new("ProviderInfo", StaysBookingGate.ProviderComplete(ProviderFacts(settings)), "Заполните сведения об исполнителе"),
             new("HousePublished", anyPublished, "Опубликуйте хотя бы один дом"),
             new("Plan", plan.HasActivePlan, "Выберите тариф или активируйте пробный период"),
         };
