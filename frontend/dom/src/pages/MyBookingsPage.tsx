@@ -8,16 +8,7 @@ import { LinkButton } from '../components/LinkButton'
 import { formatStayRange } from '../utils/stayDates'
 import { getStayErrorMessage } from '../utils/stayError'
 import { isTerminal } from '../utils/stayStatus'
-
-/** Path of a booking page from the absolute `bookingUrl`: same-origin only, otherwise the link is not followed (the token is the access). */
-export function bookingPathOf(bookingUrl: string): string | null {
-  try {
-    const u = new URL(bookingUrl, window.location.origin)
-    return u.origin === window.location.origin && u.pathname.startsWith('/b/') ? u.pathname : null
-  } catch {
-    return null
-  }
-}
+import { bookingPathOf } from '../utils/bookingPath'
 
 /** `/bookings` (P1, US-37-22) — the bookings of the signed-in account: active first, then past ones of the last 12 months (server order). */
 export function MyBookingsPage() {

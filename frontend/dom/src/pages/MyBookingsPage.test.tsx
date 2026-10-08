@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MyBookingsPage, bookingPathOf } from './MyBookingsPage'
+import { MyBookingsPage } from './MyBookingsPage'
+import { bookingPathOf } from '../utils/bookingPath'
 import { httpError } from '../test/fixtures'
 
 const my = vi.hoisted(() => vi.fn())
