@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-// T37-09 (часть шаблона): шаблон не тянет сервисное и не интерпретирует HTML.
+// T38-09 (часть шаблона): шаблон не тянет сервисное и не интерпретирует HTML.
 const raw = import.meta.glob(['./*.ts', './*.tsx', '!./*.test.ts', '!./*.test.tsx', '!./testConfig.ts'], {
   query: '?raw',
   import: 'default',
@@ -8,7 +8,7 @@ const raw = import.meta.glob(['./*.ts', './*.tsx', '!./*.test.ts', '!./*.test.ts
 }) as Record<string, string>
 const sources: [string, string][] = Object.entries(raw)
 
-describe('landing template guard (T37-09)', () => {
+describe('landing template guard (T38-09)', () => {
   it('finds template sources', () => expect(sources.length).toBeGreaterThan(8))
   it.each(sources)('%s: no dangerouslySetInnerHTML', (_f, src) => {
     expect(src).not.toContain('dangerouslySetInnerHTML')

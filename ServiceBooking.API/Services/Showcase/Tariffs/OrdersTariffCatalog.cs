@@ -1,20 +1,20 @@
 namespace ServiceBooking.API.Services.Showcase.Tariffs;
 
-/// <summary>One paid tariff of the "Заказы" grid (ARCHITECTURE_CYCLE37.md §37.10.1).</summary>
+/// <summary>One paid tariff of the "Заказы" grid (ARCHITECTURE_CYCLE38.md §38.10.1).</summary>
 public sealed record OrdersTariff(
     Guid Id, string Name, decimal PricePerMonth, int? MaxCompanies, int? MaxEmployees,
     int? MaxProductsPerShop, int? MaxOrdersPerMonth, int SortOrder, string Description, IReadOnlyList<string> Highlights);
 
 /// <summary>
-/// The pure description of the paid "Заказы" grid approved by the customer (Q37-1; values in ARCHITECTURE_CYCLE37.md §37.10.1, wording in
-/// SPEC_CYCLE37 §6.2). Ids are literals: the seeder finds a row by id first and by name (within the Orders line only) second.
+/// The pure description of the paid "Заказы" grid approved by the customer (Q38-1; values in ARCHITECTURE_CYCLE38.md §38.10.1, wording in
+/// SPEC_CYCLE38 §6.2). Ids are literals: the seeder finds a row by id first and by name (within the Orders line only) second.
 /// Advantages name only what exists; today every Orders feature is open on any tariff and the tiers differ by limits.
 /// </summary>
 public static class OrdersTariffCatalog
 {
-    public static readonly Guid LavkaId = Guid.Parse("5a1e0c37-0000-4000-8000-000000000020");
-    public static readonly Guid ShopId = Guid.Parse("5a1e0c37-0000-4000-8000-000000000030");
-    public static readonly Guid ChainId = Guid.Parse("5a1e0c37-0000-4000-8000-000000000040");
+    public static readonly Guid LavkaId = Guid.Parse("5a1e0c38-0000-4000-8000-000000000020");
+    public static readonly Guid ShopId = Guid.Parse("5a1e0c38-0000-4000-8000-000000000030");
+    public static readonly Guid ChainId = Guid.Parse("5a1e0c38-0000-4000-8000-000000000040");
 
     public static readonly OrdersTariff Lavka = new(
         LavkaId, "Лавка", 690m, MaxCompanies: 1, MaxEmployees: 5, MaxProductsPerShop: 300, MaxOrdersPerMonth: 1500, SortOrder: 20,
@@ -49,7 +49,7 @@ public static class OrdersTariffCatalog
     /// <summary>Tariffs created by <c>ops tariffs apply</c>, in creation order.</summary>
     public static readonly IReadOnlyList<OrdersTariff> Grid = [Lavka, Shop, Chain];
 
-    // ── The system free tariff (customer decision Q37-2) ───────────────────────────────────────────────────────
+    // ── The system free tariff (customer decision Q38-2) ───────────────────────────────────────────────────────
     // Seeded by migration Cycle24OrdersTimeNotifyTariffs, byte for byte; Highlights = NULL, IsPublic = false, SortOrder = -1.
     // The seeder changes a field only while it still has this value.
     public const string LegacyFreeName = "Заказы · Бесплатно";

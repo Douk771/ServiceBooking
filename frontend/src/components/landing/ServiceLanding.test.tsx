@@ -31,7 +31,7 @@ beforeEach(() => {
   vi.mocked(line.fetchGrid).mockReset().mockResolvedValue(grid)
 })
 
-describe('ServiceLanding order (T37-01)', () => {
+describe('ServiceLanding order (T38-01)', () => {
   it('renders sections in fixed order with one h1 and no footer', async () => {
     const { container } = renderLanding(makeConfig({ pricing: { line, lead: 'Лид' } }))
     await screen.findByText(/Лид — от/)
@@ -68,7 +68,7 @@ describe('ServiceLanding order (T37-01)', () => {
   })
 })
 
-describe('screenshot placeholder (T37-02)', () => {
+describe('screenshot placeholder (T38-02)', () => {
   const PH = 'landing-screenshot-placeholder'
   it('one placeholder inside section 3 when both slots are empty', () => {
     const { container } = renderLanding(makeConfig())
@@ -91,7 +91,7 @@ describe('screenshot placeholder (T37-02)', () => {
   })
 })
 
-describe('section class parity (T37-03)', () => {
+describe('section class parity (T38-03)', () => {
   it('sections 3 and 4 share wrapper, heading and steps classes', () => {
     const { container } = renderLanding(makeConfig())
     const s3 = container.querySelector('[aria-labelledby="c-title"]')!
@@ -107,7 +107,7 @@ describe('section class parity (T37-03)', () => {
   })
 })
 
-describe('compile-time shape (T37-05)', () => {
+describe('compile-time shape (T38-05)', () => {
   it('rejects wrong step/faq counts and missing title via tsc', () => {
     const ok = steps('x')
     // @ts-expect-error — две шага вместо трёх

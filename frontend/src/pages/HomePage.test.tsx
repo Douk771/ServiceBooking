@@ -221,8 +221,8 @@ describe('HomePage — cycle 29 (US-29-03) logo mark', () => {
   })
 })
 
-// T37-10: главная «Записи» на едином шаблоне (ARCHITECTURE_CYCLE37.md §37.4.2).
-describe('HomePage — единый шаблон (T37-10)', () => {
+// T38-10: главная «Записи» на едином шаблоне (ARCHITECTURE_CYCLE38.md §38.4.2).
+describe('HomePage — единый шаблон (T38-10)', () => {
   const LONG = 'Я'.repeat(200)
   beforeEach(() => {
     localStorage.clear()
@@ -244,7 +244,7 @@ describe('HomePage — единый шаблон (T37-10)', () => {
     expect(container.querySelectorAll('h1')).toHaveLength(1)
   })
 
-  it('salon photo comes after #companies, lazy; reminder wording stays (Q37-6); long name is not truncated', async () => {
+  it('salon photo comes after #companies, lazy; reminder wording stays (Q38-6); long name is not truncated', async () => {
     const { container } = renderPage()
     await screen.findByText(LONG)
     const img = container.querySelector('img[alt="Интерьер салона"]') as HTMLImageElement

@@ -36,7 +36,7 @@ export function LandingScreenshotFigure({ shot, className, imgClassName }: Props
   )
 }
 
-/** Заглушка пустого слота скриншота: не img и не figure (ARCHITECTURE_CYCLE37.md §37.3.6). */
+/** Заглушка пустого слота скриншота: не img и не figure (ARCHITECTURE_CYCLE38.md §38.3.6). */
 export function LandingScreenshotPlaceholder() {
   return (
     <div

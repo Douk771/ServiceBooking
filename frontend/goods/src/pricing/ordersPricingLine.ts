@@ -2,7 +2,7 @@ import type { PricingGridView, PricingLine } from '@/components/pricing/pricingL
 import { formatIncludedLimit, formatIncludedLimitLine } from '@/utils/pricingFormat'
 import { ordersPricingApi, type OrdersPublicPricingDto } from '../api/ordersPricing'
 
-/** Строки лимитов карточки «Заказов» в порядке ARCHITECTURE_CYCLE37.md §37.7.1. */
+/** Строки лимитов карточки «Заказов» в порядке ARCHITECTURE_CYCLE38.md §38.7.1. */
 export function ordersLimitLines(p: OrdersPublicPricingDto['plans'][number]): string[] {
   return [
     formatIncludedLimitLine(p.includedShops, 'магазины', 'магазина', 'магазинов'),

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { PricingOptionDto } from '../../types/pricing'
 
 /**
- * «Линейка» тарифов сервиса (ARCHITECTURE_CYCLE37.md §37.7.1): общий вид сетки для «Записи» и «Заказов».
+ * «Линейка» тарифов сервиса (ARCHITECTURE_CYCLE38.md §38.7.1): общий вид сетки для «Записи» и «Заказов».
  * Под ключом линейки в кеше TanStack Query всегда лежит PricingGridView — не «сырой» DTO.
  */
 export interface PricingPlanView {

@@ -9,11 +9,11 @@ import { LandingPricingSection } from './LandingPricingSection'
 import type { LandingConfig } from './types'
 
 /**
- * Единый шаблон главной сервиса (ARCHITECTURE_CYCLE37.md §37.3.2). Порядок секций, контейнер и отступы — только здесь.
+ * Единый шаблон главной сервиса (ARCHITECTURE_CYCLE38.md §38.3.2). Порядок секций, контейнер и отступы — только здесь.
  * Футер в шаблон не входит.
  */
 export function ServiceLanding({ config, catalog }: { config: LandingConfig; catalog: ReactNode }) {
-  // Заглушка скриншота — один раз на страницу, в первом пустом слоте (секция 3, затем 4) — §37.3.6.
+  // Заглушка скриншота — один раз на страницу, в первом пустом слоте (секция 3, затем 4) — §38.3.6.
   const clientsPlaceholder = !config.clients.screenshot
   const businessPlaceholder = !clientsPlaceholder && !config.business.screenshot
   return (

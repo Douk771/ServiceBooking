@@ -6,7 +6,7 @@ using ServiceBooking.Core.Entities;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE37.md §37.10 — T37-B01: the paid "Заказы" grid, T37-B02: the free-tariff alignment.</summary>
+/// <summary>ARCHITECTURE_CYCLE38.md §38.10 — T38-B01: the paid "Заказы" grid, T38-B02: the free-tariff alignment.</summary>
 public class OrdersTariffCatalogTests
 {
     [Fact]

@@ -8,7 +8,7 @@ import type { FaqItems } from './types'
 
 const r = (items: FaqItems = faqItems) => render(<MemoryRouter><FaqSection items={items} /></MemoryRouter>)
 
-describe('FaqSection (T37-06)', () => {
+describe('FaqSection (T38-06)', () => {
   it('starts collapsed, buttons live inside h3', () => {
     const { container } = r()
     const buttons = screen.getAllByRole('button')

@@ -106,7 +106,7 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
             OrdersPlansCreated: orders.Created, OrdersRulesAdded: orders.Rules, OrdersFreeFieldsAligned: orders.Aligned);
     }
 
-    /// <summary>ARCHITECTURE_CYCLE37.md §37.10.2 — the "Заказы" section: same create-only rules as the "Записи" grid, looked up within the Orders line only.</summary>
+    /// <summary>ARCHITECTURE_CYCLE38.md §38.10.2 — the "Заказы" section: same create-only rules as the "Записи" grid, looked up within the Orders line only.</summary>
     private async Task<(int Created, int Rules, int Aligned)> RunOrdersAsync(bool apply, List<string> lines, CancellationToken ct)
     {
         var ordersPlans = await db.SubscriptionPlanConfigs.Where(p => p.Line == CompanyKind.Orders).ToListAsync(ct);
@@ -152,7 +152,7 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
                 lines.Add($"«Заказы»: бесплатный тариф «{free.Name}»: уже соответствует сетке или изменён в админке — не трогаю");
             else
                 foreach (var change in changes)
-                    lines.Add($"«Заказы»: бесплатный тариф (решение Q37-2): {(apply ? "изменено" : "будет изменено")} — {change}");
+                    lines.Add($"«Заказы»: бесплатный тариф (решение Q38-2): {(apply ? "изменено" : "будет изменено")} — {change}");
         }
 
         lines.Add("«Заказы»: переключателя нет — сетка видна на GET /api/pricing/orders, как только в ней есть публичный тариф");
@@ -193,7 +193,7 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
     }
 
     /// <summary>
-    /// Q37-2 — moves the free tariff of the Orders line from the cycle-24 seed to "Бесплатный", field by field, only where the field still equals the seed.
+    /// Q38-2 — moves the free tariff of the Orders line from the cycle-24 seed to "Бесплатный", field by field, only where the field still equals the seed.
     /// When <paramref name="apply"/> is false nothing is mutated. Limits, IsPublic and Highlights are never touched (an administrator may have unpublished the tariff or cleared the highlights; the new public seed applies only on creation).
     /// </summary>
     public static List<string> AlignOrdersFreeTariff(SubscriptionPlanConfig free, bool apply)

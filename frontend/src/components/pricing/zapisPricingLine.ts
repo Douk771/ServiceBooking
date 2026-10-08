@@ -25,7 +25,7 @@ export function toZapisGridView(dto: PublicPricingDto): PricingGridView {
   }
 }
 
-/** Линейка «Записи»: GET /api/pricing (ARCHITECTURE_CYCLE37.md §37.7.1). */
+/** Линейка «Записи»: GET /api/pricing (ARCHITECTURE_CYCLE38.md §38.7.1). */
 export const zapisPricingLine: PricingLine = {
   queryKey: ['public-pricing', 'services'],
   fetchGrid: () => pricingApi.getPublicPricing().then((dto) => (dto ? toZapisGridView(dto) : null)),

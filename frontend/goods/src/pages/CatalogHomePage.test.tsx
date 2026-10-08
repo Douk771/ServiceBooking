@@ -77,7 +77,7 @@ describe('CatalogHomePage blocks', () => {
   })
 })
 
-describe('CatalogHomePage template (T37-11)', () => {
+describe('CatalogHomePage template (T38-11)', () => {
   beforeEach(() => list.mockReset())
   const LONG = 'Ы'.repeat(200)
 

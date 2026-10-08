@@ -4,7 +4,7 @@ import { Icon } from '../ui/Icon'
 import { BTN_PRIMARY, BTN_SECONDARY } from './classes'
 import type { LandingAction } from './types'
 
-/** Кнопка/ссылка по LandingAction (ARCHITECTURE_CYCLE37.md §37.3.5). Основная — тёмная со стрелкой. */
+/** Кнопка/ссылка по LandingAction (ARCHITECTURE_CYCLE38.md §38.3.5). Основная — тёмная со стрелкой. */
 export function LandingActionLink({ action, primary }: { action: LandingAction; primary: boolean }) {
   const authed = useAuthStore((s) => s.isAuthenticated())
   const className = primary ? BTN_PRIMARY : BTN_SECONDARY

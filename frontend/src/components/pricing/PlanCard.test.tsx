@@ -9,7 +9,7 @@ const plan: PricingPlanView = {
   sortOrder: 1, isFree: false, isTrial: false, limitLines: ['до 1 магазина', 'Заказы без ограничений'],
 }
 
-describe('PlanCard (T37-12)', () => {
+describe('PlanCard (T38-12)', () => {
   it('prints limitLines before highlights', () => {
     render(<PlanCard plan={plan} />)
     expect(screen.getAllByRole('listitem').map((l) => l.textContent)).toEqual(['до 1 магазина', 'Заказы без ограничений', 'Преимущество'])

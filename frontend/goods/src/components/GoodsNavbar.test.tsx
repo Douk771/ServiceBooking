@@ -51,7 +51,7 @@ describe('GoodsNavbar logout', () => {
   })
 })
 
-describe('GoodsNavbar «Тарифы» (T37-15)', () => {
+describe('GoodsNavbar «Тарифы» (T38-15)', () => {
   it('shown on desktop and in the mobile menu when the grid exists', async () => {
     getGrid.mockResolvedValue({ version: 'v', currency: 'RUB', plans: [{ id: 'a', name: 'Лавка', description: null, pricePerMonth: 690, highlights: [], includedShops: 1, includedMembers: 5, includedProductsPerShop: 300, includedOrdersPerMonth: 1500, sortOrder: 1, isFree: false }], notice: '', legalNotice: null })
     renderNavbar()

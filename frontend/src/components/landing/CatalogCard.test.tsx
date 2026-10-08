@@ -6,7 +6,7 @@ import { CatalogCard } from './CatalogCard'
 const r = (p: Partial<React.ComponentProps<typeof CatalogCard>> = {}) =>
   render(<MemoryRouter><CatalogCard to="/s/x" name="Имя" {...p} /></MemoryRouter>)
 
-describe('CatalogCard (T37-07)', () => {
+describe('CatalogCard (T38-07)', () => {
   it('prints 200-char word and 300-char sentence in full, without truncation classes', () => {
     const word = 'Я'.repeat(200)
     const addr = 'улица '.repeat(51).trim()

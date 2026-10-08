@@ -1,7 +1,7 @@
 import type { FaqItems } from '../../components/landing/types'
 
 /**
- * FAQ «Записи» (ARCHITECTURE_CYCLE37.md §37.6.2). Черновики на вычитку заказчиком; без цен (они меняются в админке),
+ * FAQ «Записи» (ARCHITECTURE_CYCLE38.md §38.6.2). Черновики на вычитку заказчиком; без цен (они меняются в админке),
  * сроков ответа и юридических обещаний. Предоплаты, рассылок и напоминаний клиенту в FAQ нет.
  */
 export const zapisFaq: FaqItems = [

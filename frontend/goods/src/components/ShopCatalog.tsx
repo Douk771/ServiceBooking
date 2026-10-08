@@ -21,7 +21,7 @@ const ACCEPT_TONE: Record<CatalogAcceptance, 'success' | 'info' | 'muted'> = {
 }
 
 /**
- * Каталог магазинов внутри рамки шаблона (ARCHITECTURE_CYCLE37.md §37.3.4): `/` и `/city/:cityId` (US-25-13/14) — where to
+ * Каталог магазинов внутри рамки шаблона (ARCHITECTURE_CYCLE38.md §38.3.4): `/` и `/city/:cityId` (US-25-13/14) — where to
  * order pickup. Which shops are visible, in which order, «открыто сейчас» and the acceptance wording are all the server's;
  * the client passes city/search/openNow/page and prints `path` as a relative link.
  */

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { goodsFaq } from './goodsFaq'
 
-// T37-09 (часть сервисов): конфиги — только данные, страницы главных — без собственной разметки секций.
+// T38-09 (часть сервисов): конфиги — только данные, страницы главных — без собственной разметки секций.
 const glob = (m: Record<string, string>) => Object.entries(m)
 const configs = glob(
   import.meta.glob(['../../../src/pages/home/*.ts', './*.ts', '!**/*.test.ts'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>,
@@ -10,7 +10,7 @@ const pages = glob(
   import.meta.glob(['../../../src/pages/HomePage.tsx', '../pages/CatalogHomePage.tsx'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>,
 )
 
-describe('service landing guard (T37-09)', () => {
+describe('service landing guard (T38-09)', () => {
   it('finds configs and pages', () => {
     expect(configs.length).toBeGreaterThanOrEqual(4)
     expect(pages).toHaveLength(2)

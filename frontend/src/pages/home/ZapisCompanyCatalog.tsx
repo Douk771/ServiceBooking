@@ -51,7 +51,7 @@ function CompanyCard({ company }: { company: Company }) {
   )
 }
 
-/** Каталог салонов внутри рамки шаблона `#companies` (ARCHITECTURE_CYCLE37.md §37.4.2); поведение прежней главной. */
+/** Каталог салонов внутри рамки шаблона `#companies` (ARCHITECTURE_CYCLE38.md §38.4.2); поведение прежней главной. */
 export function ZapisCompanyCatalog() {
   const [city, setCity] = useState<City | null>(() => loadStoredCity())
   const [search, setSearch] = useState('')

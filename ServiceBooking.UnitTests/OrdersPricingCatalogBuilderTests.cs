@@ -6,7 +6,7 @@ using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE37.md §37.9.3 — T37-B03: filter, order, products ceiling and highlights of the public "Заказы" grid.</summary>
+/// <summary>ARCHITECTURE_CYCLE38.md §38.9.3 — T38-B03: filter, order, products ceiling and highlights of the public "Заказы" grid.</summary>
 public class OrdersPricingCatalogBuilderTests
 {
     private const int Ceiling = 1000;

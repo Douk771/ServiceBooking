@@ -35,7 +35,7 @@ public class PricingController(PricingCatalogCache cache) : ControllerBase
         return Ok(dto);
     }
 
-    // ARCHITECTURE_CYCLE37.md §37.9.5. Anonymous, no switch, no legal gate (Q37-3). 404 (empty body) only when the Orders line has no active public tariff.
+    // ARCHITECTURE_CYCLE38.md §38.9.5. Anonymous, no switch, no legal gate (Q38-3). 404 (empty body) only when the Orders line has no active public tariff.
     [HttpGet("api/pricing/orders")]
     [AllowAnonymous]
     public async Task<IActionResult> GetOrdersPublicPricing(CancellationToken ct)

@@ -7,7 +7,7 @@ import { useAuthStore } from '../../store/authStore'
 const r = (ui: React.ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>)
 afterEach(() => useAuthStore.setState({ token: null } as never))
 
-describe('LandingActionLink (T37-04)', () => {
+describe('LandingActionLink (T38-04)', () => {
   it('anchor renders a hash link', () => {
     r(<LandingActionLink primary action={{ kind: 'anchor', href: '#x', label: 'К якорю' }} />)
     expect(screen.getByRole('link', { name: 'К якорю' })).toHaveAttribute('href', '#x')

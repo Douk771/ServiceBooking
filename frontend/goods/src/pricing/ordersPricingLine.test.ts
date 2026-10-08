@@ -12,7 +12,7 @@ const dto = (plans: OrdersPublicPricingDto['plans']): OrdersPublicPricingDto => 
 
 const norm = (l: readonly string[]) => l.map((x) => x.replace(/\s/g, ' '))
 
-describe('toOrdersGridView (T37-13)', () => {
+describe('toOrdersGridView (T38-13)', () => {
   it('maps all four limit lines in order', () => {
     const v = toOrdersGridView(dto([plan()]))
     expect(norm(v.plans[0].limitLines)).toEqual(['до 1 магазина', 'до 5 участников', 'до 300 товаров в магазине', 'до 1 500 заказов в месяц'])

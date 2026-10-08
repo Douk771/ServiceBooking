@@ -1,7 +1,7 @@
 import { PricingPageBody } from '@/components/pricing/PricingPageBody'
 import { ordersPricingLine } from '../pricing/ordersPricingLine'
 
-/** Public route `/pricing` «Заказов» (ARCHITECTURE_CYCLE37.md §37.7.2); вся логика — в общем PricingPageBody. */
+/** Public route `/pricing` «Заказов» (ARCHITECTURE_CYCLE38.md §38.7.2); вся логика — в общем PricingPageBody. */
 export function PricingPage() {
   return (
     <PricingPageBody

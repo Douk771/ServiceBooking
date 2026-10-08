@@ -1,4 +1,4 @@
-/** Общие классы секций шаблона — одно место для отступов и заголовков (ARCHITECTURE_CYCLE37.md §37.3.2). */
+/** Общие классы секций шаблона — одно место для отступов и заголовков (ARCHITECTURE_CYCLE38.md §38.3.2). */
 export const SECTION = 'mt-20 md:mt-28 border-t border-line pt-12'
 export const EYEBROW = 'text-[13px] font-semibold tracking-[0.14em] uppercase text-gold-dark'
 export const H2 = 'font-serif text-[32px] sm:text-[40px] leading-[1.1] font-medium text-ink'

@@ -30,7 +30,7 @@ beforeEach(() => {
   useAuthStore.setState({ user: null, token: null })
 })
 
-describe('goods PricingPage (T37-14)', () => {
+describe('goods PricingPage (T38-14)', () => {
   it('four plans by sortOrder, document title', async () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: 'Лавка' })

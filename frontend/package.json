@@ -32,7 +32,7 @@
     "shots:capture": "node scripts/screenshots/capture-goods-screenshots.mjs",
     "types:api:cycle31": "openapi-typescript ../contracts/cycle31/openapi.yaml -o src/types/api-cycle31.generated.ts",
     "types:api:cycle35": "openapi-typescript ../contracts/cycle35/openapi.yaml -o src/types/api-cycle35.generated.ts",
-    "types:api:cycle37": "openapi-typescript ../contracts/cycle37/openapi.yaml -o src/types/api-cycle37.generated.ts",
+    "types:api:cycle38": "openapi-typescript ../contracts/cycle38/openapi.yaml -o src/types/api-cycle38.generated.ts",
     "types:api:cycle33": "openapi-typescript ../contracts/cycle33/openapi.yaml -o src/types/api-cycle33.generated.ts",
     "types:api:cycle32": "openapi-typescript ../contracts/cycle32/openapi.yaml -o src/types/api-cycle32.generated.ts",
     "contracts:json": "node scripts/contracts-to-json.mjs"

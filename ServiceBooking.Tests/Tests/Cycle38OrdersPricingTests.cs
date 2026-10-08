@@ -14,13 +14,13 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
-/// QA cycle 37 — the "Заказы" tariff grid (T37-B04, T37-B05). Written from SPEC_CYCLE37 (§6, Q37-1…Q37-3), API_CONTRACT_CYCLE37.md,
-/// contracts/cycle37/openapi.yaml and the review fix (apply never touches IsPublic/Highlights of the existing free tariff), not from the code.
+/// QA cycle 38 — the "Заказы" tariff grid (T38-B04, T38-B05). Written from SPEC_CYCLE38 (§6, Q38-1…Q38-3), API_CONTRACT_CYCLE38.md,
+/// contracts/cycle38/openapi.yaml and the review fix (apply never touches IsPublic/Highlights of the existing free tariff), not from the code.
 /// Tests that need a catalog without the grid live in their own classes (own database).
 /// </summary>
-public abstract class Cycle37OrdersTestBase(TestDatabaseFixture fixture) : Cycle28ShowcaseTestBase(fixture)
+public abstract class Cycle38OrdersTestBase(TestDatabaseFixture fixture) : Cycle28ShowcaseTestBase(fixture)
 {
-    protected static readonly OpenApiContract C37 = OpenApiContract.Load("cycle37");
+    protected static readonly OpenApiContract C38 = OpenApiContract.Load("cycle38");
     protected static readonly string[] GridNames = ["Лавка", "Магазин", "Сеть магазинов"];
 
     protected async Task<TariffCatalogReport> ApplyAsync()
@@ -60,11 +60,11 @@ public abstract class Cycle37OrdersTestBase(TestDatabaseFixture fixture) : Cycle
     });
 }
 
-/// <summary>T37-B04: apply on a clean database.</summary>
+/// <summary>T38-B04: apply on a clean database.</summary>
 [Trait("Area", "billing")]
-public class Cycle37OrdersTariffsCleanTests(TestDatabaseFixture fixture) : Cycle37OrdersTestBase(fixture)
+public class Cycle38OrdersTariffsCleanTests(TestDatabaseFixture fixture) : Cycle38OrdersTestBase(fixture)
 {
-    [Fact, TestCase("CY37-B04-01")]
+    [Fact, TestCase("CY38-B04-01")]
     public async Task Apply_OnCleanCatalog_CreatesThreeOrdersTariffs_IsIdempotent_AndLeavesZapisShopAlone()
     {
         // A "Записи" tariff with the same name as an Orders grid tariff must not be taken for it, nor changed.
@@ -151,11 +151,11 @@ public class Cycle37OrdersTariffsCleanTests(TestDatabaseFixture fixture) : Cycle
     }
 }
 
-/// <summary>T37-B04: the free tariff's visibility is the administrator's decision (review fix); a price edited in the admin panel survives apply.</summary>
+/// <summary>T38-B04: the free tariff's visibility is the administrator's decision (review fix); a price edited in the admin panel survives apply.</summary>
 [Trait("Area", "billing")]
-public class Cycle37OrdersTariffsAdminEditsTests(TestDatabaseFixture fixture) : Cycle37OrdersTestBase(fixture)
+public class Cycle38OrdersTariffsAdminEditsTests(TestDatabaseFixture fixture) : Cycle38OrdersTestBase(fixture)
 {
-    [Fact, TestCase("CY37-B04-02")]
+    [Fact, TestCase("CY38-B04-02")]
     public async Task Apply_DoesNotOverwriteEditedPrice_ReportsDivergence_AndKeepsFreeTariffIsPublicAndHighlights()
     {
         // Existing free tariff: unpublished (seeded so) and with highlights typed by an administrator.
@@ -188,25 +188,25 @@ public class Cycle37OrdersTariffsAdminEditsTests(TestDatabaseFixture fixture) : 
     }
 }
 
-/// <summary>T37-B05: 404 before seeding (own database: nobody has applied the grid).</summary>
+/// <summary>T38-B05: 404 before seeding (own database: nobody has applied the grid).</summary>
 [Trait("Area", "billing")]
-public class Cycle37OrdersPricingNotSeededTests(TestDatabaseFixture fixture) : Cycle37OrdersTestBase(fixture)
+public class Cycle38OrdersPricingNotSeededTests(TestDatabaseFixture fixture) : Cycle38OrdersTestBase(fixture)
 {
-    [Fact, TestCase("CY37-B05-01")]
+    [Fact, TestCase("CY38-B05-01")]
     public async Task OrdersPricing_BeforeSeeding_Is404WithEmptyBody()
     {
         InvalidateCache();
         var response = await AnonymousClient().GetAsync("/api/pricing/orders");
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await response.Content.ReadAsStringAsync()).Should().BeNullOrEmpty("API_CONTRACT_CYCLE37: 404 without a body");
+        (await response.Content.ReadAsStringAsync()).Should().BeNullOrEmpty("API_CONTRACT_CYCLE38: 404 without a body");
     }
 }
 
-/// <summary>T37-B05: the public "Заказы" price list after the grid is applied.</summary>
+/// <summary>T38-B05: the public "Заказы" price list after the grid is applied.</summary>
 [Trait("Area", "billing")]
-public class Cycle37OrdersPricingTests(TestDatabaseFixture fixture) : Cycle37OrdersTestBase(fixture)
+public class Cycle38OrdersPricingTests(TestDatabaseFixture fixture) : Cycle38OrdersTestBase(fixture)
 {
-    [Fact, TestCase("CY37-B05-02")]
+    [Fact, TestCase("CY38-B05-02")]
     public async Task OrdersPricing_AfterApply_Is200_MatchesContract_WithHeaders_AndFreeFirstWhenPublished()
     {
         await ApplyAsync();
@@ -221,7 +221,7 @@ public class Cycle37OrdersPricingTests(TestDatabaseFixture fixture) : Cycle37Ord
         InvalidateCache();
 
         var (response, body) = await GetOrdersPricingAsync();
-        C37.AssertResponse("get", "/api/pricing/orders", 200, body);
+        C38.AssertResponse("get", "/api/pricing/orders", 200, body);
         Names(body).Should().Equal("Бесплатный", "Лавка", "Магазин", "Сеть магазинов");
         response.Headers.ETag.Should().NotBeNull();
         response.Headers.CacheControl!.Public.Should().BeTrue();
@@ -245,7 +245,7 @@ public class Cycle37OrdersPricingTests(TestDatabaseFixture fixture) : Cycle37Ord
         foreach (var p in plans) p.GetProperty("highlights").GetArrayLength().Should().BeLessThanOrEqualTo(5);
     }
 
-    [Fact, TestCase("CY37-B05-03")]
+    [Fact, TestCase("CY38-B05-03")]
     public async Task OrdersPricing_HidesDemoInactiveAndNonPublic_AndServicesTariffs_AndOrdersAreNotInZapisPricing()
     {
         await ApplyAsync();
@@ -287,7 +287,7 @@ public class Cycle37OrdersPricingTests(TestDatabaseFixture fixture) : Cycle37Ord
         zapisText.Should().NotContain("Лавка").And.NotContain("Сеть магазинов").And.NotContain("Бесплатный");
     }
 
-    [Fact, TestCase("CY37-B05-04")]
+    [Fact, TestCase("CY38-B05-04")]
     public async Task OrdersPricing_DoesNotDependOnZapisPublicationSwitch()
     {
         await ApplyAsync();
@@ -304,7 +304,7 @@ public class Cycle37OrdersPricingTests(TestDatabaseFixture fixture) : Cycle37Ord
         (await GetOrdersPricingAsync()).Body.GetProperty("plans").GetArrayLength().Should().BeGreaterThan(0);
     }
 
-    [Fact, TestCase("CY37-B05-05")]
+    [Fact, TestCase("CY38-B05-05")]
     public async Task OrdersPricing_ETag_IfNoneMatch_Is304_AndChangesWhenPriceChanges()
     {
         await ApplyAsync();
@@ -322,7 +322,7 @@ public class Cycle37OrdersPricingTests(TestDatabaseFixture fixture) : Cycle37Ord
         (await stale.GetAsync("/api/pricing/orders")).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [Fact, TestCase("CY37-B05-06")]
+    [Fact, TestCase("CY38-B05-06")]
     public async Task OrdersPricing_PriceEditedInAdminPanel_IsVisibleImmediately_AndInvalidatesETag()
     {
         await ApplyAsync();

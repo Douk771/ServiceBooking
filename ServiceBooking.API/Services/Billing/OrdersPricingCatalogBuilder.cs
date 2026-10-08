@@ -6,7 +6,7 @@ using ServiceBooking.Core.Enums;
 namespace ServiceBooking.API.Services.Billing;
 
 /// <summary>
-/// Pure mapping from "Заказы" tariff rows to <see cref="OrdersPublicPricingDto"/> (ARCHITECTURE_CYCLE37.md §37.9.3) — no database, no cache.
+/// Pure mapping from "Заказы" tariff rows to <see cref="OrdersPublicPricingDto"/> (ARCHITECTURE_CYCLE38.md §38.9.3) — no database, no cache.
 /// No options (the Orders line has none to sell), no subscriber counts, no internal flags.
 /// </summary>
 public static class OrdersPricingCatalogBuilder

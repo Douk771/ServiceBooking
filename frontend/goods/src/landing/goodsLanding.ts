@@ -4,7 +4,7 @@ import { ordersPricingLine } from '../pricing/ordersPricingLine'
 import { goodsFaq } from './goodsFaq'
 
 /**
- * Конфиг главной «Заказов» (ARCHITECTURE_CYCLE37.md §37.4.1). Тексты BuyersBlock/BusinessBlock перенесены дословно:
+ * Конфиг главной «Заказов» (ARCHITECTURE_CYCLE38.md §38.4.1). Тексты BuyersBlock/BusinessBlock перенесены дословно:
  * на них опираются тесты T27/T30. Только данные, без JSX и без классов — вёрстку держит шаблон.
  */
 export const goodsLanding: LandingConfig = {

@@ -20,12 +20,12 @@ const XL_COLS: Record<number, string> = { 4: 'xl:grid-cols-4', 5: 'xl:grid-cols-
 const gridClass = (count: number) => `${PRICING_GRID_BASE} ${XL_COLS[count] ?? 'xl:grid-cols-5'}`
 
 /**
- * Тело публичного маршрута `/pricing` для любой линейки (ARCHITECTURE_CYCLE37.md §37.7.2). Public route `/pricing` (ARCHITECTURE_CYCLE7.md §56.1) — reachable without auth, and outside the
+ * Тело публичного маршрута `/pricing` для любой линейки (ARCHITECTURE_CYCLE38.md §38.7.2). Public route `/pricing` (ARCHITECTURE_CYCLE7.md §56.1) — reachable without auth, and outside the
  * consent gate (added to CONSENT_GATE_BYPASS_PATHS in App.tsx) so a logged-in user with a pending
  * legal update can still see prices. US-71.
  *
  * 404 from the API (line.fetchGrid → null) means there is no grid to show: for «Запись» the publication switch
- * (`pricing.public-enabled`) is off, for «Заказы» the line has no active public tariff (ARCHITECTURE_CYCLE37.md §37.9.2).
+ * (`pricing.public-enabled`) is off, for «Заказы» the line has no active public tariff (ARCHITECTURE_CYCLE38.md §38.9.2).
  * That is an expected state (API_CONTRACT_CYCLE7.md §39), not an error: the page renders a plain "not available
  * yet" notice instead of an error screen.
  */

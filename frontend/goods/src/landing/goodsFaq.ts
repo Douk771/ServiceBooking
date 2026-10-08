@@ -1,6 +1,6 @@
 import type { FaqItems } from '@/components/landing/types'
 
-/** FAQ «Заказов» (ARCHITECTURE_CYCLE37.md §37.6.2). Черновики на вычитку заказчиком; цен, сроков и онлайн-оплаты здесь нет. */
+/** FAQ «Заказов» (ARCHITECTURE_CYCLE38.md §38.6.2). Черновики на вычитку заказчиком; цен, сроков и онлайн-оплаты здесь нет. */
 export const goodsFaq: FaqItems = [
   {
     question: 'Нужно ли регистрироваться, чтобы сделать заказ?',

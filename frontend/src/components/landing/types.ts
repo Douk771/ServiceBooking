@@ -2,7 +2,7 @@ import type { IconName } from '../ui/Icon'
 import type { PricingLine } from '../pricing/pricingLine'
 
 /**
- * Типы конфига единого шаблона главной (ARCHITECTURE_CYCLE37.md §37.3.1).
+ * Типы конфига единого шаблона главной (ARCHITECTURE_CYCLE38.md §38.3.1).
  * Полей className/style/as нет намеренно: перекрасить секцию из конфига нельзя.
  */
 export type AnchorHref = `#${string}`

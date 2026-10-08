@@ -20,7 +20,7 @@ beforeEach(() => {
   fetchGrid.mockReset()
 })
 
-describe('LandingPricingSection (T37-08)', () => {
+describe('LandingPricingSection (T38-08)', () => {
   it('renders nothing while loading', () => {
     fetchGrid.mockReturnValue(new Promise(() => {}))
     expect(renderIt().container).toBeEmptyDOMElement()

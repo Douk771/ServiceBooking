@@ -5,7 +5,7 @@ import { FOCUS_RING, H2, SECTION } from './classes'
 import type { FaqItems } from './types'
 
 /**
- * Секция 6: FAQ — WAI-ARIA «disclosure» (ARCHITECTURE_CYCLE37.md §37.6.1). Ответ выводится только текстовыми
+ * Секция 6: FAQ — WAI-ARIA «disclosure» (ARCHITECTURE_CYCLE38.md §38.6.1). Ответ выводится только текстовыми
  * узлами React; HTML не интерпретируется.
  */
 export function FaqSection({ items }: { items: FaqItems }) {

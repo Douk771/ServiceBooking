@@ -26,7 +26,7 @@ const PILL_TONE = {
 const WRAP = 'break-words [overflow-wrap:anywhere]'
 
 /**
- * Общая карточка каталога (салон / магазин), ARCHITECTURE_CYCLE37.md §37.5. Без `truncate` на названии и адресе:
+ * Общая карточка каталога (салон / магазин), ARCHITECTURE_CYCLE38.md §38.5. Без `truncate` на названии и адресе:
  * ряд сетки растёт по самой высокой карточке (`h-full`).
  */
 export function CatalogCard({ to, name, logoUrl, ariaLabel, testId, subtitle, badge, description, place, pill }: CatalogCardProps) {

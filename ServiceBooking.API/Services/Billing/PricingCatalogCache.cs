@@ -49,7 +49,7 @@ public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache, Leg
 
     public sealed record CachedOrdersPricing(OrdersPublicPricingDto Dto, string ETag);
 
-    /// <summary>ARCHITECTURE_CYCLE37.md §37.9.4 — the public "Заказы" grid, 60 s. <see langword="null"/> (also cached) means there is no
+    /// <summary>ARCHITECTURE_CYCLE38.md §38.9.4 — the public "Заказы" grid, 60 s. <see langword="null"/> (also cached) means there is no
     /// active public Orders tariff, i.e. the endpoint answers 404. No publication switch and no legal gate.</summary>
     public async Task<CachedOrdersPricing?> GetOrdersAsync(CancellationToken ct = default)
     {

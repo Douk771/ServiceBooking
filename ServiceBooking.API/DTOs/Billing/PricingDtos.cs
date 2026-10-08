@@ -34,7 +34,7 @@ public record PublicOptionDto(
     string? UnitPriceText,
     int SortOrder);
 
-/// <summary>ARCHITECTURE_CYCLE37.md §37.9, contracts/cycle37/openapi.yaml OrdersPublicPricingDto — GET /api/pricing/orders.</summary>
+/// <summary>ARCHITECTURE_CYCLE38.md §38.9, contracts/cycle38/openapi.yaml OrdersPublicPricingDto — GET /api/pricing/orders.</summary>
 public record OrdersPublicPricingDto(
     string Version,
     string Currency,

@@ -19,7 +19,7 @@ describe('formatMonthlyPrice', () => {
 })
 
 describe('formatIncludedLimit', () => {
-  it('groups thousands (T37-12)', () => {
+  it('groups thousands (T38-12)', () => {
     expect(formatIncludedLimit(1500, 'заказа', 'заказов').replace(/\s/g, ' ')).toBe('до 1 500 заказов')
   })
   it('null → "без ограничений"', () => {

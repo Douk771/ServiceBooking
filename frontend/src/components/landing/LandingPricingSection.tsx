@@ -6,7 +6,7 @@ import { H2, SECTION } from './classes'
 import type { LandingPricingConfig } from './types'
 
 /**
- * Секция 5: тарифы на главной (бывший PricingTeaser; ARCHITECTURE_CYCLE37.md §37.3.7). Пока грузится, при 404,
+ * Секция 5: тарифы на главной (бывший PricingTeaser; ARCHITECTURE_CYCLE38.md §38.3.7). Пока грузится, при 404,
  * ошибке и пустом списке — ничего: сломанный блок цен не должен портить главную.
  */
 export function LandingPricingSection({ config }: { config: LandingPricingConfig }) {

@@ -1,16 +1,16 @@
 openapi: 3.0.3
 
-# ServiceBooking — машиночитаемый контракт ЦИКЛА 37 (публичная сетка тарифов «Заказов»).
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 38 (публичная сетка тарифов «Заказов»).
 #
-# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл и правила — API_CONTRACT_CYCLE37.md (§37.20–§37.27),
-# решения — ARCHITECTURE_CYCLE37.md (§37.9, §37.10), требования — SPEC_CYCLE37_UNIFIED_LANDING.md + ответы заказчика в
-# BRIEF_CYCLE37_UNIFIED_LANDING.md. При расхождении по ФОРМЕ прав ЭТОТ файл.
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл и правила — API_CONTRACT_CYCLE38.md (§38.20–§38.27),
+# решения — ARCHITECTURE_CYCLE38.md (§38.9, §38.10), требования — SPEC_CYCLE38_UNIFIED_LANDING.md + ответы заказчика в
+# BRIEF_CYCLE38_UNIFIED_LANDING.md. При расхождении по ФОРМЕ прав ЭТОТ файл.
 #
-#   frontend  npx @stoplight/prism mock contracts/cycle37/openapi.yaml --port 4037
-#             npm run types:api:cycle37   (openapi-typescript -> src/types/api-cycle37.generated.ts)
-#   JSON      npm run contracts:json      (-> contracts/cycle37/openapi.json для OpenApiContract.Load("cycle37"))
-#   QA        schemathesis run contracts/cycle37/openapi.yaml --base-url http://localhost:5000 --checks all
-#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle37/openapi.yaml
+#   frontend  npx @stoplight/prism mock contracts/cycle38/openapi.yaml --port 4038
+#             npm run types:api:cycle38   (openapi-typescript -> src/types/api-cycle38.generated.ts)
+#   JSON      npm run contracts:json      (-> contracts/cycle38/openapi.json для OpenApiContract.Load("cycle38"))
+#   QA        schemathesis run contracts/cycle38/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle38/openapi.yaml
 #
 # ДЕЛЬТА. Один новый маршрут: GET /api/pricing/orders. GET /api/pricing (контракты циклов 7/18/28) НЕ МЕНЯЕТСЯ ни на байт и
 # здесь не описывается. Схемы используют только ключевые слова, поддержанные OpenApiContract.cs
@@ -18,15 +18,15 @@ openapi: 3.0.3
 # minimum, maximum, maxLength, minLength, pattern + description/example/default/title).
 
 info:
-  title: ServiceBooking API — цикл 37 (публичные тарифы «Заказов»)
-  version: "37.1.0"
+  title: ServiceBooking API — цикл 38 (публичные тарифы «Заказов»)
+  version: "38.1.0"
   license:
     name: Proprietary
   description: |
     Конвенции проекта без изменений: camelCase; деньги — number (рубли); 404 — пустое тело.
 
     ГЛАВНЫЕ ПРАВИЛА ЦИКЛА, ЗАКРЕПЛЁННЫЕ ФОРМОЙ:
-      1. Анонимный маршрут, без переключателя публикации (решение заказчика Q37-3).
+      1. Анонимный маршрут, без переключателя публикации (решение заказчика Q38-3).
       2. 404 с пустым телом, если в линейке «Заказы» нет ни одного активного публичного тарифа.
       3. Только тарифы линейки «Заказы»; служебный «Демо» не попадает никогда; опций нет.
       4. includedProductsPerShop никогда не null (технический потолок товаров в магазине).
@@ -34,7 +34,7 @@ info:
 servers:
   - url: http://localhost:5000
     description: dev (dotnet run)
-  - url: http://localhost:4037
+  - url: http://localhost:4038
     description: prism mock по этой схеме
 
 tags:
@@ -202,7 +202,7 @@ paths:
                     includedOrdersPerMonth: 150
                     sortOrder: 10
                     isFree: true
-                  - id: 5a1e0c37-0000-4000-8000-000000000020
+                  - id: 5a1e0c38-0000-4000-8000-000000000020
                     name: Лавка
                     description: 'Для пекарни, кофейни или небольшого магазина с постоянным потоком заказов.'
                     pricePerMonth: 690
@@ -216,7 +216,7 @@ paths:
                     includedOrdersPerMonth: 1500
                     sortOrder: 20
                     isFree: false
-                  - id: 5a1e0c37-0000-4000-8000-000000000030
+                  - id: 5a1e0c38-0000-4000-8000-000000000030
                     name: Магазин
                     description: 'Для магазина с несколькими точками: до 3 магазинов на одной подписке.'
                     pricePerMonth: 1490
@@ -230,7 +230,7 @@ paths:
                     includedOrdersPerMonth: 5000
                     sortOrder: 30
                     isFree: false
-                  - id: 5a1e0c37-0000-4000-8000-000000000040
+                  - id: 5a1e0c38-0000-4000-8000-000000000040
                     name: Сеть магазинов
                     description: 'Для сети от 4 магазинов. Стоимость от 2 990 ₽ в месяц, зависит от числа магазинов.'
                     pricePerMonth: 2990
