@@ -565,6 +565,18 @@ public static class DeploymentSafetyChecks
         }
     }
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE37.md §37.6.4, R37-11 — the cancellation templates of «Дома» are configuration, but the law caps them: a deduction of more than
+    /// one night or a boundary earlier than the check-in day never starts (ЮР-1). The draft templates of the SPEC (50 % / 0 %) cannot be enabled by config.
+    /// </summary>
+    public static void ValidateStaysPolicies(IConfiguration configuration)
+    {
+        var options = configuration.GetSection(Stays.StaysOptions.SectionName).Get<Stays.StaysOptions>() ?? new Stays.StaysOptions();
+        var errors = options.ConfigurationErrors();
+        if (errors.Count > 0)
+            throw new InvalidOperationException("Invalid Stays cancellation configuration: " + string.Join(" ", errors));
+    }
+
     // ARCHITECTURE_CYCLE19.md §388.1/§388.4 — ValidateAddressVerification (the geocoder's own startup
     // check) is removed целиком along with the geocoder. Address saving has no comparable licence
     // ceiling to enforce (§413.1).

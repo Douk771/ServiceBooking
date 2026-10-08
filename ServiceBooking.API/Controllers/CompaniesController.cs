@@ -298,6 +298,14 @@ public class CompaniesController(
         if (company is null) return NotFound();
         if (!await CanManageCompany(id)) return Forbid();
 
+        // ARCHITECTURE_CYCLE37.md §37.3.2 / API_CONTRACT_CYCLE37.md §37.21.2: a «Дома» company stays in its city; its zone is the city's.
+        if (company.Kind == CompanyKind.Stays)
+        {
+            if (dto.CityId is not null && dto.CityId != company.CityId) return BadRequest("Город компании «Дома» — Шерегеш");
+            if (dto.TimeZoneId is { IsSpecified: true, Value: { } staysZone } && staysZone != company.TimeZoneId)
+                return BadRequest("Часовой пояс компании задаётся городом");
+        }
+
         if (dto.Name is not null) company.Name = dto.Name;
         if (dto.Description is not null) company.Description = dto.Description;
         if (dto.Address is not null) company.Address = dto.Address;
@@ -387,7 +395,7 @@ public class CompaniesController(
                 }
             }
         }
-        else if (city is not null)
+        else if (city is not null && company.Kind == CompanyKind.Services)
         {
             var (timeZoneId, timeZoneIsManual) = CompanyTimeZoneResolver.ForUpdate(
                 effectiveCityTimeZoneId: city.TimeZoneId,

@@ -27,5 +27,5 @@ public static class StaysAccess
     public static bool Has(StaysMyRole role, StaysPermission permission) => For(role).Contains(permission);
 
     public static StaysMyRole RoleOfMember(bool isOwner, StaffPosition? position) =>
-        isOwner ? StaysMyRole.Owner : position == StaffPosition.Housekeeper ? StaysMyRole.Housekeeper : StaysMyRole.Manager;
+        isOwner ? StaysMyRole.Owner : position == StaffPosition.Manager ? StaysMyRole.Manager : StaysMyRole.Housekeeper;
 }

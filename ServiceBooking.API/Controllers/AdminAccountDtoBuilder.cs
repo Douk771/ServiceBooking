@@ -182,7 +182,7 @@ internal static class AdminAccountDtoBuilder
             && account.TrialEndsAtUtc.HasValue && account.TrialEndsAtUtc >= now;
         var state = isCurrentlyUsable ? "Active" : "Expired";
 
-        var grants = await db.TrialGrants.Where(g => g.BillingAccountId == account.Id)
+        var grants = await db.TrialGrants.Where(g => g.BillingAccountId == account.Id && g.Line == CompanyKind.Services)
             .OrderByDescending(g => g.GrantedAtUtc).ToListAsync();
         var grantedByIds = grants.Select(g => g.GrantedByUserId).Distinct().ToList();
         var grantedByNames = await db.Users.Where(u => grantedByIds.Contains(u.Id))

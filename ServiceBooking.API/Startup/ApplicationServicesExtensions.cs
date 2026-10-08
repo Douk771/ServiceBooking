@@ -76,6 +76,16 @@ internal static class ApplicationServicesExtensions
         builder.Configuration.GetSection(ServiceBooking.API.Services.Orders.OrdersOptions.SectionName));
     builder.Services.AddSingleton<ServiceBooking.API.Services.Shops.PhoneVerificationAvailability>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopAccessResolver>();
+
+    // Cycle 37 (ARCHITECTURE_CYCLE37.md §37.16): "Дома".
+    builder.Services.Configure<ServiceBooking.API.Services.Stays.StaysOptions>(
+        builder.Configuration.GetSection(ServiceBooking.API.Services.Stays.StaysOptions.SectionName));
+    builder.Services.AddSingleton<ServiceBooking.API.Services.Stays.IStaysClock, ServiceBooking.API.Services.Stays.SystemStaysClock>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysAccessResolver>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysPlanResolver>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysCompanyService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysTrialService>();
+
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopManageMapper>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.CatalogMapper>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.StockLedger>();

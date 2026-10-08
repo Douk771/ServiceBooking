@@ -78,7 +78,7 @@ public class TrialActivationService(
 
         // §4 input — this account's own past (an override grant doesn't count as "used").
         var alreadyUsed = account.TrialStartedAtUtc is not null ||
-            await db.TrialGrants.AnyAsync(g => g.BillingAccountId == account.Id && g.Source != TrialGrantSource.SuperAdminOverride, ct);
+            await db.TrialGrants.AnyAsync(g => g.BillingAccountId == account.Id && g.Line == CompanyKind.Services && g.Source != TrialGrantSource.SuperAdminOverride, ct);
         // §5/§6 input — the owner's latest verified phone (also the uniqueness key's input below).
         var verifiedPhone = await db.VerifiedPhones.AsNoTracking()
             .Where(v => v.UserId == account.OwnerUserId)
@@ -116,7 +116,7 @@ public class TrialActivationService(
             phoneKeyHash = TrialPhoneKey.Compute(trialOptions.Value.PhoneKeyHmac!, verifiedPhone);
             // §8 — TrialPhoneAlreadyUsed: someone else's past. Text carries no date/name/existence hint
             // (§4.27 🔒) regardless of what is actually found.
-            var phoneUsed = await db.TrialPhoneRegistrations.AnyAsync(r => r.PhoneKeyHash == phoneKeyHash, ct);
+            var phoneUsed = await db.TrialPhoneRegistrations.AnyAsync(r => r.Line == CompanyKind.Services && r.PhoneKeyHash == phoneKeyHash, ct);
             if (phoneUsed && !canBypass)
                 return Refuse("TrialPhoneAlreadyUsed", TrialLegalNotices.TrialRefusedPhoneAlreadyUsed);
         }
@@ -185,11 +185,12 @@ public class TrialActivationService(
             TermsAcknowledgedAtUtc = isOwnerPath ? now : null,
         });
 
-        if (phoneKeyHash is not null && !await db.TrialPhoneRegistrations.AnyAsync(r => r.PhoneKeyHash == phoneKeyHash, ct))
+        if (phoneKeyHash is not null && !await db.TrialPhoneRegistrations.AnyAsync(r => r.Line == CompanyKind.Services && r.PhoneKeyHash == phoneKeyHash, ct))
         {
             db.TrialPhoneRegistrations.Add(new TrialPhoneRegistration
             {
                 Id = Guid.NewGuid(),
+                Line = CompanyKind.Services,
                 PhoneKeyHash = phoneKeyHash,
                 RegisteredAtUtc = now,
                 KeyId = trialOptions.Value.PhoneKeyId!,
@@ -360,7 +361,7 @@ public class TrialActivationService(
             var ownAccount = await db.BillingAccounts.AsNoTracking()
                 .Where(a => a.Id == account.Id).Select(a => new { a.TrialStartedAtUtc }).FirstOrDefaultAsync(ct);
             if (ownAccount?.TrialStartedAtUtc is null && phoneKeyHash is not null &&
-                await db.TrialPhoneRegistrations.AsNoTracking().AnyAsync(r => r.PhoneKeyHash == phoneKeyHash, ct))
+                await db.TrialPhoneRegistrations.AsNoTracking().AnyAsync(r => r.Line == CompanyKind.Services && r.PhoneKeyHash == phoneKeyHash, ct))
                 return Refuse("TrialPhoneAlreadyUsed", TrialLegalNotices.TrialRefusedPhoneAlreadyUsed);
             // Same honest refusal the sequential path (§4, line ~92) gives — quote the WINNER's real
             // TrialStartedAtUtc, not "now", so the date in the message is never fabricated.
@@ -400,7 +401,7 @@ public class TrialActivationService(
         {
             account.TrialTermsAcknowledgedAtUtc = now;
             var grant = await db.TrialGrants
-                .Where(g => g.BillingAccountId == account.Id)
+                .Where(g => g.BillingAccountId == account.Id && g.Line == CompanyKind.Services)
                 .OrderByDescending(g => g.GrantedAtUtc)
                 .FirstOrDefaultAsync(ct);
             if (grant is not null)

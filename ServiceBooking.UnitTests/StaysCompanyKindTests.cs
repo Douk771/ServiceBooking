@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.PublicSites;
@@ -33,5 +34,36 @@ public class StaysCompanyKindTests
         // the other two sites are untouched
         links.CompanyPageUrl(CompanyKind.Services, "salon").Should().Be("https://ezbook.ru/company/salon");
         links.CompanyPageUrl(CompanyKind.Orders, "shop").Should().Be("https://goods.ezbook.ru/shop");
+    }
+}
+
+public class StaysDeploymentChecksTests
+{
+    private static Microsoft.Extensions.Configuration.IConfiguration Config(params (string, string)[] values) =>
+        new Microsoft.Extensions.Configuration.ConfigurationBuilder().AddInMemoryCollection(values.ToDictionary(v => v.Item1, v => (string?)v.Item2)).Build();
+
+    [Fact]
+    public void Defaults_and_lawful_overrides_start()
+    {
+        ServiceBooking.API.Services.DeploymentSafetyChecks.ValidateStaysPolicies(Config());
+        ServiceBooking.API.Services.DeploymentSafetyChecks.ValidateStaysPolicies(Config(("Stays:CancellationPolicies:Standard:MaxDeductionNights", "0")));
+    }
+
+    [Theory]
+    [InlineData("Stays:CancellationPolicies:Standard:MaxDeductionNights", "2")]
+    [InlineData("Stays:CancellationPolicies:Flexible:Boundary", "None")]
+    [InlineData("Stays:CancellationPolicies:Flexible:Boundary", "Nonsense")]
+    [InlineData("Stays:CancellationPolicies:Strict:MaxDeductionNights", "1")]
+    public void Unlawful_templates_do_not_start(string key, string value)
+    {
+        var act = () => ServiceBooking.API.Services.DeploymentSafetyChecks.ValidateStaysPolicies(Config((key, value)));
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void Public_sites_check_covers_the_stays_address()
+    {
+        var act = () => ServiceBooking.API.Services.DeploymentSafetyChecks.ValidatePublicSites(Config(("PublicSites:StaysBaseUrl", "http://dom.ezbook.ru")), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*StaysBaseUrl*");
     }
 }

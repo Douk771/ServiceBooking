@@ -9,6 +9,8 @@ using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Showcase;
+using ServiceBooking.API.Services.Stays;
+using Microsoft.Extensions.Options;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -24,7 +26,7 @@ namespace ServiceBooking.API.Controllers;
 public class CompanyMembersController(
     AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
     ServiceBooking.API.Services.Billing.AccountUsageReader accountUsageReader,
-    ServiceBooking.API.Services.Billing.OrdersPlanResolver ordersPlans) : ControllerBase
+    ServiceBooking.API.Services.Billing.OrdersPlanResolver ordersPlans, IOptions<StaysOptions> staysOptions) : ControllerBase
 {
     [HttpGet("{id:guid}/members")]
     [Authorize]
@@ -47,7 +49,8 @@ public class CompanyMembersController(
             cm.User.PhoneNumber ?? "", cm.User.Email, cm.User.AvatarUrl, cm.Role.ToString(), cm.Bio,
             masterServices.Where(ms => ms.MasterId == cm.UserId).Select(ms => ms.ServiceId).ToList(),
             cm.CommissionPercent,
-            cm.ProvidesServices
+            cm.ProvidesServices,
+            cm.StaffPosition
         )).ToList();
 
         return Ok(result);
@@ -149,6 +152,15 @@ public class CompanyMembersController(
         if (companyKind == CompanyKind.Orders && dto.Role != nameof(UserRole.Master))
             return BadRequest("В магазин можно добавить только сотрудника.");
 
+        // ARCHITECTURE_CYCLE37.md §37.21.3: a «Дома» company takes staff only, with a position; the position belongs to «Дома» alone.
+        if (companyKind == CompanyKind.Stays)
+        {
+            if (dto.Role != nameof(UserRole.Master)) return BadRequest("В компанию «Дома» можно добавить только сотрудника.");
+            if (dto.Position is not { } position || !Enum.IsDefined(position)) return BadRequest("Укажите должность: управляющий или горничная.");
+        }
+        else if (dto.Position is not null)
+            return BadRequest("Должность задаётся только сотрудникам компании «Дома».");
+
         // Tariff seat limit (ARCHITECTURE_CYCLE7.md §46.4): SUMMED across every company on the
         // account, not just this one — a customer with 3 branches on an 8-seat plan can put all 8
         // anywhere, not 8-per-branch. Only blocks adding NEW members once at/over the cap; existing
@@ -185,7 +197,15 @@ public class CompanyMembersController(
             }
         }
 
-        var plan = companyKind == CompanyKind.Orders
+        // A «Дома» company has no seat tariff (only the technical ceiling Stays:MaxStaffPerCompany, §37.3.2) and no salon seat limit.
+        if (companyKind == CompanyKind.Stays)
+        {
+            var staffCount = await db.CompanyMembers.CountAsync(cm => cm.CompanyId == id && cm.Role == UserRole.Master);
+            var ceiling = staysOptions.Value.MaxStaffPerCompany;
+            if (staffCount >= ceiling) return Conflict($"В компании не может быть больше {ceiling} сотрудников.");
+        }
+
+        var plan = companyKind is CompanyKind.Orders or CompanyKind.Stays
             ? EffectivePlan.Free with { AccountMaxEmployees = null } // a shop's seats were decided above; the salon limit does not apply to it
             : await subscriptionResolver.GetEffectivePlanAsync(id);
         if (plan.AccountMaxEmployees.HasValue)
@@ -265,7 +285,8 @@ public class CompanyMembersController(
             CompanyId = id,
             UserId = user.Id,
             Role = role,
-            Bio = dto.Bio
+            Bio = dto.Bio,
+            StaffPosition = companyKind == CompanyKind.Stays ? dto.Position : null
         };
 
         db.CompanyMembers.Add(member);
@@ -279,7 +300,28 @@ public class CompanyMembersController(
         // sourced from a value that could carry over from a different company (US-15).
         return Ok(new MemberDto(member.Id, user.Id, user.FirstName, user.LastName,
             user.PhoneNumber ?? "", user.Email, user.AvatarUrl, dto.Role, dto.Bio, [], member.CommissionPercent,
-            member.ProvidesServices));
+            member.ProvidesServices, member.StaffPosition));
+    }
+
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.21.3 — change the position (manager / housekeeper) of a «Дома» staff member. Owner or SuperAdmin; 204.</summary>
+    [HttpPut("{id:guid}/members/{memberId:guid}/position")]
+    [Authorize]
+    [RequiresOwnerTerms]
+    public async Task<IActionResult> UpdateMemberPosition(Guid id, Guid memberId, [FromBody] UpdateMemberPositionDto dto)
+    {
+        if (!await CanManageCompany(id)) return Forbid();
+        var kind = await db.Companies.AsNoTracking().Where(c => c.Id == id).Select(c => (CompanyKind?)c.Kind).FirstOrDefaultAsync();
+        if (kind is null) return NotFound();
+        if (kind != CompanyKind.Stays) return Conflict("Должность задаётся только сотрудникам компании «Дома».");
+
+        var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
+        if (member is null) return NotFound();
+        if (member.Role == UserRole.CompanyOwner) return BadRequest("Должность владельца не меняется.");
+        if (dto.Position is not { } position || !Enum.IsDefined(position)) return BadRequest("Укажите должность: управляющий или горничная.");
+
+        member.StaffPosition = position;
+        await db.SaveChangesAsync();
+        return NoContent();
     }
 
     [HttpPut("{id:guid}/members/{memberId:guid}/commission")]

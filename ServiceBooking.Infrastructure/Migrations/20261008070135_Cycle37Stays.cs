@@ -845,6 +845,60 @@ namespace ServiceBooking.Infrastructure.Migrations
                 principalTable: "StayBookings",
                 principalColumn: "Id",
                 onDelete: ReferentialAction.SetNull);
+
+            // ARCHITECTURE_CYCLE37.md §37.5 / §37.2.3 — constraints EF cannot model. EX_HouseOccupancies_NoOverlap is the last, unbreakable line of
+            // defence against a double booking: no two unreleased periods of one house share a night (23P01 is turned into 409 by HouseOccupancyWriter).
+            migrationBuilder.Sql(
+                """
+                ALTER TABLE "HouseOccupancies" ADD CONSTRAINT "EX_HouseOccupancies_NoOverlap"
+                    EXCLUDE USING gist ("HouseId" WITH =, daterange("StartDate", "EndDate", '[)') WITH &&)
+                    WHERE ("ReleasedAtUtc" IS NULL);
+
+                ALTER TABLE "HousePricePeriods" ADD CONSTRAINT "EX_HousePricePeriods_NoOverlap"
+                    EXCLUDE USING gist ("HouseId" WITH =, daterange("StartDate", "EndDate", '[]') WITH &&)
+                    WHERE ("StartDate" < "EndDate");
+                """);
+
+            // §37.11.1 — the city of the "Дома" vertical (idempotent by (Name, Region)); SearchName is CitySearch.Normalize("Шерегеш").
+            migrationBuilder.Sql(
+                """
+                INSERT INTO "Cities" ("Name", "Region", "TimeZoneId", "IsActive", "SearchName")
+                SELECT 'Шерегеш', 'Кемеровская область', 'Asia/Novokuznetsk', true, 'шерегеш'
+                WHERE NOT EXISTS (SELECT 1 FROM "Cities" WHERE "Name" = 'Шерегеш' AND "Region" = 'Кемеровская область');
+                """);
+
+            // §37.10.1 — four tariffs of the "Дома" line (Line = 2) with FIXED ids (StaysPlans.*SeedId), editable by an administrator without a deploy,
+            // and the option rule that lets accounts of paid plans buy the messenger number (only if that option exists).
+            migrationBuilder.Sql(
+                """
+                INSERT INTO "SubscriptionPlanConfigs"
+                    ("Id", "Name", "PricePerMonth", "MaxEmployees", "MaxCompanies",
+                     "AllowOnlineBooking", "AllowMailing", "AllowAnalytics", "AllowPublicListing",
+                     "AllowOnlinePayment", "AllowNotificationChannel", "PhotoQuotaMb", "PhotoRetention",
+                     "Description", "IsActive", "NotifyDaysBefore", "CreatedAt",
+                     "Highlights", "IsPublic", "SortOrder", "IsSystemFree", "IsSystemTrial",
+                     "Line", "MaxProductsPerShop", "MaxOrdersPerMonth", "AllowOrders", "MaxHouses")
+                SELECT v.id, v.name, v.price, NULL, NULL,
+                       false, false, false, false,
+                       false, v.channel, 100, 0,
+                       v.descr, true, 7, now() AT TIME ZONE 'utc',
+                       NULL, v.pub, v.sort, false, false,
+                       2, NULL, NULL, false, v.houses
+                FROM (VALUES
+                    ('0c37f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b01'::uuid, 'Один дом',        200, true,  true,  1, 1,    'Линейка «Дома»: один опубликованный дом.'),
+                    ('0c37f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b02'::uuid, 'До 3 домов',      500, true,  true,  2, 3,    'Линейка «Дома»: до трёх опубликованных домов.'),
+                    ('0c37f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b03'::uuid, 'Без ограничения', 1000, true, true,  3, NULL, 'Линейка «Дома»: без ограничения числа домов.'),
+                    ('0c37f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b04'::uuid, 'Пробный период',  0,   false, false, 0, NULL, 'Пробный тариф линейки «Дома».')
+                ) AS v(id, name, price, channel, pub, sort, houses, descr)
+                WHERE NOT EXISTS (SELECT 1 FROM "SubscriptionPlanConfigs" p WHERE p."Id" = v.id);
+
+                INSERT INTO "PlanOptionRules" ("Id", "PlanConfigId", "OptionId", "Availability", "IncludedQuantity")
+                SELECT gen_random_uuid(), p."Id", o."Id", 2, NULL
+                FROM "SubscriptionPlanConfigs" p
+                JOIN "SubscriptionOptions" o ON o."Code" = 'notifications.whatsapp'
+                WHERE p."Line" = 2 AND p."AllowNotificationChannel"
+                  AND NOT EXISTS (SELECT 1 FROM "PlanOptionRules" r WHERE r."PlanConfigId" = p."Id" AND r."OptionId" = o."Id");
+                """);
         }
 
         /// <inheritdoc />
@@ -988,60 +1042,6 @@ namespace ServiceBooking.Infrastructure.Migrations
                 column: "BillingAccountId",
                 unique: true,
                 filter: "\"Source\" <> 2");
-
-            // ARCHITECTURE_CYCLE37.md §37.5 / §37.2.3 — constraints EF cannot model. EX_HouseOccupancies_NoOverlap is the last, unbreakable line of
-            // defence against a double booking: no two unreleased periods of one house share a night (23P01 is turned into 409 by HouseOccupancyWriter).
-            migrationBuilder.Sql(
-                """
-                ALTER TABLE "HouseOccupancies" ADD CONSTRAINT "EX_HouseOccupancies_NoOverlap"
-                    EXCLUDE USING gist ("HouseId" WITH =, daterange("StartDate", "EndDate", '[)') WITH &&)
-                    WHERE ("ReleasedAtUtc" IS NULL);
-
-                ALTER TABLE "HousePricePeriods" ADD CONSTRAINT "EX_HousePricePeriods_NoOverlap"
-                    EXCLUDE USING gist ("HouseId" WITH =, daterange("StartDate", "EndDate", '[]') WITH &&)
-                    WHERE ("StartDate" < "EndDate");
-                """);
-
-            // §37.11.1 — the city of the "Дома" vertical (idempotent by (Name, Region)); SearchName is CitySearch.Normalize("Шерегеш").
-            migrationBuilder.Sql(
-                """
-                INSERT INTO "Cities" ("Name", "Region", "TimeZoneId", "IsActive", "SearchName")
-                SELECT 'Шерегеш', 'Кемеровская область', 'Asia/Novokuznetsk', true, 'шерегеш'
-                WHERE NOT EXISTS (SELECT 1 FROM "Cities" WHERE "Name" = 'Шерегеш' AND "Region" = 'Кемеровская область');
-                """);
-
-            // §37.10.1 — four tariffs of the "Дома" line (Line = 2) with FIXED ids (StaysPlans.*SeedId), editable by an administrator without a deploy,
-            // and the option rule that lets accounts of paid plans buy the messenger number (only if that option exists).
-            migrationBuilder.Sql(
-                """
-                INSERT INTO "SubscriptionPlanConfigs"
-                    ("Id", "Name", "PricePerMonth", "MaxEmployees", "MaxCompanies",
-                     "AllowOnlineBooking", "AllowMailing", "AllowAnalytics", "AllowPublicListing",
-                     "AllowOnlinePayment", "AllowNotificationChannel", "PhotoQuotaMb", "PhotoRetention",
-                     "Description", "IsActive", "NotifyDaysBefore", "CreatedAt",
-                     "Highlights", "IsPublic", "SortOrder", "IsSystemFree", "IsSystemTrial",
-                     "Line", "MaxProductsPerShop", "MaxOrdersPerMonth", "AllowOrders", "MaxHouses")
-                SELECT v.id, v.name, v.price, NULL, NULL,
-                       false, false, false, false,
-                       false, v.channel, 100, 0,
-                       v.descr, true, 7, now() AT TIME ZONE 'utc',
-                       NULL, v.pub, v.sort, false, false,
-                       2, NULL, NULL, false, v.houses
-                FROM (VALUES
-                    ('0c37f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b01'::uuid, 'Один дом',        200, true,  true,  1, 1,    'Линейка «Дома»: один опубликованный дом.'),
-                    ('0c37f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b02'::uuid, 'До 3 домов',      500, true,  true,  2, 3,    'Линейка «Дома»: до трёх опубликованных домов.'),
-                    ('0c37f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b03'::uuid, 'Без ограничения', 1000, true, true,  3, NULL, 'Линейка «Дома»: без ограничения числа домов.'),
-                    ('0c37f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b04'::uuid, 'Пробный период',  0,   false, false, 0, NULL, 'Пробный тариф линейки «Дома».')
-                ) AS v(id, name, price, channel, pub, sort, houses, descr)
-                WHERE NOT EXISTS (SELECT 1 FROM "SubscriptionPlanConfigs" p WHERE p."Id" = v.id);
-
-                INSERT INTO "PlanOptionRules" ("Id", "PlanConfigId", "OptionId", "Availability", "IncludedQuantity")
-                SELECT gen_random_uuid(), p."Id", o."Id", 2, NULL
-                FROM "SubscriptionPlanConfigs" p
-                JOIN "SubscriptionOptions" o ON o."Code" = 'notifications.whatsapp'
-                WHERE p."Line" = 2 AND p."AllowNotificationChannel"
-                  AND NOT EXISTS (SELECT 1 FROM "PlanOptionRules" r WHERE r."PlanConfigId" = p."Id" AND r."OptionId" = o."Id");
-                """);
         }
     }
 }
