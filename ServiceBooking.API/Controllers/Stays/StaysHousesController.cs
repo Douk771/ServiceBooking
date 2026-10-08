@@ -29,7 +29,8 @@ namespace ServiceBooking.API.Controllers.Stays;
 [Authorize]
 public class StaysHousesController(
     AppDbContext db, StaysAccessResolver access, HouseService houses, StaysPlanResolver plans, ImageUploadService imageUploadService,
-    FileStorage storage, ServiceBooking.API.Services.PublicSites.PublicSiteLinks links, IStaysClock clock, IOptions<StaysOptions> options) : ControllerBase
+    FileStorage storage, ServiceBooking.API.Services.PublicSites.PublicSiteLinks links, IStaysClock clock, IOptions<StaysOptions> options,
+    StaysCatalogService catalog) : ControllerBase
 {
     private static readonly Regex RegistryNumberPattern = new(@"^[0-9A-Za-zА-Яа-яЁё\-]{5,32}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
@@ -380,6 +381,7 @@ public class StaysHousesController(
         AddAttestation(house, input.Attestation!.NoticeVersion!);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        catalog.InvalidateBase();
         return Ok(await houses.BuildManageAsync(company, house, ct));
     }
 
@@ -392,6 +394,7 @@ public class StaysHousesController(
         house.IsPublished = false;
         house.UpdatedAtUtc = clock.UtcNow;
         await db.SaveChangesAsync(ct);
+        catalog.InvalidateBase();
         return Ok(await houses.BuildManageAsync(r.Company!, house, ct));
     }
 
@@ -405,6 +408,7 @@ public class StaysHousesController(
         house.ArchivedAtUtc ??= clock.UtcNow;
         house.UpdatedAtUtc = clock.UtcNow;
         await db.SaveChangesAsync(ct);
+        catalog.InvalidateBase();
         return Ok(await houses.BuildManageAsync(r.Company!, house, ct));
     }
 
