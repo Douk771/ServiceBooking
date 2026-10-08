@@ -1,0 +1,3497 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 39
+# («Дома», цикл 2: услуги-слоты — баня, чан, фурако; редактируемое напоминание накануне заезда; хвосты цикла 37).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса новых маршрутов и изменённых маршрутов цикла 37. Смысл, порядок проверок и тексты —
+# API_CONTRACT_CYCLE39.md (§39.20–§39.39), решения — ARCHITECTURE_CYCLE39.md (§39.0–§39.19), требования —
+# SPEC_CYCLE39_STAYS_SLOTS_ICAL.md, правовые решения — LEGAL_REVIEW_CYCLE39.md + §39.0a архитектуры.
+#
+# Рядом:
+#   contracts/cycle39/service-vectors.json — эталон: бизнес-день, окна, цены часов, деньги, старты, пересечение, возврат, формат, напоминание
+#   contracts/cycle39/dom-routes.json      — маршруты dom цикла 39 и резерв слов (надмножество cycle37)
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle39/openapi.yaml --port 4039
+#             npm run types:api:cycle39   (openapi-typescript -> src/types/api-cycle39.generated.ts)
+#   QA        schemathesis run contracts/cycle39/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint ../contracts/cycle39/openapi.yaml                                   (профиль по умолчанию)
+#             npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle39/openapi.yaml
+#             npm run contracts:json (cycle39 -> openapi.json для ServiceBooking.Tests/Infrastructure/OpenApiContract.cs)
+#
+# Изменённые маршруты цикла 37 (тег shared-changed) описаны частичными DTO: только новые поля, additionalProperties: true.
+# Закрытые входы цикла 37, получившие поле services, повторены здесь целиком (additionalProperties: false).
+# Время суток услуги — МИНУТЫ от 00:00 даты бизнес-дня (360…1800 при границе 06:00), см. ARCHITECTURE_CYCLE39.md §39.3.
+
+info:
+  title: ServiceBooking API — цикл 39 (Дома, цикл 2 — услуги-слоты и напоминание)
+  version: "39.1.0"
+  license:
+    name: Proprietary
+    url: https://ezbook.ru/terms
+  description: "Конвенции цикла 37 без изменений: camelCase; enum — строками; DateTime — ISO-8601 UTC; DateOnly — YYYY-MM-DD; деньги — целые рубли (суффикс Rub); тела осознанных 400/402/429 — голая строка text/plain; 401/403/404 — пустое тело; все 409 маршрутов /api/stays/* — JSON с code и message. Время суток услуги — минуты от 00:00 даты бизнес-дня (startMinute, endMinute; 360…1800). Тексты для людей (подписи времени, статусы, суммы возврата, тексты напоминания) собирает сервер: гостю — календарными датами, персоналу — на бизнес-дне старта."
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4039
+    description: prism mock по этой схеме
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: shared-changed
+    description: Изменённые маршруты цикла 37 — частичные DTO с новыми полями.
+  - name: stays-services-public
+    description: Услуги анонимно — страница услуги, календарь дат, старты, расчёт, заказ без проживания.
+  - name: stays-service-orders-public
+    description: Отдельный сеанс глазами гостя по ссылке /s/<token>.
+  - name: stays-booking-services
+    description: Услуги к проживанию со страницы брони /b/<token>.
+  - name: stays-services
+    description: Кабинет — услуги, фото, настройки, цены, позиции, публикация.
+  - name: stays-service-schedule
+    description: Кабинет — недельный шаблон и ручные даты расписания услуги.
+  - name: stays-service-sessions
+    description: Кабинет — День услуг, сеансы, проверка оплаты, отмена, добавление к брони, ручной заказ.
+  - name: stays-reminder
+    description: Кабинет — время и шаблон напоминания накануне заезда, предпросмотр, история.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CompanyId:
+      name: companyId
+      in: path
+      required: true
+      description: Id компании «Дома». Салон, магазин или чужая компания — 404.
+      schema: { type: string, format: uuid }
+    ServiceId:
+      name: serviceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    BookingId:
+      name: bookingId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PhotoId:
+      name: photoId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RuleId:
+      name: ruleId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ItemId:
+      name: itemId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ProofId:
+      name: proofId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    HouseId:
+      name: houseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Slug:
+      name: slug
+      in: path
+      required: true
+      description: Адрес компании (dom-routes.json slugPattern).
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    HouseSlug:
+      name: houseSlug
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    ServiceSlug:
+      name: serviceSlug
+      in: path
+      required: true
+      description: Адрес услуги (dom-routes.json serviceSlugPattern).
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    BookingToken:
+      name: token
+      in: path
+      required: true
+      description: Токен брони дома из ссылки /b/<token>.
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    OrderToken:
+      name: token
+      in: path
+      required: true
+      description: Токен заказа услуги из ссылки /s/<token>.
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    OverrideDate:
+      name: date
+      in: path
+      required: true
+      description: Бизнес-день ручной даты.
+      schema: { type: string, format: date }
+    DateQuery:
+      name: date
+      in: query
+      required: true
+      description: Бизнес-день (дата выбора времени).
+      schema: { type: string, format: date }
+    StayHouseQuery:
+      name: houseId
+      in: query
+      required: false
+      description: Режим «к проживанию» из формы брони дома (US-39-10) — вместе с checkIn и checkOut.
+      schema: { type: string, format: uuid }
+    StayCheckInQuery:
+      name: checkIn
+      in: query
+      required: false
+      schema: { type: string, format: date }
+    StayCheckOutQuery:
+      name: checkOut
+      in: query
+      required: false
+      schema: { type: string, format: date }
+    Page:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+
+  responses:
+    PlainTextError:
+      description: Осознанный отказ — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    TooManyRequests:
+      description: Лимит частоты или лимит номера — строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    Unauthorized:
+      description: Нет или недействителен токен. Тело пустое.
+    Forbidden:
+      description: Член компании без нужного права. Тело пустое.
+    NotFound:
+      description: Не существует или не ваше — неотличимо. Тело пустое.
+    NoContent:
+      description: Успех без тела.
+    ServiceRefusal:
+      description: Отказ расчёта, заказа или добавления сеанса.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ServiceRefusalDto' }
+    ServiceGuestConflict:
+      description: Действие гостя над заказом не применено.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ServiceOrderGuestConflictDto' }
+    BookingGuestConflict:
+      description: Действие гостя над сеансом брони не применено.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StayBookingGuestConflictDto' }
+    ServiceStaffConflict:
+      description: Действие персонала над сеансом не применено.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ServiceStaffConflictDto' }
+    StaysServiceConflict:
+      description: Конфликт в кабинете услуг или напоминания.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StaysServiceConflictDto' }
+    StayRefusal:
+      description: Отказ расчёта или создания брони дома (цикл 37, дополнен кодами услуг).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StayRefusalDto' }
+    StaysConflict:
+      description: Конфликт настроек компании (цикл 37, дополнен кодом).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StaysConflictDto' }
+    PaymentProofFile:
+      description: "Файл подтверждения оплаты. Заголовки: Cache-Control: private, no-store; X-Content-Type-Options: nosniff; Content-Security-Policy: sandbox; PDF — Content-Disposition: attachment."
+      content:
+        application/pdf:
+          schema: { type: string, format: binary }
+        image/jpeg:
+          schema: { type: string, format: binary }
+        image/png:
+          schema: { type: string, format: binary }
+        image/webp:
+          schema: { type: string, format: binary }
+
+  schemas:
+    # ───────────── перечисления ─────────────
+    StayBookingStatus:
+      type: string
+      enum: [Held, AwaitingPaymentCheck, Confirmed, ExpiredUnpaid, PaymentRejected, CancelledByGuest, CancelledByOwner]
+    StayDisplayStatus:
+      type: string
+      description: Completed — вычисляемый вид Confirmed после окончания сеанса.
+      enum: [Held, AwaitingPaymentCheck, Confirmed, Completed, ExpiredUnpaid, PaymentRejected, CancelledByGuest, CancelledByOwner]
+    StayServiceSessionState:
+      type: string
+      enum: [Active, CancelledByGuest, CancelledByOwner, ReleasedWithBooking, ReleasedWithOrder]
+    StayServiceCancellationPolicy:
+      type: string
+      description: ЮР39-1 — два законных шаблона. Шаблона Standard из SPEC нет ни в каком виде.
+      enum: [NoDeductions, PreparationCosts]
+    StayServiceRequestBasis:
+      type: string
+      description: Основание сеанса, добавленного персоналом по просьбе гостя (ЮР39-6).
+      enum: [Phone, InPerson, Messenger]
+    ServiceRefundKind:
+      type: string
+      description: CostsOnlyUpTo — остаток к возврату 0; сумма «не меньше 0» не показывается (refundAtLeastRub = null).
+      enum: [NothingPaid, Full, PartialAtLeast, CostsOnlyUpTo]
+    ServiceRefusalCode:
+      type: string
+      enum: [ServiceOrdersDisabled, ServiceNotAvailableForStays, NotAcceptingBookings, DateInPast, BeyondHorizon, HoursOutOfRange, OutsideStay, TooEarly, StartUnavailable, NoPriceForHours, SlotTaken, ItemUnavailable, ItemQuantityExceeded, BookingNotActive, TooManySessions, PriceChanged]
+    NotAcceptingReason:
+      type: string
+      enum: [CompanyBlocked, NoPlan, OverHouseLimit, NoPaymentDetails, NoProviderInfo, HouseNotPublished]
+    ServiceGuestConflictCode:
+      type: string
+      enum: [HoldExpired, ProofLimitReached, ProofNotAllowed, CancelNotAllowed]
+    StaffConflictCode:
+      type: string
+      enum: [VersionMismatch, InvalidTransition]
+    StaysServiceConflictCode:
+      type: string
+      enum: [SlugInvalid, SlugTaken, ServiceHasSessions, ServiceArchived, ServiceNoPrice, ServiceNoWindows, ServiceLimitReached, PhotoLimitReached, ItemLimitReached, PriceRuleOverlap, PriceRuleLimitReached, ReminderConfirmationRequired]
+    StartsReason:
+      type: string
+      enum: [DateInPast, BeyondHorizon, Closed, NoStarts]
+    DateSource:
+      type: string
+      enum: [Template, Override, Closed]
+    ServiceDayBarKind:
+      type: string
+      enum: [Session, Buffer, CarryOverBuffer]
+    ServiceSessionKind:
+      type: string
+      enum: [InBooking, Standalone]
+    ServiceChargeKind:
+      type: string
+      enum: [Service, Item]
+    ServiceGuestAction:
+      type: string
+      enum: [AttachProof, Cancel]
+    ServiceStaffAction:
+      type: string
+      enum: [ConfirmPayment, RejectPayment, Cancel]
+    StaysPermission:
+      type: string
+      description: Цикл 39 дописал ManageServices, EditServiceContent, ManageServiceDates.
+      enum: [ManageCompany, ManageHouses, EditHouseContent, ViewBookings, ManageBookings, ManageBlocks, ViewSchedule, ViewCabinet, ManageServices, EditServiceContent, ManageServiceDates]
+    StayChargeKind:
+      type: string
+      description: Строки суммы брони; цикл 39 дописал ServiceSlot и ServiceItem (PrepayEligible всегда false).
+      enum: [Nights, ExtraBeds, Dogs, Cot, ManualTotal, ServiceSlot, ServiceItem]
+    StayRefusalCode:
+      type: string
+      description: Коды цикла 37 плюс ServiceSlotUnavailable и ServiceSelectionInvalid (бронь дома с сеансами).
+      enum: [InvalidDates, CheckInInPast, SameDayNotAllowed, BeyondHorizon, MaxNightsExceeded, DatesUnavailable, MinNightsNotMet, TooManyGuests, DogsNotAllowed, CotNotAvailable, NoPriceForNights, NotAcceptingBookings, PriceChanged, ServiceSlotUnavailable, ServiceSelectionInvalid]
+    StaysConflictCode:
+      type: string
+      description: Коды цикла 37 плюс ProviderRequiredForServiceOrders.
+      enum: [SlugInvalid, SlugReserved, SlugTaken, NoPrice, ObjectKindRequired, RegistryNumberRequired, AttestationRequired, HouseArchived, HouseHasBookings, PhotoLimitReached, PricePeriodOverlap, BlockConflictsWithBooking, BlockOverlapsBlock, MessengerUnavailable, ProviderRequiredForServiceOrders]
+    StayGuestBookingConflictCode:
+      type: string
+      enum: [CancelNotAllowed]
+    StayCancellationPolicy:
+      type: string
+      enum: [Standard, Flexible, NoDeductions]
+    ReminderDropReason:
+      type: string
+      enum: [ForbiddenPlaceholder, EmptyValue, Digits, Link, Email, Phone, CodeWord]
+    ReminderWarning:
+      type: string
+      enum: [CancellationTermsInText, Passport, CardNumber, PassportNumber]
+    ReminderErrorCode:
+      type: string
+      enum: [TooLong, UnknownPlaceholder, ForbiddenWords]
+    StayProviderStatus:
+      type: string
+      enum: [Organization, IndividualEntrepreneur, SelfEmployed, Individual]
+    TimeOfDay:
+      type: string
+      pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+      example: "18:00"
+    MinuteOfBusinessDay:
+      type: integer
+      description: Минута от 00:00 даты бизнес-дня; 360 = 06:00, 1560 = 02:00 следующих суток, 1800 = 06:00 следующих суток.
+      minimum: 0
+      maximum: 2880
+
+    # ───────────── общее ─────────────
+    WindowInput:
+      type: object
+      additionalProperties: false
+      required: [startMinute, endMinute]
+      properties:
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        endMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+    WindowDto:
+      type: object
+      required: [startMinute, endMinute, label]
+      properties:
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        endMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        label:
+          type: string
+          description: 18:00 – 02:00 (след. дня)
+    ServiceTimeDto:
+      type: object
+      required: [businessDate, startMinute, endMinute, hours, startUtc, endUtc, label]
+      properties:
+        businessDate: { type: string, format: date }
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        endMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        hours: { type: integer, minimum: 1, maximum: 12 }
+        startUtc: { type: string, format: date-time }
+        endUtc: { type: string, format: date-time }
+        label:
+          type: string
+          description: Гостю — календарными датами (пт 15 янв, 22:00 — сб 16 янв, 01:00); персоналу — Пт, 15 янв · 22:00 – 01:00 (сб).
+    HourPriceDto:
+      type: object
+      required: [startMinute, label, priceRub]
+      properties:
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        label:
+          type: string
+          description: Начало часа с календарной датой гостю (сб 16 янв, 00:00).
+        priceRub: { type: integer }
+    ItemSelectionInput:
+      type: object
+      additionalProperties: false
+      required: [itemId, quantity]
+      properties:
+        itemId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 0, maximum: 50 }
+    ServiceSelectionInput:
+      type: object
+      additionalProperties: false
+      required: [businessDate, startMinute, hours, items]
+      properties:
+        businessDate: { type: string, format: date }
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        hours: { type: integer, minimum: 1, maximum: 12 }
+        items:
+          type: array
+          maxItems: 20
+          description: Позиции с количеством; отсутствие позиции = 0 (по умолчанию ничего не выбрано, 69-ФЗ).
+          items: { $ref: '#/components/schemas/ItemSelectionInput' }
+    ServiceItemPublicDto:
+      type: object
+      required: [id, name, priceRub, maxPerSession]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        priceRub: { type: integer }
+        maxPerSession: { type: integer }
+    SessionItemDto:
+      type: object
+      required: [name, unitPriceRub, quantity, amountRub]
+      properties:
+        name: { type: string }
+        unitPriceRub: { type: integer }
+        quantity: { type: integer }
+        amountRub: { type: integer }
+    ServiceChargeLineDto:
+      type: object
+      required: [kind, label, quantity, unitPriceRub, amountRub]
+      properties:
+        kind: { $ref: '#/components/schemas/ServiceChargeKind' }
+        label: { type: string }
+        quantity: { type: integer }
+        unitPriceRub: { type: integer }
+        amountRub: { type: integer }
+    ServiceRefundViewDto:
+      type: object
+      required: [kind, maxDeductionRub, text]
+      properties:
+        kind: { $ref: '#/components/schemas/ServiceRefundKind' }
+        refundAtLeastRub:
+          type: integer
+          nullable: true
+          description: null при CostsOnlyUpTo — «не меньше 0 ₽» не показывается никогда (Т39-02).
+        maxDeductionRub: { type: integer }
+        text:
+          type: string
+          description: Готовый текст сервера.
+    ProviderPublicDto:
+      type: object
+      nullable: true
+      required: [status, statusLabel, inn]
+      properties:
+        status: { $ref: '#/components/schemas/StayProviderStatus' }
+        statusLabel: { type: string }
+        name: { type: string, nullable: true }
+        inn: { type: string }
+        ogrn: { type: string, nullable: true }
+        claimsAddress: { type: string, nullable: true }
+    ProviderFullDto:
+      type: object
+      nullable: true
+      required: [status, statusLabel, name, inn, claimsAddress]
+      properties:
+        status: { $ref: '#/components/schemas/StayProviderStatus' }
+        statusLabel: { type: string }
+        name: { type: string }
+        inn: { type: string }
+        ogrn: { type: string, nullable: true }
+        claimsAddress: { type: string }
+    ProblemDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/ServiceRefusalCode' }
+        message: { type: string }
+    PaymentInstructionsDto:
+      type: object
+      nullable: true
+      required: [amountRub]
+      properties:
+        details: { type: string, nullable: true }
+        purpose: { type: string, nullable: true }
+        amountRub: { type: integer }
+    PaymentProofDto:
+      type: object
+      required: [id, contentType, sizeBytes, uploadedAtUtc, purged]
+      properties:
+        id: { type: string, format: uuid }
+        contentType: { type: string, enum: [application/pdf, image/jpeg, image/png, image/webp] }
+        sizeBytes: { type: integer }
+        uploadedAtUtc: { type: string, format: date-time }
+        purged: { type: boolean }
+    ProofRulesDto:
+      type: object
+      required: [canAttach, maxCount, maxBytes, acceptedTypes]
+      properties:
+        canAttach: { type: boolean }
+        maxCount: { type: integer }
+        maxBytes: { type: integer }
+        acceptedTypes:
+          type: array
+          items: { type: string }
+    PaymentConfirmedDto:
+      type: object
+      nullable: true
+      required: [atUtc, byName]
+      properties:
+        atUtc: { type: string, format: date-time }
+        byName: { type: string }
+    GateDto:
+      type: object
+      required: [accepting]
+      properties:
+        accepting: { type: boolean }
+        reasonCode:
+          allOf: [ { $ref: '#/components/schemas/NotAcceptingReason' } ]
+          nullable: true
+        reasonText: { type: string, nullable: true }
+    JournalEventDto:
+      type: object
+      required: [occurredAtUtc, kind, text, actorText]
+      properties:
+        occurredAtUtc: { type: string, format: date-time }
+        kind: { type: string }
+        text: { type: string }
+        actorText: { type: string }
+        reason: { type: string, nullable: true }
+    PushSubscriptionInput:
+      type: object
+      additionalProperties: false
+      required: [endpoint, keys]
+      properties:
+        endpoint: { type: string, maxLength: 2048 }
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh: { type: string }
+            auth: { type: string }
+        deviceLabel: { type: string, nullable: true, maxLength: 100 }
+    PushSubscriptionRemoveInput:
+      type: object
+      additionalProperties: false
+      required: [endpoint]
+      properties:
+        endpoint: { type: string, maxLength: 2048 }
+    ExpectedVersionInput:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer }
+    ExpectedVersionReasonInput:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: { type: integer }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+    IdsOrderInput:
+      type: object
+      additionalProperties: false
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          items: { type: string, format: uuid }
+    EmptyInput:
+      type: object
+      additionalProperties: false
+
+    # ───────────── ошибки 409 ─────────────
+    ServiceRefusalDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/ServiceRefusalCode' }
+        message: { type: string }
+        reasonCode:
+          allOf: [ { $ref: '#/components/schemas/NotAcceptingReason' } ]
+          nullable: true
+        quote:
+          allOf: [ { $ref: '#/components/schemas/ServiceQuoteDto' } ]
+          nullable: true
+          description: Только у PriceChanged.
+    ServiceOrderGuestConflictDto:
+      type: object
+      required: [code, message, order]
+      properties:
+        code: { $ref: '#/components/schemas/ServiceGuestConflictCode' }
+        message: { type: string }
+        order: { $ref: '#/components/schemas/PublicServiceOrderDto' }
+    StayBookingGuestConflictDto:
+      type: object
+      required: [code, message, booking]
+      properties:
+        code: { $ref: '#/components/schemas/StayGuestBookingConflictCode' }
+        message: { type: string }
+        booking: { $ref: '#/components/schemas/PublicStayBookingServicesPart' }
+    ServiceStaffConflictDto:
+      type: object
+      required: [code, message, session]
+      properties:
+        code: { $ref: '#/components/schemas/StaffConflictCode' }
+        message: { type: string }
+        session: { $ref: '#/components/schemas/StaffServiceSessionCardDto' }
+    StaysServiceConflictDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/StaysServiceConflictCode' }
+        message: { type: string }
+        conflictingRule:
+          allOf: [ { $ref: '#/components/schemas/PriceRuleDto' } ]
+          nullable: true
+        markers:
+          type: array
+          nullable: true
+          description: ReminderConfirmationRequired — что нашёл сервер (слова и числа).
+          items: { type: string }
+        noticeText:
+          type: string
+          nullable: true
+          description: ReminderConfirmationRequired — текст StayCheckInInfoOwnerNotice для диалога.
+    StayRefusalDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/StayRefusalCode' }
+        message: { type: string }
+        reasonCode:
+          allOf: [ { $ref: '#/components/schemas/NotAcceptingReason' } ]
+          nullable: true
+        quote:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: StayQuoteDto цикла 37 (только у PriceChanged).
+        serviceIndex:
+          type: integer
+          nullable: true
+          description: Индекс в services[] запроса — у ServiceSlotUnavailable и ServiceSelectionInvalid.
+    StaysConflictDto:
+      type: object
+      required: [code, message]
+      additionalProperties: true
+      properties:
+        code: { $ref: '#/components/schemas/StaysConflictCode' }
+        message: { type: string }
+
+    # ───────────── услуги анонимно ─────────────
+    PublicServiceSummaryDto:
+      type: object
+      required: [id, slug, name, url, minHours, canOrderWithoutStay, availableForHouseBookings]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        url:
+          type: string
+          description: Относительный путь /<companySlug>/uslugi/<serviceSlug>.
+        coverUrl: { type: string, nullable: true }
+        coverThumbUrl: { type: string, nullable: true }
+        priceFromRub:
+          type: integer
+          nullable: true
+          description: Минимальная цена часа.
+        minHours: { type: integer }
+        canOrderWithoutStay: { type: boolean }
+        availableForHouseBookings: { type: boolean }
+    ServicePhotoDto:
+      type: object
+      required: [id, url, thumbnailUrl, position]
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string }
+        thumbnailUrl: { type: string }
+        position: { type: integer }
+    PriceTableRowDto:
+      type: object
+      required: [label, priceRub]
+      properties:
+        label:
+          type: string
+          description: Пт 18:00 — 02:00 (ночь на сб).
+        priceRub: { type: integer }
+    PublicServiceStandaloneDto:
+      type: object
+      required: [ordering, holdMinutes]
+      properties:
+        ordering:
+          type: boolean
+          description: Компания принимает заказы без проживания.
+        prepayPercent: { type: integer, nullable: true }
+        cancellationPolicy:
+          allOf: [ { $ref: '#/components/schemas/StayServiceCancellationPolicy' } ]
+          nullable: true
+        cancellationBoundaryHours: { type: integer, nullable: true }
+        cancellationSummary: { type: string, nullable: true }
+        holdMinutes: { type: integer }
+        notOrderingText:
+          type: string
+          nullable: true
+          description: Можно добавить к брони дома.
+    PublicServiceCompanyDto:
+      type: object
+      required: [slug, name, url]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        phone: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true }
+        url: { type: string }
+    PublicServiceDto:
+      type: object
+      required: [id, slug, name, photos, minHours, maxHours, stepMinutes, priceTable, items, standalone, company, acceptingBookings, available, today, timeZoneId]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        photos:
+          type: array
+          items: { $ref: '#/components/schemas/ServicePhotoDto' }
+        minHours: { type: integer }
+        maxHours: { type: integer }
+        stepMinutes: { type: integer, enum: [30, 60] }
+        priceTable:
+          type: array
+          items: { $ref: '#/components/schemas/PriceTableRowDto' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ServiceItemPublicDto' }
+        bufferMinutes:
+          type: integer
+          nullable: true
+          description: Только если владелец включил показ времени на подготовку.
+        standalone: { $ref: '#/components/schemas/PublicServiceStandaloneDto' }
+        company: { $ref: '#/components/schemas/PublicServiceCompanyDto' }
+        provider: { $ref: '#/components/schemas/ProviderPublicDto' }
+        acceptingBookings: { type: boolean }
+        notAcceptingText: { type: string, nullable: true }
+        available: { type: boolean }
+        notAvailableText: { type: string, nullable: true }
+        today:
+          type: string
+          format: date
+          description: Текущий бизнес-день компании.
+        timeZoneId: { type: string }
+    AvailabilityDayDto:
+      type: object
+      required: [businessDate, label, hasStarts]
+      properties:
+        businessDate: { type: string, format: date }
+        label:
+          type: string
+          description: пт 15 янв
+        hasStarts: { type: boolean }
+    ServiceAvailabilityDto:
+      type: object
+      required: [serviceId, today, days]
+      properties:
+        serviceId: { type: string, format: uuid }
+        today: { type: string, format: date }
+        days:
+          type: array
+          items: { $ref: '#/components/schemas/AvailabilityDayDto' }
+    HoursOptionDto:
+      type: object
+      required: [hours, endLabel]
+      properties:
+        hours: { type: integer }
+        endLabel:
+          type: string
+          description: Окончание гостю с календарной датой при переходе через полночь (сб 16 янв, 01:00).
+    StartDto:
+      type: object
+      required: [startMinute, startUtc, label, maxHours, options]
+      properties:
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        startUtc: { type: string, format: date-time }
+        label:
+          type: string
+          description: 22:00 или 00:30 (ночь на сб).
+        maxHours: { type: integer }
+        options:
+          type: array
+          items: { $ref: '#/components/schemas/HoursOptionDto' }
+    ServiceStartsDto:
+      type: object
+      required: [serviceId, businessDate, dateLabel, minHours, maxHours, starts]
+      properties:
+        serviceId: { type: string, format: uuid }
+        businessDate: { type: string, format: date }
+        dateLabel: { type: string }
+        minHours: { type: integer }
+        maxHours: { type: integer }
+        starts:
+          type: array
+          items: { $ref: '#/components/schemas/StartDto' }
+        reason:
+          allOf: [ { $ref: '#/components/schemas/StartsReason' } ]
+          nullable: true
+        noStartsText:
+          type: string
+          nullable: true
+          description: На эту дату свободного времени нет.
+    PublicServiceQuoteInput:
+      type: object
+      additionalProperties: false
+      required: [businessDate, startMinute, hours, items]
+      properties:
+        businessDate: { type: string, format: date }
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        hours: { type: integer, minimum: 1, maximum: 12 }
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/ItemSelectionInput' }
+        houseId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Режим «к проживанию» (форма брони дома) — вместе с checkIn и checkOut.
+        checkIn: { type: string, format: date, nullable: true }
+        checkOut: { type: string, format: date, nullable: true }
+    ServiceQuoteDto:
+      type: object
+      required: [ok, problems, hourPrices, lines, serviceAmountRub, itemsAmountRub, totalRub, prepayRub, dueOnSiteRub, acceptingBookings]
+      properties:
+        ok: { type: boolean }
+        problems:
+          type: array
+          items: { $ref: '#/components/schemas/ProblemDto' }
+        time:
+          allOf: [ { $ref: '#/components/schemas/ServiceTimeDto' } ]
+          nullable: true
+        hourPrices:
+          type: array
+          items: { $ref: '#/components/schemas/HourPriceDto' }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/ServiceChargeLineDto' }
+        serviceAmountRub: { type: integer }
+        itemsAmountRub: { type: integer }
+        totalRub: { type: integer }
+        prepayPercent: { type: integer, nullable: true }
+        prepayRub: { type: integer }
+        dueOnSiteRub: { type: integer }
+        holdMinutes: { type: integer, nullable: true }
+        cancellationSummary: { type: string, nullable: true }
+        payOnSiteText:
+          type: string
+          nullable: true
+          description: Оплата на месте, в компании. Через сервис оплата не производится.
+        acceptingBookings: { type: boolean }
+        notAcceptingText: { type: string, nullable: true }
+    CreateServiceOrderInput:
+      type: object
+      additionalProperties: false
+      required: [businessDate, startMinute, hours, items, guestName, notifyByMessenger, expectedTotalRub, idempotencyKey]
+      properties:
+        businessDate: { type: string, format: date }
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        hours: { type: integer, minimum: 1, maximum: 12 }
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/ItemSelectionInput' }
+        guestName: { type: string, minLength: 1, maxLength: 100 }
+        guestPhone:
+          type: string
+          nullable: true
+          description: Обязателен для анонима; у вошедшего игнорируется.
+        comment: { type: string, nullable: true, maxLength: 500 }
+        notifyByMessenger:
+          type: boolean
+          description: Своя галочка StayMessengerConsent, по умолчанию false (Т39-08).
+        expectedTotalRub: { type: integer, minimum: 0 }
+        idempotencyKey: { type: string, format: uuid }
+        captchaToken: { type: string, nullable: true }
+    CreateServiceOrderResponse:
+      type: object
+      required: [token, orderUrl, order]
+      properties:
+        token: { type: string, minLength: 43 }
+        orderUrl:
+          type: string
+          description: Абсолютная ссылка https://dom.ezbook.ru/s/<token>.
+        order: { $ref: '#/components/schemas/PublicServiceOrderDto' }
+
+    # ───────────── заказ глазами гостя ─────────────
+    OrderServiceRefDto:
+      type: object
+      required: [name, url]
+      properties:
+        name: { type: string }
+        url: { type: string }
+        coverUrl: { type: string, nullable: true }
+    OrderCompanyRefDto:
+      type: object
+      required: [name, url]
+      properties:
+        name: { type: string }
+        phone: { type: string, nullable: true }
+        url: { type: string }
+        address: { type: string, nullable: true }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+    OrderCancellationDto:
+      type: object
+      required: [policy, summary, canCancel, refund]
+      properties:
+        policy: { $ref: '#/components/schemas/StayServiceCancellationPolicy' }
+        summary: { type: string }
+        canCancel: { type: boolean }
+        refund: { $ref: '#/components/schemas/ServiceRefundViewDto' }
+        cannotCancelText: { type: string, nullable: true }
+    WebPushInfoDto:
+      type: object
+      required: [available]
+      properties:
+        available: { type: boolean }
+        publicKey: { type: string, nullable: true }
+    OrderNotificationsDto:
+      type: object
+      required: [webPush, messengerSelected]
+      properties:
+        webPush: { $ref: '#/components/schemas/WebPushInfoDto' }
+        messengerSelected: { type: boolean }
+    PublicServiceOrderDto:
+      type: object
+      required: [status, displayStatus, statusText, serverTimeUtc, service, company, time, items, lines, hourPrices, serviceAmountRub, itemsAmountRub, totalRub, prepayRub, dueOnSiteRub, paymentProofs, proofs, cancellation, notifications, availableActions]
+      properties:
+        status: { $ref: '#/components/schemas/StayBookingStatus' }
+        displayStatus: { $ref: '#/components/schemas/StayDisplayStatus' }
+        statusText: { type: string }
+        serverTimeUtc: { type: string, format: date-time }
+        holdExpiresAtUtc: { type: string, format: date-time, nullable: true }
+        service: { $ref: '#/components/schemas/OrderServiceRefDto' }
+        company: { $ref: '#/components/schemas/OrderCompanyRefDto' }
+        provider: { $ref: '#/components/schemas/ProviderFullDto' }
+        time: { $ref: '#/components/schemas/ServiceTimeDto' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SessionItemDto' }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/ServiceChargeLineDto' }
+        hourPrices:
+          type: array
+          items: { $ref: '#/components/schemas/HourPriceDto' }
+        serviceAmountRub: { type: integer }
+        itemsAmountRub: { type: integer }
+        totalRub: { type: integer }
+        prepayPercent: { type: integer, nullable: true }
+        prepayRub: { type: integer }
+        dueOnSiteRub: { type: integer }
+        payment: { $ref: '#/components/schemas/PaymentInstructionsDto' }
+        paymentConfirmedAtUtc: { type: string, format: date-time, nullable: true }
+        paymentProofs:
+          type: array
+          items: { $ref: '#/components/schemas/PaymentProofDto' }
+        proofs: { $ref: '#/components/schemas/ProofRulesDto' }
+        cancellation: { $ref: '#/components/schemas/OrderCancellationDto' }
+        guestName: { type: string, nullable: true }
+        guestPhoneMasked: { type: string, nullable: true }
+        comment: { type: string, nullable: true }
+        statusReason: { type: string, nullable: true }
+        outcomeText: { type: string, nullable: true }
+        notifications: { $ref: '#/components/schemas/OrderNotificationsDto' }
+        availableActions:
+          type: array
+          items: { $ref: '#/components/schemas/ServiceGuestAction' }
+
+    # ───────────── услуги к проживанию (страница брони) ─────────────
+    BookingServiceOptionDto:
+      type: object
+      required: [id, name, url, minHours, dates]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        url: { type: string }
+        coverThumbUrl: { type: string, nullable: true }
+        priceFromRub: { type: integer, nullable: true }
+        minHours: { type: integer }
+        dates:
+          type: array
+          description: Бизнес-дни, где есть время внутри проживания.
+          items: { $ref: '#/components/schemas/AvailabilityDayDto' }
+    BookingServicesDto:
+      type: object
+      required: [canAdd, services]
+      properties:
+        canAdd: { type: boolean }
+        cannotAddText: { type: string, nullable: true }
+        hint:
+          type: string
+          nullable: true
+          description: Сеанс сохранится, если бронь будет оплачена (бронь Удержана).
+        services:
+          type: array
+          items: { $ref: '#/components/schemas/BookingServiceOptionDto' }
+    AddSessionInput:
+      type: object
+      additionalProperties: false
+      required: [serviceId, businessDate, startMinute, hours, items, expectedTotalRub, idempotencyKey]
+      properties:
+        serviceId: { type: string, format: uuid }
+        businessDate: { type: string, format: date }
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        hours: { type: integer, minimum: 1, maximum: 12 }
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/ItemSelectionInput' }
+        expectedTotalRub:
+          type: integer
+          minimum: 0
+          description: Итог сеанса, который видел гость.
+        idempotencyKey: { type: string, format: uuid }
+    PublicBookingSessionDto:
+      type: object
+      required: [id, serviceName, time, items, totalRub, state, stateText, canCancel, addedByStaff]
+      properties:
+        id: { type: string, format: uuid }
+        serviceName: { type: string }
+        serviceUrl: { type: string, nullable: true }
+        time: { $ref: '#/components/schemas/ServiceTimeDto' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SessionItemDto' }
+        totalRub: { type: integer }
+        state: { $ref: '#/components/schemas/StayServiceSessionState' }
+        stateText: { type: string }
+        canCancel: { type: boolean }
+        cannotCancelText: { type: string, nullable: true }
+        addedByStaff: { type: boolean }
+        addedByStaffText:
+          type: string
+          nullable: true
+          description: По вашей просьбе к брони добавлена услуга… Если вы этого не просили — отмените здесь, без последствий.
+        statusReason: { type: string, nullable: true }
+    ArrivalReminderSnapshotDto:
+      type: object
+      nullable: true
+      required: [text, sentAtUtc]
+      properties:
+        text:
+          type: string
+          description: Снимок текста на момент отправки, без строки ссылки.
+        sentAtUtc: { type: string, format: date-time }
+    BookingServicesBlockDto:
+      type: object
+      required: [canAdd]
+      properties:
+        canAdd: { type: boolean }
+        cannotAddText: { type: string, nullable: true }
+        hint: { type: string, nullable: true }
+    PublicStayBookingServicesPart:
+      type: object
+      description: PublicStayBookingDto цикла 37 + поля цикла 39 (остальные поля — как в цикле 37).
+      additionalProperties: true
+      required: [sessions, servicesBlock]
+      properties:
+        sessions:
+          type: array
+          items: { $ref: '#/components/schemas/PublicBookingSessionDto' }
+        servicesBlock: { $ref: '#/components/schemas/BookingServicesBlockDto' }
+        arrivalReminder: { $ref: '#/components/schemas/ArrivalReminderSnapshotDto' }
+
+    # ───────────── кабинет: услуги ─────────────
+    ServiceListItemDto:
+      type: object
+      required: [id, slug, name, isPublished, isArchived, position, publishProblems, hasSessions]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        isPublished: { type: boolean }
+        isArchived: { type: boolean }
+        position: { type: integer }
+        coverThumbUrl: { type: string, nullable: true }
+        publishProblems:
+          type: array
+          items: { $ref: '#/components/schemas/StaysServiceConflictCode' }
+        hasSessions: { type: boolean }
+    ServiceCreateInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+    ServiceSetupInput:
+      type: object
+      additionalProperties: false
+      required: [name, slug, minHours, maxHours, stepMinutes, bufferMinutes, showBufferToGuests, minLeadMinutes, cancellationPolicy, cancellationBoundaryHours, availableForHouseBookings]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        slug: { type: string, maxLength: 50 }
+        minHours: { type: integer, minimum: 1, maximum: 12 }
+        maxHours: { type: integer, minimum: 1, maximum: 12 }
+        stepMinutes: { type: integer, enum: [30, 60] }
+        bufferMinutes: { type: integer, minimum: 0, maximum: 240, multipleOf: 15 }
+        showBufferToGuests: { type: boolean }
+        minLeadMinutes: { type: integer, minimum: 0, maximum: 2880, multipleOf: 30 }
+        standalonePrepayPercent:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 100
+          description: null — без предоплаты.
+        cancellationPolicy: { $ref: '#/components/schemas/StayServiceCancellationPolicy' }
+        cancellationBoundaryHours: { type: integer, minimum: 3, maximum: 24 }
+        availableForHouseBookings: { type: boolean }
+    ServiceContentInput:
+      type: object
+      additionalProperties: false
+      properties:
+        description: { type: string, nullable: true, maxLength: 2000 }
+    BoundaryRangeDto:
+      type: object
+      required: [min, max]
+      properties:
+        min: { type: integer }
+        max: { type: integer }
+    ServiceManageDto:
+      type: object
+      required: [id, slug, name, minHours, maxHours, stepMinutes, bufferMinutes, showBufferToGuests, minLeadMinutes, cancellationPolicy, cancellationBoundaryHours, cancellationBoundaryRange, availableForHouseBookings, isPublished, isArchived, position, photos, publicUrl, publishProblems, hasSessions]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        minHours: { type: integer }
+        maxHours: { type: integer }
+        stepMinutes: { type: integer }
+        bufferMinutes: { type: integer }
+        showBufferToGuests: { type: boolean }
+        minLeadMinutes: { type: integer }
+        standalonePrepayPercent: { type: integer, nullable: true }
+        cancellationPolicy: { $ref: '#/components/schemas/StayServiceCancellationPolicy' }
+        cancellationBoundaryHours: { type: integer }
+        cancellationBoundaryRange: { $ref: '#/components/schemas/BoundaryRangeDto' }
+        availableForHouseBookings: { type: boolean }
+        isPublished: { type: boolean }
+        isArchived: { type: boolean }
+        position: { type: integer }
+        photos:
+          type: array
+          items: { $ref: '#/components/schemas/ServicePhotoDto' }
+        publicUrl: { type: string }
+        publishProblems:
+          type: array
+          items: { $ref: '#/components/schemas/StaysServiceConflictCode' }
+        hasSessions: { type: boolean }
+    PriceRuleDto:
+      type: object
+      required: [id, daysMask, fromHour, toHour, priceRub, label]
+      properties:
+        id: { type: string, format: uuid }
+        daysMask:
+          type: integer
+          minimum: 1
+          maximum: 127
+          description: Бит 0 = Пн … бит 6 = Вс (день недели бизнес-дня).
+        fromHour: { type: integer, minimum: 6, maximum: 29 }
+        toHour: { type: integer, minimum: 7, maximum: 30 }
+        priceRub: { type: integer }
+        label:
+          type: string
+          description: Пт 18:00 – 02:00 (след. дня)
+    PriceRuleInput:
+      type: object
+      additionalProperties: false
+      required: [daysMask, fromHour, toHour, priceRub]
+      properties:
+        daysMask: { type: integer, minimum: 1, maximum: 127 }
+        fromHour: { type: integer, minimum: 6, maximum: 29 }
+        toHour: { type: integer, minimum: 7, maximum: 30 }
+        priceRub: { type: integer, minimum: 1, maximum: 100000 }
+    PriceMatrixCellDto:
+      type: object
+      required: [hour, label, inWindowWithoutPrice]
+      properties:
+        hour:
+          type: integer
+          description: Час бизнес-дня 6…29.
+        label:
+          type: string
+          description: 01:00 (след. дня)
+        priceRub: { type: integer, nullable: true }
+        inWindowWithoutPrice:
+          type: boolean
+          description: Час попадает в окно шаблона, но цены нет — бронь невозможна.
+    PriceMatrixRowDto:
+      type: object
+      required: [dayOfWeek, label, cells]
+      properties:
+        dayOfWeek: { type: integer, minimum: 1, maximum: 7 }
+        label: { type: string }
+        cells:
+          type: array
+          items: { $ref: '#/components/schemas/PriceMatrixCellDto' }
+    PriceRulesDto:
+      type: object
+      required: [rules, matrix]
+      properties:
+        rules:
+          type: array
+          items: { $ref: '#/components/schemas/PriceRuleDto' }
+        matrix:
+          type: array
+          items: { $ref: '#/components/schemas/PriceMatrixRowDto' }
+    ServiceItemDto:
+      type: object
+      required: [id, name, priceRub, maxPerSession, isActive, position]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        priceRub: { type: integer }
+        maxPerSession: { type: integer }
+        isActive: { type: boolean }
+        position: { type: integer }
+    ServiceItemInput:
+      type: object
+      additionalProperties: false
+      required: [name, priceRub, maxPerSession, isActive]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        priceRub: { type: integer, minimum: 0, maximum: 100000 }
+        maxPerSession: { type: integer, minimum: 1, maximum: 50 }
+        isActive: { type: boolean }
+
+    # ───────────── кабинет: расписание ─────────────
+    WeeklyDayDto:
+      type: object
+      required: [dayOfWeek, label, windows]
+      properties:
+        dayOfWeek: { type: integer, minimum: 1, maximum: 7 }
+        label: { type: string }
+        windows:
+          type: array
+          items: { $ref: '#/components/schemas/WindowDto' }
+    WeeklyScheduleDto:
+      type: object
+      required: [days]
+      properties:
+        days:
+          type: array
+          items: { $ref: '#/components/schemas/WeeklyDayDto' }
+    WeeklyDayInput:
+      type: object
+      additionalProperties: false
+      required: [dayOfWeek, windows]
+      properties:
+        dayOfWeek: { type: integer, minimum: 1, maximum: 7 }
+        windows:
+          type: array
+          maxItems: 3
+          description: Пусто — закрыто.
+          items: { $ref: '#/components/schemas/WindowInput' }
+    WeeklyScheduleInput:
+      type: object
+      additionalProperties: false
+      required: [days]
+      properties:
+        days:
+          type: array
+          minItems: 7
+          maxItems: 7
+          items: { $ref: '#/components/schemas/WeeklyDayInput' }
+    OutsideSessionDto:
+      type: object
+      required: [sessionId, label]
+      properties:
+        sessionId: { type: string, format: uuid }
+        label: { type: string }
+        houseName: { type: string, nullable: true }
+    ScheduleSaveResultDto:
+      type: object
+      required: [outsideSessions]
+      properties:
+        weekly:
+          allOf: [ { $ref: '#/components/schemas/WeeklyScheduleDto' } ]
+          nullable: true
+        day:
+          allOf: [ { $ref: '#/components/schemas/ServiceMonthDayDto' } ]
+          nullable: true
+        outsideSessions:
+          type: array
+          items: { $ref: '#/components/schemas/OutsideSessionDto' }
+        warningText:
+          type: string
+          nullable: true
+          description: N сеансов вне нового расписания остаются в силе.
+    ServiceMonthDayDto:
+      type: object
+      required: [businessDate, source, windows]
+      properties:
+        businessDate: { type: string, format: date }
+        source: { $ref: '#/components/schemas/DateSource' }
+        windows:
+          type: array
+          items: { $ref: '#/components/schemas/WindowDto' }
+        comment: { type: string, nullable: true }
+        updatedByName: { type: string, nullable: true }
+        updatedAtUtc: { type: string, format: date-time, nullable: true }
+    ServiceMonthDto:
+      type: object
+      required: [serviceId, month, today, days]
+      properties:
+        serviceId: { type: string, format: uuid }
+        month: { type: string, pattern: '^\d{4}-\d{2}$' }
+        today: { type: string, format: date }
+        days:
+          type: array
+          items: { $ref: '#/components/schemas/ServiceMonthDayDto' }
+    DateOverrideInput:
+      type: object
+      additionalProperties: false
+      required: [closed, windows]
+      properties:
+        closed: { type: boolean }
+        windows:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/WindowInput' }
+        comment: { type: string, nullable: true, maxLength: 300 }
+
+    # ───────────── кабинет: сеансы ─────────────
+    ServiceDayAxisDto:
+      type: object
+      required: [fromMinute, toMinute, midnightMinute]
+      properties:
+        fromMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        toMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        midnightMinute: { type: integer, enum: [1440] }
+    ServiceDayBarDto:
+      type: object
+      required: [kind, startMinute, endMinute, label, needsAction]
+      properties:
+        kind: { $ref: '#/components/schemas/ServiceDayBarKind' }
+        sessionId: { type: string, format: uuid, nullable: true }
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        endMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        label:
+          type: string
+          description: Дом, «без проживания», «подготовка» или «подготовка после вчерашнего сеанса».
+        state: { type: string, nullable: true }
+        stateText: { type: string, nullable: true }
+        needsAction: { type: boolean }
+    ServiceDayServiceDto:
+      type: object
+      required: [id, name, isPublished, closed, windows, bars]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        isPublished: { type: boolean }
+        closed: { type: boolean }
+        windows:
+          type: array
+          items: { $ref: '#/components/schemas/WindowDto' }
+        bars:
+          type: array
+          items: { $ref: '#/components/schemas/ServiceDayBarDto' }
+    ServiceDayDto:
+      type: object
+      required: [date, label, today, axis, services]
+      properties:
+        date: { type: string, format: date }
+        label: { type: string }
+        today: { type: string, format: date }
+        axis: { $ref: '#/components/schemas/ServiceDayAxisDto' }
+        services:
+          type: array
+          items: { $ref: '#/components/schemas/ServiceDayServiceDto' }
+    StaffServiceSessionListItemDto:
+      type: object
+      required: [id, kind, serviceId, serviceName, time, statusText, totalRub, prepayRub, createdAtUtc]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: '#/components/schemas/ServiceSessionKind' }
+        serviceId: { type: string, format: uuid }
+        serviceName: { type: string }
+        time: { $ref: '#/components/schemas/ServiceTimeDto' }
+        houseName: { type: string, nullable: true }
+        bookingId: { type: string, format: uuid, nullable: true }
+        guestName: { type: string, nullable: true }
+        guestPhone: { type: string, nullable: true }
+        orderStatus:
+          allOf: [ { $ref: '#/components/schemas/StayBookingStatus' } ]
+          nullable: true
+        state: { $ref: '#/components/schemas/StayServiceSessionState' }
+        statusText: { type: string }
+        totalRub: { type: integer }
+        prepayRub: { type: integer }
+        holdExpiresAtUtc: { type: string, format: date-time, nullable: true }
+        firstProofUploadedAtUtc: { type: string, format: date-time, nullable: true }
+        createdAtUtc: { type: string, format: date-time }
+    StaffServiceSessionPage:
+      type: object
+      required: [items, totalCount, page, pageSize]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/StaffServiceSessionListItemDto' }
+        totalCount: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+    SessionBookingRefDto:
+      type: object
+      nullable: true
+      required: [id, houseName, statusText]
+      properties:
+        id: { type: string, format: uuid }
+        houseName: { type: string }
+        statusText: { type: string }
+    SessionAddedByDto:
+      type: object
+      required: [kind, text]
+      properties:
+        kind: { type: string, enum: [Guest, Customer, Staff] }
+        name: { type: string, nullable: true }
+        requestBasis:
+          allOf: [ { $ref: '#/components/schemas/StayServiceRequestBasis' } ]
+          nullable: true
+        text:
+          type: string
+          description: Добавил гость по ссылке / Добавила Мария по просьбе гостя (телефон).
+    StaffServiceSessionCardDto:
+      type: object
+      required: [id, version, kind, serviceId, serviceName, time, hourPrices, items, lines, serviceAmountRub, itemsAmountRub, totalRub, prepayRub, dueOnSiteRub, bufferMinutes, preparedUntilLabel, state, statusText, addedBy, paymentProofs, isManual, availableActions, events]
+      properties:
+        id: { type: string, format: uuid }
+        version:
+          type: integer
+          description: Версия для expectedVersion — заказа (Standalone) или сеанса (InBooking).
+        kind: { $ref: '#/components/schemas/ServiceSessionKind' }
+        serviceId: { type: string, format: uuid }
+        serviceName: { type: string }
+        time: { $ref: '#/components/schemas/ServiceTimeDto' }
+        hourPrices:
+          type: array
+          items: { $ref: '#/components/schemas/HourPriceDto' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SessionItemDto' }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/ServiceChargeLineDto' }
+        serviceAmountRub: { type: integer }
+        itemsAmountRub: { type: integer }
+        totalRub: { type: integer }
+        prepayPercent: { type: integer, nullable: true }
+        prepayRub: { type: integer }
+        dueOnSiteRub: { type: integer }
+        bufferMinutes: { type: integer }
+        preparedUntilLabel:
+          type: string
+          description: Конец + зазор, формат персонала (01:30 (сб)).
+        state: { $ref: '#/components/schemas/StayServiceSessionState' }
+        orderStatus:
+          allOf: [ { $ref: '#/components/schemas/StayBookingStatus' } ]
+          nullable: true
+        displayStatus:
+          allOf: [ { $ref: '#/components/schemas/StayDisplayStatus' } ]
+          nullable: true
+        statusText: { type: string }
+        holdExpiresAtUtc: { type: string, format: date-time, nullable: true }
+        booking: { $ref: '#/components/schemas/SessionBookingRefDto' }
+        guestName: { type: string, nullable: true }
+        guestPhone: { type: string, nullable: true }
+        comment: { type: string, nullable: true }
+        addedBy: { $ref: '#/components/schemas/SessionAddedByDto' }
+        cancellationPolicy:
+          allOf: [ { $ref: '#/components/schemas/StayServiceCancellationPolicy' } ]
+          nullable: true
+        ownerCancelRefundText: { type: string, nullable: true }
+        paymentProofs:
+          type: array
+          items: { $ref: '#/components/schemas/PaymentProofDto' }
+        paymentConfirmed: { $ref: '#/components/schemas/PaymentConfirmedDto' }
+        paymentProofsPurgedAtUtc: { type: string, format: date-time, nullable: true }
+        statusReason: { type: string, nullable: true }
+        isManual: { type: boolean }
+        availableActions:
+          type: array
+          items: { $ref: '#/components/schemas/ServiceStaffAction' }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/JournalEventDto' }
+    StaffServiceQuoteInput:
+      type: object
+      additionalProperties: false
+      required: [serviceId, businessDate, startMinute, hours, items]
+      properties:
+        serviceId: { type: string, format: uuid }
+        businessDate: { type: string, format: date }
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        hours: { type: integer, minimum: 1, maximum: 12 }
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/ItemSelectionInput' }
+        bookingId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Сеанс к этой брони (в пределах проживания).
+    StaffAddSessionInput:
+      type: object
+      additionalProperties: false
+      required: [serviceId, businessDate, startMinute, hours, items, requestBasis, idempotencyKey]
+      properties:
+        serviceId: { type: string, format: uuid }
+        businessDate: { type: string, format: date }
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        hours: { type: integer, minimum: 1, maximum: 12 }
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/ItemSelectionInput' }
+        requestBasis: { $ref: '#/components/schemas/StayServiceRequestBasis' }
+        idempotencyKey: { type: string, format: uuid }
+    ManualServiceOrderInput:
+      type: object
+      additionalProperties: false
+      required: [serviceId, businessDate, startMinute, hours, items, guestName, requestBasis, idempotencyKey]
+      properties:
+        serviceId: { type: string, format: uuid }
+        businessDate: { type: string, format: date }
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        hours: { type: integer, minimum: 1, maximum: 12 }
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/ItemSelectionInput' }
+        guestName: { type: string, minLength: 1, maxLength: 100 }
+        guestPhone: { type: string, nullable: true }
+        comment: { type: string, nullable: true, maxLength: 500 }
+        requestBasis: { $ref: '#/components/schemas/StayServiceRequestBasis' }
+        idempotencyKey: { type: string, format: uuid }
+    StaffBookingSessionDto:
+      type: object
+      required: [id, version, serviceName, time, items, totalRub, state, stateText, addedByText, canCancel]
+      properties:
+        id: { type: string, format: uuid }
+        version: { type: integer }
+        serviceName: { type: string }
+        time: { $ref: '#/components/schemas/ServiceTimeDto' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SessionItemDto' }
+        totalRub: { type: integer }
+        state: { $ref: '#/components/schemas/StayServiceSessionState' }
+        stateText: { type: string }
+        addedByText: { type: string }
+        canCancel: { type: boolean }
+        statusReason: { type: string, nullable: true }
+    StaffStayBookingCardServicesPart:
+      type: object
+      description: StaffStayBookingCardDto цикла 37 + поля цикла 39; availableActions дополнен значением AddSession.
+      additionalProperties: true
+      required: [version, sessions, availableActions]
+      properties:
+        version: { type: integer }
+        sessions:
+          type: array
+          items: { $ref: '#/components/schemas/StaffBookingSessionDto' }
+        availableActions:
+          type: array
+          items: { type: string, enum: [ConfirmPayment, RejectPayment, Cancel, AddSession] }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/StayChargeLinePart' }
+    StayChargeLinePart:
+      type: object
+      additionalProperties: true
+      required: [kind, label, amountRub, prepayEligible]
+      properties:
+        kind: { $ref: '#/components/schemas/StayChargeKind' }
+        label: { type: string }
+        amountRub: { type: integer }
+        prepayEligible: { type: boolean }
+
+    # ───────────── напоминание накануне ─────────────
+    ReminderPlaceholderDto:
+      type: object
+      required: [token, description, inMessenger, onPage, inPush]
+      properties:
+        token:
+          type: string
+          description: '{Компания}'
+        description: { type: string }
+        inMessenger: { type: boolean }
+        onPage: { type: boolean }
+        inPush: { type: boolean }
+    ReminderLimitsDto:
+      type: object
+      required: [templateMaxLength, messengerMaxLength, pageMaxLength, pushMaxLength]
+      properties:
+        templateMaxLength: { type: integer, enum: [700] }
+        messengerMaxLength: { type: integer, enum: [1000] }
+        pageMaxLength: { type: integer, enum: [1000] }
+        pushMaxLength: { type: integer, enum: [180] }
+    NoticeRefDto:
+      type: object
+      required: [key, version]
+      properties:
+        key:
+          type: string
+          description: Ключ LegalTextKey (текст — /api/legal/texts/<key> или запасной на фронте).
+        version:
+          type: string
+          description: Версия манифеста или fallback:<sha256>.
+    ArrivalReminderSettingsDto:
+      type: object
+      required: [enabled, time, isDefault, effectiveTemplate, defaultTemplate, pushTextEnabled, placeholders, limits, ownerNotice, pushNotice, warnings]
+      properties:
+        enabled:
+          type: boolean
+          description: Только чтение; переключатель — в StaysSettingsDto.arrivalReminderEnabled.
+        time: { $ref: '#/components/schemas/TimeOfDay' }
+        template:
+          type: string
+          nullable: true
+          description: null — текст по умолчанию.
+        isDefault: { type: boolean }
+        effectiveTemplate: { type: string }
+        defaultTemplate: { type: string }
+        pushTextEnabled: { type: boolean }
+        placeholders:
+          type: array
+          items: { $ref: '#/components/schemas/ReminderPlaceholderDto' }
+        limits: { $ref: '#/components/schemas/ReminderLimitsDto' }
+        ownerNotice: { $ref: '#/components/schemas/NoticeRefDto' }
+        pushNotice: { $ref: '#/components/schemas/NoticeRefDto' }
+        warnings:
+          type: array
+          items: { $ref: '#/components/schemas/ReminderWarning' }
+    ArrivalReminderInput:
+      type: object
+      additionalProperties: false
+      required: [time, pushTextEnabled, confirmCodeMarkers, ownerNoticeVersion]
+      properties:
+        time: { $ref: '#/components/schemas/TimeOfDay' }
+        template:
+          type: string
+          nullable: true
+          maxLength: 700
+          description: null или текст, равный шаблону по умолчанию, — текст по умолчанию.
+        pushTextEnabled: { type: boolean }
+        confirmCodeMarkers:
+          type: boolean
+          description: true — владелец подтвердил диалог о кодах доступа (повтор после 409 ReminderConfirmationRequired).
+        ownerNoticeVersion: { type: string, maxLength: 80 }
+        pushNoticeVersion:
+          type: string
+          nullable: true
+          maxLength: 80
+          description: Обязательна при включении push.
+    ArrivalReminderPreviewInput:
+      type: object
+      additionalProperties: false
+      required: [pushTextEnabled]
+      properties:
+        template: { type: string, nullable: true, maxLength: 2000 }
+        pushTextEnabled: { type: boolean }
+        bookingId:
+          type: string
+          format: uuid
+          nullable: true
+          description: P1 — ближайшая реальная бронь компании вместо примера.
+    PreviewTextDto:
+      type: object
+      required: [text, length]
+      properties:
+        text: { type: string }
+        length: { type: integer }
+    DroppedLineDto:
+      type: object
+      required: [line, text, reason]
+      properties:
+        line: { type: integer, minimum: 1 }
+        text: { type: string }
+        reason: { $ref: '#/components/schemas/ReminderDropReason' }
+    PushPreviewDto:
+      type: object
+      required: [text, length, usesFixedText, dropped]
+      properties:
+        text: { type: string }
+        length: { type: integer }
+        usesFixedText: { type: boolean }
+        dropped:
+          type: array
+          items: { $ref: '#/components/schemas/DroppedLineDto' }
+    ReminderErrorDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/ReminderErrorCode' }
+        message: { type: string }
+    ArrivalReminderPreviewDto:
+      type: object
+      required: [messenger, page, push, warnings, errors, confirmationRequired, markers]
+      properties:
+        messenger: { $ref: '#/components/schemas/PreviewTextDto' }
+        page: { $ref: '#/components/schemas/PreviewTextDto' }
+        push: { $ref: '#/components/schemas/PushPreviewDto' }
+        warnings:
+          type: array
+          items: { $ref: '#/components/schemas/ReminderWarning' }
+        errors:
+          type: array
+          items: { $ref: '#/components/schemas/ReminderErrorDto' }
+        confirmationRequired: { type: boolean }
+        markers:
+          type: array
+          items: { type: string }
+    ArrivalReminderChangeDto:
+      type: object
+      required: [changedAtUtc, changedByName, previousTime, newTime, previousPushText, newPushText, codeMarkersConfirmed]
+      properties:
+        changedAtUtc: { type: string, format: date-time }
+        changedByName: { type: string }
+        previousTime: { $ref: '#/components/schemas/TimeOfDay' }
+        newTime: { $ref: '#/components/schemas/TimeOfDay' }
+        previousTemplate: { type: string, nullable: true }
+        newTemplate: { type: string, nullable: true }
+        previousPushText: { type: boolean }
+        newPushText: { type: boolean }
+        codeMarkersConfirmed: { type: boolean }
+        codeMarkersHit: { type: string, nullable: true }
+
+    # ───────────── изменённые DTO цикла 37 (частичные) ─────────────
+    PublicStaysCompanyServicesPart:
+      type: object
+      description: PublicStaysCompanyDto цикла 37 + поля цикла 39.
+      additionalProperties: true
+      required: [services, acceptsServiceOrdersWithoutStay]
+      properties:
+        services:
+          type: array
+          items: { $ref: '#/components/schemas/PublicServiceSummaryDto' }
+        acceptsServiceOrdersWithoutStay: { type: boolean }
+    ServiceLinkDto:
+      type: object
+      required: [name, url]
+      properties:
+        name: { type: string }
+        url: { type: string }
+    PublicHouseServicesPart:
+      type: object
+      description: PublicHouseDto цикла 37 + строка «К проживанию можно добавить».
+      additionalProperties: true
+      required: [servicesForStay]
+      properties:
+        servicesForStay:
+          type: array
+          items: { $ref: '#/components/schemas/ServiceLinkDto' }
+    StayServiceSelectionInput:
+      type: object
+      additionalProperties: false
+      required: [serviceId, businessDate, startMinute, hours, items]
+      properties:
+        serviceId: { type: string, format: uuid }
+        businessDate: { type: string, format: date }
+        startMinute: { $ref: '#/components/schemas/MinuteOfBusinessDay' }
+        hours: { type: integer, minimum: 1, maximum: 12 }
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/ItemSelectionInput' }
+    StayQuoteInput:
+      type: object
+      additionalProperties: false
+      required: [checkIn, checkOut, adults, children, dogs, needCot]
+      properties:
+        checkIn: { type: string, format: date }
+        checkOut: { type: string, format: date }
+        adults: { type: integer, minimum: 1, maximum: 30 }
+        children: { type: integer, minimum: 0, maximum: 30 }
+        dogs: { type: integer, minimum: 0, maximum: 20 }
+        needCot: { type: boolean }
+        services:
+          type: array
+          maxItems: 3
+          description: Цикл 39 (US-39-10, P1). По умолчанию пусто — ничего не выбрано.
+          items: { $ref: '#/components/schemas/StayServiceSelectionInput' }
+    StayQuoteServiceDto:
+      type: object
+      required: [index, serviceId, ok, quote]
+      properties:
+        index: { type: integer }
+        serviceId: { type: string, format: uuid }
+        ok: { type: boolean }
+        quote: { $ref: '#/components/schemas/ServiceQuoteDto' }
+    StayQuoteServicesPart:
+      type: object
+      description: StayQuoteDto цикла 37 + services[]; totalRub и dueAtCheckInRub включают услуги, prepayRub — нет.
+      additionalProperties: true
+      required: [services, totalRub, prepayRub, dueAtCheckInRub]
+      properties:
+        services:
+          type: array
+          items: { $ref: '#/components/schemas/StayQuoteServiceDto' }
+        totalRub: { type: integer }
+        prepayRub: { type: integer }
+        dueAtCheckInRub: { type: integer }
+    CreateStayBookingInput:
+      type: object
+      additionalProperties: false
+      required: [checkIn, checkOut, adults, children, dogs, needCot, guestName, notifyByMessenger, expectedTotalRub, idempotencyKey]
+      properties:
+        checkIn: { type: string, format: date }
+        checkOut: { type: string, format: date }
+        adults: { type: integer, minimum: 1, maximum: 30 }
+        children: { type: integer, minimum: 0, maximum: 30 }
+        dogs: { type: integer, minimum: 0, maximum: 20 }
+        needCot: { type: boolean }
+        guestName: { type: string, minLength: 1, maxLength: 100 }
+        guestPhone: { type: string, nullable: true }
+        arrivalTime:
+          allOf: [ { $ref: '#/components/schemas/TimeOfDay' } ]
+          nullable: true
+        comment: { type: string, maxLength: 500, nullable: true }
+        notifyByMessenger: { type: boolean }
+        expectedTotalRub:
+          type: integer
+          minimum: 0
+          description: Итог, включая услуги.
+        idempotencyKey: { type: string, format: uuid }
+        captchaToken: { type: string, nullable: true }
+        services:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/StayServiceSelectionInput' }
+    CreateStayBookingServicesResponse:
+      type: object
+      required: [token, bookingUrl, booking]
+      properties:
+        token: { type: string, minLength: 43 }
+        bookingUrl: { type: string }
+        booking: { $ref: '#/components/schemas/PublicStayBookingServicesPart' }
+    BoardServiceDto:
+      type: object
+      required: [id, name, isPublished, isArchived]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        isPublished: { type: boolean }
+        isArchived: { type: boolean }
+    BoardServiceCellDto:
+      type: object
+      required: [serviceId, businessDate, count, firstStartLabel, needsAction]
+      properties:
+        serviceId: { type: string, format: uuid }
+        businessDate: { type: string, format: date }
+        count: { type: integer, minimum: 1 }
+        firstStartLabel:
+          type: string
+          description: с 16:00
+        crossesMidnightLabel:
+          type: string
+          nullable: true
+          description: до 01:00
+        needsAction: { type: boolean }
+    StaysBoardServicesPart:
+      type: object
+      description: StaysBoardDto цикла 37 + услуги (при changed false массивов нет).
+      additionalProperties: true
+      required: [changed]
+      properties:
+        changed: { type: boolean }
+        services:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/BoardServiceDto' }
+        serviceCells:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/BoardServiceCellDto' }
+        awaitingPaymentCount:
+          type: integer
+          nullable: true
+          description: Брони и заказы услуг в статусе AwaitingPaymentCheck.
+    ScheduleItemDto:
+      type: object
+      required: [name, quantity]
+      properties:
+        name: { type: string }
+        quantity: { type: integer }
+    ScheduleSessionDto:
+      type: object
+      description: Без телефона, сумм, файлов и статуса оплаты (только paymentUnconfirmed). comment = null, если скрыт от горничной.
+      additionalProperties: false
+      required: [sessionId, serviceName, timeLabel, preparedUntilLabel, items, paymentUnconfirmed]
+      properties:
+        sessionId: { type: string, format: uuid }
+        serviceName: { type: string }
+        timeLabel:
+          type: string
+          description: 22:00 – 01:00 (сб)
+        preparedUntilLabel:
+          type: string
+          description: 01:30 (сб)
+        houseName:
+          type: string
+          nullable: true
+          description: null — без проживания.
+        guestName: { type: string, nullable: true }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ScheduleItemDto' }
+        comment: { type: string, nullable: true }
+        paymentUnconfirmed: { type: boolean }
+    ScheduleDayServicesPart:
+      type: object
+      additionalProperties: true
+      required: [date, sessions]
+      properties:
+        date: { type: string, format: date }
+        sessions:
+          type: array
+          items: { $ref: '#/components/schemas/ScheduleSessionDto' }
+    StaysScheduleServicesPart:
+      type: object
+      description: StaysScheduleDto цикла 37; в каждый день добавлен sessions[] (на бизнес-дне старта).
+      additionalProperties: true
+      required: [days]
+      properties:
+        days:
+          type: array
+          items: { $ref: '#/components/schemas/ScheduleDayServicesPart' }
+    StaysSettingsDto:
+      type: object
+      description: StaysSettingsDto цикла 37 + acceptServiceOrdersWithoutStay (в PUT null или отсутствие — не менять).
+      additionalProperties: false
+      required: [checkInTime, checkOutTime, minNights, maxNights, horizonDays, allowGapFill, allowSameDayCheckIn, holdMinutes, prepayPercent, cancellationPolicy, dogFeeRub, cotFeeRub, checkInInfoSendTime, checkInInfoSendFullText, arrivalReminderEnabled, housekeeperSeesGuestComment, showInCatalog]
+      properties:
+        checkInTime: { $ref: '#/components/schemas/TimeOfDay' }
+        checkOutTime: { $ref: '#/components/schemas/TimeOfDay' }
+        minNights: { type: integer, minimum: 1, maximum: 30 }
+        maxNights: { type: integer, minimum: 1, maximum: 90 }
+        horizonDays: { type: integer, minimum: 30, maximum: 730 }
+        allowGapFill: { type: boolean }
+        allowSameDayCheckIn: { type: boolean }
+        holdMinutes: { type: integer, minimum: 10, maximum: 180 }
+        prepayPercent: { type: integer, minimum: 0, maximum: 100 }
+        cancellationPolicy: { $ref: '#/components/schemas/StayCancellationPolicy' }
+        dogFeeRub: { type: integer, minimum: 0, maximum: 100000 }
+        cotFeeRub: { type: integer, minimum: 0, maximum: 100000 }
+        checkInInfoSendTime: { $ref: '#/components/schemas/TimeOfDay' }
+        checkInInfoText: { type: string, nullable: true, maxLength: 2000 }
+        checkInInfoSendFullText: { type: boolean }
+        arrivalReminderEnabled: { type: boolean }
+        housekeeperSeesGuestComment: { type: boolean }
+        showInCatalog: { type: boolean }
+        acceptServiceOrdersWithoutStay: { type: boolean, nullable: true }
+    StaysCompanyManageServicesPart:
+      type: object
+      description: StaysCompanyManageDto цикла 37; settings дополнен acceptServiceOrdersWithoutStay, myPermissions — новыми правами.
+      additionalProperties: true
+      required: [myPermissions, gate]
+      properties:
+        myPermissions:
+          type: array
+          items: { $ref: '#/components/schemas/StaysPermission' }
+        settings:
+          allOf: [ { $ref: '#/components/schemas/StaysSettingsDto' } ]
+          nullable: true
+        gate: { $ref: '#/components/schemas/GateDto' }
+        awaitingPaymentCount: { type: integer, nullable: true }
+
+paths:
+  # ═════════════ изменённые маршруты цикла 37 ═════════════
+  /api/stays/public/companies/{slug}:
+    get:
+      tags: [shared-changed]
+      operationId: staysPublicCompanyCycle39
+      summary: Страница компании — добавлен блок услуг.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/Slug' }
+        - { $ref: '#/components/parameters/StayCheckInQuery' }
+        - { $ref: '#/components/parameters/StayCheckOutQuery' }
+      responses:
+        '200':
+          description: Компания.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicStaysCompanyServicesPart' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/public/companies/{slug}/houses/{houseSlug}:
+    get:
+      tags: [shared-changed]
+      operationId: staysPublicHouseCycle39
+      summary: Страница дома — добавлены услуги к проживанию.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/Slug' }
+        - { $ref: '#/components/parameters/HouseSlug' }
+      responses:
+        '200':
+          description: Дом.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicHouseServicesPart' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/public/houses/{houseId}/quote:
+    post:
+      tags: [shared-changed]
+      operationId: staysQuoteCycle39
+      summary: Расчёт брони дома — можно передать до трёх сеансов услуг.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StayQuoteInput' }
+      responses:
+        '200':
+          description: Расчёт (всегда 200, ничего не резервирует).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StayQuoteServicesPart' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/public/houses/{houseId}/bookings:
+    post:
+      tags: [shared-changed]
+      operationId: staysCreateBookingCycle39
+      summary: Создание брони дома — вместе с сеансами услуг одной операцией.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/HouseId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateStayBookingInput' }
+      responses:
+        '200':
+          description: Повтор с тем же ключом — существующая бронь.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateStayBookingServicesResponse' }
+        '201':
+          description: Бронь и её сеансы созданы.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateStayBookingServicesResponse' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StayRefusal' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/bookings/public/{token}:
+    get:
+      tags: [shared-changed]
+      operationId: stayBookingPublicCycle39
+      summary: Страница брони — сеансы, блок услуг, снимок напоминания.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/BookingToken' }
+      responses:
+        '200':
+          description: Бронь.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicStayBookingServicesPart' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/companies/{companyId}:
+    get:
+      tags: [shared-changed]
+      operationId: staysCompanyCycle39
+      summary: Карточка компании в кабинете — новые права и настройка заказов без проживания.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      responses:
+        '200':
+          description: Компания.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysCompanyManageServicesPart' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/settings:
+    put:
+      tags: [shared-changed]
+      operationId: staysUpdateSettingsCycle39
+      summary: Настройки компании — добавлена настройка «Принимать заказы услуг без проживания».
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StaysSettingsDto' }
+      responses:
+        '200':
+          description: Компания.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysCompanyManageServicesPart' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysConflict' }
+
+  /api/stays/companies/{companyId}/board:
+    get:
+      tags: [shared-changed]
+      operationId: staysBoardCycle39
+      summary: Шахматка — добавлена группа «Услуги».
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: days
+          in: query
+          required: false
+          schema: { type: integer, minimum: 7, maximum: 62, default: 30 }
+        - name: sinceRevision
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Шахматка (или changed false).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysBoardServicesPart' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/companies/{companyId}/schedule:
+    get:
+      tags: [shared-changed]
+      operationId: staysScheduleCycle39
+      summary: График — добавлены сеансы услуг.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: days
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 15, default: 15 }
+      responses:
+        '200':
+          description: График.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaysScheduleServicesPart' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/bookings/{bookingId}:
+    get:
+      tags: [shared-changed]
+      operationId: staysBookingCardCycle39
+      summary: Карточка брони — сеансы и действие AddSession.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/BookingId' }
+      responses:
+        '200':
+          description: Карточка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffStayBookingCardServicesPart' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ═════════════ услуги анонимно ═════════════
+  /api/stays/public/companies/{slug}/services/{serviceSlug}:
+    get:
+      tags: [stays-services-public]
+      operationId: staysPublicService
+      summary: Страница услуги.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/Slug' }
+        - { $ref: '#/components/parameters/ServiceSlug' }
+      responses:
+        '200':
+          description: Услуга.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicServiceDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/public/services/{serviceId}/availability:
+    get:
+      tags: [stays-services-public]
+      operationId: staysServiceAvailability
+      summary: Даты со свободным временем (до 31 бизнес-дня).
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/ServiceId' }
+        - name: from
+          in: query
+          required: false
+          description: По умолчанию — текущий бизнес-день.
+          schema: { type: string, format: date }
+        - name: days
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 31, default: 14 }
+        - { $ref: '#/components/parameters/StayHouseQuery' }
+        - { $ref: '#/components/parameters/StayCheckInQuery' }
+        - { $ref: '#/components/parameters/StayCheckOutQuery' }
+      responses:
+        '200':
+          description: Календарь дат.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceAvailabilityDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/public/services/{serviceId}/starts:
+    get:
+      tags: [stays-services-public]
+      operationId: staysServiceStarts
+      summary: Доступные старты на дату и максимум часов для каждого.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/ServiceId' }
+        - { $ref: '#/components/parameters/DateQuery' }
+        - { $ref: '#/components/parameters/StayHouseQuery' }
+        - { $ref: '#/components/parameters/StayCheckInQuery' }
+        - { $ref: '#/components/parameters/StayCheckOutQuery' }
+      responses:
+        '200':
+          description: Старты.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceStartsDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/public/services/{serviceId}/quote:
+    post:
+      tags: [stays-services-public]
+      operationId: staysServiceQuote
+      summary: Расчёт сеанса (всегда 200, ничего не резервирует).
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublicServiceQuoteInput' }
+      responses:
+        '200':
+          description: Расчёт.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceQuoteDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/public/services/{serviceId}/orders:
+    post:
+      tags: [stays-services-public]
+      operationId: staysCreateServiceOrder
+      summary: Заказ услуги без проживания.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateServiceOrderInput' }
+      responses:
+        '200':
+          description: Повтор с тем же ключом — существующий заказ.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateServiceOrderResponse' }
+        '201':
+          description: Заказ создан (Held при предоплате, иначе Confirmed).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateServiceOrderResponse' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ServiceRefusal' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ═════════════ заказ по ссылке ═════════════
+  /api/stays/service-orders/public/{token}:
+    get:
+      tags: [stays-service-orders-public]
+      operationId: staysServiceOrderPublic
+      summary: Страница отдельного сеанса.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/OrderToken' }
+      responses:
+        '200':
+          description: Заказ.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicServiceOrderDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/service-orders/public/{token}/payment-proofs:
+    post:
+      tags: [stays-service-orders-public]
+      operationId: staysServiceOrderAttachProof
+      summary: Приложить подтверждение оплаты.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/OrderToken' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Принято; первый файл переводит Held в AwaitingPaymentCheck.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicServiceOrderDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ServiceGuestConflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/service-orders/public/{token}/payment-proofs/{proofId}:
+    get:
+      tags: [stays-service-orders-public]
+      operationId: staysServiceOrderProofFile
+      summary: Файл подтверждения оплаты этого заказа.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/OrderToken' }
+        - { $ref: '#/components/parameters/ProofId' }
+      responses:
+        '200': { $ref: '#/components/responses/PaymentProofFile' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/service-orders/public/{token}/cancel:
+    post:
+      tags: [stays-service-orders-public]
+      operationId: staysServiceOrderCancel
+      summary: Отмена заказа гостем до начала сеанса.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/OrderToken' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmptyInput' }
+      responses:
+        '200':
+          description: Отменён.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicServiceOrderDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ServiceGuestConflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/service-orders/public/{token}/push-subscription:
+    post:
+      tags: [stays-service-orders-public]
+      operationId: staysServiceOrderPushSubscribe
+      summary: Push гостю со страницы заказа.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/OrderToken' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PushSubscriptionInput' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/PlainTextError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/service-orders/public/{token}/push-subscription/remove:
+    post:
+      tags: [stays-service-orders-public]
+      operationId: staysServiceOrderPushUnsubscribe
+      summary: Отключить push заказа (идемпотентно).
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/OrderToken' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PushSubscriptionRemoveInput' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ═════════════ услуги к проживанию по ссылке брони ═════════════
+  /api/stays/bookings/public/{token}/services:
+    get:
+      tags: [stays-booking-services]
+      operationId: stayBookingServices
+      summary: Услуги, которые можно добавить к брони, и даты со временем внутри проживания.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/BookingToken' }
+      responses:
+        '200':
+          description: Услуги.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookingServicesDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/bookings/public/{token}/services/{serviceId}/starts:
+    get:
+      tags: [stays-booking-services]
+      operationId: stayBookingServiceStarts
+      summary: Старты услуги на дату в пределах проживания.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/BookingToken' }
+        - { $ref: '#/components/parameters/ServiceId' }
+        - { $ref: '#/components/parameters/DateQuery' }
+      responses:
+        '200':
+          description: Старты.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceStartsDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/bookings/public/{token}/services/{serviceId}/quote:
+    post:
+      tags: [stays-booking-services]
+      operationId: stayBookingServiceQuote
+      summary: Расчёт сеанса к брони (оплата на месте).
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/BookingToken' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServiceSelectionInput' }
+      responses:
+        '200':
+          description: Расчёт.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceQuoteDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/bookings/public/{token}/sessions:
+    post:
+      tags: [stays-booking-services]
+      operationId: stayBookingAddSession
+      summary: Добавить сеанс к брони.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/BookingToken' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddSessionInput' }
+      responses:
+        '200':
+          description: Повтор с тем же ключом — бронь с уже добавленным сеансом.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicStayBookingServicesPart' }
+        '201':
+          description: Сеанс добавлен.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicStayBookingServicesPart' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ServiceRefusal' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/bookings/public/{token}/sessions/{sessionId}/cancel:
+    post:
+      tags: [stays-booking-services]
+      operationId: stayBookingCancelSession
+      summary: Отменить сеанс брони до его начала — без последствий.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/BookingToken' }
+        - { $ref: '#/components/parameters/SessionId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmptyInput' }
+      responses:
+        '200':
+          description: Отменён.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicStayBookingServicesPart' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/BookingGuestConflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ═════════════ кабинет: услуги ═════════════
+  /api/stays/companies/{companyId}/services:
+    get:
+      tags: [stays-services]
+      operationId: staysServices
+      summary: Список услуг компании (включая архивные).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      responses:
+        '200':
+          description: Услуги.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceListItemDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [stays-services]
+      operationId: staysCreateService
+      summary: Создать услугу (не опубликована, без цен и окон).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServiceCreateInput' }
+      responses:
+        '201':
+          description: Создана.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysServiceConflict' }
+
+  /api/stays/companies/{companyId}/services/order:
+    put:
+      tags: [stays-services]
+      operationId: staysServicesOrder
+      summary: Порядок услуг (полный список неархивных).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdsOrderInput' }
+      responses:
+        '200':
+          description: Новый порядок.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceListItemDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}:
+    get:
+      tags: [stays-services]
+      operationId: staysService
+      summary: Карточка услуги.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      responses:
+        '200':
+          description: Услуга.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [stays-services]
+      operationId: staysDeleteService
+      summary: Удалить услугу без сеансов (с сеансами — только архив).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysServiceConflict' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/setup:
+    put:
+      tags: [stays-services]
+      operationId: staysServiceSetup
+      summary: Название, адрес, часы, шаг, зазор, предоплата, отмена, доступность для броней домов.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServiceSetupInput' }
+      responses:
+        '200':
+          description: Услуга.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysServiceConflict' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/content:
+    put:
+      tags: [stays-services]
+      operationId: staysServiceContent
+      summary: Описание услуги.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServiceContentInput' }
+      responses:
+        '200':
+          description: Услуга.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/publish:
+    post:
+      tags: [stays-services]
+      operationId: staysServicePublish
+      summary: Опубликовать (нужны цена и окна в горизонте).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmptyInput' }
+      responses:
+        '200':
+          description: Услуга.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysServiceConflict' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/unpublish:
+    post:
+      tags: [stays-services]
+      operationId: staysServiceUnpublish
+      summary: Снять с публикации (сеансы остаются).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmptyInput' }
+      responses:
+        '200':
+          description: Услуга.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/archive:
+    post:
+      tags: [stays-services]
+      operationId: staysServiceArchive
+      summary: Архивировать (пропадает с публичных страниц, сеансы сохраняются).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmptyInput' }
+      responses:
+        '200':
+          description: Услуга.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/photos:
+    post:
+      tags: [stays-services]
+      operationId: staysServiceUploadPhoto
+      summary: Загрузить фото услуги (до 10).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Фото.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServicePhotoDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysServiceConflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/photos/order:
+    put:
+      tags: [stays-services]
+      operationId: staysServicePhotosOrder
+      summary: Порядок фото (первое — обложка).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdsOrderInput' }
+      responses:
+        '200':
+          description: Фото.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServicePhotoDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/photos/{photoId}:
+    delete:
+      tags: [stays-services]
+      operationId: staysServiceDeletePhoto
+      summary: Удалить фото.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+        - { $ref: '#/components/parameters/PhotoId' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/price-rules:
+    get:
+      tags: [stays-services]
+      operationId: staysServicePriceRules
+      summary: Правила цены и предпросмотр «день недели × час».
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      responses:
+        '200':
+          description: Правила.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceRulesDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [stays-services]
+      operationId: staysServiceAddPriceRule
+      summary: Добавить правило цены.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PriceRuleInput' }
+      responses:
+        '201':
+          description: Правила после добавления.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceRulesDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysServiceConflict' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/price-rules/{ruleId}:
+    put:
+      tags: [stays-services]
+      operationId: staysServiceUpdatePriceRule
+      summary: Изменить правило цены (созданные сеансы не меняются).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+        - { $ref: '#/components/parameters/RuleId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PriceRuleInput' }
+      responses:
+        '200':
+          description: Правила.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceRulesDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysServiceConflict' }
+    delete:
+      tags: [stays-services]
+      operationId: staysServiceDeletePriceRule
+      summary: Удалить правило цены.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+        - { $ref: '#/components/parameters/RuleId' }
+      responses:
+        '200':
+          description: Правила после удаления.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceRulesDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/items:
+    get:
+      tags: [stays-services]
+      operationId: staysServiceItems
+      summary: Платные позиции услуги.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      responses:
+        '200':
+          description: Позиции.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceItemDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [stays-services]
+      operationId: staysServiceAddItem
+      summary: Добавить позицию (до 20).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServiceItemInput' }
+      responses:
+        '201':
+          description: Позиция.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceItemDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysServiceConflict' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/items/order:
+    put:
+      tags: [stays-services]
+      operationId: staysServiceItemsOrder
+      summary: Порядок позиций.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdsOrderInput' }
+      responses:
+        '200':
+          description: Позиции.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceItemDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/items/{itemId}:
+    put:
+      tags: [stays-services]
+      operationId: staysServiceUpdateItem
+      summary: Изменить или выключить позицию (в созданных сеансах — снимок).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+        - { $ref: '#/components/parameters/ItemId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServiceItemInput' }
+      responses:
+        '200':
+          description: Позиция.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceItemDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [stays-services]
+      operationId: staysServiceDeleteItem
+      summary: Удалить позицию.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+        - { $ref: '#/components/parameters/ItemId' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ═════════════ кабинет: расписание ═════════════
+  /api/stays/companies/{companyId}/services/{serviceId}/weekly-schedule:
+    get:
+      tags: [stays-service-schedule]
+      operationId: staysServiceWeeklySchedule
+      summary: Недельный шаблон окон.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      responses:
+        '200':
+          description: Шаблон.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WeeklyScheduleDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [stays-service-schedule]
+      operationId: staysServiceSaveWeeklySchedule
+      summary: Сохранить шаблон (действует сразу на будущее, сеансы не отменяет).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WeeklyScheduleInput' }
+      responses:
+        '200':
+          description: Шаблон и предупреждение о сеансах вне окон.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleSaveResultDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/date-overrides:
+    get:
+      tags: [stays-service-schedule]
+      operationId: staysServiceMonth
+      summary: Календарь месяца — шаблон, ручные даты, закрытые даты.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+        - name: month
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+      responses:
+        '200':
+          description: Месяц.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceMonthDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/date-overrides/{date}:
+    put:
+      tags: [stays-service-schedule]
+      operationId: staysServiceSetDateOverride
+      summary: Закрыть дату или задать свои окна (заменяет шаблон на этот бизнес-день).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+        - { $ref: '#/components/parameters/OverrideDate' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DateOverrideInput' }
+      responses:
+        '200':
+          description: День и предупреждение о сеансах вне окон.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleSaveResultDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [stays-service-schedule]
+      operationId: staysServiceRemoveDateOverride
+      summary: Вернуть дату как в шаблоне.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+        - { $ref: '#/components/parameters/OverrideDate' }
+      responses:
+        '200':
+          description: День по шаблону и предупреждение о сеансах вне окон.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleSaveResultDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ═════════════ кабинет: сеансы ═════════════
+  /api/stays/companies/{companyId}/service-day:
+    get:
+      tags: [stays-service-sessions]
+      operationId: staysServiceDay
+      summary: День услуг — шкала бизнес-дня по всем услугам.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/DateQuery' }
+      responses:
+        '200':
+          description: День услуг.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceDayDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/companies/{companyId}/services/{serviceId}/starts:
+    get:
+      tags: [stays-service-sessions]
+      operationId: staysStaffServiceStarts
+      summary: Старты для персонала (минимальное время до начала не действует; неопубликованная услуга допустима).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/ServiceId' }
+        - { $ref: '#/components/parameters/DateQuery' }
+        - name: bookingId
+          in: query
+          required: false
+          description: Сеанс к этой брони — в пределах проживания.
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Старты.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceStartsDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/service-sessions:
+    get:
+      tags: [stays-service-sessions]
+      operationId: staysServiceSessions
+      summary: Сеансы — по умолчанию отдельные, ожидающие проверки оплаты.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - name: status
+          in: query
+          required: false
+          description: Статус заказа (повторяемый); по умолчанию AwaitingPaymentCheck.
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/StayBookingStatus' }
+        - name: serviceId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200':
+          description: Страница сеансов.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffServiceSessionPage' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [stays-service-sessions]
+      operationId: staysCreateManualServiceOrder
+      summary: Ручной отдельный сеанс (P1) — сразу Confirmed.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ManualServiceOrderInput' }
+      responses:
+        '201':
+          description: Сеанс создан.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffServiceSessionCardDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ServiceRefusal' }
+
+  /api/stays/companies/{companyId}/service-sessions/quote:
+    post:
+      tags: [stays-service-sessions]
+      operationId: staysStaffServiceQuote
+      summary: Расчёт сеанса для персонала.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StaffServiceQuoteInput' }
+      responses:
+        '200':
+          description: Расчёт.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceQuoteDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/service-sessions/{sessionId}:
+    get:
+      tags: [stays-service-sessions]
+      operationId: staysServiceSessionCard
+      summary: Карточка сеанса.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/SessionId' }
+      responses:
+        '200':
+          description: Карточка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffServiceSessionCardDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/service-sessions/{sessionId}/confirm-payment:
+    post:
+      tags: [stays-service-sessions]
+      operationId: staysServiceSessionConfirmPayment
+      summary: Оплата прошла (отдельный сеанс).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/SessionId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpectedVersionInput' }
+      responses:
+        '200':
+          description: Карточка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffServiceSessionCardDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ServiceStaffConflict' }
+
+  /api/stays/companies/{companyId}/service-sessions/{sessionId}/reject-payment:
+    post:
+      tags: [stays-service-sessions]
+      operationId: staysServiceSessionRejectPayment
+      summary: Отклонить оплату отдельного сеанса (причина обязательна).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/SessionId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpectedVersionReasonInput' }
+      responses:
+        '200':
+          description: Карточка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffServiceSessionCardDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ServiceStaffConflict' }
+
+  /api/stays/companies/{companyId}/service-sessions/{sessionId}/cancel:
+    post:
+      tags: [stays-service-sessions]
+      operationId: staysServiceSessionCancel
+      summary: Отменить сеанс компанией (отдельный или в брони; причина обязательна).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/SessionId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpectedVersionReasonInput' }
+      responses:
+        '200':
+          description: Карточка.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffServiceSessionCardDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ServiceStaffConflict' }
+
+  /api/stays/companies/{companyId}/service-sessions/{sessionId}/payment-proofs/{proofId}:
+    get:
+      tags: [stays-service-sessions]
+      operationId: staysServiceSessionProofFile
+      summary: Файл подтверждения оплаты отдельного сеанса (событие просмотра в журнал).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/SessionId' }
+        - { $ref: '#/components/parameters/ProofId' }
+      responses:
+        '200': { $ref: '#/components/responses/PaymentProofFile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/stays/companies/{companyId}/bookings/{bookingId}/sessions:
+    post:
+      tags: [stays-service-sessions]
+      operationId: staysStaffAddSession
+      summary: Добавить сеанс к брони по просьбе гостя (основание обязательно).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+        - { $ref: '#/components/parameters/BookingId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StaffAddSessionInput' }
+      responses:
+        '200':
+          description: Повтор с тем же ключом.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffStayBookingCardServicesPart' }
+        '201':
+          description: Сеанс добавлен; гость уведомлён.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffStayBookingCardServicesPart' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ServiceRefusal' }
+
+  # ═════════════ кабинет: напоминание накануне ═════════════
+  /api/stays/companies/{companyId}/arrival-reminder:
+    get:
+      tags: [stays-reminder]
+      operationId: staysArrivalReminder
+      summary: Время, шаблон и push напоминания накануне заезда.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      responses:
+        '200':
+          description: Настройки.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArrivalReminderSettingsDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [stays-reminder]
+      operationId: staysSaveArrivalReminder
+      summary: Сохранить время, шаблон и push (с историей правок).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ArrivalReminderInput' }
+      responses:
+        '200':
+          description: Настройки.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArrivalReminderSettingsDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaysServiceConflict' }
+
+  /api/stays/companies/{companyId}/arrival-reminder/preview:
+    post:
+      tags: [stays-reminder]
+      operationId: staysPreviewArrivalReminder
+      summary: Предпросмотр трёх каналов без сохранения.
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ArrivalReminderPreviewInput' }
+      responses:
+        '200':
+          description: Предпросмотр.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArrivalReminderPreviewDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/stays/companies/{companyId}/arrival-reminder/history:
+    get:
+      tags: [stays-reminder]
+      operationId: staysArrivalReminderHistory
+      summary: История правок напоминания (новые сверху, до 100).
+      parameters:
+        - { $ref: '#/components/parameters/CompanyId' }
+      responses:
+        '200':
+          description: История.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ArrivalReminderChangeDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
