@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { companiesApi } from '@/api/companies'
 import { CompanyCard, CompanyCardSkeleton, type CompanyCardData } from '@/components/company/CompanyCard'
 import { Icon } from '@/components/ui/Icon'
 import { storefrontApi } from '../api/storefront'
@@ -34,6 +35,20 @@ function toCardData(shop: StorefrontDto): CompanyCardData {
 }
 
 const LEGAL_FORM_LABELS: Record<string, string> = { Ip: 'ИП', Company: 'Организация', SelfEmployed: 'Самозанятый' }
+
+/**
+ * A 404 of the storefront: the address may belong to a «Дома» company (§37.3.3 п. 2) — then the visitor goes to its page on dom;
+ * anything else is the usual «Магазин не найден».
+ */
+function MissingShop({ slug }: { slug: string }) {
+  const company = useQuery({ queryKey: ['company-kind', slug], queryFn: () => companiesApi.getBySlug(slug), retry: false })
+  const url = company.data?.kind === 'Stays' ? company.data.publicUrl : null
+  useEffect(() => {
+    if (url) window.location.replace(url)
+  }, [url])
+  if (company.isLoading || url) return <main className="max-w-[860px] mx-auto px-4 pt-10 text-sm text-ink-soft">Переходим на страницу компании…</main>
+  return <NotFoundPage title="Магазин не найден" hint="Проверьте ссылку или QR-код — адрес мог измениться." />
+}
 
 /** US-23-18 — the shop page at `/:slug`: header, categories with products, cart bar and slide-over cart. */
 export function StorefrontPage() {
@@ -116,7 +131,7 @@ export function StorefrontPage() {
       </main>
     )
   if (shopQuery.isError || !shop) {
-    if (httpStatus(shopQuery.error) === 404) return <NotFoundPage title="Магазин не найден" hint="Проверьте ссылку или QR-код — адрес мог измениться." />
+    if (httpStatus(shopQuery.error) === 404) return <MissingShop slug={slug} />
     return (
       <main className="max-w-[860px] mx-auto px-4 pt-10">
         <ErrorState message={getGoodsErrorMessage(shopQuery.error, 'Не удалось загрузить магазин.')} onRetry={() => void shopQuery.refetch()} />

@@ -8,8 +8,9 @@ type Cycle18 = Cycle18Schemas['schemas']
 type Cycle24 = Cycle24Schemas['schemas']
 
 /** Cycle 24 (API_CONTRACT_CYCLE24.md §485.3): the plan's line and the «Заказы» fields. Additive; absent from an older server. */
-export type PlanLine = Cycle24['CompanyKind']
-type OrdersPlanFields = Partial<Pick<Cycle24['AdminPlanDtoCycle24'], 'line' | 'maxProductsPerShop' | 'maxOrdersPerMonth' | 'allowOrders'>>
+// Cycle 37: a third line, `Stays`, with `maxHouses` (API_CONTRACT_CYCLE37.md §37.21.4).
+export type PlanLine = 'Services' | 'Orders' | 'Stays'
+type OrdersPlanFields = Partial<Omit<Pick<Cycle24['AdminPlanDtoCycle24'], 'line' | 'maxProductsPerShop' | 'maxOrdersPerMonth' | 'allowOrders'>, 'line'>> & { line?: PlanLine; maxHouses?: number | null }
 
 /** 152-ФЗ ч. 7 ст. 5 prohibits indefinite retention of personal data; `Forever` was removed from
  *  the contract (`contracts/cycle7/openapi.yaml`) to match `RemovePhotoRetentionForever`, which

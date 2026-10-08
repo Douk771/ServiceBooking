@@ -38,7 +38,7 @@ export interface AdminCompany {
   name: string
   slug: string
   /** Cycle 23 (API_CONTRACT_CYCLE23.md §408.6). */
-  kind?: 'Services' | 'Orders'
+  kind?: 'Services' | 'Orders' | 'Stays'
   publicUrl?: string
   email?: string
   phone?: string
@@ -88,7 +88,7 @@ export const adminApi = {
   getUsers: (search?: string, page = 1, pageSize = 20, showcase?: ShowcaseFilter) =>
     api.get<Paged<AdminUser>>('/admin/users', { params: { search, page, pageSize, showcase } }).then((r) => r.data),
   updateUserRoles: (id: string, roles: string[]) => api.put(`/admin/users/${id}/roles`, roles),
-  getCompanies: (search?: string, page = 1, pageSize = 20, kind?: 'Services' | 'Orders', showcase?: ShowcaseFilter) =>
+  getCompanies: (search?: string, page = 1, pageSize = 20, kind?: 'Services' | 'Orders' | 'Stays', showcase?: ShowcaseFilter) =>
     api
       .get<Paged<AdminCompany>>('/admin/companies', { params: { search, page, pageSize, kind, showcase } })
       .then((r) => r.data),

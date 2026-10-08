@@ -1,7 +1,6 @@
 import type { components as Cycle9Components } from './api-cycle9.generated'
 import type { components as Cycle19Components } from './api-cycle19.generated'
 import type { components as Cycle14Components } from './api-cycle14.generated'
-import type { components as Cycle23Components } from './api-cycle23.generated'
 import type { components as Cycle31Components } from './api-cycle31.generated'
 import type { components as Cycle33Components } from './api-cycle33.generated'
 import type { components as Cycle37Components } from './api-cycle37.generated'
@@ -49,8 +48,8 @@ export type PhoneVerificationSessionStatus = Cycle14Components['schemas']['Phone
 export type PhoneVerificationRef = Cycle14Components['schemas']['PhoneVerificationRef']
 
 // ── Cycle 23 (API_CONTRACT_CYCLE23.md §408.1): companies now come in two kinds. Read off the generated schema.
-export type CompanyKind = Cycle23Components['schemas']['CompanyKind']
-export type CompanyKindsSummary = Cycle23Components['schemas']['CompanyKindsSummaryDto']
+export type CompanyKind = Cycle37Components['schemas']['CompanyKind']
+export type CompanyKindsSummary = Cycle37Components['schemas']['CompanyKindsSummaryDto']
 
 export interface Company {
   id: string

@@ -101,6 +101,15 @@ export function CabinetHomePage() {
           .
         </p>
       )}
+      {summary.data && summary.data.stays.count > 0 && (
+        <p className="mt-2 text-sm text-ink-soft" data-testid="stays-line">
+          Ваши дома управляются на{' '}
+          <a href={summary.data.stays.siteUrl} className="text-gold hover:text-gold-dark font-medium">
+            dom.ezbook.ru
+          </a>
+          .
+        </p>
+      )}
     </main>
   )
 }

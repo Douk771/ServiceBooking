@@ -69,7 +69,7 @@ export function buildAssignInput(params: {
   reasonCode?: SubscriptionChangeReason | null
   reasonDetails?: string
   /** Cycle 24: `Orders` assigns the «Заказы» subscription; omitted for Services so the body stays exactly as before. */
-  line?: 'Services' | 'Orders'
+  line?: 'Services' | 'Orders' | 'Stays'
 }): AssignSubscriptionInput {
   return {
     planId: params.planId,

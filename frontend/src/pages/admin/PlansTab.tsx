@@ -24,6 +24,8 @@ import {
   optionRulesToForm,
   optionRulesToPayload,
   ordersPlanPayload,
+  staysPlanPayload,
+  staysPlanLimitError,
   ordersPlanLimitsError,
   type PlanForm,
 } from './planForm'
@@ -126,6 +128,7 @@ export function PlansTab() {
     highlights: form.highlights,
     options: optionRulesToPayload(form.optionRules),
     ...ordersPlanPayload(form, !!editingPlan),
+    ...staysPlanPayload(form, !!editingPlan),
   })
 
   const createMut = useMutation({
@@ -175,6 +178,7 @@ export function PlansTab() {
         sortOrder: plan.sortOrder,
         highlights: plan.highlights ?? [],
         options: plan.options ?? [],
+        ...(plan.line === 'Stays' ? { maxHouses: plan.maxHouses ?? null } : {}),
         ...(plan.line === 'Orders' ? { maxProductsPerShop: plan.maxProductsPerShop ?? null, maxOrdersPerMonth: plan.maxOrdersPerMonth ?? null, allowOrders: plan.allowOrders ?? true } : {}),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-plans'] }),
@@ -246,6 +250,7 @@ export function PlansTab() {
       maxProductsPerShop: plan.maxProductsPerShop != null ? String(plan.maxProductsPerShop) : '',
       maxOrdersPerMonth: plan.maxOrdersPerMonth != null ? String(plan.maxOrdersPerMonth) : '',
       allowOrders: plan.allowOrders ?? true,
+      maxHouses: plan.maxHouses != null ? String(plan.maxHouses) : '',
     })
     setEditingPlan(plan)
     setShowCreate(true)
@@ -307,6 +312,8 @@ export function PlansTab() {
   const active = inLine?.filter((p) => p.isActive) ?? []
   const inactive = inLine?.filter((p) => !p.isActive) ?? []
   const isOrdersForm = form.line === 'Orders'
+  const isStaysForm = form.line === 'Stays'
+  const isSalonForm = !isOrdersForm && !isStaysForm
 
   const renderOptionRow = (option: AdminOptionDto) => {
     const rule = form.optionRules[option.id] ?? {
@@ -354,7 +361,7 @@ export function PlansTab() {
         <div className="flex items-center gap-3 flex-wrap">
           <p className="text-sm text-muted">Тарифные планы подписки</p>
           <div role="tablist" aria-label="Линейка тарифов" className="inline-flex rounded-full bg-cream-deep p-1">
-            {([['Services', 'Записи'], ['Orders', 'Заказы']] as const).map(([value, label]) => (
+            {([['Services', 'Записи'], ['Orders', 'Заказы'], ['Stays', 'Дома']] as const).map(([value, label]) => (
               <button
                 key={value}
                 type="button"
@@ -409,13 +416,18 @@ export function PlansTab() {
                         <span className="text-xs text-muted">
                           {plan.line === 'Orders' ? 'Магазинов' : 'Компаний суммарно'}: {plan.maxCompanies != null ? `до ${plan.maxCompanies}` : '∞'}
                         </span>
+                        {plan.line === 'Stays' && (
+                          <span className="text-xs text-muted" data-testid="stays-plan-limits">
+                            Домов: {plan.maxHouses != null ? `до ${plan.maxHouses}` : '∞'}
+                          </span>
+                        )}
                         {plan.line === 'Orders' && (
                           <span className="text-xs text-muted" data-testid="orders-plan-limits">
                             Товаров в магазине: {plan.maxProductsPerShop != null ? `до ${plan.maxProductsPerShop}` : '∞'} · Заказов в месяц: {plan.maxOrdersPerMonth != null ? `до ${plan.maxOrdersPerMonth}` : '∞'} · Приём заказов: {plan.allowOrders ? 'да' : 'нет'} · Показ в каталоге goods: {plan.allowPublicListing ? 'да' : 'нет'}
                           </span>
                         )}
                       </div>
-                      {plan.line !== 'Orders' && (
+                      {(plan.line ?? 'Services') === 'Services' && (
                       <div className="flex flex-wrap gap-1.5 mb-2">
                         <FeatureBadge label="Онлайн-запись" enabled={plan.allowOnlineBooking} />
                         <FeatureBadge label="Рассылка" enabled={plan.allowMailing} />
@@ -470,7 +482,7 @@ export function PlansTab() {
                           Сделать системным бесплатным
                         </Button>
                       )}
-                      {plan.line !== 'Orders' && !plan.isSystemTrial && plan.pricePerMonth === 0 && (
+                      {(plan.line ?? 'Services') === 'Services' && !plan.isSystemTrial && plan.pricePerMonth === 0 && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -480,7 +492,7 @@ export function PlansTab() {
                           Сделать тарифом пробного периода
                         </Button>
                       )}
-                      {plan.line !== 'Orders' && plan.isSystemTrial && (
+                      {(plan.line ?? 'Services') === 'Services' && plan.isSystemTrial && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -575,6 +587,7 @@ export function PlansTab() {
               >
                 <option value="Services">Записи (салоны)</option>
                 <option value="Orders">Заказы (магазины)</option>
+                <option value="Stays">Дома</option>
               </select>
               {editingPlan && <p className="text-[11px] text-muted">Линейку тарифа менять нельзя.</p>}
             </div>
@@ -659,7 +672,21 @@ export function PlansTab() {
               </div>
             )}
 
-            {!isOrdersForm && (
+            {isStaysForm && (
+              <div data-testid="stays-plan-fields">
+                <Input
+                  label="Макс. домов (∞)"
+                  type="number"
+                  min={1}
+                  value={form.maxHouses}
+                  onChange={(e) => setForm((f) => ({ ...f, maxHouses: e.target.value }))}
+                  placeholder="∞"
+                />
+                <p className="text-[11px] text-muted mt-1">Сколько домов компания может держать опубликованными.</p>
+              </div>
+            )}
+
+            {isSalonForm && (
             <div className="grid grid-cols-2 gap-3">
               <Input
                 label="Квота фото клиентов, МБ (∞)"
@@ -683,7 +710,7 @@ export function PlansTab() {
             </div>
             )}
 
-            {!isOrdersForm && (
+            {isSalonForm && (
             <div>
               <p className="text-sm font-medium text-ink-soft mb-2">Функции</p>
               <div className="grid grid-cols-2 gap-2">
@@ -856,7 +883,7 @@ export function PlansTab() {
                 className="flex-1"
                 loading={editingPlan ? updateMut.isPending : createMut.isPending}
                 onClick={() => {
-                  const err = ordersPlanLimitsError(form)
+                  const err = ordersPlanLimitsError(form) ?? staysPlanLimitError(form)
                   setLimitsError(err ?? '')
                   if (err) return
                   if (editingPlan) updateMut.mutate()
