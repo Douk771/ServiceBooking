@@ -7409,3 +7409,18 @@ Vitest разработчиков (не пересобирались QA): раз
 |---|---|---|
 | CY36-02 | `frontend/src/test/testAreas.guard.test.ts` (FE-36-03) | каждый `*.test.ts(x)` входит хотя бы в одну область |
 | CY36-03 | `ServiceBooking.Tests/Tests/DemoSeededTemplateGuardTests.cs` | клон засеянного шаблона демо-базы = настоящий сброс (строки каждой таблицы, личность магазинов и демо-людей, файлы) |
+
+## Цикл 37 — перенос главных на единый шаблон (FE, T-37-08…10)
+
+Перенос тестов goods (ARCHITECTURE_CYCLE37.md §37.12.2): проверки и id прежние, рендер через `LandingClientsSection`/`LandingBusinessSection` с `goodsLanding`.
+
+| Было | Стало |
+|---|---|
+| `goods/src/components/BuyersBlock.test.tsx` (T30-01…12) | `goods/src/landing/goodsLanding.clients.test.tsx` |
+| T30-13 (паритет классов) | удалён из goods; держит шаблон (T37-03, `ServiceLanding.test.tsx`) |
+| `BuyersBlock.qa.test.tsx` (QA30-02…10) | `goods/src/landing/goodsLanding.qa.test.tsx` |
+| `BusinessBlock.test.tsx` (T27-01…10) | `goods/src/landing/goodsLanding.business.test.tsx` |
+| `BusinessBlock.qa.test.tsx` (QA27-01…) | `goods/src/landing/goodsLanding.business.qa.test.tsx` |
+| `BusinessBlock.screenshot.test.tsx` (T30-14) | `goods/src/landing/goodsLanding.business.screenshot.test.tsx` |
+
+Новые: T37-09 (`goods/src/landing/configs.guard.test.ts`, `src/pages/home/zapisFaq.test.ts`), T37-10 (`src/pages/HomePage.test.tsx`), T37-11 (`goods/src/pages/CatalogHomePage.test.tsx`), T37-13 (`goods/src/pricing/ordersPricingLine.test.ts`), T37-14 (`goods/src/pages/PricingPage.test.tsx`), T37-15 (`goods/src/components/GoodsNavbar.test.tsx`).

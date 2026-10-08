@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { BusinessBlock } from './BusinessBlock'
+import { LandingBusinessSection } from '@/components/landing/LandingBusinessSection'
+import { goodsLanding } from './goodsLanding'
 import { useAuthStore } from '@/store/authStore'
 
 // QA-тесты цикла 27, написаны по SPEC.md (US-27-01..05), независимо от реализации.
-const setup = () => render(<MemoryRouter><BusinessBlock /></MemoryRouter>)
+const setup = () => render(<MemoryRouter><LandingBusinessSection config={goodsLanding.business} placeholder={false} /></MemoryRouter>)
 beforeEach(() => useAuthStore.setState({ user: null, token: null }))
 afterEach(() => useAuthStore.setState({ user: null, token: null }))
 

@@ -3,8 +3,10 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.Services.Legal;
+using ServiceBooking.API.Services.Orders;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
@@ -21,11 +23,12 @@ namespace ServiceBooking.API.Services.Billing;
 /// precondition isn't met. The hot path doesn't get more expensive — it's a read of an already-loaded
 /// in-memory field, not a new query.
 /// </summary>
-public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache, LegalDocumentProvider legalDocuments)
+public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache, LegalDocumentProvider legalDocuments, IOptions<OrdersOptions> ordersOptions)
 {
     public const string PublicEnabledSettingKey = "pricing.public-enabled";
 
     private const string CacheKey = "pricing:public";
+    private const string OrdersCacheKey = "pricing:public:orders";
     private const string PublicEnabledCacheKey = "pricing:public-enabled";
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(60);
     private static readonly JsonSerializerOptions HashSerializerOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -44,6 +47,29 @@ public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache, Leg
         return result;
     }
 
+    public sealed record CachedOrdersPricing(OrdersPublicPricingDto Dto, string ETag);
+
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.9.4 — the public "Заказы" grid, 60 s. <see langword="null"/> (also cached) means there is no
+    /// active public Orders tariff, i.e. the endpoint answers 404. No publication switch and no legal gate.</summary>
+    public async Task<CachedOrdersPricing?> GetOrdersAsync(CancellationToken ct = default)
+    {
+        if (cache.TryGetValue(OrdersCacheKey, out CachedOrdersPricing? cached)) return cached;
+
+        var plans = await db.SubscriptionPlanConfigs.AsNoTracking().Where(p => p.Line == CompanyKind.Orders).ToListAsync(ct);
+        var legalNotice = await GetRawSettingAsync("pricing.orders.legal-notice", ct);
+        var dto = OrdersPricingCatalogBuilder.Build("pending", plans, ordersOptions.Value.MaxProductsPerShop, legalNotice);
+
+        CachedOrdersPricing? result = null;
+        if (dto.Plans.Count > 0)
+        {
+            var etag = ComputeETag(dto);
+            result = new CachedOrdersPricing(dto with { Version = etag }, $"W/\"{etag}\"");
+        }
+
+        cache.Set(OrdersCacheKey, result, CacheDuration);
+        return result;
+    }
+
     /// <summary>Same payload as <see cref="GetAsync"/> but built straight from the database, bypassing
     /// (and never populating) the 60-second cache — API_CONTRACT_CYCLE7.md §40: the admin preview must
     /// show a just-saved change immediately, not up to a minute later.</summary>
@@ -52,7 +78,7 @@ public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache, Leg
     private async Task<CachedPricing> BuildAsync(CancellationToken ct)
     {
         // ARCHITECTURE_CYCLE24.md §459.5 [legal L14]: the public price list shows the "Записи" line only — "Заказы" tariffs are seen by a signed-in owner in their cabinet.
-        var plans = await db.SubscriptionPlanConfigs.AsNoTracking().Where(p => p.Line == Core.Enums.CompanyKind.Services).ToListAsync(ct);
+        var plans = await db.SubscriptionPlanConfigs.AsNoTracking().Where(p => p.Line == CompanyKind.Services).ToListAsync(ct);
         var options = await db.SubscriptionOptions.AsNoTracking().ToListAsync(ct);
         var legalNotice = await GetRawSettingAsync("pricing.legal-notice", ct);
 
@@ -108,6 +134,7 @@ public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache, Leg
     public void Invalidate()
     {
         cache.Remove(CacheKey);
+        cache.Remove(OrdersCacheKey);
         cache.Remove(PublicEnabledCacheKey);
     }
 
@@ -117,7 +144,7 @@ public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache, Leg
             .Select(s => s.Value)
             .FirstOrDefaultAsync(ct);
 
-    private static string ComputeETag(PublicPricingDto dto)
+    private static string ComputeETag(object dto)
     {
         var json = JsonSerializer.Serialize(dto, HashSerializerOptions);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));

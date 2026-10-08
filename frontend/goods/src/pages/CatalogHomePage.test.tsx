@@ -6,6 +6,7 @@ import { CatalogHomePage } from './CatalogHomePage'
 import { goodsCatalogApi } from '../api/goodsCatalog'
 
 vi.mock('../api/goodsCatalog', () => ({ goodsCatalogApi: { list: vi.fn() } }))
+vi.mock('../api/ordersPricing', () => ({ ordersPricingApi: { get: vi.fn().mockResolvedValue(null) } }))
 vi.mock('@/api/cities', () => ({ citiesApi: { search: () => Promise.resolve([]) } }))
 
 const list = vi.mocked(goodsCatalogApi.list)
@@ -73,5 +74,25 @@ describe('CatalogHomePage blocks', () => {
     await screen.findByRole('button', { name: 'Повторить' })
     expect(screen.getByRole('region', { name: 'Соберите заказ с телефона и заберите, когда он готов' })).toBeTruthy()
     expect(screen.getByRole('region', { name: 'Магазин и кафе принимают заказы без звонков и переписок' })).toBeTruthy()
+  })
+})
+
+describe('CatalogHomePage template (T37-11)', () => {
+  beforeEach(() => list.mockReset())
+  const LONG = 'Ы'.repeat(200)
+
+  it('sections order: catalog, buyers, business, faq; no media block; long name printed in full', async () => {
+    list.mockResolvedValue({ items: [shop({ name: LONG })], page: 1, pageSize: 20, totalCount: 1 } as never)
+    const { container } = setup()
+    const name = await screen.findByText(LONG)
+    expect(name.className).not.toContain('truncate')
+    expect(container.querySelector('main #catalog')?.contains(container.querySelector('#shop-list'))).toBe(true)
+    expect(container.querySelector('main figure img[alt="Интерьер салона"]')).toBeNull()
+    const buyers = screen.getByRole('region', { name: 'Соберите заказ с телефона и заберите, когда он готов' })
+    const biz = screen.getByRole('region', { name: 'Магазин и кафе принимают заказы без звонков и переписок' })
+    const faq = container.querySelector('#faq') as Element
+    expect(follows(container.querySelector('#catalog') as Element, buyers)).toBe(true)
+    expect(follows(biz, faq)).toBe(true)
+    expect(container.querySelectorAll('#faq h3 > button')).toHaveLength(8)
   })
 })

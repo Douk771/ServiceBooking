@@ -132,7 +132,7 @@ public static class PricingCatalogBuilder
         return $"{option.UnitName} — {price} ₽/мес";
     }
 
-    private static IReadOnlyList<string> SplitHighlights(string? raw)
+    internal static IReadOnlyList<string> SplitHighlights(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return [];
 

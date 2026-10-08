@@ -21,7 +21,7 @@ export function formatIncludedLimit(count: number | null, unitGenitiveSingular: 
   const mod10 = count % 10
   const mod100 = count % 100
   const form = mod10 === 1 && mod100 !== 11 ? unitGenitiveSingular : unitGenitivePlural
-  return `до ${count} ${form}`
+  return `до ${count.toLocaleString('ru-RU')} ${form}`
 }
 
 /**
