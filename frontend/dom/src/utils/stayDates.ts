@@ -84,6 +84,12 @@ export function formatDateLong(date: string): string {
   return `${d} ${MONTHS_GEN[m - 1]} ${y}`
 }
 
+/** "30.12.2026" */
+export function formatDateNumeric(date: string): string {
+  const [y, m, d] = date.split('-')
+  return `${d}.${m}.${y}`
+}
+
 /** "30 дек" — year only when it differs from `referenceYear`. */
 export function formatDateShort(date: string, referenceYear?: number): string {
   const [y, m, d] = date.split('-').map(Number)
