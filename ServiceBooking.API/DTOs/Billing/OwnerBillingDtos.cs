@@ -32,7 +32,12 @@ public record OwnerSubscriptionDto(
     // For the "Записи" line: Line = Services, Orders = null, AvailablePlans = null (the answer is the cycle-23 one plus these three fields).
     // Line is a STRING carrying the enum name (the CompanyDto.Kind convention): clients that read this DTO without a string-enum converter keep working.
     string Line = nameof(Core.Enums.CompanyKind.Services), OrdersUsageDto? Orders = null,
-    IReadOnlyList<AvailablePlanDto>? AvailablePlans = null);
+    IReadOnlyList<AvailablePlanDto>? AvailablePlans = null,
+    // Cycle 37 (API_CONTRACT_CYCLE37.md §37.21.4) — the «Дома» block; set only when Line = Stays.
+    StaysSubscriptionBlockDto? Stays = null);
+
+/// <summary>Published houses against the limit of the «Дома» tariff, the trial and the banner level (the same words as StaysPlanSummaryDto).</summary>
+public record StaysSubscriptionBlockDto(int HousesPublished, int? MaxHouses, bool IsTrial, DateTime? TrialEndsAtUtc, string WarningLevel, string? Text);
 
 /// <summary>Orders of the month against the limit of the "Заказы" tariff (ARCHITECTURE_CYCLE24.md §459.6). All texts are the server's.</summary>
 public record OrdersUsageDto(

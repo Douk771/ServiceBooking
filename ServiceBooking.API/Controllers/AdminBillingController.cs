@@ -229,9 +229,9 @@ public class AdminBillingController(
         var account = await db.BillingAccounts.Include(a => a.Owner).FirstOrDefaultAsync(a => a.Id == accountId);
         if (account is null) return NotFound();
         if (dto.Line is { } requestedLine && !Enum.IsDefined(requestedLine)) return BadRequest("Неизвестная линейка.");
-        if (dto.Line == CompanyKind.Orders) return await AssignOrdersSubscriptionAsync(account, dto);
-        // A request of the "Заказы" line is closed by an "Orders" assignment only.
-        if (dto.RequestId.HasValue && account.RequestedAtUtc is not null && account.RequestedLine == CompanyKind.Orders)
+        if (dto.Line is CompanyKind.Orders or CompanyKind.Stays) return await AssignOrdersSubscriptionAsync(account, dto, dto.Line.Value);
+        // A request of the "Заказы" / «Дома» line is closed by an assignment of that line only.
+        if (dto.RequestId.HasValue && account.RequestedAtUtc is not null && account.RequestedLine is CompanyKind.Orders or CompanyKind.Stays)
             return Conflict("Заявка уже обработана.");
 
         if (dto.PaidUntil is { } paidUntilDate && paidUntilDate.ToDateTime(TimeOnly.MinValue) < DateTime.UtcNow.Date.AddDays(-1))
@@ -474,7 +474,7 @@ public class AdminBillingController(
     /// account already has in this line; the change log row carries the line. The options are the account's (shared by both lines) — the request is their full set.
     /// A reason for a hidden tariff is not REQUIRED here (every "Заказы" tariff is hidden by design, [legal L14]) but is validated and stored when given.
     /// </summary>
-    private async Task<IActionResult> AssignOrdersSubscriptionAsync(BillingAccount account, AssignSubscriptionInput dto)
+    private async Task<IActionResult> AssignOrdersSubscriptionAsync(BillingAccount account, AssignSubscriptionInput dto, CompanyKind kind)
     {
         var accountId = account.Id;
         if (dto.PaidUntil is { } paidUntilDate && paidUntilDate.ToDateTime(TimeOnly.MinValue) < DateTime.UtcNow.Date.AddDays(-1))
@@ -483,7 +483,7 @@ public class AdminBillingController(
             return BadRequest(SubscriptionAssignmentValidator.MissingPaidUntilError);
         var optionLines = dto.Options ?? [];
 
-        if (dto.RequestId.HasValue && (account.RequestedAtUtc is null || account.RequestedLine != CompanyKind.Orders || dto.RequestId.Value != accountId))
+        if (dto.RequestId.HasValue && (account.RequestedAtUtc is null || account.RequestedLine != kind || dto.RequestId.Value != accountId))
             return Conflict("Заявка уже обработана.");
 
         SubscriptionPlanConfig? plan = null;
@@ -491,7 +491,11 @@ public class AdminBillingController(
         {
             plan = await db.SubscriptionPlanConfigs.FindAsync(dto.PlanId.Value);
             if (plan is null) return NotFound("Тариф не найден.");
-            if (plan.Line != CompanyKind.Orders) return BadRequest(BillingTexts.AdminDifferentLine);
+            if (plan.Line != kind) return BadRequest(BillingTexts.AdminDifferentLine);
+            // ARCHITECTURE_CYCLE37.md §37.10.2: the trial of «Дома» is granted only by StaysTrialService (the once-only checks live there).
+            if (kind == CompanyKind.Stays && plan.Id == StaysPlans.TrialSeedId)
+                return Conflict(new DTOs.Billing.TrialRefusalDto("TrialPlanNotAssignableHere",
+                    "Пробный тариф нельзя назначить через это действие — он выдаётся владельцем при активации пробного периода."));
             // ARCHITECTURE_CYCLE35.md §35.3.3: the hidden demo tariff of «Заказы» is for showcase accounts only, like the one of «Записи».
             if (ShowcaseMixingGuard.CheckServicePlan(plan.Id, account.IsShowcase) is { } servicePlanRefusal)
                 return Conflict(servicePlanRefusal);
@@ -524,13 +528,19 @@ public class AdminBillingController(
         var changedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var now = DateTime.UtcNow;
 
-        // The new limits vs what is already occupied IN THIS LINE (shops, seats incl. the owner).
+        // The new limits vs what is already occupied IN THIS LINE (shops, seats incl. the owner; for «Дома» — published houses).
+        if (kind == CompanyKind.Stays)
+        {
+            var housesPublished = await db.Houses.AsNoTracking().CountAsync(h => h.IsPublished && h.ArchivedAtUtc == null && h.Company.BillingAccountId == accountId && h.Company.Kind == CompanyKind.Stays);
+            if (!dto.ConfirmLimitOverflow && plan?.MaxHouses is { } maxHouses && housesPublished > maxHouses)
+                return Conflict($"На новом тарифе доступно {maxHouses} домов, опубликовано {housesPublished}. Подтвердите превышение лимита, чтобы продолжить.");
+        }
         var systemFree = await db.SubscriptionPlanConfigs.AsNoTracking().FirstOrDefaultAsync(p => p.IsSystemFree && p.Line == CompanyKind.Orders);
-        var newPlan = plan is not null
+        var newPlan = kind == CompanyKind.Stays ? OrdersPlan.FallbackFree : plan is not null
             ? OrdersPlanResolver.Resolve(new OrdersSubscription { PlanConfig = plan, PlanConfigId = plan.Id, IsActive = true }, systemFree, now)
             : OrdersPlanResolver.Resolve(null, systemFree, now);
         var usage = (await usageReader.GetAsync([accountId], CompanyKind.Orders)).GetValueOrDefault(accountId) ?? new AccountUsage(accountId, 0, 0);
-        if (!dto.ConfirmLimitOverflow)
+        if (!dto.ConfirmLimitOverflow && kind == CompanyKind.Orders)
         {
             if (newPlan.MaxShops is { } maxShops && usage.CompaniesUsed > maxShops)
                 return Conflict($"На новом тарифе доступно {maxShops} магазинов, занято {usage.CompaniesUsed}. Подтвердите превышение лимита, чтобы продолжить.");
@@ -538,22 +548,43 @@ public class AdminBillingController(
                 return Conflict($"На новом тарифе доступно {maxSeats} мест, занято {usage.SeatsUsed}. Подтвердите превышение лимита, чтобы продолжить.");
         }
 
-        var sub = await db.OrdersSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == accountId);
-        if (sub is null)
+        Guid? oldPlanId;
+        DateTime? oldPaidUntil;
+        bool oldIsActive;
+        DateTime? newPaidUntil;
+        if (kind == CompanyKind.Stays)
         {
-            sub = new OrdersSubscription { Id = Guid.NewGuid(), BillingAccountId = accountId, CreatedAtUtc = now };
-            db.OrdersSubscriptions.Add(sub);
+            var staysSub = await db.StaysSubscriptions.FirstOrDefaultAsync(s => s.BillingAccountId == accountId);
+            if (staysSub is null)
+            {
+                staysSub = new StaysSubscription { Id = Guid.NewGuid(), BillingAccountId = accountId, CreatedAtUtc = now };
+                db.StaysSubscriptions.Add(staysSub);
+            }
+            (oldPlanId, oldPaidUntil, oldIsActive) = (staysSub.PlanConfigId, staysSub.PaidUntil, staysSub.IsActive);
+            staysSub.PlanConfigId = dto.PlanId;
+            staysSub.IsActive = dto.IsActive;
+            staysSub.PaidUntil = ToUtc(dto.PaidUntil);
+            staysSub.UpdatedAtUtc = now;
+            staysSub.UpdatedByUserId = changedByUserId;
+            newPaidUntil = staysSub.PaidUntil;
         }
-        var oldPlanId = sub.PlanConfigId;
-        var oldPaidUntil = sub.PaidUntil;
-        var oldIsActive = sub.IsActive;
+        else
+        {
+            var sub = await db.OrdersSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == accountId);
+            if (sub is null)
+            {
+                sub = new OrdersSubscription { Id = Guid.NewGuid(), BillingAccountId = accountId, CreatedAtUtc = now };
+                db.OrdersSubscriptions.Add(sub);
+            }
+            (oldPlanId, oldPaidUntil, oldIsActive) = (sub.PlanConfigId, sub.PaidUntil, sub.IsActive);
+            sub.PlanConfigId = dto.PlanId;
+            sub.IsActive = dto.IsActive;
+            sub.PaidUntil = ToUtc(dto.PaidUntil);
+            sub.UpdatedAtUtc = now;
+            sub.UpdatedByUserId = changedByUserId;
+            newPaidUntil = sub.PaidUntil;
+        }
         var oldOptionsSummary = await BuildOptionsSummaryAsync(accountId);
-
-        sub.PlanConfigId = dto.PlanId;
-        sub.IsActive = dto.IsActive;
-        sub.PaidUntil = ToUtc(dto.PaidUntil);
-        sub.UpdatedAtUtc = now;
-        sub.UpdatedByUserId = changedByUserId;
 
         // The account's options: the request is the FULL set (as in the "Записи" assignment); the ones left out end with the paid period.
         var existingOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Where(o => o.BillingAccountId == accountId).ToListAsync();
@@ -580,7 +611,7 @@ public class AdminBillingController(
             }
         }
         foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null))
-            row.EndsAtUtc = sub.PaidUntil ?? now;
+            row.EndsAtUtc = newPaidUntil ?? now;
 
         if (dto.RequestId.HasValue)
         {
@@ -598,20 +629,20 @@ public class AdminBillingController(
         db.SubscriptionChangeLogs.Add(new SubscriptionChangeLog
         {
             Id = Guid.NewGuid(), OwnerUserId = account.OwnerUserId, BillingAccountId = accountId, ChangedByUserId = changedByUserId, ChangedAt = now,
-            OldPlanConfigId = oldPlanId, NewPlanConfigId = dto.PlanId, OldPaidUntil = oldPaidUntil, NewPaidUntil = sub.PaidUntil,
+            OldPlanConfigId = oldPlanId, NewPlanConfigId = dto.PlanId, OldPaidUntil = oldPaidUntil, NewPaidUntil = newPaidUntil,
             OldIsActive = oldIsActive, NewIsActive = dto.IsActive,
             ChangeKind = oldPlanId != dto.PlanId ? SubscriptionChangeKind.Plan : SubscriptionChangeKind.Options,
             OldOptionsSummary = oldOptionsSummary, NewOptionsSummary = newOptionsSummary, Comment = dto.Comment,
             ReasonCode = dto.ReasonCode, ReasonDetails = dto.ReasonDetails,
-            Line = CompanyKind.Orders,
+            Line = kind,
         });
         account.UpdatedAtUtc = now;
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
 
         logger.LogInformation(
-            "Orders subscription assigned to billing account {AccountId} by {UserId}: plan {PlanName}, options {OptionsSummary}",
-            accountId, changedByUserId, plan?.Name ?? OrdersFreePlan.Name, string.IsNullOrEmpty(newOptionsSummary) ? "—" : newOptionsSummary);
+            "{Line} subscription assigned to billing account {AccountId} by {UserId}: plan {PlanName}, options {OptionsSummary}",
+            kind, accountId, changedByUserId, plan?.Name ?? (kind == CompanyKind.Orders ? OrdersFreePlan.Name : "—"), string.IsNullOrEmpty(newOptionsSummary) ? "—" : newOptionsSummary);
         var freshAccount = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan).FirstAsync(a => a.Id == accountId);
         return Ok(await BuildAdminAccountDtoAsync(freshAccount));
     }
@@ -713,6 +744,8 @@ public class AdminBillingController(
             .Where(s => s.BillingAccountId != null && page1.Select(a => a.Id).Contains(s.BillingAccountId!.Value)).ToListAsync(ct);
         var ordersSubs = await db.OrdersSubscriptions.Include(s => s.PlanConfig)
             .Where(s => page1.Select(a => a.Id).Contains(s.BillingAccountId)).ToListAsync(ct);
+        var staysSubs = await db.StaysSubscriptions.Include(s => s.PlanConfig)
+            .Where(s => page1.Select(a => a.Id).Contains(s.BillingAccountId)).ToListAsync(ct);
         var companyCounts = await db.Companies.Where(c => c.BillingAccountId != null && page1.Select(a => a.Id).Contains(c.BillingAccountId!.Value))
             .GroupBy(c => c.BillingAccountId!.Value).Select(g => new { AccountId = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.AccountId, x => x.Count, ct);
 
@@ -737,7 +770,13 @@ public class AdminBillingController(
             var requestLine = a.RequestedLine ?? CompanyKind.Services;
             var sub = subs.FirstOrDefault(s => s.BillingAccountId == a.Id);
             var ordersSub = ordersSubs.FirstOrDefault(s => s.BillingAccountId == a.Id);
-            var currentPlanConfig = requestLine == CompanyKind.Orders ? ordersSub?.PlanConfig : sub?.PlanConfig;
+            var staysSub = staysSubs.FirstOrDefault(s => s.BillingAccountId == a.Id);
+            var currentPlanConfig = requestLine switch
+            {
+                CompanyKind.Orders => ordersSub?.PlanConfig,
+                CompanyKind.Stays => staysSub?.PlanConfig,
+                _ => sub?.PlanConfig
+            };
             var estimated = (currentPlanConfig?.PricePerMonth ?? 0m) + itemDtos.Where(i => !i.retired)
                 .Sum(i => (allOptions.FirstOrDefault(o => o.Id == i.optionId)?.PricePerMonth ?? 0m) * i.quantity);
             return new

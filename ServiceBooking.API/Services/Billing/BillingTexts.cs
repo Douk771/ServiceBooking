@@ -67,7 +67,7 @@ public static class BillingTexts
 
     /// <summary>409 when a request of the OTHER line is already waiting (one request per account).</summary>
     public static string RequestOfOtherLine(CompanyKind pendingLine) =>
-        $"У вас уже есть заявка на смену тарифа «{(pendingLine == CompanyKind.Orders ? "Заказы" : "Записи")}» — отмените её или дождитесь решения";
+        $"У вас уже есть заявка на смену тарифа «{pendingLine switch { CompanyKind.Orders => "Заказы", CompanyKind.Stays => "Дома", _ => "Записи" }}» — отмените её или дождитесь решения";
 
     private static string ShopsWord(int n)
     {

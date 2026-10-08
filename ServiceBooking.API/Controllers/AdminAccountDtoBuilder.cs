@@ -138,6 +138,24 @@ internal static class AdminAccountDtoBuilder
             trial = trialDto,
             // ARCHITECTURE_CYCLE24.md §459.5 — the subscription of the "Заказы" line next to the "Записи" one above.
             ordersSubscription = await BuildOrdersSubscriptionAsync(db, usageReader, account, now),
+            staysSubscription = await BuildStaysSubscriptionAsync(db, account, now),
+        };
+    }
+
+    /// <summary>ARCHITECTURE_CYCLE37.md §37.10.4 — the «Дома» block of the account card: plan, paid-until, active flag, published houses and the limit.</summary>
+    private static async Task<object> BuildStaysSubscriptionAsync(AppDbContext db, BillingAccount account, DateTime now)
+    {
+        var sub = await db.StaysSubscriptions.AsNoTracking().Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == account.Id);
+        var plan = Services.Stays.StaysPlanResolver.Resolve(sub, now);
+        var published = await db.Houses.AsNoTracking().CountAsync(h => h.IsPublished && h.ArchivedAtUtc == null && h.Company.BillingAccountId == account.Id && h.Company.Kind == CompanyKind.Stays);
+        return new
+        {
+            planId = sub?.PlanConfigId,
+            planName = sub?.PlanConfig?.Name,
+            paidUntil = sub?.PaidUntil,
+            isActive = plan.HasActivePlan,
+            housesPublished = published,
+            maxHouses = sub?.PlanConfig?.MaxHouses,
         };
     }
 

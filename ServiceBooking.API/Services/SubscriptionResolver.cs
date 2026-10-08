@@ -206,6 +206,22 @@ public class SubscriptionResolver(AppDbContext db)
             ? []
             : await db.PlanOptionRules.AsNoTracking().Where(r => ordersPlanIds.Contains(r.PlanConfigId)).ToListAsync();
 
+        // ARCHITECTURE_CYCLE37.md §37.3.2: the same rule for the third line — a number is also paid when the account has a «Дома» company and the «Дома» tariff allows it.
+        // For an account without «Дома» companies nothing below changes (bit-for-bit the cycle-24 result).
+        var accountsWithStays = (await db.Companies.AsNoTracking()
+                .Where(c => c.Kind == CompanyKind.Stays && c.BillingAccountId != null && ids.Contains(c.BillingAccountId!.Value))
+                .Select(c => c.BillingAccountId!.Value).Distinct().ToListAsync()).ToHashSet();
+        var staysPlans = new Dictionary<Guid, Stays.StaysPlan>();
+        var staysRules = new List<PlanOptionRule>();
+        if (accountsWithStays.Count > 0)
+        {
+            var staysSubs = await db.StaysSubscriptions.AsNoTracking().Include(s => s.PlanConfig).Where(s => accountsWithStays.Contains(s.BillingAccountId)).ToListAsync();
+            foreach (var accountId in accountsWithStays)
+                staysPlans[accountId] = Stays.StaysPlanResolver.Resolve(staysSubs.FirstOrDefault(s => s.BillingAccountId == accountId), now);
+            var staysPlanIds = staysPlans.Values.Where(p => p.PlanId.HasValue).Select(p => p.PlanId!.Value).Distinct().ToList();
+            staysRules = staysPlanIds.Count == 0 ? [] : await db.PlanOptionRules.AsNoTracking().Where(r => staysPlanIds.Contains(r.PlanConfigId)).ToListAsync();
+        }
+
         var result = new Dictionary<Guid, EffectivePlan>();
         foreach (var id in ids)
         {
@@ -224,7 +240,13 @@ public class SubscriptionResolver(AppDbContext db)
                 var ordersAvailability = ordersPlan?.PlanId is { } ordersPlanId
                     ? ordersRules.FirstOrDefault(r => r.PlanConfigId == ordersPlanId && r.OptionId == o.OptionId)?.Availability
                     : null;
-                return PaidNumbers(o.Quantity, o.PaidUntilUtc, subUsable, availability, hasShops, ordersPlan?.Usable ?? false, ordersAvailability, now);
+                var hasStays = accountsWithStays.Contains(id);
+                var staysPlan = hasStays ? staysPlans.GetValueOrDefault(id) : null;
+                var staysAvailability = staysPlan?.PlanId is { } staysPlanId
+                    ? staysRules.FirstOrDefault(r => r.PlanConfigId == staysPlanId && r.OptionId == o.OptionId)?.Availability
+                    : null;
+                return PaidNumbers(o.Quantity, o.PaidUntilUtc, subUsable, availability, hasShops, ordersPlan?.Usable ?? false, ordersAvailability, now,
+                    hasStays, staysPlan?.HasActivePlan ?? false, staysAvailability);
             }
 
             var whatsapp = activeOptions.FirstOrDefault(o => o.BillingAccountId == id && o.Option.Code == WhatsAppOptionCode);
@@ -242,9 +264,11 @@ public class SubscriptionResolver(AppDbContext db)
     /// </summary>
     public static int PaidNumbers(
         int quantity, DateTime? optionPaidUntilUtc, bool servicesUsable, OptionAvailability? servicesRule,
-        bool accountHasShops, bool ordersUsable, OptionAvailability? ordersRule, DateTime nowUtc) =>
+        bool accountHasShops, bool ordersUsable, OptionAvailability? ordersRule, DateTime nowUtc,
+        bool accountHasStays = false, bool staysUsable = false, OptionAvailability? staysRule = null) =>
         IsOptionCurrentlyPaid(servicesUsable, optionPaidUntilUtc, servicesRule, nowUtc) ||
-        (accountHasShops && IsOptionCurrentlyPaid(ordersUsable, optionPaidUntilUtc, ordersRule, nowUtc))
+        (accountHasShops && IsOptionCurrentlyPaid(ordersUsable, optionPaidUntilUtc, ordersRule, nowUtc)) ||
+        (accountHasStays && IsOptionCurrentlyPaid(staysUsable, optionPaidUntilUtc, staysRule, nowUtc))
             ? quantity
             : 0;
 

@@ -33,7 +33,13 @@ public class OwnerSubscriptionService(
     /// the shops of the account and the month counter.
     /// </summary>
     public Task<OwnerSubscriptionDto> BuildAsync(BillingAccount account, CompanyKind line) =>
-        line == CompanyKind.Orders ? BuildOrdersAsync(account) : BuildAsync(account);
+        line switch
+        {
+            CompanyKind.Services => BuildAsync(account),
+            CompanyKind.Orders => BuildOrdersAsync(account),
+            CompanyKind.Stays => BuildStaysAsync(account),
+            _ => throw new System.Diagnostics.UnreachableException()
+        };
 
     public async Task<OwnerSubscriptionDto> BuildAsync(BillingAccount account)
     {
@@ -246,6 +252,67 @@ public class OwnerSubscriptionService(
             "RUB", status, StatusTextFor(status, sub?.PaidUntil), planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays, isExpiringSoon,
             usageDto, coveredShops, warning, availableOptions, pendingRequest, CanRequestChanges: true, LastRejectedRequest: lastRejected, Trial: null,
             Line: nameof(CompanyKind.Orders), Orders: ordersDto, AvailablePlans: availablePlans);
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE37.md §37.10.4 — the «Дома» line: built from <see cref="StaysSubscription"/>. There is NO free tier: no row means "NoPlan".
+    /// <c>availablePlans</c> are the active tariffs of the line except the trial; the unit of the limit is the PUBLISHED house of the whole account.
+    /// </summary>
+    private async Task<OwnerSubscriptionDto> BuildStaysAsync(BillingAccount account)
+    {
+        var now = DateTime.UtcNow;
+        var sub = await db.StaysSubscriptions.AsNoTracking().Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == account.Id);
+        var plan = Stays.StaysPlanResolver.Resolve(sub, now);
+        var published = await db.Houses.AsNoTracking().CountAsync(h => h.IsPublished && h.ArchivedAtUtc == null && h.Company.BillingAccountId == account.Id && h.Company.Kind == CompanyKind.Stays);
+        var (level, text) = Stays.StaysPlanResolver.Warning(plan, published, now);
+
+        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
+            .Where(o => o.BillingAccountId == account.Id && (o.EndsAtUtc == null || o.EndsAtUtc > now)).ToListAsync();
+        var planRules = plan.PlanId is { } rulesPlanId ? await db.PlanOptionRules.Where(r => r.PlanConfigId == rulesPlanId).ToListAsync() : [];
+        var optionDtos = subscribedOptions.Select(o => ToSubscribedOptionDto(o, planRules)).ToList();
+
+        var companies = await db.Companies.AsNoTracking().Where(c => c.BillingAccountId == account.Id && c.Kind == CompanyKind.Stays).ToListAsync();
+        var companyIds = companies.Select(c => c.Id).ToList();
+        var seatsByCompany = await usageReader.GetCompanySeatsAsync(companyIds);
+        var assignedIds = (await db.ChannelCompanyAssignments.Where(a => companyIds.Contains(a.CompanyId)).Select(a => a.CompanyId).ToListAsync()).ToHashSet();
+        var staff = seatsByCompany.Values.Sum();
+        var numbersRegistered = await db.NotificationChannels.CountAsync(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced);
+        var servicesPlan = await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
+        var usageDto = new SubscriptionUsageDto(
+            companies.Count, null, staff, null, $"Сотрудников: {staff}", $"Компаний: {companies.Count}",
+            servicesPlan.PaidNotificationNumbers, numbersRegistered, BuildNumbersText(servicesPlan.PaidNotificationNumbers, numbersRegistered));
+
+        var status = !plan.WasEverSubscribed ? "NoPlan" : plan.HasActivePlan ? "Active" : "Expired";
+        var statusText = status == "NoPlan" ? "Тариф не выбран" : StatusTextFor(status, sub?.PaidUntil);
+        var planConfig = sub?.PlanConfig;
+        var planDto = new SubscribedPlanDto(plan.PlanId, plan.PlanName ?? "Тариф не выбран", planConfig?.Description, planConfig?.PricePerMonth ?? 0m,
+            plan.AllowNotificationChannel ? ["Сообщения гостям в MAX и WhatsApp"] : []);
+        var totalMonthlyPrice = BillingCalculator.TotalMonthlyPrice(planDto.PricePerMonth, optionDtos.Select(o => o.PricePerMonth));
+        var expiresInDays = BillingCalculator.ExpiresInDays(sub?.PaidUntil, now);
+
+        SubscriptionWarningDto? warning = level == "None" ? null : new SubscriptionWarningDto(level, text ?? string.Empty, []);
+        var allOptions = await db.SubscriptionOptions.WhereNotRetired().Where(o => o.IsActive && o.PricePerMonth != null).ToListAsync();
+        var availableOptions = allOptions.Select(o => ToAvailableOptionDto(o, planRules)).ToList();
+        var pendingRequest = account.RequestedLine == CompanyKind.Stays
+            ? BuildPendingRequestDto(account, await db.SubscriptionOptions.ToListAsync(), planDto.PricePerMonth, false, sub?.PlanConfigId) : null;
+        var lastRejected = account.LastRejectionReason is not null && account.LastRejectedAtUtc.HasValue
+            ? new RejectedRequestDto(account.LastRejectionReason, account.LastRejectedAtUtc.Value) : null;
+
+        var availablePlans = (await db.SubscriptionPlanConfigs.AsNoTracking().Where(p => p.Line == CompanyKind.Stays && p.IsActive && p.Id != StaysPlans.TrialSeedId)
+                .OrderBy(p => p.PricePerMonth).ThenBy(p => p.SortOrder).ToListAsync())
+            .Select(p => new AvailablePlanDto(
+                p.Id, p.Name, p.PricePerMonth, p.Description,
+                string.IsNullOrWhiteSpace(p.Highlights) ? [] : p.Highlights.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(PricingCatalogBuilder.MaxHighlights).ToList(),
+                p.MaxHouses is { } m ? $"до {m} {Stays.StaysTexts.Plural(m, "дома", "домов", "домов")}" : "дома без ограничения"))
+            .ToList();
+
+        return new OwnerSubscriptionDto(
+            "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays,
+            plan.IsTrial && level is "TrialEnding3d" or "TrialEnding1d", usageDto,
+            companies.Select(c => new CoveredCompanyDto(c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), assignedIds.Contains(c.Id))).ToList(),
+            warning, availableOptions, pendingRequest, CanRequestChanges: true, LastRejectedRequest: lastRejected, Trial: null,
+            Line: nameof(CompanyKind.Stays), Orders: null, AvailablePlans: availablePlans,
+            Stays: new StaysSubscriptionBlockDto(published, plan.MaxHouses, plan.IsTrial, plan.IsTrial ? plan.PaidUntilUtc : null, level, text));
     }
 
     private static List<string> OrdersPlanIncludes(OrdersPlan plan)

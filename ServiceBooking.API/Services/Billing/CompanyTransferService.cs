@@ -62,7 +62,7 @@ public sealed record TransferResult(bool Success, TransferFailure? Failure)
 /// </summary>
 public class CompanyTransferService(
     AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
-    AccountUsageReader usageReader, CompanyOwnerWriter companyOwnerWriter, OrdersPlanResolver ordersPlans, ILogger<CompanyTransferService> logger)
+    AccountUsageReader usageReader, CompanyOwnerWriter companyOwnerWriter, OrdersPlanResolver ordersPlans, Stays.StaysPlanResolver staysPlans, ILogger<CompanyTransferService> logger)
 {
     /// <summary>
     /// §51.1's linkage rule, evaluated against the database, wrapping the pure
@@ -185,6 +185,8 @@ public class CompanyTransferService(
             var orders = await ordersPlans.GetForAccountAsync(accountId);
             return (orders.MaxShops, orders.MaxSeats);
         }
+        // ARCHITECTURE_CYCLE37.md §37.3.2: a «Дома» company has no company/seat limit; its limit is the number of PUBLISHED houses (checked in TransferAsync).
+        if (kind == CompanyKind.Stays) return (null, null);
         var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId);
         return (plan.AccountMaxCompanies, plan.AccountMaxEmployees);
     }
@@ -262,6 +264,23 @@ public class CompanyTransferService(
         }
 
         var preview = await ComputePreviewAsync(companyId, targetBillingAccountId, newOwnerAddsSeat, newOwner is not null, company.Kind);
+
+        if (company.Kind == CompanyKind.Stays)
+        {
+            // The published houses of the moved company plus those already on the receiving account must fit the tariff of the receiving account.
+            var movingHouses = await db.Houses.CountAsync(h => h.CompanyId == companyId && h.IsPublished && h.ArchivedAtUtc == null);
+            var plan = await staysPlans.GetForAccountAsync(targetBillingAccountId);
+            if (movingHouses > 0 && plan.MaxHouses is { } maxHouses)
+            {
+                var onTarget = await staysPlans.CountPublishedHousesAsync(targetBillingAccountId);
+                if (onTarget + movingHouses > maxHouses)
+                    return TransferResult.Fail(TransferFailureKind.CompanyLimitExceeded,
+                        $"На принимающем аккаунте тариф «{plan.PlanName}» позволяет опубликовать {maxHouses} {Stays.StaysTexts.Plural(maxHouses, "дом", "дома", "домов")}, " +
+                        $"а после переноса их будет {onTarget + movingHouses}. Снимите дома с публикации или смените тариф.");
+            }
+            if (movingHouses > 0 && !plan.HasActivePlan)
+                return TransferResult.Fail(TransferFailureKind.CompanyLimitExceeded, "На принимающем аккаунте не выбран тариф «Дома» — выберите тариф, чтобы принять опубликованные дома.");
+        }
 
         if (preview.CompanyLimitExceeded)
         {
