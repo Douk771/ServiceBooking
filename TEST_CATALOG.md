@@ -7464,6 +7464,7 @@ Vitest разработчиков (не пересобирались QA): раз
 | CY37-55 | `Cycle37BookingFlowTests` | `Blocks_ConflictWithBooking_TouchingAllowed_PastForbidden_CommentHiddenFromPublic` |
 | CY37-56 | `Cycle37BookingFlowTests` | `Calendar_StatesAndPrivacy_NoNamesNoStatusesOfOthers_UnavailableForNoPriceAndPast` |
 | CY37-60 | `Cycle37ConcurrencyTests` | `TwentyParallelGuestBookings_SameDates_ExactlyOneCreated_OthersJson409DatesUnavailable` |
+| CY37-60b | `Cycle37ConcurrencyTests` | `ParallelStaffConfirmAndGuestProofUpload_NeverDeadlock_NoServerErrors_ManyRounds` |
 | CY37-61 | `Cycle37ConcurrencyTests` | `ParallelGuestAndOwnerBlock_ExactlyOneSideWins_RepeatedRounds` |
 | CY37-62 | `Cycle37ConcurrencyTests` | `ParallelGuestAndManualBooking_ExactlyOneSideWins_RepeatedRounds` |
 | CY37-63 | `Cycle37ConcurrencyTests` | `ParallelOverlappingRanges_NeverShareANight_AdjacentRangesBothAllowed` |
@@ -7499,6 +7500,7 @@ Vitest разработчиков (не пересобирались QA): раз
 | CY37-104 | `Cycle37PrivacyTests` | `Export_ContainsAccountBookings_GuestBookingsOnlyForVerifiedPhone_NoFilesNoStaffNames` |
 | CY37-105 | `Cycle37PrivacyTests` | `DeleteAccount_ErasesGuestBookings_KeepsCalendarStatusAndAmounts_RemovesProofFilesAndPush` |
 | CY37-106 | `Cycle37PrivacyTests` | `Retention_PaymentProofs_DeletedAfter90DaysFromLaterOfCheckOutAndTerminalStatus_DryRunChangesNothing` |
+| CY37-106b | `Cycle37PrivacyTests` | `Retention_PaymentProofs_NotDeletedHoursBeforeTheExactCheckOutMoment_WhenTerminalStatusIsOld` |
 | CY37-107 | `Cycle37PrivacyTests` | `Retention_UnpaidReleasedBookings_AreDepersonalisedAfter30Days_OthersUntouched` |
 | CY37-108 | `Cycle37PrivacyTests` | `Retention_AllSixStayRulesAreRegistered_AndPeriodsComeFromConfiguration` |
 | CY37-110 | `Cycle37TariffTrialTests` | `StaysTrial_DoesNotBlockSalonTrial_AndSalonTrialDoesNotBlockStaysTrial` |
@@ -7513,6 +7515,16 @@ Vitest разработчиков (не пересобирались QA): раз
 | CY37-122 | `Cycle37NotificationsTests` | `GuestPush_SubscribeOnBookingPage_PayloadHasNoPersonalData_AndIsSentOncePerEvent` |
 | CY37-123 | `Cycle37NotificationsTests` | `GuestPush_Refused_WhenCompanyDisabledIt_OrBookingIsFinished_AndLimitFivePerBooking` |
 | CY37-124 | `Cycle37NotificationsTests` | `ScheduledMessages_TenMinuteWarning_ArrivalReminder_AreQueuedOnce_AndReminderCanBeSwitchedOff` |
+| CY37-130 | `Cycle37ReviewFixesTests` | `Catalog_ReflectsPublishUnpublishArchiveAndAdminBlock_AtOnce_WithoutManualCacheReset` |
+| CY37-131 | `Cycle37ReviewFixesTests` | `AdminRetentionPolicy_ExposesSixStayPeriods_WithConfiguredValues` |
+| CY37-132 | `Cycle37ReviewFixesTests` | `AvailablePlans_StaysLine_HaveMaxHouses_UnlimitedOmitsIt_OrdersLineHasNone` |
+| CY37-133 | `Cycle37ReviewFixesTests` | `GuestCancel_OfExpiredHold_Is409WithTimeToPayExpiredText_AndFinishesTheExpiry` |
+| CY37-134 | `Cycle37ReviewFixesTests` | `BoardBlock_CarriesComment_PutWithThatCommentKeepsIt_PublicCalendarNeverShowsIt` |
+| CY37-135 | `Cycle37ReviewFixesTests` | `Block_OnArchivedHouse_Is409HouseArchived_AndNothingIsCreated` |
+| CY37-136 | `Cycle37ReviewFixesTests` | `ManualBooking_WithPhoneAndNotifyTick_NeverQueuesMessengerToGuest_EvenWhenCompanySwitchIsOn` |
+| CY37-137 | `Cycle37ReviewFixesTests` | `GuestCancel_RacingStaffRejectPayment_ExactlyOneWins_NoServerErrors_JournalAndCalendarAgree` |
+| CY37-138 | `Cycle37ReviewFixesTests` | `GuestCancel_RacingStaffConfirmPayment_NoServerErrors_FinalStateMatchesTheResponses` |
+| CY37-140 | `Cycle37MigrationRollbackTests` | `Cycle37StaysMigration_UpDownUp_OnScratchDatabase_RemovesAndRestoresSchemaAndSeed` |
 
 Прогон: `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle37"` (нужны `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` и `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`).
 
