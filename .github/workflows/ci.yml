@@ -358,6 +358,14 @@ jobs:
           SMOKE_PROFILE: dom
           PORT: "4175"
 
+      # Цикл 39 (S1): токены /b/, /s/ и API public/<token> не должны попадать в access log dom.
+      - name: Check dom nginx log masking
+        working-directory: .
+        run: |
+          sudo apt-get install -y --no-install-recommends nginx-light >/dev/null
+          sudo systemctl stop nginx || true
+          PATH=/usr/sbin:$PATH bash deploy/nginx/test-dom-masking.sh
+
       # Frontend build moves off the production server entirely (T-D3, US-44, ARCHITECTURE.md §12.3):
       # deploy/deploy.sh downloads this artifact and ships it to the VPS instead of running `npm ci &&
       # npm run build` on the box being served from. 30-day retention matches the number of recent
