@@ -811,6 +811,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stays/companies/{companyId}/services/{serviceId}/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Даты со свободным временем для форм персонала («Добавить услугу», ручной заказ); минимальное время до начала не действует. */
+        get: operations["staysStaffServiceAvailability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stays/companies/{companyId}/service-sessions": {
         parameters: {
             query?: never;
@@ -1301,6 +1318,13 @@ export interface components {
             minHours: number;
             canOrderWithoutStay: boolean;
             availableForHouseBookings: boolean;
+            /**
+             * Format: uuid
+             * @description Тот же идентификатор, что и id (для форм, которым нужен явный serviceId).
+             */
+            serviceId?: string;
+            /** @description Активные позиции услуги (для выбора в форме брони). */
+            items?: components["schemas"]["ServiceItemPublicDto"][];
         };
         ServicePhotoDto: {
             /** Format: uuid */
@@ -1401,6 +1425,8 @@ export interface components {
             reason?: (string & components["schemas"]["StartsReason"]) | null;
             /** @description На эту дату свободного времени нет. */
             noStartsText?: string | null;
+            /** @description Активные позиции услуги — только в ответе маршрута персонала. */
+            items?: components["schemas"]["ServiceItemPublicDto"][] | null;
         };
         PublicServiceQuoteInput: {
             /** Format: date */
@@ -1533,6 +1559,10 @@ export interface components {
             minHours: number;
             /** @description Бизнес-дни, где есть время внутри проживания. */
             dates: components["schemas"]["AvailabilityDayDto"][];
+            /** Format: uuid */
+            serviceId?: string;
+            /** @description Активные позиции услуги. */
+            items?: components["schemas"]["ServiceItemPublicDto"][];
         };
         BookingServicesDto: {
             canAdd: boolean;
@@ -2063,6 +2093,8 @@ export interface components {
         ServiceLinkDto: {
             name: string;
             url: string;
+            /** Format: uuid */
+            serviceId?: string;
         };
         /** @description PublicHouseDto цикла 37 + строка «К проживанию можно добавить». */
         PublicHouseServicesPart: {
@@ -4009,6 +4041,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ServiceStartsDto"];
+                };
+            };
+            400: components["responses"]["PlainTextError"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    staysStaffServiceAvailability: {
+        parameters: {
+            query?: {
+                from?: string;
+                days?: number;
+                /** @description Сеанс к этой брони — в пределах проживания. */
+                bookingId?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Id компании «Дома». Салон, магазин или чужая компания — 404. */
+                companyId: components["parameters"]["CompanyId"];
+                serviceId: components["parameters"]["ServiceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Календарь дат. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAvailabilityDto"];
                 };
             };
             400: components["responses"]["PlainTextError"];

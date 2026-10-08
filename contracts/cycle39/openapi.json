@@ -1519,6 +1519,18 @@
           },
           "availableForHouseBookings": {
             "type": "boolean"
+          },
+          "serviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Тот же идентификатор, что и id (для форм, которым нужен явный serviceId)."
+          },
+          "items": {
+            "type": "array",
+            "description": "Активные позиции услуги (для выбора в форме брони).",
+            "items": {
+              "$ref": "#/components/schemas/ServiceItemPublicDto"
+            }
           }
         }
       },
@@ -1874,6 +1886,14 @@
             "type": "string",
             "nullable": true,
             "description": "На эту дату свободного времени нет."
+          },
+          "items": {
+            "type": "array",
+            "nullable": true,
+            "description": "Активные позиции услуги — только в ответе маршрута персонала.",
+            "items": {
+              "$ref": "#/components/schemas/ServiceItemPublicDto"
+            }
           }
         }
       },
@@ -2383,6 +2403,17 @@
             "description": "Бизнес-дни, где есть время внутри проживания.",
             "items": {
               "$ref": "#/components/schemas/AvailabilityDayDto"
+            }
+          },
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "description": "Активные позиции услуги.",
+            "items": {
+              "$ref": "#/components/schemas/ServiceItemPublicDto"
             }
           }
         }
@@ -4438,6 +4469,10 @@
           },
           "url": {
             "type": "string"
+          },
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -7575,6 +7610,77 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ServiceStartsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/stays/companies/{companyId}/services/{serviceId}/availability": {
+      "get": {
+        "tags": [
+          "stays-service-sessions"
+        ],
+        "operationId": "staysStaffServiceAvailability",
+        "summary": "Даты со свободным временем для форм персонала («Добавить услугу», ручной заказ); минимальное время до начала не действует.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 31,
+              "default": 14
+            }
+          },
+          {
+            "name": "bookingId",
+            "in": "query",
+            "required": false,
+            "description": "Сеанс к этой брони — в пределах проживания.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Календарь дат.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceAvailabilityDto"
                 }
               }
             }
