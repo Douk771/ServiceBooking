@@ -54,16 +54,3 @@ export function formatIncludedLimitLine(
   if (count === null) return `${unitNominativePlural[0].toUpperCase()}${unitNominativePlural.slice(1)} без ограничений`
   return formatIncludedLimit(count, unitGenitiveSingular, unitGenitivePlural)
 }
-
-/**
- * The plan that gets the visual accent on `/pricing`: the first PAID plan by `sortOrder` — neither the free one nor the
- * trial. Since cycle 28 the trial (`isTrial`, price 0, `isFree: false`) sits right after the free plan; without this
- * exclusion the accent would land on the trial instead of the first tariff a customer actually pays for.
- */
-export function pickFeaturedPlanId(
-  plans: readonly { id: string; isFree: boolean; isTrial?: boolean; sortOrder: number; pricePerMonth: number }[],
-): string | undefined {
-  return [...plans]
-    .sort((a, b) => a.sortOrder - b.sortOrder || a.pricePerMonth - b.pricePerMonth)
-    .find((p) => !p.isFree && !p.isTrial)?.id
-}

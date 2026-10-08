@@ -1,6 +1,5 @@
 import type { LandingConfig } from '../../components/landing/types'
 import { zapisPricingLine } from '../../components/pricing/zapisPricingLine'
-import salonHero from '../../assets/salon-hero.jpg'
 import { zapisFaq } from './zapisFaq'
 
 /**
@@ -21,7 +20,6 @@ export const zapisLanding: LandingConfig = {
     howTo: { kind: 'anchor', href: '#clients-title', label: 'Как записаться' },
   },
   catalog: { id: 'companies', ariaLabel: 'Компании и салоны' },
-  media: { src: salonHero, alt: 'Интерьер салона', width: 941, height: 1672 },
   clients: {
     eyebrow: 'Для клиентов',
     title: 'Запишитесь к мастеру онлайн, без звонков',
