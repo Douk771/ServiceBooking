@@ -15,6 +15,8 @@ import { ConsentsPage } from '@/pages/ConsentsPage'
 import { NoticesPage } from '@/pages/NoticesPage'
 import { BaniNavbar } from './components/BaniNavbar'
 import { BaniFooter } from './components/BaniFooter'
+import { CatalogPage } from './pages/CatalogPage'
+import { CompanyPage } from './pages/CompanyPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PendingPage } from './pages/PendingPage'
 import { ProfilePage } from './pages/ProfilePage'
@@ -67,7 +69,7 @@ export function BaniApp() {
           <LegalGuard bypassPaths={CONSENT_GATE_BYPASS_PATHS}>
             <RouteErrorBoundary>
               <Routes>
-                <Route path="/" element={<PendingPage title="Бани" />} />
+                <Route path="/" element={<CatalogPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
                 <Route path="/s/:token" element={<PendingPage title="Бронь" />} />
@@ -104,7 +106,7 @@ export function BaniApp() {
                 <Route path="/payment-terms" element={<Navigate to="/terms-owner#payment-terms" replace />} />
 
                 {/* /:slug and /:slug/:resourceSlug are the company and the resource; static routes rank higher. */}
-                <Route path="/:slug" element={<PendingPage title="Комплекс" />} />
+                <Route path="/:slug" element={<CompanyPage />} />
                 <Route path="/:slug/:resourceSlug" element={<PendingPage title="Баня" />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
