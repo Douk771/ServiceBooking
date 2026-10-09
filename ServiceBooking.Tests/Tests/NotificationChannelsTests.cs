@@ -326,57 +326,63 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
 
     // ── Company assignment ───────────────────────────────────────────────────────────────────────
 
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.28.5, BE-40-2): INTENTIONAL change of expectations. A number works for every company of its
+    // billing account, so the assignment routes are legacy: POST answers 410 and changes nothing, DELETE answers 204 and changes nothing
+    // (the old tests expected a 409 confirmation / 201 / a cancelled queue).
+
     [Fact, TestCase("NTF-C011")]
-    public async Task AssignCompany_SecondCompanyWithoutAck_Returns409()
-    {
-        var (owner, company1, channel) = await CreateConnectedChannelAsync();
-        var company2 = await CreateCompanyAsync(owner.Token);
-
-        var response = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{channel.Id}/companies",
-            new AssignCompanyDto(company2.Id, WarningAcknowledged: false));
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-    }
-
-    [Fact, TestCase("NTF-C012")]
-    public async Task AssignCompany_SecondCompanyWithAck_Succeeds()
+    public async Task AssignCompany_IsGone_410_AndChangesNothing_WhateverTheBody()
     {
         var (owner, _, channel) = await CreateConnectedChannelAsync();
         var company2 = await CreateCompanyAsync(owner.Token);
 
-        var response = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{channel.Id}/companies",
-            new AssignCompanyDto(company2.Id, WarningAcknowledged: true));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var dto = (await response.Content.ReadJsonAsync<ChannelDto>())!;
-        dto.Companies.Should().HaveCount(2);
+        foreach (var acknowledged in new[] { false, true })
+        {
+            var response = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{channel.Id}/companies",
+                new AssignCompanyDto(company2.Id, WarningAcknowledged: acknowledged));
+            response.StatusCode.Should().Be(HttpStatusCode.Gone);
+            (await response.Content.ReadAsStringAsync()).Should().Be("Назначать компании больше не нужно: номер работает для всех ваших компаний");
+        }
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        (await db.ChannelCompanyAssignments.AnyAsync(a => a.CompanyId == company2.Id)).Should().BeFalse("the call must not create an assignment");
+    }
+
+    [Fact, TestCase("NTF-C012")]
+    public async Task AssignCompany_ForeignChannel_Is404_NotTheGone()
+    {
+        var (owner, _, _) = await CreateConnectedChannelAsync();
+        var (_, _, foreignChannel) = await CreateConnectedChannelAsync();
+
+        var response = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{foreignChannel.Id}/companies",
+            new AssignCompanyDto(Guid.NewGuid(), WarningAcknowledged: true));
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, "a foreign channel is indistinguishable from a missing one (API_CONTRACT_CYCLE4.md §19.2)");
     }
 
     [Fact, TestCase("NTF-C013")]
-    public async Task AssignCompany_AlreadyOnAnotherChannel_Returns409()
-    {
-        var (owner, _, channelA) = await CreateConnectedChannelAsync();
-        var (_, companyB, _) = await CreateConnectedChannelAsync(); // different owner+channel+company
-
-        var response = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{channelA.Id}/companies",
-            new AssignCompanyDto(companyB.Id, WarningAcknowledged: true));
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, "companyB belongs to a different owner");
-    }
-
-    [Fact, TestCase("NTF-C014")]
-    public async Task UnassignCompany_CancelsOnlyThatCompanysPendingRows_LeavesSiblingCompanyAlone()
+    public async Task ChannelDto_Companies_AreAllCompaniesOfTheAccount_WithoutAnyAssignment()
     {
         var (owner, company1, channel) = await CreateConnectedChannelAsync();
         var company2 = await CreateCompanyAsync(owner.Token);
-        var assignCompany2 = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{channel.Id}/companies",
-            new AssignCompanyDto(company2.Id, WarningAcknowledged: true));
-        assignCompany2.EnsureSuccessStatusCode();
 
+        var dto = (await (await AuthedClient(owner.Token).GetAsync($"/api/notification-channels/{channel.Id}")).Content.ReadJsonAsync<ChannelDto>())!;
+
+        dto.Companies.Select(c => c.CompanyId).Should().BeEquivalentTo([company1.Id, company2.Id]);
+    }
+
+    [Fact, TestCase("NTF-C014")]
+    public async Task UnassignCompany_IsNoOp_204_QueueUntouched()
+    {
+        var (owner, company1, channel) = await CreateConnectedChannelAsync();
+        Guid rowId;
         using (var scope = Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            db.OutboundNotifications.AddRange(
-                NewPendingNotification(company1.Id, channel.Id),
-                NewPendingNotification(company2.Id, channel.Id));
+            var row = NewPendingNotification(company1.Id, channel.Id);
+            db.OutboundNotifications.Add(row);
             await db.SaveChangesAsync();
+            rowId = row.Id;
         }
 
         var response = await AuthedClient(owner.Token).DeleteAsync($"/api/notification-channels/{channel.Id}/companies/{company1.Id}");
@@ -385,17 +391,11 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         using (var scope = Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var rows = await db.OutboundNotifications.Where(n => n.ChannelId == channel.Id).ToListAsync();
-            rows.Single(r => r.CompanyId == company1.Id).Status.Should().Be(NotificationStatus.Cancelled);
-            rows.Single(r => r.CompanyId == company2.Id).Status.Should().Be(NotificationStatus.Pending, "sibling company's queue must be untouched");
-
-            // ARCHITECTURE_CYCLE4.md §27.1's isolation invariant: this is the one test in this file that
-            // deliberately leaves a Pending row on a channel still Connected at the assertion point above
-            // — clean it up now so it can never be picked up by a LATER, unrelated
-            // NotificationDispatchTestFactory run sharing the same "servicebooking_test" database (the
-            // real dispatcher scans Pending rows platform-wide, not scoped to whichever test created them).
-            var survivingRow = rows.Single(r => r.CompanyId == company2.Id);
-            db.OutboundNotifications.Remove(survivingRow);
+            var row = await db.OutboundNotifications.FirstAsync(n => n.Id == rowId);
+            row.Status.Should().Be(NotificationStatus.Pending, "the route changes no data any more");
+            // ARCHITECTURE_CYCLE4.md §27.1's isolation invariant: a Pending row on a Connected channel must not outlive this test (the real
+            // dispatcher scans Pending rows platform-wide).
+            db.OutboundNotifications.Remove(row);
             await db.SaveChangesAsync();
         }
     }
@@ -403,7 +403,7 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
     // ── Replace after ban (priority scenario 2) ──────────────────────────────────────────────────
 
     [Fact, TestCase("NTF-C015")]
-    public async Task Replace_BlockedChannel_MovesPeriodAssignmentsAndPendingRows_NotExpired()
+    public async Task Replace_BlockedChannel_KeepsPeriod_MovesPendingRows_NotExpired()
     {
         var (owner, company, channel) = await CreateConnectedChannelAsync();
 
@@ -446,8 +446,9 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
             oldChannel.State.Should().Be(ChannelState.Replaced);
             oldChannel.ReplacedByChannelId.Should().Be(result.NewChannelId);
 
+            // Cycle 40 (§40.4, BE-40-2): assignments are no longer moved (nor read) — the new number serves the whole account.
             var assignment = await db.ChannelCompanyAssignments.AsNoTracking().SingleAsync(a => a.CompanyId == company.Id);
-            assignment.ChannelId.Should().Be(result.NewChannelId);
+            assignment.ChannelId.Should().Be(channel.Id, "the legacy assignment row is left alone");
 
             var pendingRow = await db.OutboundNotifications.AsNoTracking().FirstAsync(n => n.Id == pendingId);
             pendingRow.ChannelId.Should().Be(result.NewChannelId, "Pending rows migrate to the new channel");

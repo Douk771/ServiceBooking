@@ -49,7 +49,7 @@ public static class MessagingQueueing
 
 /// <summary>
 /// §40.11.2 — gathers the two facts <see cref="MessengerConsentRule"/> needs and asks it. A mark that is already <c>true</c>/<c>false</c>
-/// needs no lookup. For <c>null</c> the recipient is an account when the record belongs to one (<paramref name="userId"/>) or when an
+/// needs no lookup. For <c>null</c> the recipient is an account when the record belongs to one (the <c>userId</c> argument) or when an
 /// account has the recipient's phone CONFIRMED; the grant is the account's current <c>PdnConsent/ProviderDelivery</c>.
 /// </summary>
 public sealed class MessengerConsentResolver(AppDbContext db, ConsentLedger consentLedger)
