@@ -17,6 +17,8 @@ public static class BathsSlugPolicy
 
     private static readonly Lazy<Policy> Loaded = new(Load);
 
+    public static int SlugMinLength => Loaded.Value.Min;
+    public static int SlugMaxLength => Loaded.Value.Max;
     public static IReadOnlySet<string> ReservedSlugs => Loaded.Value.Reserved;
     public static IReadOnlySet<string> ReservedResourceSlugs => Loaded.Value.ReservedResource;
     public static IReadOnlyList<string> SpaRoutes => Loaded.Value.SpaRoutes;
