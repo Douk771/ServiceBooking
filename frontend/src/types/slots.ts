@@ -58,7 +58,16 @@ export type PublicServiceQuoteInput = S39['PublicServiceQuoteInput']
 export type ServiceQuoteDto = S39['ServiceQuoteDto']
 export type CreateServiceOrderInput = S39['CreateServiceOrderInput'] & { guestsCount?: number | null }
 export type CreateServiceOrderResponse = S39['CreateServiceOrderResponse']
-export type PublicServiceOrderDto = S39['PublicServiceOrderDto'] & { guestsCount?: number | null }
+export type SessionReminderViewDto = S42['SessionReminderViewDto']
+export type PublicServiceOrderDto = S39['PublicServiceOrderDto'] & {
+  guestsCount?: number | null
+  cityName?: string
+  localTimeNote?: string
+  /** Not null once the reminder was sent (bani). */
+  sessionReminder?: SessionReminderViewDto | null
+  /** `/<companySlug>` — «Забронировать ещё в этом комплексе» (bani); no personal data in it (Т42-09). */
+  bookAgainUrl?: string | null
+}
 export type ServiceListItemDto = S39['ServiceListItemDto']
 export type ServiceSetupInput = S39['ServiceSetupInput'] & { capacity?: number | null }
 export type ServiceManageDto = S39['ServiceManageDto'] & { capacity?: number | null; contentWarnings?: OwnerTextWarning[] }

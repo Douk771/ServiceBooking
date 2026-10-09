@@ -10,7 +10,7 @@ import { ServiceOrderPanel } from '@/components/slots/services/ServiceOrderPanel
 import { ServiceTermsModal } from '@/components/slots/services/ServiceTermsModal'
 import { getStayErrorMessage, isNotFound } from '@/utils/slots/slotError'
 import { isIsoDate } from '@/utils/slots/slotDates'
-import { useSlotVertical } from '@/components/slots/SlotVerticalContext'
+import { useGuestWords, useSlotVertical } from '@/components/slots/SlotVerticalContext'
 
 /**
  * `/:slug/uslugi/:serviceSlug` — the page of a service (US-39-07/08, API_CONTRACT_CYCLE39.md §39.22.1). Gallery, the owner's
@@ -20,8 +20,12 @@ import { useSlotVertical } from '@/components/slots/SlotVerticalContext'
  */
 export function ServiceView() {
   const { api, words, features, NotFound } = useSlotVertical()
+  const guestWords = useGuestWords()
   const publicServicesApi = api.publicServices
-  const { slug = '', serviceSlug = '' } = useParams()
+  const params = useParams()
+  const slug = params.slug ?? ''
+  // dom's address is /:slug/uslugi/:serviceSlug, bani's is /:slug/:resourceSlug.
+  const serviceSlug = params.serviceSlug ?? params.resourceSlug ?? ''
   const [sp] = useSearchParams()
   const dateParam = sp.get('date')
   const initialDate = dateParam && isIsoDate(dateParam) ? dateParam : null
@@ -177,7 +181,7 @@ export function ServiceView() {
           ) : standalone.ordering ? (
             <ServiceOrderPanel service={service} initialDate={initialDate} onOpenTerms={() => setTermsOpen(true)} />
           ) : (
-            <section className="rounded-3xl border border-line bg-white p-6" aria-label="Заказ услуги">
+            <section className="rounded-3xl border border-line bg-white p-6" aria-label={guestWords.panelLabel}>
               <p className="text-base font-medium text-ink" data-testid="not-ordering">
                 {standalone.notOrderingText ?? words.notOrderingFallback}
               </p>

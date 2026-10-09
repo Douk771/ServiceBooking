@@ -20,6 +20,9 @@ import { CompanyPage } from './pages/CompanyPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PendingPage } from './pages/PendingPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { ResourcePage } from './pages/ResourcePage'
+import { OrderPage } from './pages/OrderPage'
+import { MyBookingsPage } from './pages/MyBookingsPage'
 
 /**
  * Routes reachable while a "Material" change to a GLOBAL-gate document is pending acceptance (same reasoning as dom's list):
@@ -72,10 +75,10 @@ export function BaniApp() {
                 <Route path="/" element={<CatalogPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
-                <Route path="/s/:token" element={<PendingPage title="Бронь" />} />
+                <Route path="/s/:token" element={<OrderPage />} />
 
                 <Route element={<RequireAuth />}>
-                  <Route path="/bookings" element={<PendingPage title="Мои брони" />} />
+                  <Route path="/bookings" element={<MyBookingsPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/profile/consents" element={<ConsentsPage />} />
                   <Route path="/notices" element={<NoticesPage />} />
@@ -107,7 +110,7 @@ export function BaniApp() {
 
                 {/* /:slug and /:slug/:resourceSlug are the company and the resource; static routes rank higher. */}
                 <Route path="/:slug" element={<CompanyPage />} />
-                <Route path="/:slug/:resourceSlug" element={<PendingPage title="Баня" />} />
+                <Route path="/:slug/:resourceSlug" element={<ResourcePage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </RouteErrorBoundary>
