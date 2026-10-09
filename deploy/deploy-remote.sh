@@ -40,6 +40,11 @@ GOODS_SMOKE="${GOODS_SMOKE:-1}"
 DOM_HOST="${DOM_HOST:-dom.ezbook.ru}"
 DOM_SMOKE="${DOM_SMOKE:-1}"
 DOM_VHOST="${DOM_VHOST:-/etc/nginx/sites-enabled/dom.ezbook.conf}"
+# ARCHITECTURE_CYCLE42.md §42.13.4 — bani.ezbook.ru: the same as dom, from current/__bani (smoke only if the vhost is installed).
+# BANI_SMOKE=0 is the emergency off switch.
+BANI_HOST="${BANI_HOST:-bani.ezbook.ru}"
+BANI_SMOKE="${BANI_SMOKE:-1}"
+BANI_VHOST="${BANI_VHOST:-/etc/nginx/sites-enabled/bani.ezbook.conf}"
 
 NEW_RELEASE_DIR="$RELEASES_DIR/$RELEASE_TS"
 [ -d "$NEW_RELEASE_DIR" ] || { echo "ERROR: $NEW_RELEASE_DIR does not exist — did deploy.sh finish uploading it?" >&2; exit 1; }
@@ -351,6 +356,36 @@ else
     exit 1
   }
   echo "    dom OK"
+fi
+
+if [ "$BANI_SMOKE" = "0" ]; then
+  echo "==> bani smoke skipped (BANI_SMOKE=0)"
+elif [ ! -e "$BANI_VHOST" ]; then
+  echo "WARNING: bani vhost not installed ($BANI_VHOST), smoke skipped (DEPLOY.md §31)" >&2
+else
+  echo "==> bani smoke: https://$BANI_HOST/ and /api/health/ready via local nginx"
+  [ -f "$CURRENT_LINK/__bani/index.html" ] || {
+    echo "ERROR: $CURRENT_LINK/__bani/index.html is missing — the release was built without bani (build:release includes it)" >&2
+    rollback_hint
+    exit 1
+  }
+  bani_index=$(curl -sf --max-time 10 --resolve "$BANI_HOST:443:127.0.0.1" "https://$BANI_HOST/") || {
+    echo "ERROR: https://$BANI_HOST/ did not answer 200 via local nginx — is the bani vhost installed and does it have a certificate? (DEPLOY.md §31)" >&2
+    rollback_hint
+    exit 1
+  }
+  grep -q '<div id="root">' <<<"$bani_index" || {
+    echo "ERROR: https://$BANI_HOST/ answered, but not with the bani SPA shell (<div id=\"root\"> missing)" >&2
+    rollback_hint
+    exit 1
+  }
+  bani_ready=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$BANI_HOST:443:127.0.0.1" "https://$BANI_HOST/api/health/ready")
+  [ "$bani_ready" = "200" ] || {
+    echo "ERROR: https://$BANI_HOST/api/health/ready returned $bani_ready via local nginx (expected 200)" >&2
+    rollback_hint
+    exit 1
+  }
+  echo "    bani OK"
 fi
 
 echo "==> Pruning old releases (keeping $KEEP_RELEASES most recent)"
