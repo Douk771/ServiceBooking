@@ -84,11 +84,18 @@ public class ChannelPresentationTests
         ChannelPresentation.CanConnect(state, paymentState, riskAccepted).Should().Be(expected);
     }
 
+    // Cycle 40 (API_CONTRACT_CYCLE40.md §40.22.1): a number can be replaced from any state except "never bound" and "already replaced"
+    // (before the cycle only a banned one could) — an intentional change of the expectation.
     [Theory]
     [InlineData(ChannelState.Blocked, true)]
-    [InlineData(ChannelState.Connected, false)]
+    [InlineData(ChannelState.Connected, true)]
+    [InlineData(ChannelState.Connecting, true)]
+    [InlineData(ChannelState.Disconnected, true)]
+    [InlineData(ChannelState.NeedsReconnect, true)]
+    [InlineData(ChannelState.DisabledByOwner, true)]
     [InlineData(ChannelState.NotConnected, false)]
-    public void CanReplace_OnlyTrueForBlocked(ChannelState state, bool expected)
+    [InlineData(ChannelState.Replaced, false)]
+    public void CanReplace_AnyBoundStateExceptReplaced(ChannelState state, bool expected)
     {
         ChannelPresentation.CanReplace(state).Should().Be(expected);
     }

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.Services.Notifications;
-using ChannelOptionCodes = ServiceBooking.API.Services.Notifications.Funding.ChannelOptionCodes;
+using ServiceBooking.API.Services.Notifications.Funding;
 using ServiceBooking.API.Services.Orders;
 using ServiceBooking.API.Services.Shops;
 using ServiceBooking.Core.Entities;
