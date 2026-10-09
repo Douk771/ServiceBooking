@@ -21,6 +21,8 @@ export interface SlotGuestWords {
   phoneNoteAnonymous: string
   phoneNoteAccount: string
   requisitesLater: string
+  /** The line before the «notify me in this browser» button. */
+  pushHint: string
 }
 
 export const DEFAULT_GUEST_WORDS: SlotGuestWords = {
@@ -38,6 +40,7 @@ export const DEFAULT_GUEST_WORDS: SlotGuestWords = {
   phoneNoteAnonymous: 'На этот номер придёт ссылка на заказ. Проверьте, что номер указан верно.',
   phoneNoteAccount: 'Заказ оформляется на номер вашего аккаунта.',
   requisitesLater: 'Реквизиты появятся на странице заказа.',
+  pushHint: 'Браузер сообщит, когда компания подтвердит оплату и когда будет готова информация к заселению.',
 }
 
 /** The words of a vertical: its overrides over the defaults. */

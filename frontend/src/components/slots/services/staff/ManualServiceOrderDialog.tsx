@@ -12,7 +12,7 @@ import { getStayErrorMessage, readConflict } from '@/utils/slots/slotError'
 import { ErrorState, Skeleton } from '@/components/slots/ui/StatePanels'
 import { ServicePickDialog } from '@/components/slots/services/ServicePickDialog'
 import { BasisSelect } from '@/components/slots/services/staff/BasisSelect'
-import { useSlotVertical } from '@/components/slots/SlotVerticalContext'
+import { useCabinetWords, useSlotVertical } from '@/components/slots/SlotVerticalContext'
 
 const DAYS_AHEAD = 14
 
@@ -22,6 +22,7 @@ const DAYS_AHEAD = 14
  */
 export function ManualServiceOrderDialog({ companyId, date, onCreated, onClose }: { companyId: string; date: string; onCreated: (sessionId: string) => void; onClose: () => void }) {
   const { api, features } = useSlotVertical()
+  const cw = useCabinetWords()
   const staysServicesApi = api.cabinet
   const staysBoardApi = api.sessions
   const qc = useQueryClient()
@@ -45,28 +46,28 @@ export function ManualServiceOrderDialog({ companyId, date, onCreated, onClose }
     },
     onError: (err) => {
       const refusal = readConflict<ServiceRefusalDto>(err)
-      setError(getStayErrorMessage(err, 'Не удалось создать заказ.'))
+      setError(getStayErrorMessage(err, cw.manualOrderCreateError))
       if (refusal && isTimeGone(refusal.code)) setResetSignal((n) => n + 1)
     },
   })
 
   if (list.isLoading)
     return (
-      <Modal title="Ручной заказ" onClose={onClose}>
+      <Modal title={cw.manualOrderTitle} onClose={onClose}>
         <Skeleton className="h-32" />
       </Modal>
     )
   if (list.isError || !list.data)
     return (
-      <Modal title="Ручной заказ" onClose={onClose}>
-        <ErrorState message={getStayErrorMessage(list.error, 'Не удалось загрузить услуги.')} onRetry={() => void list.refetch()} />
+      <Modal title={cw.manualOrderTitle} onClose={onClose}>
+        <ErrorState message={getStayErrorMessage(list.error, cw.servicesLoadError)} onRetry={() => void list.refetch()} />
       </Modal>
     )
   const services = list.data.filter((s) => !s.isArchived)
   if (services.length === 0)
     return (
-      <Modal title="Ручной заказ" onClose={onClose}>
-        <p className="text-sm text-ink-soft">У компании нет услуг. Создайте услугу в разделе «Услуги».</p>
+      <Modal title={cw.manualOrderTitle} onClose={onClose}>
+        <p className="text-sm text-ink-soft">{cw.manualOrderNoServices}</p>
       </Modal>
     )
 
@@ -75,7 +76,7 @@ export function ManualServiceOrderDialog({ companyId, date, onCreated, onClose }
 
   return (
     <ServicePickDialog
-      title="Ручной заказ услуги"
+      title={cw.manualOrderStepTitle}
       services={services.map((s) => ({ id: s.id, name: s.name }))}
       staticDays={() => days}
       loadStarts={(id, d) => staysBoardApi.staffStarts(companyId, id, { date: d })}

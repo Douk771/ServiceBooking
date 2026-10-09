@@ -3,6 +3,7 @@ import type { createSlotApi } from '@/api/slots'
 import { useLegalText, type ServerLegalText } from '@/hooks/slots/useLegalText'
 import type { SlotText } from '@/utils/slots/slotTexts'
 import { resolveGuestWords, type SlotGuestWords } from '@/utils/slots/slotGuestWords'
+import { resolveCabinetWords, type SlotCabinetWords } from '@/utils/slots/slotCabinetWords'
 
 /** The routes of one vertical: dom builds them with `createSlotApi('/stays')`, bani with `createSlotApi('/baths')`. */
 export type SlotApi = ReturnType<typeof createSlotApi>
@@ -72,6 +73,8 @@ export interface SlotWords {
   serviceCreateHint?: string
   /** The guest's own words for an order («бронь» in bani); what is missing keeps the default wording of `slotGuestWords`. */
   guest?: Partial<SlotGuestWords>
+  /** The cabinet's own words («бронь», «ресурс» in bani); what is missing keeps the default wording of `slotCabinetWords`. */
+  cabinet?: Partial<SlotCabinetWords>
 }
 
 /** A browser-tab memory of the anonymous guest's name and phone (bani: `sessionStorage`, Т42-09). Never reaches a URL. */
@@ -126,6 +129,11 @@ export function useSlotVertical(): SlotVertical {
 /** The guest's words of the current vertical; the defaults (dom) when rendered outside a provider, so a lone component stays testable. */
 export function useGuestWords(): SlotGuestWords {
   return resolveGuestWords(useContext(Ctx)?.words.guest)
+}
+
+/** The cabinet's words of the current vertical; the defaults (dom) when rendered outside a provider. */
+export function useCabinetWords(): SlotCabinetWords {
+  return resolveCabinetWords(useContext(Ctx)?.words.cabinet)
 }
 
 /** The legal microcopy `key` of the current vertical (server text or its fallback). */

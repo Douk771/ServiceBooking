@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/Icon'
 import { LinkButton } from '@/components/slots/ui/LinkButton'
 import { EmptyState, ErrorState, InlineError, LoadingList } from '@/components/slots/ui/StatePanels'
-import { useCabinetCompany, useSlotVertical } from '@/components/slots/SlotVerticalContext'
+import { useCabinetCompany, useCabinetWords, useSlotVertical } from '@/components/slots/SlotVerticalContext'
 import type { ServiceListItemDto } from '@/types/slots'
 import { businessDateOf } from '@/utils/slots/businessClock'
 import { can } from '@/utils/slots/slotPermissions'
@@ -22,6 +22,7 @@ function statusOf(s: ServiceListItemDto): { text: string; cls: string } {
  */
 export function CabinetServicesView() {
   const { api, paths, words, NotFound } = useSlotVertical()
+  const cw = useCabinetWords()
   const staysServicesApi = api.cabinet
   const { company } = useCabinetCompany()
   const qc = useQueryClient()
@@ -98,18 +99,18 @@ export function CabinetServicesView() {
     <main className="mx-auto max-w-[900px] px-4 pb-6 pt-8 sm:px-8">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-serif text-[26px] text-ink">Услуги</h2>
+          <h2 className="font-serif text-[26px] text-ink">{cw.servicesTitle}</h2>
           <p className="mt-0.5 text-sm text-ink-soft">Баня, чан и другие услуги на время. Гости видят только опубликованные. Порядок здесь — порядок на странице компании.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {can(perms, 'ViewBookings') && (
             <LinkButton to={paths.cabinetDay(company.id, today)} variant="secondary">
-              День услуг
+              {cw.dayLink}
             </LinkButton>
           )}
           {manage && (
             <LinkButton to={paths.cabinetServiceNew(company.id)}>
-              <Icon name="plus" size={16} /> Добавить услугу
+              <Icon name="plus" size={16} /> {cw.addService}
             </LinkButton>
           )}
         </div>
@@ -118,12 +119,12 @@ export function CabinetServicesView() {
       {q.isLoading ? (
         <LoadingList rows={3} />
       ) : q.isError ? (
-        <ErrorState message={getStayErrorMessage(q.error, 'Не удалось загрузить услуги.')} onRetry={() => void q.refetch()} />
+        <ErrorState message={getStayErrorMessage(q.error, cw.servicesLoadError)} onRetry={() => void q.refetch()} />
       ) : (q.data ?? []).length === 0 ? (
         <EmptyState
-          title="Услуг пока нет"
+          title={cw.dayEmptyTitle}
           text={words.servicesEmptyText}
-          action={manage ? <LinkButton to={paths.cabinetServiceNew(company.id)}>Добавить услугу</LinkButton> : undefined}
+          action={manage ? <LinkButton to={paths.cabinetServiceNew(company.id)}>{cw.addService}</LinkButton> : undefined}
         />
       ) : (
         <>

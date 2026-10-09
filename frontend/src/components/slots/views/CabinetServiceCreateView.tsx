@@ -4,13 +4,14 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/Button'
 import { InlineError } from '@/components/ui/InlineError'
 import { Input } from '@/components/ui/Input'
-import { useCabinetCompany, useSlotVertical } from '@/components/slots/SlotVerticalContext'
+import { useCabinetCompany, useCabinetWords, useSlotVertical } from '@/components/slots/SlotVerticalContext'
 import { can } from '@/utils/slots/slotPermissions'
 import { getStayErrorMessage } from '@/utils/slots/slotError'
 
 /** `/cabinet/:companyId/services/new` (`ManageServices`) — only the name; the service starts unpublished with an address from its name. */
 export function CabinetServiceCreateView() {
   const { api, paths, words, NotFound } = useSlotVertical()
+  const cw = useCabinetWords()
   const staysServicesApi = api.cabinet
   const { company } = useCabinetCompany()
   const navigate = useNavigate()
@@ -31,7 +32,7 @@ export function CabinetServiceCreateView() {
 
   return (
     <main className="mx-auto max-w-[560px] px-4 pb-6 pt-8 sm:px-8">
-      <h2 className="font-serif text-[26px] text-ink">Новая услуга</h2>
+      <h2 className="font-serif text-[26px] text-ink">{cw.newServiceTitle}</h2>
       <p className="mb-6 mt-1 text-sm text-ink-soft">Сначала название. Расписание, цены, позиции, правила и публикация — на странице услуги.</p>
       <form
         noValidate
@@ -52,7 +53,7 @@ export function CabinetServiceCreateView() {
             Отмена
           </Button>
           <Button type="submit" className="min-h-[44px] flex-1" loading={create.isPending}>
-            Создать услугу
+            {cw.createService}
           </Button>
         </div>
       </form>
