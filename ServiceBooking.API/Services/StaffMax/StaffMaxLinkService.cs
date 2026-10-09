@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.StaffMax;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -17,6 +18,10 @@ public sealed class StaffMaxLinkService(
     AppDbContext db, StaffMaxAvailability availability, IOptions<StaffMaxOptions> options, IOptions<PhoneVerificationOptions> phoneOptions)
 {
     public const string NotEligibleText = "Подключить MAX могут владельцы и сотрудники магазинов и компаний «Дома»";
+
+    /// <summary>Kinds whose staff have positions («Дома», «Бани»): there the owner / manager gets booking messages, a housekeeper / банщик does not (ARCHITECTURE_CYCLE42.md §42.3.4).</summary>
+    private static readonly CompanyKind[] PositionKinds =
+        Enum.GetValues<CompanyKind>().Where(k => CompanyKindTraits.For(k).UsesStaffPositions).ToArray();
 
     public const string NotLinkedText = "Не подключено";
     public const string PendingText = "Ждём подтверждения в MAX…";
@@ -54,7 +59,7 @@ public sealed class StaffMaxLinkService(
 
         // Cycle 39: an owner or a manager of a «Дома» company is eligible too (a housekeeper is not — the same rule as LinkAsync).
         var eligible = shops.Count > 0 || await db.CompanyMembers.AsNoTracking().Where(CompanyMembership.IsStaffRole)
-            .AnyAsync(cm => cm.UserId == userId && cm.Company.IsActive && cm.Company.Kind == CompanyKind.Stays && cm.StaffPosition != StaffPosition.Housekeeper, ct);
+            .AnyAsync(cm => cm.UserId == userId && cm.Company.IsActive && PositionKinds.Contains(cm.Company.Kind) && cm.StaffPosition != StaffPosition.Housekeeper, ct);
         return new StaffMaxStatusDto(
             availability.Enabled, availability.CanLink, availability.UnavailableText, eligible, status, text,
             link?.LinkedAtUtc, link?.StoppedAtUtc,
@@ -76,7 +81,7 @@ public sealed class StaffMaxLinkService(
         if (!await db.CompanyMembers.Where(CompanyMembership.IsStaffRole)
                 .AnyAsync(cm => cm.UserId == userId && db.Companies.Any(c => c.Id == cm.CompanyId && c.IsActive &&
                     // ARCHITECTURE_CYCLE37.md §37.3.2: a shop's staff, or the owner / a manager of a «Дома» company (a housekeeper gets no booking messages).
-                    (c.Kind == CompanyKind.Orders || (c.Kind == CompanyKind.Stays && cm.StaffPosition != StaffPosition.Housekeeper))), ct))
+                    (c.Kind == CompanyKind.Orders || (PositionKinds.Contains(c.Kind) && cm.StaffPosition != StaffPosition.Housekeeper))), ct))
             return (NotEligibleText, null);
         if (!availability.Enabled) return (StaffMaxAvailability.NotEnabledText, null);
         if (!availability.CanLink) return (StaffMaxAvailability.LinkUnavailableText, null);
