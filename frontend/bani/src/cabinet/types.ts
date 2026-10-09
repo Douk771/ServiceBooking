@@ -22,7 +22,12 @@ export type ProviderInput = components['schemas']['ProviderInput']
 export type StayProviderStatus = components['schemas']['StayProviderStatus']
 export type TrialStateDto = components['schemas']['TrialStateDto']
 export type TrialOutcomeDto = components['schemas']['TrialOutcomeDto']
-export type NotificationSettingsDto = components['schemas']['NotificationSettingsDto']
+// Cycle 40 (API_CONTRACT_CYCLE40.md §40.29): messagingActive / deliveryChoiceVisible / priorityWarning are appended by the server (the cycle42 schema is frozen).
+export type NotificationSettingsDto = components['schemas']['NotificationSettingsDto'] & {
+  messagingActive?: boolean
+  deliveryChoiceVisible?: boolean
+  priorityWarning?: string | null
+}
 export type NotificationSettingsInput = components['schemas']['NotificationSettingsInput']
 
 /** The two positions of a «Бани» company (a `Master` with a position): «Администратор» sees bookings, «Банщик» only the schedule. */

@@ -30,3 +30,9 @@ describe('restrictedItemPrompt', () => {
     expect(restrictedItemPrompt({ code: 'ItemRestrictedConfirmationRequired' })).toEqual({ markers: [], text: '' })
   })
 })
+
+describe('ownerWarningTexts with a vertical\'s own texts', () => {
+  it('prefers the override and falls back to the default for a code it lacks', () => {
+    expect(ownerWarningTexts(['HealthClaim', 'Passport'], { HealthClaim: 'свой' })).toEqual(['свой', OWNER_WARNING_TEXT.Passport])
+  })
+})

@@ -23,6 +23,8 @@ export interface SlotGuestWords {
   requisitesLater: string
   /** The line before the «notify me in this browser» button. */
   pushHint: string
+  /** The name of the installed app in the iPhone settings list («Настройки → Уведомления → «…»»). */
+  appName: string
 }
 
 export const DEFAULT_GUEST_WORDS: SlotGuestWords = {
@@ -41,6 +43,7 @@ export const DEFAULT_GUEST_WORDS: SlotGuestWords = {
   phoneNoteAccount: 'Заказ оформляется на номер вашего аккаунта.',
   requisitesLater: 'Реквизиты появятся на странице заказа.',
   pushHint: 'Браузер сообщит, когда компания подтвердит оплату и когда будет готова информация к заселению.',
+  appName: 'Дома',
 }
 
 /** The words of a vertical: its overrides over the defaults. */

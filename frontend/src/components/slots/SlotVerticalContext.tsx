@@ -73,6 +73,8 @@ export interface SlotWords {
   serviceCreateHint?: string
   /** The guest's own words for an order («бронь» in bani); what is missing keeps the default wording of `slotGuestWords`. */
   guest?: Partial<SlotGuestWords>
+  /** The texts of the soft warnings about an owner's text, by code (bani: the contract's `ownerText.warningTexts`); absent = dom's. */
+  ownerWarnings?: Partial<Record<string, string>>
   /** The cabinet's own words («бронь», «ресурс» in bani); what is missing keeps the default wording of `slotCabinetWords`. */
   cabinet?: Partial<SlotCabinetWords>
 }
@@ -129,6 +131,11 @@ export function useSlotVertical(): SlotVertical {
 /** The guest's words of the current vertical; the defaults (dom) when rendered outside a provider, so a lone component stays testable. */
 export function useGuestWords(): SlotGuestWords {
   return resolveGuestWords(useContext(Ctx)?.words.guest)
+}
+
+/** The vertical's own texts of owner-text warnings; undefined (dom's defaults) outside a provider. */
+export function useOwnerWarningTexts(): Partial<Record<string, string>> | undefined {
+  return useContext(Ctx)?.words.ownerWarnings
 }
 
 /** The cabinet's words of the current vertical; the defaults (dom) when rendered outside a provider. */

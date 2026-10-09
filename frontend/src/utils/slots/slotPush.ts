@@ -34,7 +34,7 @@ export function pruneBookingPushStorage(storage: Pick<Storage, 'length' | 'key' 
  * the shared `getPushUnavailableReason`; only the words are dom's. The advice mirrors goods: the booking page always shows
  * everything, notifications are a convenience (R37-5).
  */
-export function guestPushMessage(reason: PushUnavailableReason): string {
+export function guestPushMessage(reason: PushUnavailableReason, appName = 'Дома'): string {
   const advice = ' Сведения о брони всегда доступны на этой странице — сохраните ссылку.'
   switch (reason) {
     case 'ios-safari-not-installed':
@@ -48,7 +48,7 @@ export function guestPushMessage(reason: PushUnavailableReason): string {
     case 'permission-denied':
       return 'Вы запретили уведомления в браузере. Чтобы вернуть: значок замка в адресной строке → Уведомления → Разрешить.' + advice
     case 'ios-permission-denied':
-      return 'Вы запретили уведомления для этого приложения. Чтобы вернуть: Настройки айфона → Уведомления → «Дома» → Допуск уведомлений.' + advice
+      return `Вы запретили уведомления для этого приложения. Чтобы вернуть: Настройки айфона → Уведомления → «${appName}» → Допуск уведомлений.` + advice
     case 'platform-disabled':
       return 'Уведомления в браузере пока не включены на платформе.'
     case 'company-disabled':

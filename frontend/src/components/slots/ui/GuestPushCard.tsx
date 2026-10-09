@@ -33,7 +33,7 @@ export function GuestPushCard({
       </p>
       {push.reason ? (
         <p className="mt-1.5 text-sm text-ink-soft" data-testid="guest-push-reason" data-reason={push.reason}>
-          {guestPushMessage(push.reason)}
+          {guestPushMessage(push.reason, gw.appName)}
         </p>
       ) : push.subscribed ? (
         <div className="mt-1.5 flex flex-wrap items-center justify-between gap-3">
