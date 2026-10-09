@@ -150,7 +150,7 @@ BEGIN
     SELECT count(*) FILTER (WHERE paid_old_rule), count(*) FILTER (WHERE paid_new_rule)
       INTO n_old, n_new FROM _c40_channel_pay;
     IF n_old > 0 OR n_new > 0 THEN
-        RAISE EXCEPTION 'СТОП: оплаченных каналов по старому правилу %, по новому %. Выкат цикла 40 остановлен до решения заказчика (DEPLOY.md §29 п. 1)', n_old, n_new;
+        RAISE EXCEPTION 'СТОП: оплаченных каналов по старому правилу %, по новому %. Выкат цикла 40 остановлен до решения заказчика (DEPLOY.md §31 п. 1)', n_old, n_new;
     END IF;
     RAISE NOTICE 'OK: оплаченных каналов нет (0 и 0)';
 END $$;

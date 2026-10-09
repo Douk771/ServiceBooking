@@ -243,7 +243,9 @@ public class TrialActivationService(
             var transport = AccountMessagingReader.TransportOf(optionCode)!.Value;
             // Т40-L-01 (review of cycle 40): an option whose offer (TermsOwner) is not published is not granted either — the «Условия» step would take the owner's
             // consent to a DRAFT and the messages would start before the offer exists. Open ≠ sellable: the price is not asked of a free trial, the published offer is.
-            var offerPublished = LegalOptionGuards.IsPubliclySellable(optionCode, legalDocuments.Current);
+            // The price is the go-live lever of an option (the migration leaves MAX without one): no price — not granted either.
+            var offerPublished = LegalOptionGuards.IsPubliclySellable(optionCode, legalDocuments.Current)
+                && await db.SubscriptionOptions.AsNoTracking().AnyAsync(o => o.Code == optionCode && o.PricePerMonth != null, ct);
             if (!offerPublished || TrialOptionGrantRule.Decide(await platformSettings.IsOptionOpenAsync(transport, ct), rowExists: false, rowGrantedByTrial: false)
                 == TrialOptionGrantAction.SkipClosed)
             {

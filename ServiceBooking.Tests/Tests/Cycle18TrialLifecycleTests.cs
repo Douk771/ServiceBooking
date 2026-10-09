@@ -580,6 +580,9 @@ public abstract class Cycle18LifecycleTestBase(TestDatabaseFixture fixture) : Ap
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await OpenWhatsAppOptionAsync(db, scope.ServiceProvider.GetRequiredService<PlatformSettings>());
         var optionId = await GetOrCreateWhatsAppOptionIdAsync(db);
+        // Cycle 40 (review): the price is the go-live lever of an option — a trial grants only an option that has one.
+        var whatsApp = await db.SubscriptionOptions.FirstAsync(o => o.Id == optionId);
+        whatsApp.PricePerMonth ??= 490;
         var rule = await db.PlanOptionRules.FirstOrDefaultAsync(r => r.PlanConfigId == trialPlanId && r.OptionId == optionId);
         if (rule is null)
         {

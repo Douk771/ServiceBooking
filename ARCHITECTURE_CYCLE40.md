@@ -768,7 +768,7 @@ frontend/src/components/pricing/MessengerAddonLines.tsx; frontend/src/components
 frontend/src/utils/channelRules.ts (+test по channel-vectors.json); src/types/api-cycle40.generated.ts; package.json types:api:cycle40
 contracts/cycle40/       openapi.yaml, openapi.json, channel-vectors.json; contracts/redocly.yaml (+cycle40)
 deploy/checks/           cycle40-channels-report.sql, cycle40-rollback-assignments.sql
-.github/workflows/ci.yml; DEPLOY.md §29; API_DOCUMENTATION.md «Каналы рассылок (цикл 40)»
+.github/workflows/ci.yml; DEPLOY.md §31; API_DOCUMENTATION.md «Каналы рассылок (цикл 40)»
 ```
 
 `Cycle22RouteTable.golden.txt` — **3 новых маршрута** (§40.37 контракта).
