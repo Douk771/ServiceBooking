@@ -20,7 +20,7 @@ import { ServiceTermsModal } from '@/components/slots/services/ServiceTermsModal
 import type { PublicServiceOrderDto, ServiceOrderGuestConflictDto } from '@/types/slots'
 import { getStayErrorMessage, httpStatus, readConflict } from '@/utils/slots/slotError'
 import { BOOKING_POLL_MS, TONE_CLASSES, isTerminal, statusTone } from '@/utils/slots/slotStatus'
-import { useSlotVertical } from '@/components/slots/SlotVerticalContext'
+import { useGuestWords, useSlotVertical } from '@/components/slots/SlotVerticalContext'
 
 /**
  * `/s/:token` — a separate session of the guest (US-39-12/13, no login: the token is the access, the page says «не пересылайте»).
@@ -30,6 +30,7 @@ import { useSlotVertical } from '@/components/slots/SlotVerticalContext'
  */
 export function ServiceOrderView() {
   const { api, words, legal, NotFound } = useSlotVertical()
+  const gw = useGuestWords()
   const serviceOrdersApi = api.orders
   const { token = '' } = useParams<{ token: string }>()
   const location = useLocation()
@@ -63,16 +64,16 @@ export function ServiceOrderView() {
     onError: (err) => {
       const c = readConflict<ServiceOrderGuestConflictDto>(err)
       if (c?.order) setOrder(c.order)
-      setCancelError(getStayErrorMessage(err, 'Не удалось отменить заказ.'))
+      setCancelError(getStayErrorMessage(err, gw.cancelError))
     },
   })
 
   useEffect(() => {
-    if (order) document.title = `Сеанс — ${order.service.name}`
+    if (order) document.title = `${gw.titlePrefix} — ${order.service.name}`
     return () => {
       document.title = words.brandTitle
     }
-  }, [order, words])
+  }, [order, words, gw.titlePrefix])
 
   if (query.isLoading) {
     return (
@@ -83,10 +84,10 @@ export function ServiceOrderView() {
     )
   }
   if (query.isError && !order) {
-    if (httpStatus(query.error) === 404) return <NotFound title="Заказ не найден" hint="Проверьте ссылку: она должна быть скопирована целиком." />
+    if (httpStatus(query.error) === 404) return <NotFound title={gw.notFoundTitle} hint="Проверьте ссылку: она должна быть скопирована целиком." />
     return (
       <main className="mx-auto max-w-[720px] px-4 pt-10">
-        <ErrorState message={getStayErrorMessage(query.error, 'Не удалось загрузить заказ.')} onRetry={() => void query.refetch()} />
+        <ErrorState message={getStayErrorMessage(query.error, gw.loadError)} onRetry={() => void query.refetch()} />
       </main>
     )
   }
@@ -102,12 +103,12 @@ export function ServiceOrderView() {
     <main className="mx-auto max-w-[760px] px-4 pb-4 pt-8 sm:px-8">
       {justCreated && o.displayStatus === 'Held' && (
         <p className="mb-4 rounded-2xl bg-success-bg px-5 py-3 text-sm text-success" role="status">
-          Заказ создан, время удерживается за вами. Сохраните эту ссылку — по ней заказ всегда можно открыть.
+          {gw.createdHeld}
         </p>
       )}
       {justCreated && o.displayStatus === 'Confirmed' && (
         <p className="mb-4 rounded-2xl bg-success-bg px-5 py-3 text-sm text-success" role="status">
-          Сеанс забронирован. Сохраните эту ссылку — по ней заказ всегда можно открыть.
+          {gw.createdConfirmed}
         </p>
       )}
 
@@ -120,7 +121,7 @@ export function ServiceOrderView() {
           </span>
         )}
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gold-dark">Ваш сеанс</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gold-dark">{gw.eyebrow}</p>
           <h1 className="font-serif text-[28px] leading-tight text-ink sm:text-[34px]">
             <Link to={o.service.url} className="!text-ink hover:underline">
               {o.service.name}
@@ -129,6 +130,11 @@ export function ServiceOrderView() {
           <p className="mt-1 text-sm text-ink-soft" data-testid="session-time">
             {o.time.label}
           </p>
+          {o.localTimeNote && (
+            <p className="text-xs text-muted" data-testid="local-time-note">
+              {o.localTimeNote}
+            </p>
+          )}
         </div>
       </header>
 
@@ -151,7 +157,7 @@ export function ServiceOrderView() {
             <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm text-ink-soft">
               <li>Внесите предоплату {formatRub(o.prepayRub)} по реквизитам ниже.</li>
               <li>Приложите подтверждение оплаты — квитанцию или скриншот перевода.</li>
-              <li>Компания проверит оплату и подтвердит заказ.</li>
+              <li>{gw.companyChecks}</li>
             </ol>
           </section>
         )}
@@ -178,6 +184,16 @@ export function ServiceOrderView() {
                 </a>
               </p>
             )}
+          </section>
+        )}
+
+        {o.sessionReminder && (
+          <section className="rounded-2xl border border-line bg-white p-5" aria-labelledby="reminder-title" data-testid="session-reminder">
+            <h2 id="reminder-title" className="mb-1 text-[15px] font-semibold text-ink">
+              Напоминание
+            </h2>
+            <p className="whitespace-pre-line text-sm text-ink">{o.sessionReminder.text}</p>
+            {o.sessionReminder.sentAtUtc && <p className="mt-1 text-xs text-muted">Отправлено {fmtDateTime(o.sessionReminder.sentAtUtc)}</p>}
           </section>
         )}
 
@@ -360,11 +376,21 @@ export function ServiceOrderView() {
           </section>
         )}
 
+        {o.bookAgainUrl && (
+          <Link
+            to={o.bookAgainUrl}
+            className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-line bg-white px-5 text-sm font-semibold !text-ink hover:border-line-strong"
+            data-testid="book-again"
+          >
+            Забронировать ещё в этом комплексе
+          </Link>
+        )}
+
         <p className="text-xs leading-relaxed text-muted">
           <button type="button" onClick={() => setTermsOpen(true)} className="font-semibold text-gold-dark underline">
             Условия оказания услуги
           </button>
-          . Кто знает ссылку на эту страницу, тот видит заказ и может его отменить — не пересылайте её посторонним.
+          . {gw.linkNote}
         </p>
       </div>
 

@@ -15,7 +15,7 @@ import { isQuoteBookable, isTimeGone, type SessionPick } from '@/utils/slots/ser
 import { guestsCountProblem, toCreateOrderInput, toServiceQuoteInput, validateOrderFields, type OrderGuestFields } from '@/utils/slots/serviceOrderForm'
 import { getStayErrorMessage, httpStatus, plainBody, readConflict } from '@/utils/slots/slotError'
 import { SlotNotice } from '@/components/slots/ui/SlotNotice'
-import { useSlotVertical } from '@/components/slots/SlotVerticalContext'
+import { useGuestWords, useSlotVertical } from '@/components/slots/SlotVerticalContext'
 import { ServiceQuoteSummary } from '@/components/slots/services/ServiceQuoteSummary'
 import { ServiceTimePicker } from '@/components/slots/services/ServiceTimePicker'
 
@@ -27,7 +27,8 @@ import { ServiceTimePicker } from '@/components/slots/services/ServiceTimePicker
  */
 export function ServiceOrderPanel({ service, initialDate, onOpenTerms }: { service: PublicServiceDto; initialDate?: string | null; onOpenTerms: () => void }) {
   const navigate = useNavigate()
-  const { api, paths, legal, features } = useSlotVertical()
+  const { api, paths, legal, features, guestMemory } = useSlotVertical()
+  const words = useGuestWords()
   const publicServicesApi = api.publicServices
   const withGuests = features.capacity && service.capacity != null
   const qc = useQueryClient()
@@ -38,11 +39,15 @@ export function ServiceOrderPanel({ service, initialDate, onOpenTerms }: { servi
 
   const [pick, setPick] = useState<SessionPick | null>(null)
   const [resetSignal, setResetSignal] = useState(0)
-  const [guest, setGuest] = useState<OrderGuestFields>({
-    name: authed ? `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() : '',
-    phone: '',
-    comment: '',
-    notifyByMessenger: false,
+  // The anonymous guest's name and phone come from the tab's memory when the vertical keeps one (Т42-09); the messenger tick never does.
+  const [guest, setGuest] = useState<OrderGuestFields>(() => {
+    const remembered = authed ? null : (guestMemory?.load() ?? null)
+    return {
+      name: authed ? `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() : (remembered?.name ?? ''),
+      phone: remembered?.phone ?? '',
+      comment: '',
+      notifyByMessenger: false,
+    }
   })
   const [guestsRaw, setGuestsRaw] = useState('')
   const [captchaToken, setCaptchaToken] = useState('')
@@ -72,6 +77,7 @@ export function ServiceOrderPanel({ service, initialDate, onOpenTerms }: { servi
       publicServicesApi.createOrder(service.id, toCreateOrderInput({ pick: pick!, order: itemOrder, guest, anonymous, quote: q!, idempotencyKey, captchaToken, guestsCount: withGuests ? Number(guestsRaw) : null })),
     onSuccess: (res) => {
       forgetBookingKey(`svc:${service.id}`)
+      if (anonymous) guestMemory?.save({ name: guest.name.trim(), phone: guest.phone })
       void qc.invalidateQueries({ queryKey: ['stays-service-availability', service.id] })
       navigate(paths.orderPage(res.token), { replace: true, state: { justCreated: true } })
     },
@@ -107,7 +113,7 @@ export function ServiceOrderPanel({ service, initialDate, onOpenTerms }: { servi
           return
         }
       }
-      setFormError(getStayErrorMessage(err, 'Не удалось оформить заказ. Попробуйте ещё раз.'))
+      setFormError(getStayErrorMessage(err, words.createError))
     },
   })
 
@@ -125,7 +131,7 @@ export function ServiceOrderPanel({ service, initialDate, onOpenTerms }: { servi
   const canSubmit = !!pick && quoteFresh && isQuoteBookable(q) && !create.isPending
 
   return (
-    <section id="order" aria-label="Заказ услуги" className="rounded-3xl border border-line bg-white p-5 shadow-soft sm:p-6">
+    <section id="order" aria-label={words.panelLabel} className="rounded-3xl border border-line bg-white p-5 shadow-soft sm:p-6">
       <h2 className="font-serif text-2xl text-ink">Выберите время</h2>
       {service.localTimeNote && <p className="mt-1 text-sm text-ink-soft" data-testid="local-time-note">{service.localTimeNote}</p>}
 
@@ -179,13 +185,13 @@ export function ServiceOrderPanel({ service, initialDate, onOpenTerms }: { servi
         {anonymous ? (
           <div>
             <PhoneInput label="Телефон" value={guest.phone} error={fieldErrors.phone} onChange={(phone) => setGuest((g) => ({ ...g, phone }))} />
-            <p className="mt-1 text-xs text-muted">На этот номер придёт ссылка на заказ. Проверьте, что номер указан верно.</p>
+            <p className="mt-1 text-xs text-muted">{words.phoneNoteAnonymous}</p>
           </div>
         ) : (
           <div>
             <p className="text-[13px] font-medium text-[#4A4038]">Телефон</p>
             <p className="mt-1 text-sm text-ink">{formatPhone(user?.phone)}</p>
-            <p className="mt-0.5 text-xs text-muted">Заказ оформляется на номер вашего аккаунта.</p>
+            <p className="mt-0.5 text-xs text-muted">{words.phoneNoteAccount}</p>
           </div>
         )}
 

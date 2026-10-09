@@ -2,6 +2,7 @@ import { createContext, useContext, type ComponentType, type ReactNode } from 'r
 import type { createSlotApi } from '@/api/slots'
 import { useLegalText, type ServerLegalText } from '@/hooks/slots/useLegalText'
 import type { SlotText } from '@/utils/slots/slotTexts'
+import { resolveGuestWords, type SlotGuestWords } from '@/utils/slots/slotGuestWords'
 
 /** The routes of one vertical: dom builds them with `createSlotApi('/stays')`, bani with `createSlotApi('/baths')`. */
 export type SlotApi = ReturnType<typeof createSlotApi>
@@ -65,6 +66,14 @@ export interface SlotWords {
   servicesEmptyText: string
   /** Label of the link from a session to the stay booking. */
   stayBookingLabel: string
+  /** The guest's own words for an order («бронь» in bani); what is missing keeps the default wording of `slotGuestWords`. */
+  guest?: Partial<SlotGuestWords>
+}
+
+/** A browser-tab memory of the anonymous guest's name and phone (bani: `sessionStorage`, Т42-09). Never reaches a URL. */
+export interface SlotGuestMemory {
+  load(): { name: string; phone: string } | null
+  save(guest: { name: string; phone: string }): void
 }
 
 export interface SlotFeatures {
@@ -89,6 +98,8 @@ export interface SlotVertical {
   }
   words: SlotWords
   features: SlotFeatures
+  /** Optional: remembers the anonymous guest between two orders in one tab. */
+  guestMemory?: SlotGuestMemory
   /** The «not found» screen of the app. */
   NotFound: ComponentType<{ title?: string; hint?: string }>
   /** The company of `/cabinet/:companyId/*` (a hook of the app's layout). */
@@ -106,6 +117,11 @@ export function useSlotVertical(): SlotVertical {
   const v = useContext(Ctx)
   if (!v) throw new Error('useSlotVertical must be used inside <SlotVerticalProvider> (dom: staysVertical, bani: bathsVertical)')
   return v
+}
+
+/** The guest's words of the current vertical; the defaults (dom) when rendered outside a provider, so a lone component stays testable. */
+export function useGuestWords(): SlotGuestWords {
+  return resolveGuestWords(useContext(Ctx)?.words.guest)
 }
 
 /** The legal microcopy `key` of the current vertical (server text or its fallback). */

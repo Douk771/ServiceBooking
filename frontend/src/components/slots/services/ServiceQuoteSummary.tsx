@@ -1,5 +1,6 @@
 import { formatRub } from '@/utils/money'
 import type { ServiceQuoteDto } from '@/types/slots'
+import { useGuestWords } from '@/components/slots/SlotVerticalContext'
 import { Skeleton } from '@/components/slots/ui/StatePanels'
 
 /**
@@ -8,6 +9,7 @@ import { Skeleton } from '@/components/slots/ui/StatePanels'
  * quote that is not `ok` shows its problems and no amounts.
  */
 export function ServiceQuoteSummary({ quote, loading, stale }: { quote: ServiceQuoteDto | undefined; loading?: boolean; stale?: boolean }) {
+  const words = useGuestWords()
   if (loading && !quote) return <Skeleton className="h-40" />
   if (!quote) return null
   if (!quote.ok) {
@@ -50,8 +52,8 @@ export function ServiceQuoteSummary({ quote, loading, stale }: { quote: ServiceQ
       </dl>
       {quote.prepayRub > 0 && quote.holdMinutes != null && (
         <p className="mt-3 text-xs text-ink-soft">
-          Время удерживается {quote.holdMinutes} минут — за это время внесите предоплату по реквизитам и приложите подтверждение оплаты.
-          Реквизиты появятся на странице заказа.
+          Время удерживается {quote.holdMinutes} минут — за это время внесите предоплату по реквизитам и приложите подтверждение оплаты.{' '}
+          {words.requisitesLater}
         </p>
       )}
       {quote.cancellationSummary && <p className="mt-2 text-xs text-ink-soft">Отмена: {quote.cancellationSummary}</p>}
