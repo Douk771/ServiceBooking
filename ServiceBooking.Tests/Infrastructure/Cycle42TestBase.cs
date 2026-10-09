@@ -67,7 +67,7 @@ public abstract class Cycle42TestBase(TestDatabaseFixture fixture) : Cycle39Test
     /// <paramref name="windowsByDay"/> — окна по дням недели 1…7 (переопределяют <paramref name="windows"/>).
     /// </summary>
     protected async Task<ResCtx> AddResourceAsync(
-        BathCtx c, string? name = null, int capacity = 6, int minHours = 1, int maxHours = 6, int step = 30, int buffer = 30, int? prepay = 30, (int Start, int End)[]? windows = null,
+        BathCtx c, string? name = null, int? capacity = 6, int minHours = 1, int maxHours = 6, int step = 30, int buffer = 30, int? prepay = 30, (int Start, int End)[]? windows = null,
         Dictionary<int, (int Start, int End)[]>? windowsByDay = null, bool publish = true, int priceRub = HourPrice)
     {
         var client = AuthedClient(c.Token);
