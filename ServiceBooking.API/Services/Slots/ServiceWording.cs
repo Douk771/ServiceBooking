@@ -54,7 +54,7 @@ public sealed record ServiceWording(
         city => string.IsNullOrWhiteSpace(city) ? " (время местное)" : $" (время местное, {city.Trim()})");
 
     /// <summary>The wording of a company's vertical; kinds that are not slot verticals fall back to «Дома» (their legacy strings).</summary>
-    public static ServiceWording For(CompanyKind kind) => kind == CompanyKind.Baths ? Baths : Stays;
+    public static ServiceWording For(CompanyKind kind) => kind switch { CompanyKind.Baths => Baths, _ => Stays };
 
     private static string BathsStatusText(string displayStatus) => displayStatus switch
     {
