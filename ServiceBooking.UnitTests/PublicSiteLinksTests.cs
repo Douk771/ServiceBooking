@@ -68,6 +68,29 @@ public class PublicSiteLinksTests
     }
 
     [Fact]
+    public void ServiceLinksByKind_Stays_EqualLegacyStayMethods()
+    {
+        var l = Links();
+        var c = Guid.NewGuid();
+        var s = Guid.NewGuid();
+        l.ServiceOrderPageUrl(CompanyKind.Stays, "tok").Should().Be(l.StayServiceOrderPageUrl("tok"));
+        l.CabinetServiceSessionUrl(CompanyKind.Stays, c, s).Should().Be(l.StaysCabinetServiceSessionUrl(c, s));
+        l.ServiceOrderRelativePath(CompanyKind.Stays, "tok").Should().Be("/s/tok");
+    }
+
+    [Fact]
+    public void ServiceLinksByKind_Baths_UseBathsSite()
+    {
+        var l = new PublicSiteLinks(Options.Create(new PublicSitesOptions { BathsBaseUrl = "https://bani.ezbook.ru" }));
+        l.ServiceOrderPageUrl(CompanyKind.Baths, "tok").Should().Be("https://bani.ezbook.ru/s/tok");
+        l.ServiceOrderRelativePath(CompanyKind.Baths, "tok").Should().Be("/s/tok");
+    }
+
+    [Fact]
+    public void ServiceOrderRelativePath_NonSlotKind_Throws() =>
+        ((Action)(() => Links().ServiceOrderRelativePath(CompanyKind.Orders, "t"))).Should().Throw<ArgumentOutOfRangeException>();
+
+    [Fact]
     public void ValidatePublicSites_LocalhostHttp_AllowedInDevelopment() =>
         ((Action)(() => DeploymentSafetyChecks.ValidatePublicSites(Config("http://localhost:5173", "http://localhost:5174"), "Development")))
             .Should().NotThrow();

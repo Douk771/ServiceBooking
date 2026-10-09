@@ -68,6 +68,9 @@ public sealed class PublicSiteLinks(IOptions<PublicSitesOptions> options)
     /// <summary>{site of kind}/s/{token} — the page of a stand-alone service order of that vertical.</summary>
     public string ServiceOrderPageUrl(CompanyKind kind, string token) => $"{SlotSiteBaseUrl(kind)}/s/{token}";
 
+    /// <summary>/s/{token} — the same page as a path relative to the site (guest push payload).</summary>
+    public string ServiceOrderRelativePath(CompanyKind kind, string token) => Slots.SlotVerticals.IsSlotKind(kind) ? $"/s/{token}" : throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a slot vertical.");
+
     /// <summary>{site of kind}/cabinet/{companyId}/service-sessions/{sessionId}.</summary>
     public string CabinetServiceSessionUrl(CompanyKind kind, Guid companyId, Guid sessionId) =>
         $"{SlotSiteBaseUrl(kind)}/cabinet/{companyId}/service-sessions/{sessionId}";
