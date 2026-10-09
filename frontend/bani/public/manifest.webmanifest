@@ -1,0 +1,15 @@
+{
+  "id": "/",
+  "name": "ezbook · Бани",
+  "short_name": "Бани",
+  "lang": "ru",
+  "start_url": "/cabinet",
+  "scope": "/",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "theme_color": "#5A3A22",
+  "background_color": "#FAF6F0",
+  "display": "standalone"
+}

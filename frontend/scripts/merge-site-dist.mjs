@@ -9,7 +9,7 @@ import { join } from 'node:path'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const sites = process.argv.slice(2)
 if (sites.length === 0) {
-  console.error('merge-site-dist: usage: node scripts/merge-site-dist.mjs <site> [<site>...]  (e.g. goods dom)')
+  console.error('merge-site-dist: usage: node scripts/merge-site-dist.mjs <site> [<site>...]  (e.g. goods dom bani)')
   process.exit(1)
 }
 if (!existsSync(join(root, 'dist'))) {
