@@ -18,7 +18,6 @@ import { BaniFooter } from './components/BaniFooter'
 import { CatalogPage } from './pages/CatalogPage'
 import { CompanyPage } from './pages/CompanyPage'
 import { NotFoundPage } from './pages/NotFoundPage'
-import { PendingPage } from './pages/PendingPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { ResourcePage } from './pages/ResourcePage'
 import { OrderPage } from './pages/OrderPage'
@@ -32,6 +31,13 @@ import { ResourcesPage } from './pages/cabinet/ResourcesPage'
 import { ResourceCreatePage } from './pages/cabinet/ResourceCreatePage'
 import { ResourceEditPage } from './pages/cabinet/ResourceEditPage'
 import { SchedulePage } from './pages/cabinet/SchedulePage'
+import { CabinetHomePage } from './pages/cabinet/CabinetHomePage'
+import { CreateCompanyPage } from './pages/cabinet/CreateCompanyPage'
+import { SubscriptionPage } from './pages/cabinet/SubscriptionPage'
+import { SettingsPage } from './pages/cabinet/SettingsPage'
+import { StaffPage } from './pages/cabinet/StaffPage'
+import { NotificationsPage } from './pages/cabinet/NotificationsPage'
+import { LinkPage } from './pages/cabinet/LinkPage'
 
 /**
  * Routes reachable while a "Material" change to a GLOBAL-gate document is pending acceptance (same reasoning as dom's list):
@@ -69,8 +75,6 @@ function RouteErrorBoundary({ children }: { children: ReactNode }) {
  * bani.ezbook.ru (ARCHITECTURE_CYCLE42.md §42.12.2). The route table mirrors contracts/cycle42/bani-routes.json
  * (`spaRoutes` + `/:slug` + `/:slug/:resourceSlug`); baniRoutes.test.ts checks both directions, and every first segment
  * must be a reserved word so a company address can never shadow a route.
- *
- * Screens of FE-42-3/4/5 are <PendingPage/> until their tasks land; each owner swaps the element.
  */
 export function BaniApp() {
   return (
@@ -91,9 +95,9 @@ export function BaniApp() {
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/profile/consents" element={<ConsentsPage />} />
                   <Route path="/notices" element={<NoticesPage />} />
-                  <Route path="/cabinet" element={<PendingPage title="Кабинет" />} />
-                  <Route path="/cabinet/new" element={<PendingPage title="Новая компания" />} />
-                  <Route path="/cabinet/subscription" element={<PendingPage title="Подписка" />} />
+                  <Route path="/cabinet" element={<CabinetHomePage />} />
+                  <Route path="/cabinet/new" element={<CreateCompanyPage />} />
+                  <Route path="/cabinet/subscription" element={<SubscriptionPage />} />
                   <Route element={<CompanyLayout />}>
                     <Route path="/cabinet/:companyId" element={<CompanyIndexRedirect />} />
                     <Route element={<CabinetSlotScope />}>
@@ -104,11 +108,11 @@ export function BaniApp() {
                       <Route path="/cabinet/:companyId/resources/new" element={<ResourceCreatePage />} />
                       <Route path="/cabinet/:companyId/resources/:serviceId" element={<ResourceEditPage />} />
                       <Route path="/cabinet/:companyId/schedule" element={<SchedulePage />} />
+                      <Route path="/cabinet/:companyId/settings" element={<SettingsPage />} />
+                      <Route path="/cabinet/:companyId/staff" element={<StaffPage />} />
+                      <Route path="/cabinet/:companyId/notifications" element={<NotificationsPage />} />
+                      <Route path="/cabinet/:companyId/link" element={<LinkPage />} />
                     </Route>
-                    <Route path="/cabinet/:companyId/settings" element={<PendingPage title="Настройки" />} />
-                    <Route path="/cabinet/:companyId/staff" element={<PendingPage title="Персонал" />} />
-                    <Route path="/cabinet/:companyId/notifications" element={<PendingPage title="Уведомления" />} />
-                    <Route path="/cabinet/:companyId/link" element={<PendingPage title="Ссылка" />} />
                   </Route>
                 </Route>
 
