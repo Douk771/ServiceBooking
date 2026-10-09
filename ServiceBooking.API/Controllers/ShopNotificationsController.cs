@@ -29,7 +29,8 @@ namespace ServiceBooking.API.Controllers;
 [Authorize]
 public class ShopNotificationsController(
     AppDbContext db, ShopAccessResolver access, ShopChannelReader channelReader, IOptions<WebPushOptions> webPushOptions,
-    PlatformSettings platformSettings, ServiceBooking.API.Services.StaffMax.StaffMaxAvailability staffMaxAvailability) : ControllerBase
+    PlatformSettings platformSettings, ServiceBooking.API.Services.StaffMax.StaffMaxAvailability staffMaxAvailability,
+    AccountMessagingReader messagingReader) : ControllerBase
 {
     public const string NoChannelText = "Подключите номер для сообщений покупателям";
     public const string NotFundedText = "Номер не оплачен — оставьте заявку на опцию в разделе «Подписка»";
@@ -53,12 +54,11 @@ public class ShopNotificationsController(
         if (input.DeliveryMode is { } mode && !Enum.IsDefined(mode) || input.PriorityTransport is { } transport && !Enum.IsDefined(transport))
             return BadRequest(PriorityNotFunded);
 
-        var channels = await channelReader.LoadAsync(shopId, ct);
-        var funded = channels.Where(c => c.IsFunded).ToList();
-        if (input.CustomerMessengerEnabled && funded.Count == 0)
+        // Cycle 40 (§40.6.4): "available" = the account has a PAID transport; the 409 for switching the flag on without one stays, the 400 for a priority
+        // that is not funded is gone (the choice is a preference; routing falls back only by the mode's own rules).
+        var messagingAtWrite = await messagingReader.ForCompanyAsync(shopId, ct: ct);
+        if (input.CustomerMessengerEnabled && !messagingAtWrite.AnyPaid)
             return Conflict(new CatalogConflictDto(CatalogConflictCode.MessengerUnavailable, MessengerUnavailableConflict));
-        if (input.PriorityTransport is { } priority && funded.All(c => c.Channel.Transport != priority))
-            return BadRequest(PriorityNotFunded);
 
         var now = DateTime.UtcNow;
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -99,8 +99,11 @@ public class ShopNotificationsController(
         var channels = await channelReader.LoadAsync(shopId, ct);
         var idleDays = channels.Count == 0 ? 0 : await platformSettings.GetChannelIdleDaysAsync();
 
-        var messengerAvailable = channels.Any(c => c.IsFunded);
-        var unavailableText = messengerAvailable ? null : channels.Count == 0 ? NoChannelText : NotFundedText;
+        var messaging = await messagingReader.ForCompanyAsync(shopId, ct: ct);
+        var facts = messaging.Transports.Select(t => new TransportMessagingFacts(t.Transport, t.Option.Open, t.Paid, t.Routable, t.Working)).ToList();
+        var status = CompanyMessagingStatus.Evaluate(messaging.PlatformEnabled, notificationSettings.DeliveryMode, notificationSettings.PriorityTransport, facts);
+        var messengerAvailable = messaging.AnyPaid;
+        var unavailableText = messengerAvailable ? null : CompanyMessagingStatus.MessengerUnavailableText(facts);
         var platformPush = string.Equals(webPushOptions.Value.Provider, "web-push", StringComparison.OrdinalIgnoreCase);
 
         var channelDtos = channels.Select(c =>
@@ -117,6 +120,7 @@ public class ShopNotificationsController(
             notificationSettings.StaffPushEnabled, shopSettings.CustomerWebPushEnabled, shopSettings.CustomerMessengerEnabled,
             notificationSettings.DeliveryMode, notificationSettings.PriorityTransport, messengerAvailable, unavailableText, platformPush, channelDtos,
             shopSettings.StaffMaxEnabled, staffMaxAvailability.Enabled,
-            staffMaxAvailability.Enabled ? null : ServiceBooking.API.Services.StaffMax.StaffMaxAvailability.NotEnabledText);
+            staffMaxAvailability.Enabled ? null : ServiceBooking.API.Services.StaffMax.StaffMaxAvailability.NotEnabledText,
+            status.MessagingActive, status.DeliveryChoiceVisible, status.PriorityWarning);
     }
 }

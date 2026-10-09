@@ -78,7 +78,7 @@ public class Cycle24NotificationsTests(TestDatabaseFixture fixture) : Cycle24Tes
         s.CustomerWebPushEnabled.Should().BeTrue("web-push покупателям бесплатно, по умолчанию включён");
         s.CustomerMessengerEnabled.Should().BeFalse("мессенджер по умолчанию выключен");
         s.MessengerAvailable.Should().BeFalse();
-        s.MessengerUnavailableText.Should().Be("Подключите номер для сообщений покупателям");
+        s.MessengerUnavailableText.Should().Be("Подключите номер в блоке „Номера“"); // Cycle 40 (§40.33.6): the new line, the number is connected in the «Numbers» block
         s.Channels.Should().BeEmpty();
 
         (await AuthedClient(staff.Token).GetAsync(url)).StatusCode.Should().Be(HttpStatusCode.OK, "читает персонал");
@@ -121,8 +121,9 @@ public class Cycle24NotificationsTests(TestDatabaseFixture fixture) : Cycle24Tes
         // приоритетный транспорт без оплаченного канала этого транспорта
         var badPriority = await c.PutJsonAsync(url, new ShopNotificationSettingsInput(true, true, true, NotificationDeliveryMode.PriorityChannel,
             s.Channels[0].Transport == NotificationTransport.Max ? NotificationTransport.WhatsApp : NotificationTransport.Max));
-        badPriority.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await badPriority.Content.ReadAsStringAsync()).Should().Contain("Приоритетный канал должен быть среди оплаченных каналов магазина");
+        // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.6.4): INTENTIONAL change — the 400 "priority must be among paid channels" is gone; the priority is a preference of
+        // the delivery mode, saved as sent (routing and the settings screen's priorityWarning deal with a priority that does not work).
+        badPriority.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Cycle 40 (§40.28.5, BE-40-2): INTENTIONAL change — the assignment route is legacy: 410 for an own channel, nothing assigned or refused
         // (the previous expectations were an idempotent 201 and a 409 "Магазин уже привязан к другому номеру этого мессенджера").

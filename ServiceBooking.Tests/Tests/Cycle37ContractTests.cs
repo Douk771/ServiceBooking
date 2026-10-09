@@ -29,6 +29,9 @@ public class Cycle37ContractTests(TestDatabaseFixture fixture) : Cycle37TestBase
 
     private static readonly Dictionary<string, System.Text.RegularExpressions.Regex> Cycle39Additions = new()
     {
+        // Цикл 40 дописал в настройки уведомлений «Домов» messagingActive, deliveryChoiceVisible, priorityWarning (contracts/cycle40/openapi.yaml, StaysNotificationSettingsDto).
+        ["GET /api/stays/companies/{companyId}/notification-settings 200"] = Rx(@"^\$\.(messagingActive|deliveryChoiceVisible|priorityWarning)" + NotDescribed),
+        ["PUT /api/stays/companies/{companyId}/notification-settings 200"] = Rx(@"^\$\.(messagingActive|deliveryChoiceVisible|priorityWarning)" + NotDescribed),
         ["GET /api/stays/public/companies/{slug} 200"] = Rx(@"^\$\.(services|acceptsServiceOrdersWithoutStay)" + NotDescribed),
         // Цикл 40 дописал в ответ страницы дома необязательное messenger (предложение уведомлений гостю; contracts/cycle40/openapi.yaml, PublicHouseCycle40Part).
         ["GET /api/stays/public/companies/{slug}/houses/{houseSlug} 200"] = Rx(@"^\$\.(servicesForStay|messenger)" + NotDescribed),

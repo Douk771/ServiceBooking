@@ -409,11 +409,17 @@ public class CompanyNotificationsController(
         var usableTransports = UsableTransports(messaging);
         var priorityChannelHealthy = usableTransports.Contains(priorityTransport);
 
+        // §40.6.4: one rule for what the three settings screens say about messaging; effectiveEnabled = messagingActive, blockedReason is its reason.
+        var status = CompanyMessagingStatus.Evaluate(
+            messaging.PlatformEnabled, deliveryMode, priorityTransport,
+            messaging.Transports.Select(t => new TransportMessagingFacts(t.Transport, t.Option.Open, t.Paid, t.Routable, t.Working)).ToList());
+
         return new NotificationSettingsDto(
             enabledTypes, settings?.ReminderLeadMinutes ?? new CompanyNotificationSettings().ReminderLeadMinutes,
             settings?.MinLeadMinutes ?? new CompanyNotificationSettings().MinLeadMinutes,
-            PlanAllowsChannel: true, channelDto, blockedReason is null, blockedReason,
-            deliveryMode, priorityTransport, usableTransports, priorityChannelHealthy);
+            PlanAllowsChannel: true, channelDto, status.MessagingActive, status.BlockedReason,
+            deliveryMode, priorityTransport, usableTransports, priorityChannelHealthy,
+            status.MessagingActive, status.InactiveText, status.DeliveryChoiceVisible, status.PriorityWarning, status.WorkingTransports);
     }
 
     /// <summary>ARCHITECTURE_CYCLE9.md §104.5/§114.4 — the transports the READ-ONLY settings screen shows as currently pickable/healthy:
