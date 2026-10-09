@@ -133,7 +133,7 @@ public abstract class SlotSessionsControllerBase(
             var display = ServiceDtoMapper.DisplayStatusOf(x.Order, x.Session.EndUtc, now);
             return (Sort: firstProofs.GetValueOrDefault(x.Order.Id, x.Order.CreatedAtUtc), Item: new StaffServiceSessionListItemDto(
                 x.Session.Id, ServiceSessionKind.Standalone, x.Session.ServiceId, x.Session.ServiceNameSnapshot, ServiceDtoMapper.TimeOf(x.Session, forStaff: true), null, null,
-                x.Order.GuestName, x.Order.GuestPhone, x.Order.Status, x.Session.State, ServiceTexts.StatusText(display), x.Order.TotalRub, x.Order.PrepayRub,
+                x.Order.GuestName, x.Order.GuestPhone, x.Order.Status, x.Session.State, ServiceWording.For(Vertical.Kind).StatusText(display), x.Order.TotalRub, x.Order.PrepayRub,
                 x.Order.Status == StayBookingStatus.Held ? x.Order.HoldExpiresAtUtc : null, firstProofs.TryGetValue(x.Order.Id, out var fp) ? fp : null, x.Order.CreatedAtUtc), x.Session.StartUtc);
         }).ToList();
 

@@ -7,6 +7,7 @@ using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Shops;
 using ServiceBooking.API.Services.Subjects;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.API.Services.Slots;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
@@ -107,8 +108,8 @@ public class ServiceOrderCreationService(
         if (twin is not null) return new ServiceOrderCreateResult(null, twin, Created: false);
         switch (await throttle.CheckAsync(company.Id, canonicalPhone, now, ct))
         {
-            case StayThrottleVerdict.TooManyHeld: return Throttled(ServiceTexts.TooManyHeldOrders);
-            case StayThrottleVerdict.TooManyPerDay: return Throttled(ServiceTexts.TooManyOrdersPerDay);
+            case StayThrottleVerdict.TooManyHeld: return Throttled(ServiceWording.For(company.Kind).TooManyHeldOrders);
+            case StayThrottleVerdict.TooManyPerDay: return Throttled(ServiceWording.For(company.Kind).TooManyOrdersPerDay);
         }
 
         // 8. The lock of the service: lazy release → the rules (counting what is still active) → the money.

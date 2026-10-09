@@ -4,6 +4,7 @@ using ServiceBooking.API.DTOs.Stays;
 using ServiceBooking.API.Services.Notifications.WebPush;
 using ServiceBooking.API.Services.PublicSites;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.API.Services.Slots;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
@@ -66,12 +67,13 @@ public class ServiceDtoMapper(
         if (canCancel) actions.Add("Cancel");
         var holdExpired = o.Status == StayBookingStatus.Held && o.HoldExpiresAtUtc <= now;
 
-        var refund = RefundFor(o, session, now, byOwner: false);
+        var wording = ServiceWording.For(company.Kind);
+        var refund = RefundFor(o, session, now, byOwner: false, company.Kind);
         var pushOn = settings.GuestWebPushEnabled && string.Equals(webPush.Value.Provider, "web-push", StringComparison.OrdinalIgnoreCase) && active;
         var phone = company.Phone;
         PaymentInstructionsDto? payment = active && o.PrepayRub > 0 ? new PaymentInstructionsDto(o.PaymentDetailsSnapshot, o.PaymentPurposeSnapshot, o.PrepayRub) : null;
         return new PublicServiceOrderDto(
-            o.Status, display, ServiceTexts.StatusText(display), now, o.Status == StayBookingStatus.Held ? o.HoldExpiresAtUtc : null,
+            o.Status, display, wording.StatusText(display), now, o.Status == StayBookingStatus.Held ? o.HoldExpiresAtUtc : null,
             new OrderServiceRefDto(session.ServiceNameSnapshot, ServiceUrl(company, service.Slug), cover),
             new OrderCompanyRefDto(company.Name, phone, $"/{company.Slug}", company.Address, company.YandexMapsUrl, company.TwoGisUrl),
             StaysCompanyService.ProviderFromSnapshot(o.ProviderSnapshotJson), TimeOf(session), ItemsOf(session), LinesOf(session), HourPricesOf(session),
@@ -79,17 +81,17 @@ public class ServiceDtoMapper(
             o.PaymentConfirmedAtUtc, proofs.Select(StayDtoMapper.ToProof).ToList(),
             new ProofRulesDto(actions.Contains("AttachProof"), maxProofs, options.Value.PaymentProofs.MaxFileBytes, StayDtoMapper.AcceptedProofTypes.ToList()),
             new OrderCancellationDto(o.CancellationPolicySnapshot, ServiceTexts.CancellationSummary(o.CancellationPolicySnapshot, o.CancellationBoundaryHoursSnapshot), canCancel,
-                refund, !canCancel && active ? (holdExpired ? ServiceTexts.HoldExpired(phone) : ServiceTexts.AlreadyStarted(phone)) : null),
+                refund, !canCancel && active ? (holdExpired ? wording.HoldExpired(phone) : ServiceTexts.AlreadyStarted(phone)) : null),
             o.GuestName, StayPhone.Mask(o.GuestPhone), o.Comment, o.StatusReason,
-            StayStateMachine.IsTerminal(o.Status) ? (ServiceTexts.OutcomeText(o.Status, o.StatusReason, phone, o.PaymentConfirmedAtUtc != null || proofs.Count > 0) is { Length: > 0 } t ? t : null) : null,
+            StayStateMachine.IsTerminal(o.Status) ? (wording.OutcomeText(o.Status, o.StatusReason, phone, o.PaymentConfirmedAtUtc != null || proofs.Count > 0) is { Length: > 0 } t ? t : null) : null,
             new OrderNotificationsDto(new WebPushInfoDto(pushOn, pushOn ? webPush.Value.VapidPublicKey : null), o.NotifyByMessenger), actions);
     }
 
-    public ServiceRefundViewDto RefundFor(StayServiceOrder o, StayServiceSession s, DateTime nowUtc, bool byOwner)
+    public ServiceRefundViewDto RefundFor(StayServiceOrder o, StayServiceSession s, DateTime nowUtc, bool byOwner, CompanyKind kind = CompanyKind.Stays)
     {
         var firstHour = ServiceJson.ReadHourPrices(s.HourPricesJson).FirstOrDefault()?.PriceRub ?? 0;
         var r = ServiceRefund.Compute(o.Status, o.CancellationPolicySnapshot, o.CancellationBoundaryHoursSnapshot, o.PrepayRub, firstHour, s.StartUtc, nowUtc, byOwner,
-            options.Value.Services.MaxDeductionHours);
+            options.Value.Services.MaxDeductionHours, ServiceWording.For(kind).RefundTerminal);
         return new ServiceRefundViewDto(r.Kind, r.RefundAtLeastRub, r.MaxDeductionRub, r.Text);
     }
 
@@ -162,7 +164,7 @@ public class ServiceDtoMapper(
         List<StayBookingEventDto> events;
         if (order is not null)
             events = (await db.StayServiceOrderEvents.AsNoTracking().Where(e => e.StayServiceOrderId == order.Id).OrderBy(e => e.OccurredAtUtc).ThenBy(e => e.Kind).ToListAsync(ct))
-                .Select(e => new StayBookingEventDto(e.OccurredAtUtc, e.Kind.ToString(), ServiceTexts.StaffEventText(e.Kind), ActorText(e.ActorKind, e.ActorNameSnapshot), e.Reason)).ToList();
+                .Select(e => new StayBookingEventDto(e.OccurredAtUtc, e.Kind.ToString(), ServiceWording.For(company.Kind).StaffEventText(e.Kind), ActorText(e.ActorKind, e.ActorNameSnapshot), e.Reason)).ToList();
         else
             events = (await db.StayBookingEvents.AsNoTracking().Where(e => e.ServiceSessionId == s.Id).OrderBy(e => e.OccurredAtUtc).ThenBy(e => e.Kind).ToListAsync(ct))
                 .Select(e => new StayBookingEventDto(e.OccurredAtUtc, e.Kind.ToString(), StaysTexts.EventText(e.Kind), StayDtoMapper.ActorText(e), e.Reason)).ToList();
@@ -173,7 +175,7 @@ public class ServiceDtoMapper(
         if (order is not null)
         {
             display = DisplayStatusOf(order, s.EndUtc, now);
-            statusText = ServiceTexts.StatusText(display);
+            statusText = ServiceWording.For(company.Kind).StatusText(display);
             actions.AddRange(StayStateMachine.StaffActions(order.Status));
         }
         else

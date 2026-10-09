@@ -26,6 +26,8 @@ public abstract class SlotServiceOrdersPublicControllerBase(
 {
     protected abstract SlotVertical Vertical { get; }
 
+    private ServiceWording Wording => ServiceWording.For(Vertical.Kind);
+
     private const int MaxTokenLength = 100;
 
     [HttpGet("public/{token}")]
@@ -55,9 +57,9 @@ public abstract class SlotServiceOrdersPublicControllerBase(
         return result.Outcome switch
         {
             ProofOutcome.Ok => StatusCode(StatusCodes.Status201Created, dto),
-            ProofOutcome.NotAllowed => Conflict(new ServiceOrderGuestConflictDto("ProofNotAllowed", ServiceTexts.ProofNotAllowed(dto.StatusText), dto)),
+            ProofOutcome.NotAllowed => Conflict(new ServiceOrderGuestConflictDto("ProofNotAllowed", Wording.ProofNotAllowed(dto.StatusText), dto)),
             ProofOutcome.LimitReached => Conflict(new ServiceOrderGuestConflictDto("ProofLimitReached", $"Можно приложить не больше {dto.Proofs.MaxCount} файлов", dto)),
-            _ => Conflict(new ServiceOrderGuestConflictDto("HoldExpired", ServiceTexts.HoldExpired(phone), dto)),
+            _ => Conflict(new ServiceOrderGuestConflictDto("HoldExpired", Wording.HoldExpired(phone), dto)),
         };
     }
 
@@ -86,9 +88,9 @@ public abstract class SlotServiceOrdersPublicControllerBase(
         var dto = await mapper.ToPublicOrderAsync((await FindAsync(token, ct))!, ct);
         if (result.Outcome == TransitionOutcome.Ok) return Ok(dto);
         var message = result.Outcome == TransitionOutcome.HoldExpired || dto.Status == StayBookingStatus.ExpiredUnpaid
-            ? ServiceTexts.HoldExpired(dto.Company.Phone)
-            : dto.Status == StayBookingStatus.CancelledByGuest || dto.Status == StayBookingStatus.CancelledByOwner ? ServiceTexts.OrderAlreadyCancelled
-            : dto.Cancellation.CannotCancelText ?? ServiceTexts.OrderAlreadyCancelled;
+            ? Wording.HoldExpired(dto.Company.Phone)
+            : dto.Status == StayBookingStatus.CancelledByGuest || dto.Status == StayBookingStatus.CancelledByOwner ? Wording.OrderAlreadyCancelled
+            : dto.Cancellation.CannotCancelText ?? Wording.OrderAlreadyCancelled;
         return Conflict(new ServiceOrderGuestConflictDto("CancelNotAllowed", message, dto));
     }
 
@@ -105,7 +107,7 @@ public abstract class SlotServiceOrdersPublicControllerBase(
 
         var enabled = await db.StaysSettings.AsNoTracking().Where(s => s.CompanyId == order.CompanyId).Select(s => (bool?)s.GuestWebPushEnabled).FirstOrDefaultAsync(ct) ?? true;
         if (!enabled) return Conflict(StayBookingsPublicController.CompanyNoPush);
-        if (StayStateMachine.IsTerminal(order.Status)) return Conflict(ServiceTexts.ServiceOrderDone);
+        if (StayStateMachine.IsTerminal(order.Status)) return Conflict(Wording.ServiceOrderDone);
         if (!string.Equals(webPush.Value.Provider, "web-push", StringComparison.OrdinalIgnoreCase)) return Conflict(StayBookingsPublicController.PlatformNoPush);
         await pushWriter.UpsertForOrderAsync(order.Id, input.Endpoint!, input.Keys.P256dh, input.Keys.Auth, ct);
         return NoContent();
