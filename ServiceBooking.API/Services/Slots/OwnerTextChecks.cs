@@ -31,7 +31,7 @@ public static class OwnerTextChecks
     private static readonly (string Code, Regex Pattern)[] Soft =
     {
         ("CancellationTermsInText", new(@"штраф|неустойк|неявк|не\s+возвращ|условия\s+отмены|отмен\w*\s+(?:за|менее|позже)", Opts)),
-        ("MandatoryExtraCharge", new(@"доплат|сверх|обязательн\w*\s+(?:платеж|оплат|взнос)|оплат\w*\s+на\s+месте", Opts)),
+        ("MandatoryExtraCharge", new(@"(?<!\p{L})доплат|(?<!\p{L})сверх|обязательн\w*\s+(?:платеж|оплат|взнос)|оплат\w*\s+на\s+месте", Opts)),
         ("HealthClaim", new(@"лечебн|лечени|лечит|оздоровит|целебн|исцел|детокс|противопоказани", Opts)),
         ("Passport", new(@"паспорт", Opts)),
         ("CardNumber", new(@"(?<!\d)(?:\d{4}[\s-]?){3}\d{4}(?!\d)", Opts)),
