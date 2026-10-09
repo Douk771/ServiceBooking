@@ -26,7 +26,7 @@ public class ServiceCatalogService(AppDbContext db, ServiceSlotService slots, St
         var today = slots.TodayOf(company);
         var hasWindows = await db.StayServiceWeeklyWindows.AsNoTracking().AnyAsync(w => w.ServiceId == service.Id, ct)
             || (await db.StayServiceDateOverrides.AsNoTracking().Where(o => o.ServiceId == service.Id && !o.IsClosed && o.BusinessDate >= today && o.BusinessDate <= today.AddDays(settings.HorizonDays)).CountAsync(ct)) > 0;
-        return ServicePublishRules.Problems(service.ArchivedAtUtc != null, hasRules, hasWindows).ToList();
+        return ServicePublishRules.Problems(service.ArchivedAtUtc != null, hasRules, hasWindows, Slots.SlotVerticals.Find(company.Kind)?.RequiresCapacityToPublish ?? false, service.Capacity is not null).ToList();
     }
 
     public async Task<List<ServiceListItemDto>> ListAsync(Company company, StaysSettings settings, CancellationToken ct)
@@ -54,7 +54,8 @@ public class ServiceCatalogService(AppDbContext db, ServiceSlotService slots, St
         var b = options.Value.Services.CancellationBoundaryHours;
         return new ServiceManageDto(s.Id, s.Slug, s.Name, s.Description, s.MinHours, s.MaxHours, s.StepMinutes, s.BufferMinutes, s.ShowBufferToGuests, s.MinLeadMinutes,
             s.StandalonePrepayPercent, s.CancellationPolicy, s.CancellationBoundaryHours, new BoundaryRangeDto(b.Min, b.Max), s.AvailableForHouseBookings, s.IsPublished,
-            s.ArchivedAtUtc != null, s.Position, photos.Select(PhotoDto).ToList(), links.ServicePageUrl(company.Slug, s.Slug), problems, has);
+            s.ArchivedAtUtc != null, s.Position, photos.Select(PhotoDto).ToList(), Slots.SlotVerticals.IsSlotKind(company.Kind) ? links.ResourcePageUrl(company.Kind, company.Slug, s.Slug) : links.ServicePageUrl(company.Slug, s.Slug), problems, has,
+            s.Capacity, Slots.OwnerTextChecks.Check(s.Description).Warnings.ToList());
     }
 
     public static ServicePhotoDto PhotoDto(StayServicePhoto p) => new(p.Id, p.Url, p.ThumbnailUrl ?? p.Url, p.Position);
