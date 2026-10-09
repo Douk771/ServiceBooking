@@ -438,6 +438,20 @@ public class AdminController(
             .Select(g => new { CompanyId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.CompanyId, x => x.Count, ct);
 
+        // ARCHITECTURE_CYCLE42.md §42.5.5 (P1, US-42-04): the bath company's statistics — counts only, no personal data.
+        var bathIds = companies.Where(c => c.Kind == CompanyKind.Baths).Select(c => c.Id).ToList();
+        var bathsStats = new Dictionary<Guid, AdminBathsStatsDto>();
+        if (bathIds.Count > 0)
+        {
+            var since = DateTime.UtcNow.AddDays(-AdminBathsStatsDto.OrdersWindowDays);
+            var resources = await db.StayServices.AsNoTracking().Where(s => bathIds.Contains(s.CompanyId) && s.ArchivedAtUtc == null)
+                .GroupBy(s => s.CompanyId).Select(g => new { CompanyId = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.CompanyId, x => x.Count, ct);
+            var recentOrders = await db.StayServiceOrders.AsNoTracking().Where(o => bathIds.Contains(o.CompanyId) && o.CreatedAtUtc >= since)
+                .GroupBy(o => o.CompanyId).Select(g => new { CompanyId = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.CompanyId, x => x.Count, ct);
+            foreach (var id in bathIds)
+                bathsStats[id] = new AdminBathsStatsDto(resources.GetValueOrDefault(id), recentOrders.GetValueOrDefault(id));
+        }
+
         var result = companies.Select(c =>
         {
             var sub = c.BillingAccountId.HasValue ? subByAccount.GetValueOrDefault(c.BillingAccountId.Value) : null;
@@ -445,7 +459,8 @@ public class AdminController(
             return new AdminCompanyDto(c.Id, c.Name, c.Slug, c.Email, c.Phone, c.IsActive, c.AllowSelfBooking, c.CreatedAt,
                 c.MemberCount, count, c.OwnerUserId, ownerEmails.GetValueOrDefault(c.OwnerUserId, c.OwnerUserId),
                 sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Free", sub?.PaidUntil, sub?.IsActive ?? true,
-                c.Kind.ToString(), siteLinks.CompanyPageUrl(c.Kind, c.Slug), c.IsShowcase, c.ShowcaseBookingOpen);
+                c.Kind.ToString(), siteLinks.CompanyPageUrl(c.Kind, c.Slug), c.IsShowcase, c.ShowcaseBookingOpen,
+                bathsStats.GetValueOrDefault(c.Id));
         }).ToList();
 
         return Ok(Pagination.Create(result, currentPage, currentPageSize, total));
@@ -694,7 +709,15 @@ public record AdminCompanyDto(Guid Id, string Name, string Slug, string? Email, 
     // Kind: the enum's name as a string, for the same reason as CompanyDto.Kind (readable without the enum converter).
     string Kind = nameof(CompanyKind.Services), string PublicUrl = "",
     // ARCHITECTURE_CYCLE28.md §594.2 — additive: showcase mark and whether the showcase company takes online booking.
-    bool IsShowcase = false, bool ShowcaseBookingOpen = false);
+    bool IsShowcase = false, bool ShowcaseBookingOpen = false,
+    // ARCHITECTURE_CYCLE42.md §42.5.5 (P1, US-42-04): only for Kind = Baths, omitted otherwise.
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] AdminBathsStatsDto? BathsStats = null);
+
+/// <summary>Statistics of a bath company: unarchived resources and orders created in the last <see cref="OrdersWindowDays"/> days.</summary>
+public record AdminBathsStatsDto(int ResourcesCount, int OrdersLast30Days)
+{
+    public const int OrdersWindowDays = 30;
+}
 
 
 public record SubscriptionDiagnosticsDto(
