@@ -41,7 +41,8 @@ public static class NotificationTypeCatalog
         NotificationType.StaffStaySessionAdded, NotificationType.StaffServiceOrderCreated, NotificationType.StaffServiceOrderPaymentProofUploaded,
         NotificationType.StaffServiceSessionCancelledByGuest, NotificationType.ServiceGuestOrderCreated, NotificationType.ServiceGuestHoldExpiring,
         NotificationType.ServiceGuestHoldExpired, NotificationType.ServiceGuestConfirmed, NotificationType.ServiceGuestPaymentRejected,
-        NotificationType.ServiceGuestCancelledByOwner, NotificationType.StayGuestSessionAdded, NotificationType.StayGuestSessionCancelledByOwner
+        NotificationType.ServiceGuestCancelledByOwner, NotificationType.StayGuestSessionAdded, NotificationType.StayGuestSessionCancelledByOwner,
+        NotificationType.ServiceGuestSessionReminder
     ];
 
     public static bool IsServiceType(NotificationType type) => ServiceTypes.Contains(type);

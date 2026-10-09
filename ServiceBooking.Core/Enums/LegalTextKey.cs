@@ -85,6 +85,16 @@ public static class LegalTextKey
     public const string StayReminderPushOwnerNotice = "StayReminderPushOwnerNotice";
     public const string StayServiceSafetyOwnerNotice = "StayServiceSafetyOwnerNotice";
 
+    // ARCHITECTURE_CYCLE42.md §42.2.4 — «Бани». DELIBERATELY NOT in All (the deploy must not wait for legal-counsel): the frontend shows its neutral fallback on 404.
+    public const string BathBookingNotice = "BathBookingNotice";
+    public const string BathBookingTerms = "BathBookingTerms";
+    public const string BathPublicContactsNotice = "BathPublicContactsNotice";
+    public const string BathPositionsOwnerNotice = "BathPositionsOwnerNotice";
+    public const string BathCapacityOwnerNotice = "BathCapacityOwnerNotice";
+    public const string BathPaymentProofNotice = "BathPaymentProofNotice";
+    public const string BathPaymentRequisitesOwnerNotice = "BathPaymentRequisitesOwnerNotice";
+    public const string BathOwnerCancelNotice = "BathOwnerCancelNotice";
+
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         BookingNotice, TemplateAdWarning, UnsubscribePage, PhotoConsent, HealthDataConsent, GuardianConfirmation,

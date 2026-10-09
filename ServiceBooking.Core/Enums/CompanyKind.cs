@@ -13,5 +13,8 @@ public enum CompanyKind
     Orders = 1,
 
     /// <summary>ARCHITECTURE_CYCLE37.md §37.3 — a company renting houses by the night on dom.ezbook.ru.</summary>
-    Stays = 2
+    Stays = 2,
+
+    /// <summary>ARCHITECTURE_CYCLE42.md §42.2.1 — a company renting baths by the hour on bani.ezbook.ru.</summary>
+    Baths = 3
 }

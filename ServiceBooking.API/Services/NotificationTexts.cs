@@ -57,6 +57,7 @@ public static class NotificationTexts
         NotificationType.ServiceGuestCancelledByOwner => "Заказ услуги отменён компанией",
         NotificationType.StayGuestSessionAdded => "Услуга добавлена к брони",
         NotificationType.StayGuestSessionCancelledByOwner => "Сеанс отменён компанией",
+        NotificationType.ServiceGuestSessionReminder => "Напоминание перед сеансом",
         _ => "Уведомление",
     };
 

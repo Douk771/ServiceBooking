@@ -45,6 +45,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<StayGuestPushNotification> StayGuestPushNotifications => Set<StayGuestPushNotification>();
     public DbSet<StaysSubscription> StaysSubscriptions => Set<StaysSubscription>();
 
+    // Cycle 42 (ARCHITECTURE_CYCLE42.md §42.2): «Бани».
+    public DbSet<BathsSubscription> BathsSubscriptions => Set<BathsSubscription>();
+    public DbSet<StayServiceItemConfirmation> StayServiceItemConfirmations => Set<StayServiceItemConfirmation>();
+
     // Cycle 39 (ARCHITECTURE_CYCLE39.md §39.2): time-slot services of «Дома».
     public DbSet<StayService> StayServices => Set<StayService>();
     public DbSet<StayServicePhoto> StayServicePhotos => Set<StayServicePhoto>();
@@ -340,6 +344,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             {
                 t.HasCheckConstraint("CK_StaysSettings_CheckOutNotAfterCheckIn", "\"CheckOutTime\" <= \"CheckInTime\"");
                 t.HasCheckConstraint("CK_StaysSettings_Nights", "\"MinNights\" BETWEEN 1 AND 30 AND \"MaxNights\" BETWEEN 1 AND 90 AND \"MinNights\" <= \"MaxNights\"");
+                t.HasCheckConstraint("CK_StaysSettings_ServiceReminderHours", "\"ServiceReminderHours\" IS NULL OR \"ServiceReminderHours\" BETWEEN 1 AND 24");
             });
         });
 
@@ -546,6 +551,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => new { x.CompanyId, x.Position });
             e.ToTable(t =>
             {
+                t.HasCheckConstraint("CK_StayServices_Capacity", "\"Capacity\" IS NULL OR \"Capacity\" BETWEEN 1 AND 30");
                 t.HasCheckConstraint("CK_StayServices_Hours", "1 <= \"MinHours\" AND \"MinHours\" <= \"MaxHours\" AND \"MaxHours\" <= 12");
                 t.HasCheckConstraint("CK_StayServices_Step", "\"StepMinutes\" IN (30, 60)");
                 t.HasCheckConstraint("CK_StayServices_Buffer", "\"BufferMinutes\" BETWEEN 0 AND 240 AND \"BufferMinutes\" % 15 = 0");
@@ -648,7 +654,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.HoldExpiresAtUtc).HasDatabaseName("IX_StayServiceOrders_HoldExpiry").HasFilter("\"Status\" = 0");
             e.HasIndex(x => new { x.GuestPhone, x.CreatedAtUtc }).HasDatabaseName("IX_StayServiceOrders_Phone").HasFilter("\"GuestPhone\" IS NOT NULL");
             e.HasIndex(x => new { x.GuestUserId, x.CreatedAtUtc });
-            e.ToTable(t => t.HasCheckConstraint("CK_StayServiceOrders_Money", "\"TotalRub\" = \"ServiceAmountRub\" + \"ItemsAmountRub\" AND \"DueOnSiteRub\" = \"TotalRub\" - \"PrepayRub\""));
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_StayServiceOrders_Money", "\"TotalRub\" = \"ServiceAmountRub\" + \"ItemsAmountRub\" AND \"DueOnSiteRub\" = \"TotalRub\" - \"PrepayRub\"");
+                t.HasCheckConstraint("CK_StayServiceOrders_GuestsCount", "\"GuestsCount\" IS NULL OR \"GuestsCount\" BETWEEN 1 AND 30");
+            });
         });
 
         builder.Entity<StayServiceSession>(e =>
@@ -709,6 +719,28 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(s => s.BillingAccount).WithMany().HasForeignKey(s => s.BillingAccountId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(s => s.PlanConfig).WithMany().HasForeignKey(s => s.PlanConfigId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(s => s.BillingAccountId).IsUnique();
+        });
+
+        builder.Entity<BathsSubscription>(e =>
+        {
+            e.HasOne(s => s.BillingAccount).WithMany().HasForeignKey(s => s.BillingAccountId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(s => s.PlanConfig).WithMany().HasForeignKey(s => s.PlanConfigId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(s => s.BillingAccountId).IsUnique();
+        });
+
+        builder.Entity<StayServiceItemConfirmation>(e =>
+        {
+            e.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<StayService>().WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<StayServiceItem>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(x => x.ItemNameSnapshot).HasMaxLength(100);
+            e.Property(x => x.MarkersHit).HasMaxLength(200);
+            e.Property(x => x.NoticeKey).HasMaxLength(64);
+            e.Property(x => x.NoticeVersion).HasMaxLength(80);
+            e.Property(x => x.ConfirmedByUserId).HasMaxLength(450);
+            e.Property(x => x.ConfirmedByNameSnapshot).HasMaxLength(200);
+            e.Property(x => x.IpAddress).HasMaxLength(64);
+            e.HasIndex(x => new { x.ServiceId, x.ConfirmedAtUtc });
         });
 
         builder.Entity<OrderMonthlyUsage>(e =>

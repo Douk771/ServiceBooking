@@ -22,6 +22,8 @@ public class StayService
     public int? StandalonePrepayPercent { get; set; }
     public StayServiceCancellationPolicy CancellationPolicy { get; set; } = StayServiceCancellationPolicy.NoDeductions;
     public int CancellationBoundaryHours { get; set; } = 12;
+    /// <summary>ARCHITECTURE_CYCLE42.md §42.2.3: "up to N people" (1..30); NULL for «Дома».</summary>
+    public int? Capacity { get; set; }
     public bool AvailableForHouseBookings { get; set; } = true;
     public bool IsPublished { get; set; }
     public int Position { get; set; }
@@ -174,6 +176,11 @@ public class StayServiceOrder
     public string? Comment { get; set; }
     public StayServiceRequestBasis? RequestBasis { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE42.md §42.2.3: snapshot at creation (1..30), never changes.</summary>
+    public int? GuestsCount { get; set; }
+    /// <summary>ARCHITECTURE_CYCLE42.md §42.2.3: when the pre-session reminder was queued (once-only; set even with no channel).</summary>
+    public DateTime? SessionReminderAtUtc { get; set; }
+
     public int ServiceAmountRub { get; set; }
     public int ItemsAmountRub { get; set; }
     public int TotalRub { get; set; }
@@ -226,6 +233,24 @@ public class StayServiceOrderEvent
     public StayBookingStatus? ToStatus { get; set; }
     public string? Reason { get; set; }
     public string? DetailsJson { get; set; }
+}
+
+/// <summary>ARCHITECTURE_CYCLE42.md §42.2.2 (Т42-05): append-only journal of "this is not alcohol or tobacco" confirmations. Written only by ServiceItemWriter.</summary>
+public class StayServiceItemConfirmation
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid ServiceId { get; set; }
+    /// <summary>NULL — the position was deleted.</summary>
+    public Guid? ItemId { get; set; }
+    public string ItemNameSnapshot { get; set; } = string.Empty;
+    public string MarkersHit { get; set; } = string.Empty;
+    public string NoticeKey { get; set; } = string.Empty;
+    public string NoticeVersion { get; set; } = string.Empty;
+    public string ConfirmedByUserId { get; set; } = string.Empty;
+    public string ConfirmedByNameSnapshot { get; set; } = string.Empty;
+    public DateTime ConfirmedAtUtc { get; set; } = DateTime.UtcNow;
+    public string? IpAddress { get; set; }
 }
 
 /// <summary>History of the arrival-reminder setting (US-39-20, Т39-12/13): append-only, kept while the company exists.</summary>
