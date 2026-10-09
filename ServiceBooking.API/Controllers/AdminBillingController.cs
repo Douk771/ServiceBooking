@@ -25,6 +25,7 @@ public class AdminBillingController(
     AppDbContext db,
     SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
     OwnerSubscriptionService ownerSubscriptionService,
+    Services.Baths.BathsCatalogService bathsCatalog,
     ILogger<AdminBillingController> logger) : ControllerBase
 {
     // B5: PostgreSQL "timestamp with time zone" columns require Kind == Utc; DateOnly.ToDateTime always
@@ -533,14 +534,14 @@ public class AdminBillingController(
         if (vertical is not null)
         {
             var unitsPublished = await new Services.Stays.StaysPlanResolver(db).CountPublishedUnitsAsync(vertical, accountId);
-            var (maxUnits, unitWord) = vertical.Unit switch
+            var maxUnits = vertical.Unit switch
             {
-                Services.Stays.GateUnit.House => (plan?.MaxHouses, "домов"),
-                Services.Stays.GateUnit.Resource => (plan?.MaxResources, "ресурсов"),
+                Services.Stays.GateUnit.House => plan?.MaxHouses,
+                Services.Stays.GateUnit.Resource => plan?.MaxResources,
                 _ => throw new System.Diagnostics.UnreachableException()
             };
             if (!dto.ConfirmLimitOverflow && maxUnits is { } limit && unitsPublished > limit)
-                return Conflict($"На новом тарифе доступно {limit} {unitWord}, опубликовано {unitsPublished}. Подтвердите превышение лимита, чтобы продолжить.");
+                return Conflict(Services.Stays.StaysTexts.PlanLimitOverflow(vertical.Unit, limit, unitsPublished));
         }
         else if (kind == CompanyKind.Orders)
         {
@@ -665,6 +666,8 @@ public class AdminBillingController(
         account.UpdatedAtUtc = now;
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
+        // ARCHITECTURE_CYCLE42.md §42.10.2: the gate of a «Бани» company reads the plan — the catalog base must not keep a stale verdict for 30 seconds.
+        if (kind == CompanyKind.Baths) bathsCatalog.InvalidateBase();
 
         logger.LogInformation(
             "{Line} subscription assigned to billing account {AccountId} by {UserId}: plan {PlanName}, options {OptionsSummary}",
