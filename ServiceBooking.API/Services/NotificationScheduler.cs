@@ -303,7 +303,7 @@ public sealed class NotificationScheduler(
             NewDate: type == NotificationType.BookingRescheduled ? booking.Date.ToString("dd.MM.yyyy") : null,
             NewTime: type == NotificationType.BookingRescheduled ? booking.StartTime.ToString("HH:mm") : null);
 
-        var rendered = NotificationTemplateRenderer.Render(templateBody, templateContext);
+        var rendered = NotificationTemplateRenderer.WithSender(ctx.Company.Name, NotificationTemplateRenderer.Render(templateBody, templateContext));
 
         var unsubscribeKey = options.Value.UnsubscribeKey;
         if (string.IsNullOrEmpty(unsubscribeKey) || string.IsNullOrEmpty(ctx.RecipientPhone))

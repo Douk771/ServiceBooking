@@ -246,7 +246,8 @@ public class CompanyNotificationsController(
             CompanyName: "Ваш салон", Address: "ул. Примерная, 1", CompanyPhone: "+7 900 000-00-00",
             CancellationReason: "по просьбе клиента", NewDate: "20.09.2026", NewTime: "12:00");
 
-        var rendered = NotificationTemplateRenderer.Render(dto.Body, sampleContext);
+        var companyName = await db.Companies.AsNoTracking().Where(c => c.Id == companyId).Select(c => c.Name).FirstOrDefaultAsync() ?? sampleContext.CompanyName;
+        var rendered = NotificationTemplateRenderer.WithSender(companyName, NotificationTemplateRenderer.Render(dto.Body, sampleContext));
         var withUnsubscribe = NotificationTemplateRenderer.AppendUnsubscribeLine(
             rendered, "Отказаться от уведомлений: https://ezbook.ru/u/…");
 

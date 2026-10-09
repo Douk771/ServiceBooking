@@ -66,6 +66,7 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.ChannelTestMessageTask>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.NumbersOverviewBuilder>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.MessengerConsentResolver>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.CustomerMessagingOfferService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.PendingRebinder>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingEventLog>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingActorResolver>();

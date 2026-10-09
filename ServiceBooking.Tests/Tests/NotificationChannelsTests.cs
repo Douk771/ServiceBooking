@@ -147,6 +147,7 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         // the exact same ranking code path the original WhatsApp/WhatsApp version of this test did.
         var (owner, _) = await CreateOwnerWithCompanyAsync();
         await GiveNotificationCapablePlanAsync(owner.UserId);
+        await SetChannelPriceAsync(990); // Cycle 40: an option without a price is not for sale (the class database keeps the price of earlier tests otherwise)
         var owned = AuthedClient(owner.Token);
 
         var first = (await (await owned.PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest()))

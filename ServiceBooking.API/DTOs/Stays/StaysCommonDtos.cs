@@ -63,7 +63,9 @@ public record PublicHouseDto(
     bool DogsForbidden, int DogFeeRub, bool HasCot, int CotFeeRub, List<HouseAmenityDto> Amenities, string? Address,
     string? YandexMapsUrl, string? TwoGisUrl, PublicRegistryDto? Registry, PublicCompanyRefDto Company, ProviderPublicDto? Provider,
     PublicStayRulesDto Rules, int? PriceFromRub, bool AcceptingBookings, string? NotAcceptingText, bool Available,
-    string? NotAvailableText, DateOnly Today, string TimeZoneId, List<ServiceLinkDto>? ServicesForStay = null);
+    string? NotAvailableText, DateOnly Today, string TimeZoneId, List<ServiceLinkDto>? ServicesForStay = null,
+    // ARCHITECTURE_CYCLE40.md §40.10 — do messenger messages work for this company's guests (the booking-form tick).
+    ServiceBooking.API.Services.Notifications.CustomerMessagingOfferDto? Messenger = null);
 
 public record CalendarDayDto(DateOnly Date, CalendarDayState State, int? PriceRub);
 

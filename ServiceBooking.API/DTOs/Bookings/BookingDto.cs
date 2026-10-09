@@ -81,7 +81,11 @@ public record BookingDto(
     int? ClientCancelMinHours = null,
     // ARCHITECTURE_CYCLE28.md §577.4, API_CONTRACT_CYCLE28.md §593 — the booking belongs to a showcase (fictional) company. Filled on every route
     // that returns a BookingDto; the frontend shows the "example" line in the booking card when true.
-    bool CompanyIsShowcase = false
+    bool CompanyIsShowcase = false,
+    // ARCHITECTURE_CYCLE40.md §40.11.6 — consent to messenger messages for this booking; the staff member's name is never given out.
+    bool? NotifyByMessenger = null,
+    DateTime? MessengerConsentAtUtc = null,
+    bool MessengerConsentByStaff = false
 );
 
 // US-67 (API_CONTRACT_CYCLE6.md §43.2): one line per service in the visit, in visit order.
@@ -120,5 +124,7 @@ public record CreateBookingDto(
     // compiling unchanged: BookedForOther defaults false, requiring no confirmation, exactly today's
     // behavior (API_CONTRACT_CYCLE5.md §46.1's "bookedForOther: false — поведение ровно как сегодня").
     bool BookedForOther = false,
-    GuardianConfirmationDto? GuardianConfirmation = null
+    GuardianConfirmationDto? GuardianConfirmation = null,
+    // ARCHITECTURE_CYCLE40.md §40.11.1 — client/guest: the "notify me in a messenger" tick (true/false/null = not asked); staff: true = "the client agreed".
+    bool? NotifyByMessenger = null
 );

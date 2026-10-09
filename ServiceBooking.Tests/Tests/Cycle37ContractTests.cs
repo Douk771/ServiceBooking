@@ -30,7 +30,8 @@ public class Cycle37ContractTests(TestDatabaseFixture fixture) : Cycle37TestBase
     private static readonly Dictionary<string, System.Text.RegularExpressions.Regex> Cycle39Additions = new()
     {
         ["GET /api/stays/public/companies/{slug} 200"] = Rx(@"^\$\.(services|acceptsServiceOrdersWithoutStay)" + NotDescribed),
-        ["GET /api/stays/public/companies/{slug}/houses/{houseSlug} 200"] = Rx(@"^\$\.servicesForStay" + NotDescribed),
+        // Цикл 40 дописал в ответ страницы дома необязательное messenger (предложение уведомлений гостю; contracts/cycle40/openapi.yaml, PublicHouseCycle40Part).
+        ["GET /api/stays/public/companies/{slug}/houses/{houseSlug} 200"] = Rx(@"^\$\.(servicesForStay|messenger)" + NotDescribed),
         ["POST /api/stays/public/houses/{houseId}/quote 200"] = Rx(@"^\$\.services" + NotDescribed),
         ["POST /api/stays/public/houses/{houseId}/bookings 200"] = PublicBookingAdds,
         ["POST /api/stays/public/houses/{houseId}/bookings 201"] = PublicBookingAdds,

@@ -22,7 +22,7 @@ namespace ServiceBooking.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/notifications")]
-public class NotificationsController(AppDbContext db, IOptions<NotificationOptions> options, ILogger<NotificationsController> logger) : ControllerBase
+public class NotificationsController(AppDbContext db, IOptions<NotificationOptions> options, ServiceBooking.API.Services.Legal.ConsentLedger consentLedger, ILogger<NotificationsController> logger) : ControllerBase
 {
     // ── Cabinet preferences ──────────────────────────────────────────────────────────────────────
 
@@ -30,11 +30,14 @@ public class NotificationsController(AppDbContext db, IOptions<NotificationOptio
     [Authorize]
     public async Task<ActionResult<NotificationPreferencesDto>> GetPreferences(CancellationToken ct)
     {
+        var consented = await consentLedger.CurrentAsync(
+            ServiceBooking.API.Services.Legal.ConsentSubject.ForUser(User.FindFirstValue(ClaimTypes.NameIdentifier)!),
+            LegalDocumentType.PdnConsent.ToString(), ConsentPurpose.ProviderDelivery, ct) is not null;
         var phone = await CallerCanonicalPhoneAsync();
-        if (phone is null) return Ok(new NotificationPreferencesDto(true));
+        if (phone is null) return Ok(new NotificationPreferencesDto(true, consented));
 
         var optedOut = await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == phone, ct);  // SUBJECT-PHONE-GATE: not-account-scoped — reads only the CALLER's own opt-out status for their own phone (CallerCanonicalPhoneAsync), never another subject's data (ARCHITECTURE_CYCLE16.md §245.3)
-        return Ok(new NotificationPreferencesDto(!optedOut));
+        return Ok(new NotificationPreferencesDto(!optedOut, consented));
     }
 
     [HttpPut("preferences")]

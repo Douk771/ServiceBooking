@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using ServiceBooking.API.DTOs.Stays;
 using ServiceBooking.API.Services.Legal;
+using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Shops;
 using ServiceBooking.API.Services.Subjects;
 using ServiceBooking.Core.Entities;
@@ -23,7 +24,8 @@ public sealed record ServiceOrderCreateResult(ActionResult? Error, StayServiceOr
 public class ServiceOrderCreationService(
     AppDbContext db, CaptchaService captcha, ServiceSlotService slots, ServiceSessionWriter sessionWriter, ServiceOrderThrottle throttle,
     StayServiceOrderEventLog eventLog, ServiceHoldReleaser holdReleaser, LegalDocumentProvider legalProvider, IStaysClock clock,
-    StaysCompanyService companyService, ShopChannelReader channelReader, StayActorResolver actors)
+    StaysCompanyService companyService, ShopChannelReader channelReader, StayActorResolver actors,
+    CustomerMessagingOfferService messagingOffer, ConsentLedger consentLedger, ILogger<ServiceOrderCreationService> logger)
 {
     private const string IdempotencyIndex = "IX_StayServiceOrders_CompanyId_IdempotencyKey";
 
@@ -98,7 +100,7 @@ public class ServiceOrderCreationService(
         if (!gate.Accepting) return Refuse(ServiceRefusalCode.NotAcceptingBookings, ServiceTexts.NotAcceptingGuest, gate.ReasonCode);
 
         var now = clock.UtcNow;
-        var notifyByMessenger = dto.NotifyByMessenger && settings.GuestMessengerEnabled && await channelReader.IsMessengerAvailableAsync(company.Id, ct);
+        var notifyByMessenger = dto.NotifyByMessenger && settings.GuestMessengerEnabled && (await messagingOffer.EvaluateAsync(company, ct)).Offered;
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         // 7. The number's limits, under the number's lock (lock order: phone → [house →] service, §39.5.2).
@@ -166,6 +168,13 @@ public class ServiceOrderCreationService(
             if (winner is null) throw;
             return new ServiceOrderCreateResult(null, winner, Created: false);
         }
+        // Т40-L-07 (§40.11.3): a signed-in guest's tick is the provider-delivery consent — entered in the journal once the order is committed.
+        if (guestKind == StayActorKind.Customer && notifyByMessenger && account is not null)
+        {
+            try { await MessengerOptInLedger.GrantForCustomerAsync(consentLedger, legalProvider, account.Id, ConsentSource.MessengerOptInStay, remoteIp, ct); }
+            catch (Exception ex) { logger.LogError(ex, "Failed to record the provider-delivery consent for service order {OrderId}", order.Id); }
+        }
+
         return new ServiceOrderCreateResult(null, order, Created: true);
     }
 
