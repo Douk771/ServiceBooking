@@ -57,7 +57,7 @@ export function DevicesAndNotificationsSection({
 
   if (!visible) return null
 
-  const kinds = { hasServices: push.hasServices, hasOrders: push.hasOrders, hasStays: push.hasStays }
+  const kinds = { hasServices: push.hasServices, hasOrders: push.hasOrders, hasStays: push.hasStays, hasBaths: push.hasBaths }
   const both = push.hasServices && push.hasOrders
   const busy = push.isEnabling || push.isDisabling
   const switchLabel = staffPushSwitchLabel(kinds)

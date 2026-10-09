@@ -46,6 +46,8 @@ export interface PlanForm {
   allowOrders: boolean
   /** Cycle 37: «Макс. домов» of a «Дома» plan; empty = no limit. */
   maxHouses: string
+  /** Cycle 42: «Макс. ресурсов» of a «Бани» plan; empty = no limit. */
+  maxResources: string
 }
 
 export const defaultForm: PlanForm = {
@@ -73,6 +75,7 @@ export const defaultForm: PlanForm = {
   maxOrdersPerMonth: '',
   allowOrders: true,
   maxHouses: '',
+  maxResources: '',
 }
 
 export function optionRulesToForm(rules: PlanOptionRuleDto[]): PlanForm['optionRules'] {
@@ -130,5 +133,20 @@ export function staysPlanPayload(form: Pick<PlanForm, 'line' | 'maxHouses'>, isE
   return {
     ...(isEditing ? {} : { line: 'Stays' as const }),
     maxHouses: form.maxHouses.trim() === '' ? null : parseInt(form.maxHouses),
+  }
+}
+
+/** Cycle 42 (API_CONTRACT_CYCLE42.md §42.21): «Макс. ресурсов» of a «Бани» plan — integer >= 1 or empty (no limit). Other lines send nothing. */
+export function bathsPlanLimitError(form: Pick<PlanForm, 'line' | 'maxResources'>): string | null {
+  if (form.line !== 'Baths') return null
+  const v = form.maxResources.trim()
+  return v !== '' && (!/^\d+$/.test(v) || parseInt(v) < 1) ? 'Лимит ресурсов: целое число от 1 или пустое поле.' : null
+}
+
+export function bathsPlanPayload(form: Pick<PlanForm, 'line' | 'maxResources'>, isEditing: boolean) {
+  if (form.line !== 'Baths') return {}
+  return {
+    ...(isEditing ? {} : { line: 'Baths' as const }),
+    maxResources: form.maxResources.trim() === '' ? null : parseInt(form.maxResources),
   }
 }
