@@ -188,7 +188,7 @@ public class BathsCatalogService(
     public async Task<BathsPublicCompanyDto?> CompanyPageAsync(string slug, CancellationToken ct)
     {
         var normalized = BathsSlugPolicy.Normalize(slug);
-        var company = await db.Companies.AsNoTracking().Include(c => c.City).FirstOrDefaultAsync(c => c.Slug.ToLower() == normalized && c.Kind == CompanyKind.Baths, ct);
+        var company = await db.Companies.AsNoTracking().Include(c => c.City).FirstOrDefaultAsync(c => c.Slug == normalized && c.Kind == CompanyKind.Baths, ct);
         if (company is null || !company.IsActive) return null;
         var settings = await companyService.LoadSettingsAsync(company.Id, ct: ct);
         var services = await db.StayServices.AsNoTracking().Where(s => s.CompanyId == company.Id && s.IsPublished && s.ArchivedAtUtc == null)
