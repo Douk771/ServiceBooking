@@ -14,10 +14,14 @@ export const OWNER_WARNING_TEXT: Record<OwnerTextWarning, string> = {
 }
 
 /** The texts to show for the codes the server sent, in the server's order, without repeats. */
-export function ownerWarningTexts(codes: readonly string[] | null | undefined): string[] {
+export function ownerWarningTexts(
+  codes: readonly string[] | null | undefined,
+  /** A vertical's own texts (bani prints `bani-vectors.json` `ownerText.warningTexts` verbatim); the defaults are dom's. */
+  overrides?: Partial<Record<string, string>>,
+): string[] {
   const out: string[] = []
   for (const code of codes ?? []) {
-    const text = (OWNER_WARNING_TEXT as Record<string, string | undefined>)[code]
+    const text = overrides?.[code] ?? (OWNER_WARNING_TEXT as Record<string, string | undefined>)[code]
     if (text && !out.includes(text)) out.push(text)
   }
   return out

@@ -5,6 +5,7 @@ import { useBathsCompany } from './cabinet/useBathsCompany'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { BATH_FALLBACKS } from './utils/baniTexts'
 import { BANI_CABINET_WORDS } from './cabinet/cabinetTexts'
+import { OWNER_TEXT_WARNINGS } from './utils/ownerText'
 
 /**
  * `bathsVertical` — the bani description of the slot vertical (ARCHITECTURE_CYCLE42.md §42.12.2): addresses of bani-routes.json,
@@ -57,6 +58,7 @@ export const bathsVertical: SlotVertical & {
     servicesEmptyText: 'Добавьте первую баню: название, вместимость, расписание, цены и правила. Опубликованная баня появится в каталоге.',
     stayBookingLabel: 'Бронь',
     cabinet: BANI_CABINET_WORDS,
+    ownerWarnings: OWNER_TEXT_WARNINGS,
   },
   features: { stayMode: false, capacity: true, houseBookingsToggle: false, photoPeopleNotice: true },
   NotFound: NotFoundPage,
