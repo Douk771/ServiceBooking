@@ -1,8 +1,7 @@
 import { useOutletContext } from 'react-router-dom'
 import type { SlotCabinetCompany, SlotVertical } from '@/components/slots/SlotVerticalContext'
 import { bathsVertical } from '../vertical'
-import { NotFoundPage } from '../pages/NotFoundPage'
-import { CABINET_FALLBACKS, RESOURCE_ONE_PLACE_HINT } from './cabinetTexts'
+import { PHOTO_PEOPLE_FALLBACK, RESOURCE_ONE_PLACE_HINT } from './cabinetTexts'
 import type { BathsCompanyManageDto } from './types'
 
 export interface CabinetOutletContext {
@@ -18,51 +17,16 @@ export function useBathsCompany(): CabinetOutletContext {
 const useCabinetCompany = (): SlotCabinetCompany => useBathsCompany()
 
 /**
- * The «Бани» vertical for the shared SERVICE SCREENS OF THE CABINET (resources, «День услуг», card of a booking, manual booking).
- * Built on `bathsVertical` of FE-42-2 (api, brand). Until FE-42-3/4 give `bathsVertical` its own `paths`/`legal`/`words`/`features`, this
- * is the one place that spells them for the cabinet; the guest keys are named as in ARCHITECTURE_CYCLE42.md §42.11.3 and have no
- * fallbacks here because no cabinet screen renders them (FE-42-4/8 own them).
+ * `bathsVertical` of FE-42-3 plus what only the cabinet needs: the company of the layout's outlet (FE-42-5 may swap its own hook in),
+ * the notice above the positions (Т42-05), the «no people in the frame» line (Т42-13) and the R42-1 hint on creating a resource.
  */
 export const bathsCabinetVertical: SlotVertical = {
-  kind: 'Baths',
-  api: bathsVertical.api,
-  paths: {
-    resourcePage: (companySlug, serviceSlug) => `/${companySlug}/${serviceSlug}`,
-    orderPage: (token) => `/s/${encodeURIComponent(token)}`,
-    cabinetServices: (companyId) => `/cabinet/${companyId}/resources`,
-    cabinetServiceNew: (companyId) => `/cabinet/${companyId}/resources/new`,
-    cabinetService: (companyId, serviceId) => `/cabinet/${companyId}/resources/${serviceId}`,
-    cabinetSession: (companyId, sessionId) => `/cabinet/${companyId}/service-sessions/${sessionId}`,
-    cabinetDay: (companyId, date) => `/cabinet/${companyId}/service-day/${date}`,
-    cabinetBooking: () => null,
-  },
+  ...bathsVertical,
   legal: {
-    keys: {
-      serviceBookingNotice: 'BathBookingNotice',
-      serviceBookingTerms: 'BathBookingTerms',
-      serviceCancellationTerms: 'StayServiceCancellationTerms',
-      serviceCommentNotice: 'StayServiceCommentNotice',
-      messengerConsent: 'StayMessengerConsent',
-      paymentProofNotice: 'BathPaymentProofNotice',
-      serviceAddNotice: 'BathBookingNotice',
-      serviceSafetyOwnerNotice: 'StayServiceSafetyOwnerNotice',
-      serviceCancellationOwnerNotice: 'StayServiceCancellationOwnerNotice',
-      photoPeopleNotice: 'CompanyPhotoPeopleNotice',
-      capacityOwnerNotice: 'BathCapacityOwnerNotice',
-      positionsOwnerNotice: 'BathPositionsOwnerNotice',
-    },
-    fallbacks: CABINET_FALLBACKS,
+    ...bathsVertical.legal,
+    keys: { ...bathsVertical.legal.keys, photoPeopleNotice: 'CompanyPhotoPeopleNotice', positionsOwnerNotice: 'BathPositionsOwnerNotice' },
+    fallbacks: { ...bathsVertical.legal.fallbacks, ...PHOTO_PEOPLE_FALLBACK },
   },
-  words: {
-    brandTitle: 'EZBOOK Бани',
-    brandName: 'EZBOOK Бани',
-    chooseResource: 'К комплексу',
-    notOrderingFallback: '',
-    servicesEmptyText: 'Добавьте первую баню или купель: название, потом расписание, цены и правила. Опубликованный ресурс увидят гости.',
-    stayBookingLabel: '',
-    serviceCreateHint: RESOURCE_ONE_PLACE_HINT,
-  },
-  features: { stayMode: false, capacity: true, houseBookingsToggle: false, photoPeopleNotice: true },
-  NotFound: NotFoundPage,
+  words: { ...bathsVertical.words, serviceCreateHint: RESOURCE_ONE_PLACE_HINT },
   useCabinetCompany,
 }
