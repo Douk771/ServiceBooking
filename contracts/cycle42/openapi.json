@@ -1,0 +1,6438 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ServiceBooking API — цикл 42 (Бани)",
+    "version": "42.1.0",
+    "license": {
+      "name": "Proprietary",
+      "url": "https://ezbook.ru/terms"
+    },
+    "description": "Конвенции циклов 37 и 39 без изменений: camelCase; enum — строками; DateTime — ISO-8601 UTC; DateOnly — YYYY-MM-DD; деньги — целые рубли (суффикс Rub); тела осознанных 400/402/429 — голая строка text/plain; 401/403/404 — пустое тело; все 409 маршрутов /api/baths/* — JSON с code и message. Компания «Бани» — Company.Kind = Baths. Маршруты /api/baths/* видят только компании Baths (остальные — 404 без оракула), маршруты /api/stays/* по-прежнему видят только Stays."
+  },
+  "servers": [
+    {
+      "url": "https://bani.ezbook.ru",
+      "description": "стенд (бой — после отдельного решения заказчика)"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "baths-public",
+      "description": "Анонимно — каталог, города, страница комплекса."
+    },
+    {
+      "name": "baths-services-public",
+      "description": "Анонимно — страница ресурса, даты, старты, расчёт, бронь (база — контроллер услуг цикла 39)."
+    },
+    {
+      "name": "baths-orders-public",
+      "description": "Бронь глазами гостя по ссылке /s/<token> и «Мои брони»."
+    },
+    {
+      "name": "baths-companies",
+      "description": "Кабинет — компания, настройки, реквизиты, исполнитель, адрес, QR, уведомления, пробный период, расписание банщика."
+    },
+    {
+      "name": "baths-resources",
+      "description": "Кабинет — ресурсы (бани, купели), фото, правила, цены, позиции, расписание (база — кабинет услуг цикла 39)."
+    },
+    {
+      "name": "baths-sessions",
+      "description": "Кабинет — День услуг, брони, проверка оплаты, отмена, ручная бронь (база — сеансы цикла 39)."
+    },
+    {
+      "name": "shared-changed",
+      "description": "Изменённые существующие маршруты — частичные DTO с новыми полями или расширенные входы."
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "CompanyId": {
+        "name": "companyId",
+        "in": "path",
+        "required": true,
+        "description": "Id компании «Бани». Салон, магазин, «Дома» или чужая компания — 404.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "StaysCompanyId": {
+        "name": "companyId",
+        "in": "path",
+        "required": true,
+        "description": "Id компании «Дома» (изменённые маршруты /api/stays/*).",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "ServiceId": {
+        "name": "serviceId",
+        "in": "path",
+        "required": true,
+        "description": "Id ресурса (StayServices.Id).",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "SessionId": {
+        "name": "sessionId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "PhotoId": {
+        "name": "photoId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "RuleId": {
+        "name": "ruleId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "ItemId": {
+        "name": "itemId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "ProofId": {
+        "name": "proofId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "Slug": {
+        "name": "slug",
+        "in": "path",
+        "required": true,
+        "description": "Адрес компании (bani-routes.json slugPattern).",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "ServiceSlug": {
+        "name": "serviceSlug",
+        "in": "path",
+        "required": true,
+        "description": "Адрес ресурса (bani-routes.json resourceSlugPattern).",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "OrderToken": {
+        "name": "token",
+        "in": "path",
+        "required": true,
+        "description": "Токен брони из ссылки /s/<token> (256 бит).",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "OverrideDate": {
+        "name": "date",
+        "in": "path",
+        "required": true,
+        "description": "Бизнес-день ручной даты.",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "DateQuery": {
+        "name": "date",
+        "in": "query",
+        "required": true,
+        "description": "Бизнес-день.",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "CatalogDateQuery": {
+        "name": "date",
+        "in": "query",
+        "required": false,
+        "description": "P1 — показать только ресурсы, у которых в этот бизнес-день есть свободный старт.",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "CityQuery": {
+        "name": "cityId",
+        "in": "query",
+        "required": false,
+        "description": "Id города из справочника. Без параметра — все города.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "FromQuery": {
+        "name": "from",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "DaysQuery": {
+        "name": "days",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31
+        }
+      },
+      "MonthQuery": {
+        "name": "month",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}$"
+        }
+      },
+      "StatusQuery": {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "$ref": "#/components/schemas/StayBookingStatus"
+        }
+      },
+      "ServiceIdQuery": {
+        "name": "serviceId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "ToQuery": {
+        "name": "to",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "NameQuery": {
+        "name": "name",
+        "in": "query",
+        "required": false,
+        "description": "Название — для предложения адреса.",
+        "schema": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "SlugQuery": {
+        "name": "slug",
+        "in": "query",
+        "required": false,
+        "description": "Адрес для проверки.",
+        "schema": {
+          "type": "string",
+          "maxLength": 100
+        }
+      },
+      "CompanyIdQuery": {
+        "name": "companyId",
+        "in": "query",
+        "required": false,
+        "description": "Своя компания — исключается из проверки занятости адреса.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "PageSize": {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 20
+        }
+      },
+      "LineQuery": {
+        "name": "line",
+        "in": "query",
+        "required": false,
+        "description": "Линейка тарифов. Baths — новая линейка цикла 42.",
+        "schema": {
+          "$ref": "#/components/schemas/CompanyKind"
+        }
+      }
+    },
+    "responses": {
+      "PlainTextError": {
+        "description": "Осознанный отказ — голая строка по-русски.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PaymentRequired": {
+        "description": "Превышен лимит тарифа — строка по-русски («Тариф „…“ позволяет опубликовать N ресурсов»).",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Лимит частоты или лимит номера — строка по-русски.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Нет или недействителен токен. Тело пустое."
+      },
+      "Forbidden": {
+        "description": "Член компании без нужного права. Тело пустое."
+      },
+      "NotFound": {
+        "description": "Не существует, другой вид компании или не ваше — неотличимо. Тело пустое."
+      },
+      "NoContent": {
+        "description": "Успех без тела."
+      },
+      "BathsConflict": {
+        "description": "Конфликт настроек компании «Бани».",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BathsConflictDto"
+            }
+          }
+        }
+      },
+      "ServiceRefusal": {
+        "description": "Отказ расчёта или брони (коды цикла 39).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ServiceRefusalDto"
+            }
+          }
+        }
+      },
+      "ServiceGuestConflict": {
+        "description": "Действие гостя над бронью не применено.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ServiceOrderGuestConflictDto"
+            }
+          }
+        }
+      },
+      "ServiceStaffConflict": {
+        "description": "Действие персонала над бронью не применено.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ServiceStaffConflictDto"
+            }
+          }
+        }
+      },
+      "StaysServiceConflict": {
+        "description": "Конфликт в кабинете ресурсов (коды цикла 39 + ServiceNoCapacity, ItemRestrictedConfirmationRequired).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/StaysServiceConflictDto"
+            }
+          }
+        }
+      },
+      "PaymentProofFile": {
+        "description": "Файл подтверждения оплаты. Заголовки: Cache-Control: private, no-store; X-Content-Type-Options: nosniff; Content-Security-Policy: sandbox; PDF — Content-Disposition: attachment.",
+        "content": {
+          "application/pdf": {
+            "schema": {
+              "type": "string",
+              "format": "binary"
+            }
+          },
+          "image/jpeg": {
+            "schema": {
+              "type": "string",
+              "format": "binary"
+            }
+          },
+          "image/png": {
+            "schema": {
+              "type": "string",
+              "format": "binary"
+            }
+          },
+          "image/webp": {
+            "schema": {
+              "type": "string",
+              "format": "binary"
+            }
+          }
+        }
+      },
+      "QrPng": {
+        "description": "PNG с QR-кодом адреса страницы комплекса на bani.ezbook.ru.",
+        "content": {
+          "image/png": {
+            "schema": {
+              "type": "string",
+              "format": "binary"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "CompanyKind": {
+        "type": "string",
+        "description": "Вид компании. Baths = 3 — новое значение цикла 42 (только дописыванием в конец).",
+        "enum": [
+          "Services",
+          "Orders",
+          "Stays",
+          "Baths"
+        ]
+      },
+      "StaysMyRole": {
+        "type": "string",
+        "description": "Роль в компании «Бани» — те же значения, что у «Домов». В интерфейсе bani Manager называется «Администратор», Housekeeper — «Банщик».",
+        "enum": [
+          "Owner",
+          "Manager",
+          "Housekeeper",
+          "SuperAdmin"
+        ]
+      },
+      "StaysPermission": {
+        "type": "string",
+        "description": "Без изменений против цикла 39. Права «домов» (ManageHouses, EditHouseContent, ManageBlocks) у компании «Бани» не используются.",
+        "enum": [
+          "ManageCompany",
+          "ManageHouses",
+          "EditHouseContent",
+          "ViewBookings",
+          "ManageBookings",
+          "ManageBlocks",
+          "ViewSchedule",
+          "ViewCabinet",
+          "ManageServices",
+          "EditServiceContent",
+          "ManageServiceDates"
+        ]
+      },
+      "NotAcceptingReason": {
+        "type": "string",
+        "description": "Цикл 42 дописал OverResourceLimit (лимит опубликованных ресурсов линейки «Бани»).",
+        "enum": [
+          "CompanyBlocked",
+          "NoPlan",
+          "OverHouseLimit",
+          "NoPaymentDetails",
+          "NoProviderInfo",
+          "HouseNotPublished",
+          "OverResourceLimit"
+        ]
+      },
+      "StayBookingStatus": {
+        "type": "string",
+        "enum": [
+          "Held",
+          "AwaitingPaymentCheck",
+          "Confirmed",
+          "ExpiredUnpaid",
+          "PaymentRejected",
+          "CancelledByGuest",
+          "CancelledByOwner"
+        ]
+      },
+      "StayDisplayStatus": {
+        "type": "string",
+        "enum": [
+          "Held",
+          "AwaitingPaymentCheck",
+          "Confirmed",
+          "Completed",
+          "ExpiredUnpaid",
+          "PaymentRejected",
+          "CancelledByGuest",
+          "CancelledByOwner"
+        ]
+      },
+      "StayProviderStatus": {
+        "type": "string",
+        "enum": [
+          "Organization",
+          "IndividualEntrepreneur",
+          "SelfEmployed",
+          "Individual"
+        ]
+      },
+      "StayServiceCancellationPolicy": {
+        "type": "string",
+        "enum": [
+          "NoDeductions",
+          "PreparationCosts"
+        ]
+      },
+      "StayServiceRequestBasis": {
+        "type": "string",
+        "enum": [
+          "Phone",
+          "InPerson",
+          "Messenger"
+        ]
+      },
+      "ServiceRefusalCode": {
+        "type": "string",
+        "description": "Коды цикла 39 без изменений.",
+        "enum": [
+          "ServiceOrdersDisabled",
+          "ServiceNotAvailableForStays",
+          "NotAcceptingBookings",
+          "DateInPast",
+          "BeyondHorizon",
+          "HoursOutOfRange",
+          "OutsideStay",
+          "TooEarly",
+          "StartUnavailable",
+          "NoPriceForHours",
+          "SlotTaken",
+          "ItemUnavailable",
+          "ItemQuantityExceeded",
+          "BookingNotActive",
+          "TooManySessions",
+          "PriceChanged"
+        ]
+      },
+      "ServiceGuestConflictCode": {
+        "type": "string",
+        "enum": [
+          "HoldExpired",
+          "ProofLimitReached",
+          "ProofNotAllowed",
+          "CancelNotAllowed"
+        ]
+      },
+      "StaffConflictCode": {
+        "type": "string",
+        "enum": [
+          "VersionMismatch",
+          "InvalidTransition"
+        ]
+      },
+      "StaysServiceConflictCode": {
+        "type": "string",
+        "description": "Коды цикла 39 + ServiceNoCapacity (публикация ресурса «Бань» без вместимости) + ItemRestrictedConfirmationRequired (позиция похожа на алкоголь или табак, Т42-05).",
+        "enum": [
+          "SlugInvalid",
+          "SlugTaken",
+          "ServiceHasSessions",
+          "ServiceArchived",
+          "ServiceNoPrice",
+          "ServiceNoWindows",
+          "ServiceLimitReached",
+          "PhotoLimitReached",
+          "ItemLimitReached",
+          "PriceRuleOverlap",
+          "PriceRuleLimitReached",
+          "ReminderConfirmationRequired",
+          "ServiceNoCapacity",
+          "ItemRestrictedConfirmationRequired"
+        ]
+      },
+      "BathsConflictCode": {
+        "type": "string",
+        "enum": [
+          "SlugInvalid",
+          "SlugReserved",
+          "SlugTaken",
+          "MessengerUnavailable"
+        ]
+      },
+      "BathsChecklistCode": {
+        "type": "string",
+        "enum": [
+          "ProfileFilled",
+          "PaymentDetails",
+          "ProviderInfo",
+          "ResourcePublished",
+          "Plan"
+        ]
+      },
+      "PlanWarningLevel": {
+        "type": "string",
+        "enum": [
+          "None",
+          "TrialEnding3d",
+          "TrialEnding1d",
+          "Expired",
+          "NoPlan",
+          "OverLimit"
+        ]
+      },
+      "OwnerTextWarning": {
+        "type": "string",
+        "description": "Мягкие предупреждения при сохранении описания ресурса и позиций (bani-vectors.json ownerText).",
+        "enum": [
+          "CancellationTermsInText",
+          "MandatoryExtraCharge",
+          "HealthClaim",
+          "Passport",
+          "CardNumber",
+          "PassportNumber"
+        ]
+      },
+      "MinuteOfBusinessDay": {
+        "type": "integer",
+        "description": "Минута от 00:00 даты бизнес-дня; 360 = 06:00, 1560 = 02:00 следующих суток, 1800 = 06:00 следующих суток.",
+        "minimum": 0,
+        "maximum": 2880
+      },
+      "GateDto": {
+        "type": "object",
+        "required": [
+          "accepting"
+        ],
+        "properties": {
+          "accepting": {
+            "type": "boolean"
+          },
+          "reasonCode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NotAcceptingReason"
+              }
+            ],
+            "type": "string",
+            "nullable": true
+          },
+          "reasonText": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PhotoDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "thumbnailUrl",
+          "position"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string"
+          },
+          "thumbnailUrl": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          }
+        }
+      },
+      "ProviderPublicDto": {
+        "type": "object",
+        "nullable": true,
+        "required": [
+          "status",
+          "statusLabel",
+          "inn"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/StayProviderStatus"
+          },
+          "statusLabel": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "inn": {
+            "type": "string"
+          },
+          "ogrn": {
+            "type": "string",
+            "nullable": true
+          },
+          "claimsAddress": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ProviderFullDto": {
+        "type": "object",
+        "nullable": true,
+        "required": [
+          "status",
+          "statusLabel",
+          "name",
+          "inn",
+          "claimsAddress"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/StayProviderStatus"
+          },
+          "statusLabel": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "inn": {
+            "type": "string"
+          },
+          "ogrn": {
+            "type": "string",
+            "nullable": true
+          },
+          "claimsAddress": {
+            "type": "string"
+          }
+        }
+      },
+      "ItemSelectionInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "itemId",
+          "quantity"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50
+          }
+        }
+      },
+      "WindowInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "startMinute",
+          "endMinute"
+        ],
+        "properties": {
+          "startMinute": {
+            "$ref": "#/components/schemas/MinuteOfBusinessDay"
+          },
+          "endMinute": {
+            "$ref": "#/components/schemas/MinuteOfBusinessDay"
+          }
+        }
+      },
+      "IdsOrderInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ids"
+        ],
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "EmptyInput": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "ExpectedVersionInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer"
+          }
+        }
+      },
+      "ExpectedVersionReasonInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "reason"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        }
+      },
+      "PushSubscriptionInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "keys"
+        ],
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "keys": {
+            "type": "object",
+            "required": [
+              "p256dh",
+              "auth"
+            ],
+            "properties": {
+              "p256dh": {
+                "type": "string"
+              },
+              "auth": {
+                "type": "string"
+              }
+            }
+          },
+          "deviceLabel": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 100
+          }
+        }
+      },
+      "PushSubscriptionRemoveInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "endpoint"
+        ],
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "maxLength": 2048
+          }
+        }
+      },
+      "BathsConflictDto": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/BathsConflictCode"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ServiceRefusalDto": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ServiceRefusalCode"
+          },
+          "message": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NotAcceptingReason"
+              }
+            ],
+            "type": "string",
+            "nullable": true
+          },
+          "quote": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceQuotePart"
+              }
+            ],
+            "type": "object",
+            "nullable": true,
+            "description": "Только у PriceChanged."
+          }
+        }
+      },
+      "ServiceOrderGuestConflictDto": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "order"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ServiceGuestConflictCode"
+          },
+          "message": {
+            "type": "string"
+          },
+          "order": {
+            "$ref": "#/components/schemas/PublicServiceOrderPart"
+          }
+        }
+      },
+      "ServiceStaffConflictDto": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "session"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/StaffConflictCode"
+          },
+          "message": {
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/StaffServiceSessionCardPart"
+          }
+        }
+      },
+      "StaysServiceConflictDto": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/StaysServiceConflictCode"
+          },
+          "message": {
+            "type": "string"
+          },
+          "conflictingRule": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true,
+            "description": "PriceRuleDto цикла 39 (только у PriceRuleOverlap)."
+          },
+          "markers": {
+            "type": "array",
+            "nullable": true,
+            "description": "ItemRestrictedConfirmationRequired — найденные основы (пив, кальян…); ReminderConfirmationRequired — как в цикле 39.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "noticeText": {
+            "type": "string",
+            "nullable": true,
+            "description": "ItemRestrictedConfirmationRequired — текст BathPositionsOwnerNotice (или запасной) для диалога подтверждения."
+          }
+        }
+      },
+      "BathResourceCardDto": {
+        "type": "object",
+        "required": [
+          "resourceId",
+          "resourceSlug",
+          "resourceName",
+          "companySlug",
+          "companyName",
+          "cityName",
+          "minHours",
+          "url"
+        ],
+        "properties": {
+          "resourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resourceSlug": {
+            "type": "string"
+          },
+          "resourceName": {
+            "type": "string"
+          },
+          "companySlug": {
+            "type": "string"
+          },
+          "companyName": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "coverUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "coverThumbUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "priceFromRub": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Минимальная цена часа по правилам."
+          },
+          "minHours": {
+            "type": "integer"
+          },
+          "capacity": {
+            "type": "integer",
+            "nullable": true,
+            "description": "«до N человек»."
+          },
+          "url": {
+            "type": "string",
+            "description": "Относительный путь /<companySlug>/<resourceSlug>."
+          }
+        }
+      },
+      "BathsCatalogPageDto": {
+        "type": "object",
+        "required": [
+          "items",
+          "totalCount",
+          "page",
+          "pageSize",
+          "dateFilterApplied"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BathResourceCardDto"
+            }
+          },
+          "totalCount": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          },
+          "cityId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "cityName": {
+            "type": "string",
+            "nullable": true
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "dateFilterApplied": {
+            "type": "boolean"
+          },
+          "emptyText": {
+            "type": "string",
+            "nullable": true,
+            "description": "В этом городе пока нет бань / На эту дату свободного времени нет."
+          }
+        }
+      },
+      "BathsCatalogCityDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "resourcesCount"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string",
+            "nullable": true
+          },
+          "resourcesCount": {
+            "type": "integer"
+          }
+        }
+      },
+      "BathsCatalogCitiesDto": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BathsCatalogCityDto"
+            }
+          }
+        }
+      },
+      "BathsPublicCompanyDto": {
+        "type": "object",
+        "required": [
+          "slug",
+          "name",
+          "cityName",
+          "timeZoneId",
+          "photos",
+          "resources",
+          "acceptingBookings"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "timeZoneId": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "logoUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "yandexMapsUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "twoGisUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "photos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PhotoDto"
+            }
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ProviderPublicDto"
+          },
+          "acceptingBookings": {
+            "type": "boolean"
+          },
+          "notAcceptingText": {
+            "type": "string",
+            "nullable": true,
+            "description": "Бронирование временно недоступно."
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BathResourceCardDto"
+            }
+          }
+        }
+      },
+      "PublicServiceCycle42Part": {
+        "type": "object",
+        "description": "Полная форма — contracts/cycle39/openapi.yaml PublicServiceDto. Цикл 42 дописал capacity, cityName, localTimeNote. Для «Бань» standalone.ordering всегда true, туристического налога и реквизитов нет.",
+        "additionalProperties": true,
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "minHours",
+          "maxHours",
+          "acceptingBookings",
+          "available",
+          "today",
+          "timeZoneId",
+          "cityName"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "minHours": {
+            "type": "integer"
+          },
+          "maxHours": {
+            "type": "integer"
+          },
+          "acceptingBookings": {
+            "type": "boolean"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "today": {
+            "type": "string",
+            "format": "date"
+          },
+          "timeZoneId": {
+            "type": "string"
+          },
+          "capacity": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Вместимость «до N человек» (у услуг «Домов» поле отсутствует)."
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "localTimeNote": {
+            "type": "string",
+            "description": "«Время местное, Шерегеш» (Т42-08) — фронт показывает рядом с выбором времени."
+          }
+        }
+      },
+      "ServiceAvailabilityPart": {
+        "type": "object",
+        "description": "Полная форма — cycle39 ServiceAvailabilityDto.",
+        "additionalProperties": true,
+        "required": [
+          "serviceId",
+          "today",
+          "days"
+        ],
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "today": {
+            "type": "string",
+            "format": "date"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": [
+                "businessDate",
+                "label",
+                "hasStarts"
+              ],
+              "properties": {
+                "businessDate": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "hasStarts": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ServiceStartsPart": {
+        "type": "object",
+        "description": "Полная форма — cycle39 ServiceStartsDto.",
+        "additionalProperties": true,
+        "required": [
+          "serviceId",
+          "businessDate",
+          "dateLabel",
+          "minHours",
+          "maxHours",
+          "starts"
+        ],
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "businessDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "dateLabel": {
+            "type": "string"
+          },
+          "minHours": {
+            "type": "integer"
+          },
+          "maxHours": {
+            "type": "integer"
+          },
+          "starts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": [
+                "startMinute",
+                "startUtc",
+                "label",
+                "maxHours"
+              ],
+              "properties": {
+                "startMinute": {
+                  "$ref": "#/components/schemas/MinuteOfBusinessDay"
+                },
+                "startUtc": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "maxHours": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "BathServiceQuoteInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Расчёт ресурса «Бань». Режима «к проживанию» нет (поля houseId/checkIn/checkOut цикла 39 не принимаются).",
+        "required": [
+          "businessDate",
+          "startMinute",
+          "hours",
+          "items"
+        ],
+        "properties": {
+          "businessDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "startMinute": {
+            "$ref": "#/components/schemas/MinuteOfBusinessDay"
+          },
+          "hours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/ItemSelectionInput"
+            }
+          }
+        }
+      },
+      "ServiceQuotePart": {
+        "type": "object",
+        "description": "Полная форма — cycle39 ServiceQuoteDto.",
+        "additionalProperties": true,
+        "required": [
+          "ok",
+          "totalRub",
+          "prepayRub",
+          "dueOnSiteRub",
+          "acceptingBookings"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "totalRub": {
+            "type": "integer"
+          },
+          "prepayRub": {
+            "type": "integer"
+          },
+          "dueOnSiteRub": {
+            "type": "integer"
+          },
+          "acceptingBookings": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateBathOrderInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "CreateServiceOrderInput цикла 39 + guestsCount. Для ресурса с вместимостью guestsCount обязателен (1…capacity); у ресурса без вместимости (услуги «Домов») игнорируется.",
+        "required": [
+          "businessDate",
+          "startMinute",
+          "hours",
+          "items",
+          "guestName",
+          "notifyByMessenger",
+          "expectedTotalRub",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "businessDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "startMinute": {
+            "$ref": "#/components/schemas/MinuteOfBusinessDay"
+          },
+          "hours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/ItemSelectionInput"
+            }
+          },
+          "guestsCount": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 30,
+            "description": "«Сколько человек придёт, включая детей» (Т42-06). Без возраста и деления на взрослых и детей."
+          },
+          "guestName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "guestPhone": {
+            "type": "string",
+            "nullable": true,
+            "description": "Обязателен для анонима; у вошедшего игнорируется."
+          },
+          "comment": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500
+          },
+          "notifyByMessenger": {
+            "type": "boolean",
+            "description": "Своя галочка StayMessengerConsent, по умолчанию false; при «Забронировать ещё» — снова false (Т42-09)."
+          },
+          "expectedTotalRub": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "captchaToken": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "CreateBathOrderResponse": {
+        "type": "object",
+        "required": [
+          "token",
+          "orderUrl",
+          "order"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 43
+          },
+          "orderUrl": {
+            "type": "string",
+            "description": "Абсолютная ссылка https://bani.ezbook.ru/s/<token>."
+          },
+          "order": {
+            "$ref": "#/components/schemas/PublicServiceOrderPart"
+          }
+        }
+      },
+      "SessionReminderViewDto": {
+        "type": "object",
+        "nullable": true,
+        "required": [
+          "sentAtUtc",
+          "text"
+        ],
+        "properties": {
+          "sentAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "text": {
+            "type": "string",
+            "description": "Фиксированный текст напоминания (без ссылки) — блок «Напоминание» на странице брони."
+          }
+        }
+      },
+      "PublicServiceOrderPart": {
+        "type": "object",
+        "description": "Полная форма — cycle39 PublicServiceOrderDto. Цикл 42 дописал guestsCount, cityName, localTimeNote, sessionReminder, bookAgainUrl.",
+        "additionalProperties": true,
+        "required": [
+          "status",
+          "displayStatus",
+          "statusText",
+          "serverTimeUtc",
+          "totalRub",
+          "prepayRub",
+          "dueOnSiteRub"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/StayBookingStatus"
+          },
+          "displayStatus": {
+            "$ref": "#/components/schemas/StayDisplayStatus"
+          },
+          "statusText": {
+            "type": "string"
+          },
+          "serverTimeUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "totalRub": {
+            "type": "integer"
+          },
+          "prepayRub": {
+            "type": "integer"
+          },
+          "dueOnSiteRub": {
+            "type": "integer"
+          },
+          "guestsCount": {
+            "type": "integer",
+            "nullable": true
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "localTimeNote": {
+            "type": "string"
+          },
+          "sessionReminder": {
+            "$ref": "#/components/schemas/SessionReminderViewDto"
+          },
+          "bookAgainUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "Относительный путь /<companySlug> — «Забронировать ещё в этом комплексе». Без ПДн в адресе (Т42-09)."
+          }
+        }
+      },
+      "MyBathOrderDto": {
+        "type": "object",
+        "required": [
+          "orderUrl",
+          "companyName",
+          "resourceName",
+          "timeLabel",
+          "status",
+          "displayStatus",
+          "statusText",
+          "totalRub",
+          "isActive"
+        ],
+        "properties": {
+          "orderUrl": {
+            "type": "string",
+            "description": "Относительный путь /s/<token> — только владельцу брони."
+          },
+          "companyName": {
+            "type": "string"
+          },
+          "resourceName": {
+            "type": "string"
+          },
+          "timeLabel": {
+            "type": "string",
+            "description": "Гостевой формат — календарными датами."
+          },
+          "localTimeNote": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StayBookingStatus"
+          },
+          "displayStatus": {
+            "$ref": "#/components/schemas/StayDisplayStatus"
+          },
+          "statusText": {
+            "type": "string"
+          },
+          "totalRub": {
+            "type": "integer"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MyBathOrdersDto": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Сначала активные (по времени начала ↑), затем прошедшие (↓); за 12 месяцев.",
+            "items": {
+              "$ref": "#/components/schemas/MyBathOrderDto"
+            }
+          }
+        }
+      },
+      "BathsCompanyCreateInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "cityId",
+          "phone",
+          "ownerTermsVersion"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "slug": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 50
+          },
+          "cityId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "address": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 300
+          },
+          "phone": {
+            "type": "string",
+            "maxLength": 30
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2000
+          },
+          "ownerTermsVersion": {
+            "type": "string"
+          },
+          "trialTermsVersion": {
+            "type": "string",
+            "nullable": true,
+            "description": "Версия условий пробного периода «Бань» (baths-2026-10-09) — если владелец согласился активировать триал."
+          }
+        }
+      },
+      "TrialOutcomeDto": {
+        "type": "object",
+        "required": [
+          "granted"
+        ],
+        "properties": {
+          "granted": {
+            "type": "boolean"
+          },
+          "refusalCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "endsAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "TrialStateDto": {
+        "type": "object",
+        "required": [
+          "offered",
+          "eligible",
+          "durationDays"
+        ],
+        "properties": {
+          "offered": {
+            "type": "boolean"
+          },
+          "eligible": {
+            "type": "boolean"
+          },
+          "refusalCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "termsVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "termsText": {
+            "type": "string",
+            "nullable": true
+          },
+          "durationDays": {
+            "type": "integer"
+          },
+          "endsAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "TrialInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "termsVersion"
+        ],
+        "properties": {
+          "termsVersion": {
+            "type": "string"
+          }
+        }
+      },
+      "BathsSettingsDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "horizonDays",
+          "holdMinutes",
+          "housekeeperSeesGuestComment",
+          "showInCatalog",
+          "sessionReminderEnabled",
+          "sessionReminderHours"
+        ],
+        "properties": {
+          "horizonDays": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 730
+          },
+          "holdMinutes": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 180
+          },
+          "housekeeperSeesGuestComment": {
+            "type": "boolean",
+            "description": "Показывать комментарий гостя банщику (ЮР-5), по умолчанию false."
+          },
+          "showInCatalog": {
+            "type": "boolean"
+          },
+          "sessionReminderEnabled": {
+            "type": "boolean"
+          },
+          "sessionReminderHours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 24,
+            "description": "За сколько часов до начала напомнить гостю (по умолчанию 3)."
+          }
+        }
+      },
+      "PaymentDetailsDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "paymentDetails": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 1000
+          },
+          "paymentPurpose": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 300
+          }
+        }
+      },
+      "ProviderInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StayProviderStatus"
+              }
+            ],
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "inn": {
+            "type": "string",
+            "nullable": true
+          },
+          "ogrn": {
+            "type": "string",
+            "nullable": true
+          },
+          "claimsAddress": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "SlugInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slug": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 100
+          }
+        }
+      },
+      "BathsSlugCheckDto": {
+        "type": "object",
+        "required": [
+          "suggested",
+          "available"
+        ],
+        "properties": {
+          "suggested": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "conflict": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BathsConflictDto"
+              }
+            ],
+            "type": "object",
+            "nullable": true
+          }
+        }
+      },
+      "ChecklistItemDto": {
+        "type": "object",
+        "required": [
+          "code",
+          "done",
+          "text"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/BathsChecklistCode"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "BathsPlanSummaryDto": {
+        "type": "object",
+        "required": [
+          "isTrial",
+          "resourcesPublished",
+          "warningLevel"
+        ],
+        "properties": {
+          "planName": {
+            "type": "string",
+            "nullable": true
+          },
+          "isTrial": {
+            "type": "boolean"
+          },
+          "paidUntilUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "maxResources": {
+            "type": "integer",
+            "nullable": true,
+            "description": "null — без ограничения (или тарифа нет)."
+          },
+          "resourcesPublished": {
+            "type": "integer"
+          },
+          "warningLevel": {
+            "$ref": "#/components/schemas/PlanWarningLevel"
+          },
+          "text": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "BathsCompanyManageDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "cityName",
+          "timeZoneId",
+          "timeZoneIsManual",
+          "isActive",
+          "showInCatalog",
+          "publicUrl",
+          "myRole",
+          "myPermissions",
+          "gate",
+          "checklist",
+          "plan"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "logoUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "yandexMapsUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "twoGisUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "cityId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "timeZoneId": {
+            "type": "string"
+          },
+          "timeZoneIsManual": {
+            "type": "boolean"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "showInCatalog": {
+            "type": "boolean"
+          },
+          "publicUrl": {
+            "type": "string",
+            "description": "https://bani.ezbook.ru/<slug>."
+          },
+          "myRole": {
+            "$ref": "#/components/schemas/StaysMyRole"
+          },
+          "myPermissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaysPermission"
+            }
+          },
+          "settings": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BathsSettingsDto"
+              }
+            ],
+            "type": "object",
+            "nullable": true,
+            "description": "null для банщика."
+          },
+          "paymentDetails": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentDetailsDto"
+              }
+            ],
+            "type": "object",
+            "nullable": true,
+            "description": "Только с правом ManageCompany."
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ProviderFullDto"
+          },
+          "gate": {
+            "$ref": "#/components/schemas/GateDto"
+          },
+          "checklist": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChecklistItemDto"
+            }
+          },
+          "plan": {
+            "$ref": "#/components/schemas/BathsPlanSummaryDto"
+          },
+          "awaitingPaymentCount": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Брони в AwaitingPaymentCheck; null для банщика."
+          }
+        }
+      },
+      "BathsCompanyCreatedDto": {
+        "type": "object",
+        "required": [
+          "company",
+          "token"
+        ],
+        "properties": {
+          "company": {
+            "$ref": "#/components/schemas/BathsCompanyManageDto"
+          },
+          "token": {
+            "type": "string",
+            "description": "Свежий JWT с клеймом принятого соглашения владельца."
+          },
+          "trial": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrialOutcomeDto"
+              }
+            ],
+            "type": "object",
+            "nullable": true
+          }
+        }
+      },
+      "BathsCompanyListItemDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "publicUrl",
+          "myRole",
+          "acceptingBookings"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "logoUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "publicUrl": {
+            "type": "string"
+          },
+          "myRole": {
+            "$ref": "#/components/schemas/StaysMyRole"
+          },
+          "acceptingBookings": {
+            "type": "boolean"
+          },
+          "awaitingPaymentCount": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "NotificationSettingsDto": {
+        "type": "object",
+        "required": [
+          "staffPushEnabled",
+          "staffMaxEnabled",
+          "guestWebPushEnabled",
+          "guestMessengerEnabled",
+          "messengerAvailable"
+        ],
+        "properties": {
+          "staffPushEnabled": {
+            "type": "boolean"
+          },
+          "staffMaxEnabled": {
+            "type": "boolean"
+          },
+          "guestWebPushEnabled": {
+            "type": "boolean"
+          },
+          "guestMessengerEnabled": {
+            "type": "boolean"
+          },
+          "messengerAvailable": {
+            "type": "boolean"
+          },
+          "deliveryMode": {
+            "type": "string",
+            "nullable": true
+          },
+          "priorityTransport": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NotificationSettingsInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "staffPushEnabled",
+          "staffMaxEnabled",
+          "guestWebPushEnabled",
+          "guestMessengerEnabled"
+        ],
+        "properties": {
+          "staffPushEnabled": {
+            "type": "boolean"
+          },
+          "staffMaxEnabled": {
+            "type": "boolean"
+          },
+          "guestWebPushEnabled": {
+            "type": "boolean"
+          },
+          "guestMessengerEnabled": {
+            "type": "boolean"
+          },
+          "deliveryMode": {
+            "type": "string",
+            "nullable": true
+          },
+          "priorityTransport": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ScheduleItemDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "quantity"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer"
+          }
+        }
+      },
+      "BathScheduleSessionDto": {
+        "type": "object",
+        "description": "Расписание банщика. Схема ЗАКРЫТА — телефона, сумм, файлов, реквизитов и статуса оплаты нет вовсе (только paymentUnconfirmed); comment = null, если банщику комментарий не показывается (US-42-21).",
+        "additionalProperties": false,
+        "required": [
+          "sessionId",
+          "serviceName",
+          "timeLabel",
+          "preparedUntilLabel",
+          "items",
+          "paymentUnconfirmed"
+        ],
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "timeLabel": {
+            "type": "string",
+            "description": "Календарными датами при переходе через полночь — «пт 15 янв, 22:00 — сб 16 янв, 01:00»."
+          },
+          "preparedUntilLabel": {
+            "type": "string",
+            "description": "Конец подготовки (конец + зазор)."
+          },
+          "guestName": {
+            "type": "string",
+            "nullable": true
+          },
+          "guestsCount": {
+            "type": "integer",
+            "nullable": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleItemDto"
+            }
+          },
+          "comment": {
+            "type": "string",
+            "nullable": true
+          },
+          "paymentUnconfirmed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "BathScheduleDayDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "date",
+          "label",
+          "sessions"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "label": {
+            "type": "string"
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BathScheduleSessionDto"
+            }
+          }
+        }
+      },
+      "BathScheduleDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "today",
+          "days"
+        ],
+        "properties": {
+          "today": {
+            "type": "string",
+            "format": "date"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BathScheduleDayDto"
+            }
+          }
+        }
+      },
+      "RevisionDto": {
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "description": "StaysSettings.BookingsRevision — «День услуг» и список броней перечитываются при смене."
+          }
+        }
+      },
+      "ServiceListItemPart": {
+        "type": "object",
+        "description": "Полная форма — cycle39 ServiceListItemDto.",
+        "additionalProperties": true,
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "isPublished",
+          "isArchived",
+          "position",
+          "publishProblems",
+          "hasSessions"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isPublished": {
+            "type": "boolean"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "publishProblems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaysServiceConflictCode"
+            }
+          },
+          "hasSessions": {
+            "type": "boolean"
+          },
+          "capacity": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "ServiceCreateInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        }
+      },
+      "ServiceSetupInputCycle42": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "ServiceSetupInput цикла 39 + capacity. Для «Бань» availableForHouseBookings сервер принудительно хранит false.",
+        "required": [
+          "name",
+          "slug",
+          "minHours",
+          "maxHours",
+          "stepMinutes",
+          "bufferMinutes",
+          "showBufferToGuests",
+          "minLeadMinutes",
+          "cancellationPolicy",
+          "cancellationBoundaryHours",
+          "availableForHouseBookings"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "minHours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "maxHours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "stepMinutes": {
+            "type": "integer",
+            "enum": [
+              30,
+              60
+            ]
+          },
+          "bufferMinutes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 240,
+            "multipleOf": 15
+          },
+          "showBufferToGuests": {
+            "type": "boolean"
+          },
+          "minLeadMinutes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2880,
+            "multipleOf": 30
+          },
+          "standalonePrepayPercent": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cancellationPolicy": {
+            "$ref": "#/components/schemas/StayServiceCancellationPolicy"
+          },
+          "cancellationBoundaryHours": {
+            "type": "integer",
+            "minimum": 3,
+            "maximum": 24
+          },
+          "availableForHouseBookings": {
+            "type": "boolean"
+          },
+          "capacity": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 30,
+            "description": "Вместимость. Обязательна для публикации ресурса «Бань» (409 ServiceNoCapacity); у услуг «Домов» не используется."
+          }
+        }
+      },
+      "ServiceContentInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2000
+          }
+        }
+      },
+      "ServiceManageCycle42Part": {
+        "type": "object",
+        "description": "Полная форма — cycle39 ServiceManageDto. Цикл 42 дописал capacity и contentWarnings.",
+        "additionalProperties": true,
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "isPublished",
+          "isArchived",
+          "publicUrl",
+          "publishProblems",
+          "contentWarnings"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isPublished": {
+            "type": "boolean"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "publicUrl": {
+            "type": "string",
+            "description": "Для «Бань» — https://bani.ezbook.ru/<companySlug>/<resourceSlug>."
+          },
+          "publishProblems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaysServiceConflictCode"
+            }
+          },
+          "capacity": {
+            "type": "integer",
+            "nullable": true
+          },
+          "contentWarnings": {
+            "type": "array",
+            "description": "Мягкие предупреждения по описанию (Т42-12) — не отказ.",
+            "items": {
+              "$ref": "#/components/schemas/OwnerTextWarning"
+            }
+          }
+        }
+      },
+      "PriceRuleInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "daysMask",
+          "fromHour",
+          "toHour",
+          "priceRub"
+        ],
+        "properties": {
+          "daysMask": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 127
+          },
+          "fromHour": {
+            "type": "integer",
+            "minimum": 6,
+            "maximum": 29
+          },
+          "toHour": {
+            "type": "integer",
+            "minimum": 7,
+            "maximum": 30
+          },
+          "priceRub": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000
+          }
+        }
+      },
+      "PriceRulesPart": {
+        "type": "object",
+        "description": "Полная форма — cycle39 PriceRulesDto.",
+        "additionalProperties": true,
+        "required": [
+          "rules",
+          "matrix"
+        ],
+        "properties": {
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "matrix": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "ServiceItemInputCycle42": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "ServiceItemInput цикла 39 + confirmRestricted (Т42-05).",
+        "required": [
+          "name",
+          "priceRub",
+          "maxPerSession",
+          "isActive"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "priceRub": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "maxPerSession": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "confirmRestricted": {
+            "type": "boolean",
+            "description": "Повтор после 409 ItemRestrictedConfirmationRequired — владелец подтвердил «Это не алкоголь и не табак». Подтверждение пишется в журнал StayServiceItemConfirmations."
+          }
+        }
+      },
+      "ServiceItemCycle42Part": {
+        "type": "object",
+        "description": "Полная форма — cycle39 ServiceItemDto. Цикл 42 дописал warnings.",
+        "additionalProperties": true,
+        "required": [
+          "id",
+          "name",
+          "priceRub",
+          "maxPerSession",
+          "isActive",
+          "position"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "priceRub": {
+            "type": "integer"
+          },
+          "maxPerSession": {
+            "type": "integer"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OwnerTextWarning"
+            }
+          }
+        }
+      },
+      "WeeklyDayInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dayOfWeek",
+          "windows"
+        ],
+        "properties": {
+          "dayOfWeek": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 7
+          },
+          "windows": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/WindowInput"
+            }
+          }
+        }
+      },
+      "WeeklyScheduleInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "days"
+        ],
+        "properties": {
+          "days": {
+            "type": "array",
+            "minItems": 7,
+            "maxItems": 7,
+            "items": {
+              "$ref": "#/components/schemas/WeeklyDayInput"
+            }
+          }
+        }
+      },
+      "WeeklySchedulePart": {
+        "type": "object",
+        "description": "Полная форма — cycle39 WeeklyScheduleDto.",
+        "additionalProperties": true,
+        "required": [
+          "days"
+        ],
+        "properties": {
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "ScheduleSaveResultPart": {
+        "type": "object",
+        "description": "Полная форма — cycle39 ScheduleSaveResultDto.",
+        "additionalProperties": true,
+        "required": [
+          "outsideSessions"
+        ],
+        "properties": {
+          "outsideSessions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "warningText": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ServiceMonthPart": {
+        "type": "object",
+        "description": "Полная форма — cycle39 ServiceMonthDto.",
+        "additionalProperties": true,
+        "required": [
+          "serviceId",
+          "month",
+          "today",
+          "days"
+        ],
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "month": {
+            "type": "string"
+          },
+          "today": {
+            "type": "string",
+            "format": "date"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "DateOverrideInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "closed",
+          "windows"
+        ],
+        "properties": {
+          "closed": {
+            "type": "boolean"
+          },
+          "windows": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/WindowInput"
+            }
+          },
+          "comment": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 300
+          }
+        }
+      },
+      "ServiceDayPart": {
+        "type": "object",
+        "description": "Полная форма — cycle39 ServiceDayDto. У «Бань» label полосы сеанса — «бронь», а не дом.",
+        "additionalProperties": true,
+        "required": [
+          "date",
+          "label",
+          "today",
+          "axis",
+          "services"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "label": {
+            "type": "string"
+          },
+          "today": {
+            "type": "string",
+            "format": "date"
+          },
+          "axis": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "StaffServiceQuoteInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "StaffServiceQuoteInput цикла 39 без bookingId (у «Бань» броней домов нет).",
+        "required": [
+          "serviceId",
+          "businessDate",
+          "startMinute",
+          "hours",
+          "items"
+        ],
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "businessDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "startMinute": {
+            "$ref": "#/components/schemas/MinuteOfBusinessDay"
+          },
+          "hours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/ItemSelectionInput"
+            }
+          }
+        }
+      },
+      "StaffServiceSessionPagePart": {
+        "type": "object",
+        "description": "Полная форма — cycle39 StaffServiceSessionPage.",
+        "additionalProperties": true,
+        "required": [
+          "items",
+          "totalCount",
+          "page",
+          "pageSize"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "totalCount": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          }
+        }
+      },
+      "StaffServiceSessionCardPart": {
+        "type": "object",
+        "description": "Полная форма — cycle39 StaffServiceSessionCardDto. Цикл 42 дописал guestsCount (у сеансов «Домов» поле отсутствует).",
+        "additionalProperties": true,
+        "required": [
+          "id",
+          "version",
+          "serviceId",
+          "serviceName",
+          "statusText",
+          "isManual"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "statusText": {
+            "type": "string"
+          },
+          "isManual": {
+            "type": "boolean"
+          },
+          "guestsCount": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "ManualBathOrderInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "ManualServiceOrderInput цикла 39 + guestsCount (необязателен, 1…capacity).",
+        "required": [
+          "serviceId",
+          "businessDate",
+          "startMinute",
+          "hours",
+          "items",
+          "guestName",
+          "requestBasis",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "businessDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "startMinute": {
+            "$ref": "#/components/schemas/MinuteOfBusinessDay"
+          },
+          "hours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/ItemSelectionInput"
+            }
+          },
+          "guestsCount": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 30
+          },
+          "guestName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "guestPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "comment": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500
+          },
+          "requestBasis": {
+            "$ref": "#/components/schemas/StayServiceRequestBasis"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "KindsSummaryCycle42Part": {
+        "type": "object",
+        "description": "CompanyKindsSummaryDto — цикл 42 дописал baths (число компаний «Бани» пользователя и адрес сайта).",
+        "additionalProperties": true,
+        "required": [
+          "baths"
+        ],
+        "properties": {
+          "baths": {
+            "type": "object",
+            "required": [
+              "count",
+              "siteUrl"
+            ],
+            "properties": {
+              "count": {
+                "type": "integer"
+              },
+              "siteUrl": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "OwnerSubscriptionBathsPart": {
+        "type": "object",
+        "description": "OwnerSubscriptionDto при line=Baths — линейка, блок baths и тарифы линейки (без триала). Поле baths у других линеек отсутствует.",
+        "additionalProperties": true,
+        "required": [
+          "line",
+          "baths",
+          "availablePlans"
+        ],
+        "properties": {
+          "line": {
+            "type": "string",
+            "enum": [
+              "Baths"
+            ]
+          },
+          "baths": {
+            "type": "object",
+            "required": [
+              "resourcesPublished",
+              "isTrial",
+              "warningLevel"
+            ],
+            "properties": {
+              "resourcesPublished": {
+                "type": "integer"
+              },
+              "maxResources": {
+                "type": "integer",
+                "nullable": true
+              },
+              "isTrial": {
+                "type": "boolean"
+              },
+              "trialEndsAtUtc": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "warningLevel": {
+                "$ref": "#/components/schemas/PlanWarningLevel"
+              },
+              "text": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "availablePlans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": [
+                "planId",
+                "name",
+                "pricePerMonth"
+              ],
+              "properties": {
+                "planId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "pricePerMonth": {
+                  "type": "number"
+                },
+                "maxResources": {
+                  "type": "integer",
+                  "nullable": true,
+                  "description": "Лимит опубликованных ресурсов; null — без ограничения. У тарифов других линеек поля нет."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/baths/catalog": {
+      "get": {
+        "tags": [
+          "baths-public"
+        ],
+        "operationId": "bathsCatalog",
+        "summary": "Каталог ресурсов (карточка — ресурс). Только опубликованные ресурсы компаний, которые принимают брони.",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CityQuery"
+          },
+          {
+            "$ref": "#/components/parameters/CatalogDateQuery"
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница каталога.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BathsCatalogPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/catalog/cities": {
+      "get": {
+        "tags": [
+          "baths-public"
+        ],
+        "operationId": "bathsCatalogCities",
+        "summary": "Города, в которых есть хотя бы один ресурс в каталоге (для выбора в панели подбора).",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Города.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BathsCatalogCitiesDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/public/companies/{slug}": {
+      "get": {
+        "tags": [
+          "baths-public"
+        ],
+        "operationId": "bathsPublicCompany",
+        "summary": "Страница банного комплекса — сведения, «Об исполнителе» (статус и ИНН), ресурсы карточками.",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Slug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Комплекс.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BathsPublicCompanyDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/public/companies/{slug}/services/{serviceSlug}": {
+      "get": {
+        "tags": [
+          "baths-services-public"
+        ],
+        "operationId": "bathsPublicResource",
+        "summary": "Страница ресурса — галерея, описание, вместимость, таблица цен, позиции, правило отмены.",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Slug"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceSlug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ресурс.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicServiceCycle42Part"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/public/services/{serviceId}/availability": {
+      "get": {
+        "tags": [
+          "baths-services-public"
+        ],
+        "operationId": "bathsResourceAvailability",
+        "summary": "Даты со свободными стартами.",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "$ref": "#/components/parameters/FromQuery"
+          },
+          {
+            "$ref": "#/components/parameters/DaysQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Даты.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceAvailabilityPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/public/services/{serviceId}/starts": {
+      "get": {
+        "tags": [
+          "baths-services-public"
+        ],
+        "operationId": "bathsResourceStarts",
+        "summary": "Доступные старты бизнес-дня (ServiceSlotCalculator цикла 39).",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "$ref": "#/components/parameters/DateQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Старты.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceStartsPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/public/services/{serviceId}/quote": {
+      "post": {
+        "tags": [
+          "baths-services-public"
+        ],
+        "operationId": "bathsResourceQuote",
+        "summary": "Расчёт (всегда 200, ничего не резервирует).",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BathServiceQuoteInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Расчёт.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceQuotePart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/public/services/{serviceId}/orders": {
+      "post": {
+        "tags": [
+          "baths-services-public"
+        ],
+        "operationId": "bathsCreateOrder",
+        "summary": "Бронь ресурса (заказ без проживания цикла 39) — аноним с капчей или вошедший.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBathOrderInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Повтор с тем же ключом — существующая бронь.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateBathOrderResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Бронь создана (Held с таймером при предоплате, иначе Confirmed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateBathOrderResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/ServiceRefusal"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/service-orders/public/{token}": {
+      "get": {
+        "tags": [
+          "baths-orders-public"
+        ],
+        "operationId": "bathsOrderPublic",
+        "summary": "Страница брони (опрос 15 с).",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OrderToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Бронь.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicServiceOrderPart"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/service-orders/public/{token}/payment-proofs": {
+      "post": {
+        "tags": [
+          "baths-orders-public"
+        ],
+        "operationId": "bathsOrderAttachProof",
+        "summary": "Приложить подтверждение оплаты (PDF/JPEG/PNG/WebP до 10 МБ, до 3 файлов).",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OrderToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Файл принят; первый файл переводит Held → AwaitingPaymentCheck.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicServiceOrderPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/ServiceGuestConflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/service-orders/public/{token}/payment-proofs/{proofId}": {
+      "get": {
+        "tags": [
+          "baths-orders-public"
+        ],
+        "operationId": "bathsOrderProofFile",
+        "summary": "Файл подтверждения оплаты.",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OrderToken"
+          },
+          {
+            "$ref": "#/components/parameters/ProofId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/PaymentProofFile"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/service-orders/public/{token}/cancel": {
+      "post": {
+        "tags": [
+          "baths-orders-public"
+        ],
+        "operationId": "bathsOrderCancel",
+        "summary": "Отмена гостем до начала сеанса.",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OrderToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Отменено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicServiceOrderPart"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/ServiceGuestConflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/service-orders/public/{token}/push-subscription": {
+      "post": {
+        "tags": [
+          "baths-orders-public"
+        ],
+        "operationId": "bathsOrderPushSubscribe",
+        "summary": "Push гостю со страницы брони (заголовок «EZBOOK Бани», без ПДн в видимом тексте).",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OrderToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushSubscriptionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/NoContent"
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/service-orders/public/{token}/push-subscription/remove": {
+      "post": {
+        "tags": [
+          "baths-orders-public"
+        ],
+        "operationId": "bathsOrderPushUnsubscribe",
+        "summary": "Отписка push со страницы брони.",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OrderToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushSubscriptionRemoveInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/NoContent"
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/service-orders/my": {
+      "get": {
+        "tags": [
+          "baths-orders-public"
+        ],
+        "operationId": "bathsMyOrders",
+        "summary": "«Мои брони» (P1) — брони аккаунта и, при подтверждённом номере, гостевые брони на этот номер (SUBJECT-PHONE-GATE).",
+        "responses": {
+          "200": {
+            "description": "Брони.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyBathOrdersDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/baths/companies": {
+      "post": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsCreateCompany",
+        "summary": "Создать компанию «Бани» (город — из справочника, пояс — по городу; по желанию — триал).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BathsCompanyCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Компания создана.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BathsCompanyCreatedDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/BathsConflict"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/my": {
+      "get": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsMyCompanies",
+        "summary": "Компании «Бани», где пользователь — владелец или сотрудник.",
+        "responses": {
+          "200": {
+            "description": "Список.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BathsCompanyListItemDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/baths/slug-check": {
+      "get": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsSlugCheck",
+        "summary": "Проверить адрес или предложить свободный из названия (всегда 200).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NameQuery"
+          },
+          {
+            "$ref": "#/components/parameters/SlugQuery"
+          },
+          {
+            "$ref": "#/components/parameters/CompanyIdQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Результат проверки.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BathsSlugCheckDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/baths/trial": {
+      "get": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsTrialState",
+        "summary": "Состояние пробного периода линейки «Бани» (однократно на аккаунт и номер в линейке).",
+        "responses": {
+          "200": {
+            "description": "Состояние.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrialStateDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsTrialActivate",
+        "summary": "Активировать пробный период «Бань».",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrialInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Активирован.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrialOutcomeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "description": "Отказ с кодом (TrialAlreadyUsed, TrialPhoneAlreadyUsed, PhoneNotVerified …).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrialOutcomeDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}": {
+      "get": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsCompany",
+        "summary": "Кабинет компании — сведения, права, настройки, гейт, чек-лист, тариф.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Компания.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BathsCompanyManageDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/settings": {
+      "put": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsUpdateSettings",
+        "summary": "Настройки компании «Бани» (полная замена; ManageCompany).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BathsSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Сохранено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BathsCompanyManageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/payment-details": {
+      "put": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsUpdatePaymentDetails",
+        "summary": "Реквизиты для перевода и назначение платежа (в публичные ответы не попадают).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentDetailsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Сохранено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BathsCompanyManageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/provider": {
+      "put": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsUpdateProvider",
+        "summary": "Сведения об исполнителе (обязательны всегда, ЮР39-2).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Сохранено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BathsCompanyManageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/slug": {
+      "put": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsChangeSlug",
+        "summary": "Сменить адрес комплекса (старая ссылка и QR перестают работать).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlugInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Сохранено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BathsCompanyManageDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/BathsConflict"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/qr": {
+      "get": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsQr",
+        "summary": "QR-код адреса комплекса.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/QrPng"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/notification-settings": {
+      "get": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsNotificationSettings",
+        "summary": "Флаги уведомлений персоналу и гостю.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Флаги.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSettingsDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsUpdateNotificationSettings",
+        "summary": "Сохранить флаги уведомлений.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationSettingsInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Сохранено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSettingsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/BathsConflict"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/schedule": {
+      "get": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsSchedule",
+        "summary": "Расписание банщика (ViewSchedule) — сеансы по бизнес-дням старта, без телефонов и сумм.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/FromQuery"
+          },
+          {
+            "$ref": "#/components/parameters/DaysQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Расписание.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BathScheduleDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/revision": {
+      "get": {
+        "tags": [
+          "baths-companies"
+        ],
+        "operationId": "bathsRevision",
+        "summary": "Ревизия броней компании для автообновления «Дня услуг», списка броней и расписания (опрос ≤ 30 с).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ревизия.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services": {
+      "get": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsResources",
+        "summary": "Ресурсы компании (включая архивные).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceListItemPart"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsCreateResource",
+        "summary": "Создать ресурс (не опубликован, без цен и окон; availableForHouseBookings = false).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Создан.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceManageCycle42Part"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/StaysServiceConflict"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/order": {
+      "put": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsResourcesOrder",
+        "summary": "Порядок ресурсов.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdsOrderInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Новый порядок.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceListItemPart"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}": {
+      "get": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsResource",
+        "summary": "Карточка ресурса.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ресурс.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceManageCycle42Part"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsDeleteResource",
+        "summary": "Удалить ресурс без броней (с бронями — только архив).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/NoContent"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/StaysServiceConflict"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/setup": {
+      "put": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsResourceSetup",
+        "summary": "Правила ресурса — название, адрес, часы, шаг, зазор, упреждение, предоплата, отмена, вместимость.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceSetupInputCycle42"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Сохранено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceManageCycle42Part"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/StaysServiceConflict"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/content": {
+      "put": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsResourceContent",
+        "summary": "Описание ресурса (до 2000 символов; отказ на «задаток/невозвратный/депозит», мягкие предупреждения).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceContentInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Сохранено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceManageCycle42Part"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/publish": {
+      "post": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsResourcePublish",
+        "summary": "Опубликовать (нужны цена, окна, вместимость и место в лимите тарифа).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Опубликован.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceManageCycle42Part"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/StaysServiceConflict"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/unpublish": {
+      "post": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsResourceUnpublish",
+        "summary": "Снять с публикации.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Снят.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceManageCycle42Part"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/archive": {
+      "post": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsResourceArchive",
+        "summary": "В архив.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "В архиве.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceManageCycle42Part"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/photos": {
+      "post": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsResourcePhotoUpload",
+        "summary": "Фото ресурса (до 10).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Загружено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/StaysServiceConflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/photos/order": {
+      "put": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsResourcePhotosOrder",
+        "summary": "Порядок фото.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdsOrderInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Новый порядок.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PhotoDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/photos/{photoId}": {
+      "delete": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsResourcePhotoDelete",
+        "summary": "Удалить фото.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "$ref": "#/components/parameters/PhotoId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/NoContent"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/price-rules": {
+      "get": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsPriceRules",
+        "summary": "Правила цены и матрица «день × час».",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Правила.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceRulesPart"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsPriceRuleCreate",
+        "summary": "Добавить правило цены.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceRuleInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Добавлено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceRulesPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/StaysServiceConflict"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/price-rules/{ruleId}": {
+      "put": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsPriceRuleUpdate",
+        "summary": "Изменить правило цены.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "$ref": "#/components/parameters/RuleId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceRuleInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Изменено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceRulesPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/StaysServiceConflict"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsPriceRuleDelete",
+        "summary": "Удалить правило цены.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "$ref": "#/components/parameters/RuleId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Удалено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceRulesPart"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/items": {
+      "get": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsItems",
+        "summary": "Позиции ресурса (веники, полотенца, чай, парение).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Позиции.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceItemCycle42Part"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsItemCreate",
+        "summary": "Добавить позицию (мягкий фильтр алкоголя и табака — 409 с подтверждением).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceItemInputCycle42"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Добавлена.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceItemCycle42Part"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/StaysServiceConflict"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/items/order": {
+      "put": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsItemsOrder",
+        "summary": "Порядок позиций.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdsOrderInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Новый порядок.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceItemCycle42Part"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/items/{itemId}": {
+      "put": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsItemUpdate",
+        "summary": "Изменить позицию (тот же фильтр, что при добавлении).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "$ref": "#/components/parameters/ItemId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceItemInputCycle42"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Изменена.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceItemCycle42Part"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/StaysServiceConflict"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsItemDelete",
+        "summary": "Удалить позицию (созданные брони хранят снимок).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "$ref": "#/components/parameters/ItemId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/NoContent"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/weekly-schedule": {
+      "get": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsWeeklySchedule",
+        "summary": "Недельный шаблон окон.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Шаблон.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeeklySchedulePart"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsWeeklyScheduleSave",
+        "summary": "Сохранить недельный шаблон (брони не отменяются — предупреждение о бронях вне окон).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeeklyScheduleInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Сохранено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleSaveResultPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/date-overrides": {
+      "get": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsDateOverrides",
+        "summary": "Месяц ручных дат.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "$ref": "#/components/parameters/MonthQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Месяц.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceMonthPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/date-overrides/{date}": {
+      "put": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsDateOverrideSet",
+        "summary": "Закрыть день или задать свои окна.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "$ref": "#/components/parameters/OverrideDate"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DateOverrideInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Сохранено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleSaveResultPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "baths-resources"
+        ],
+        "operationId": "bathsDateOverrideRemove",
+        "summary": "Вернуть день как в шаблоне.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "$ref": "#/components/parameters/OverrideDate"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Сохранено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleSaveResultPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/service-day": {
+      "get": {
+        "tags": [
+          "baths-sessions"
+        ],
+        "operationId": "bathsServiceDay",
+        "summary": "«День услуг» — шкала бизнес-дня по всем ресурсам.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/DateQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "День.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceDayPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/starts": {
+      "get": {
+        "tags": [
+          "baths-sessions"
+        ],
+        "operationId": "bathsStaffStarts",
+        "summary": "Старты для ручной брони (упреждение 0, неопубликованный неархивный ресурс допустим).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "$ref": "#/components/parameters/DateQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Старты.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceStartsPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/services/{serviceId}/availability": {
+      "get": {
+        "tags": [
+          "baths-sessions"
+        ],
+        "operationId": "bathsStaffAvailability",
+        "summary": "Даты со стартами для ручной брони.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "$ref": "#/components/parameters/FromQuery"
+          },
+          {
+            "$ref": "#/components/parameters/DaysQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Даты.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceAvailabilityPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/service-sessions/quote": {
+      "post": {
+        "tags": [
+          "baths-sessions"
+        ],
+        "operationId": "bathsStaffQuote",
+        "summary": "Расчёт для ручной брони.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffServiceQuoteInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Расчёт.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceQuotePart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/service-sessions": {
+      "get": {
+        "tags": [
+          "baths-sessions"
+        ],
+        "operationId": "bathsSessions",
+        "summary": "Список броней (по умолчанию «Ожидают проверки оплаты»).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/StatusQuery"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceIdQuery"
+          },
+          {
+            "$ref": "#/components/parameters/FromQuery"
+          },
+          {
+            "$ref": "#/components/parameters/ToQuery"
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffServiceSessionPagePart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "baths-sessions"
+        ],
+        "operationId": "bathsManualOrder",
+        "summary": "Ручная бронь персонала (звонок, «свои») — сразу Confirmed, основание обязательно.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualBathOrderInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Бронь создана.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffServiceSessionCardPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/ServiceRefusal"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/service-sessions/{sessionId}": {
+      "get": {
+        "tags": [
+          "baths-sessions"
+        ],
+        "operationId": "bathsSessionCard",
+        "summary": "Карточка брони.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Карточка.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffServiceSessionCardPart"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/service-sessions/{sessionId}/confirm-payment": {
+      "post": {
+        "tags": [
+          "baths-sessions"
+        ],
+        "operationId": "bathsConfirmPayment",
+        "summary": "«Оплата прошла».",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpectedVersionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Подтверждено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffServiceSessionCardPart"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/ServiceStaffConflict"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/service-sessions/{sessionId}/reject-payment": {
+      "post": {
+        "tags": [
+          "baths-sessions"
+        ],
+        "operationId": "bathsRejectPayment",
+        "summary": "«Отклонить» (причина обязательна).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpectedVersionReasonInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Отклонено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffServiceSessionCardPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/ServiceStaffConflict"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/service-sessions/{sessionId}/cancel": {
+      "post": {
+        "tags": [
+          "baths-sessions"
+        ],
+        "operationId": "bathsCancelByOwner",
+        "summary": "«Отменить» в любом активном статусе (причина обязательна).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpectedVersionReasonInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Отменено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffServiceSessionCardPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/ServiceStaffConflict"
+          }
+        }
+      }
+    },
+    "/api/baths/companies/{companyId}/service-sessions/{sessionId}/payment-proofs/{proofId}": {
+      "get": {
+        "tags": [
+          "baths-sessions"
+        ],
+        "operationId": "bathsStaffProofFile",
+        "summary": "Файл подтверждения оплаты (событие просмотра в журнале).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/ProofId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/PaymentProofFile"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/stays/companies/{companyId}/services/{serviceId}/setup": {
+      "put": {
+        "tags": [
+          "shared-changed"
+        ],
+        "operationId": "staysServiceSetupCycle42",
+        "summary": "Услуга «Домов» — вход принимает capacity (dom его не шлёт; null — вместимость не используется).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/StaysCompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceSetupInputCycle42"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Сохранено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceManageCycle42Part"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/StaysServiceConflict"
+          }
+        }
+      }
+    },
+    "/api/stays/companies/{companyId}/services/{serviceId}/items": {
+      "post": {
+        "tags": [
+          "shared-changed"
+        ],
+        "operationId": "staysItemCreateCycle42",
+        "summary": "Позиция услуги «Домов» — тот же мягкий фильтр алкоголя и табака (D3 7а.4 касается и услуг «Домов»).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/StaysCompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceItemInputCycle42"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Добавлена.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceItemCycle42Part"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/StaysServiceConflict"
+          }
+        }
+      }
+    },
+    "/api/stays/companies/{companyId}/services/{serviceId}/items/{itemId}": {
+      "put": {
+        "tags": [
+          "shared-changed"
+        ],
+        "operationId": "staysItemUpdateCycle42",
+        "summary": "Изменение позиции услуги «Домов» — тот же фильтр.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/StaysCompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          },
+          {
+            "$ref": "#/components/parameters/ItemId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceItemInputCycle42"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Изменена.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceItemCycle42Part"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/StaysServiceConflict"
+          }
+        }
+      }
+    },
+    "/api/stays/companies/{companyId}/services/{serviceId}/content": {
+      "put": {
+        "tags": [
+          "shared-changed"
+        ],
+        "operationId": "staysServiceContentCycle42",
+        "summary": "Описание услуги «Домов» — отказ на «задаток/невозвратный/депозит» и мягкие предупреждения contentWarnings.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/StaysCompanyId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceContentInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Сохранено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceManageCycle42Part"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/companies/kinds-summary": {
+      "get": {
+        "tags": [
+          "shared-changed"
+        ],
+        "operationId": "companyKindsSummaryCycle42",
+        "summary": "Сводка компаний пользователя по сайтам — дописан baths.",
+        "responses": {
+          "200": {
+            "description": "Сводка.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindsSummaryCycle42Part"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/billing/subscription": {
+      "get": {
+        "tags": [
+          "shared-changed"
+        ],
+        "operationId": "ownerSubscriptionBathsCycle42",
+        "summary": "Подписка владельца — линейка Baths (line=Baths). Ответ описан только для line=Baths.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/LineQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Подписка линейки.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerSubscriptionBathsPart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    }
+  }
+}
