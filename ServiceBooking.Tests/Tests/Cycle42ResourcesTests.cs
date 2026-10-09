@@ -490,4 +490,18 @@ public class Cycle42ResourcesTests(TestDatabaseFixture fixture) : Cycle42TestBas
     [InlineData("Полезно при простуде", "HealthClaim")]
     [InlineData("Недорого, невозврат средств", "CancellationTermsInText")]
     public async Task ContractStems_NotCaughtYet_ProduceTheirWarning(string text, string code) => await ContractStems_ProduceTheirWarning(text, code);
+
+    /// <summary>
+    /// BUG-C42-QA-3 (НЕ ВЫПОЛНЯЕТСЯ): сброс вместимости (<c>capacity: null</c>) у УЖЕ ОПУБЛИКОВАННОГО ресурса бани проходит (200), ресурс остаётся опубликованным без вместимости,
+    /// гость бронирует без числа гостей — обходится правило публикации ServiceNoCapacity (§42.29). Ожидается 400/409 либо снятие с публикации.
+    /// </summary>
+    [Fact(Skip = "BUG-C42-QA-3: вместимость опубликованной бани можно обнулить"), TestCase("CY42-31")]
+    public async Task Capacity_CannotBeClearedOnAPublishedBathResource()
+    {
+        var c = await CreateBathAsync();
+        var r = await AddResourceAsync(c, capacity: 6);
+        var cleared = await SetupAsync(r, null);
+        var stillPublished = (await J(await AuthedClient(c.Token).GetAsync($"/api/baths/companies/{c.CompanyId}/services/{r.Id}"))).GetProperty("isPublished").GetBoolean();
+        (cleared.StatusCode != HttpStatusCode.OK || !stillPublished).Should().BeTrue("опубликованный ресурс бани без вместимости недопустим");
+    }
 }
