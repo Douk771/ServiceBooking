@@ -44,6 +44,7 @@ public static class ServiceNotificationTexts
         {
             NotificationType.ServiceGuestHoldExpiring => "Осталось 10 минут, чтобы приложить подтверждение оплаты",
             NotificationType.StayGuestSessionAdded => "Услуга добавлена к брони — откройте бронь",
+            NotificationType.ServiceGuestSessionReminder => "Скоро ваш сеанс — откройте бронь",
             _ when baths => "Статус вашей брони изменился",
             _ => forOrder ? "Статус вашего заказа изменился" : "Статус вашей брони изменился",
         };
@@ -112,8 +113,18 @@ public static class ServiceNotificationTexts
                 $"{f.CompanyName}: бронь «{f.ServiceName}», {time} отменена компанией.{why} Предоплата возвращается полностью; вы вправе требовать возмещения убытков.{contact} {pageUrl}",
             NotificationType.ServiceGuestCancelledByOwner =>
                 $"{f.CompanyName}: бронь «{f.ServiceName}», {time} отменена компанией.{why} Оплата за сеанс не вносилась.{contact} {pageUrl}",
+            NotificationType.ServiceGuestSessionReminder => $"{SessionReminderLead(f.CompanyName, f.ServiceName, time)} Бронь: {pageUrl}",
             _ => $"{f.CompanyName}: статус вашей брони изменился: {pageUrl}",
         };
         return string.IsNullOrEmpty(unsubscribeUrl) ? text : $"{text}\n\nОтписаться от сообщений: {unsubscribeUrl}";
     }
+
+    private static string SessionReminderLead(string company, string service, string time) => $"{company}: напоминаем о брони — «{service}», {time}.";
+
+    /// <summary>
+    /// API_CONTRACT_CYCLE42.md §42.36.4 — the text of the reminder block on the booking page, assembled on the fly from the snapshots of the session (no link, no guest name, no ad):
+    /// there is nothing personal to erase in it.
+    /// </summary>
+    public static string BathsSessionReminderPageText(string companyName, string serviceName, DateOnly businessDate, int startMinute, int hours, string? cityName) =>
+        SessionReminderLead(companyName, serviceName, ServiceTimeFormat.Guest(businessDate, startMinute, hours) + ServiceWording.Baths.GuestTimeSuffix(cityName));
 }

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Stays;
+using ServiceBooking.API.DTOs.Baths;
 using ServiceBooking.API.Services.Notifications.WebPush;
 using ServiceBooking.API.Services.PublicSites;
 using ServiceBooking.Core.Entities;
@@ -88,7 +89,11 @@ public class ServiceDtoMapper(
             o.GuestName, StayPhone.Mask(o.GuestPhone), o.Comment, o.StatusReason,
             StayStateMachine.IsTerminal(o.Status) ? (wording.OutcomeText(o.Status, o.StatusReason, phone, o.PaymentConfirmedAtUtc != null || proofs.Count > 0) is { Length: > 0 } t ? t : null) : null,
             new OrderNotificationsDto(new WebPushInfoDto(pushOn, pushOn ? webPush.Value.VapidPublicKey : null), o.NotifyByMessenger), actions,
-            isBaths ? o.GuestsCount : null, cityName, isBaths ? ServiceWording.LocalTimeNote(cityName) : null, null, isBaths ? $"/{company.Slug}" : null);
+            isBaths ? o.GuestsCount : null, cityName, isBaths ? ServiceWording.LocalTimeNote(cityName) : null,
+            isBaths && o.SessionReminderAtUtc is { } reminderAt
+                ? new SessionReminderViewDto(reminderAt, ServiceNotificationTexts.BathsSessionReminderPageText(company.Name, session.ServiceNameSnapshot, session.BusinessDate, session.StartMinute, session.Hours, cityName))
+                : null,
+            isBaths ? $"/{company.Slug}" : null);
     }
 
     public ServiceRefundViewDto RefundFor(StayServiceOrder o, StayServiceSession s, DateTime nowUtc, bool byOwner, CompanyKind kind = CompanyKind.Stays)

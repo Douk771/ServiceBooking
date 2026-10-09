@@ -48,6 +48,7 @@ public static class StayNotificationPlan
         StayServiceOrderEventKind.PaymentConfirmed => [new(NotificationType.ServiceGuestConfirmed, StayAudience.Guest)],
         StayServiceOrderEventKind.PaymentRejected => [new(NotificationType.ServiceGuestPaymentRejected, StayAudience.Guest)],
         StayServiceOrderEventKind.CancelledByOwner => [new(NotificationType.ServiceGuestCancelledByOwner, StayAudience.Guest)],
+        StayServiceOrderEventKind.SessionReminderSent => [new(NotificationType.ServiceGuestSessionReminder, StayAudience.Guest)],
         _ => []
     };
 }

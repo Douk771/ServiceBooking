@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.Services.Slots;
 using ServiceBooking.API.Services.Stays;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -12,7 +13,7 @@ namespace ServiceBooking.API.Services.Scheduling.Tasks;
 /// that queues the message. A missed term (the server was down) is sent on the first pass if it is still relevant, otherwise only marked.
 /// </summary>
 public sealed class StaysScheduledMessagesTask(
-    AppDbContext db, StayNotificationPlanner planner, CheckInInfoReleaser checkInInfo, IStaysClock clock, ArrivalReminderService reminders, StayBookingEventLog eventLog,
+    AppDbContext db, StayNotificationPlanner planner, CheckInInfoReleaser checkInInfo, IStaysClock clock, ArrivalReminderService reminders, StayBookingEventLog eventLog, StayServiceOrderEventLog orderEventLog,
     ILogger<StaysScheduledMessagesTask> logger) : IScheduledTask
 {
     public const int BatchSize = 100;
@@ -30,9 +31,11 @@ public sealed class StaysScheduledMessagesTask(
         var reminded = await ArrivalRemindersAsync(now, ct);
         var released = await CheckInInfoAsync(ct);
         var orderWarned = await OrderHoldExpiringAsync(now, ct);
-        var summary = $"hold warnings {holdWarned}, order hold warnings {orderWarned}, reminders {reminded}, check-in info {released}";
+        var sessionReminded = await SessionRemindersAsync(now, ct);
+        var summary = $"hold warnings {holdWarned}, order hold warnings {orderWarned}, reminders {reminded}, check-in info {released}, session reminders {sessionReminded}";
         logger.LogInformation("stays-scheduled-messages: {Summary}", summary);
-        return new ScheduledTaskOutcome(holdWarned + orderWarned + reminded + released, holdWarned + orderWarned + reminded + released, 0, summary);
+        var total = holdWarned + orderWarned + reminded + released + sessionReminded;
+        return new ScheduledTaskOutcome(total, total, 0, summary);
     }
 
     private async Task<int> HoldExpiringAsync(DateTime now, CancellationToken ct)
@@ -87,6 +90,62 @@ public sealed class StaysScheduledMessagesTask(
             db.ChangeTracker.Clear();
         }
         return count;
+    }
+
+    /// <summary>The look-ahead of the third pass: the earliest reminder moment is 24 h (the largest setting) before the start, plus an hour of slack for the shift out of the night.</summary>
+    public static readonly TimeSpan SessionReminderHorizon = TimeSpan.FromHours(25);
+    public const int SessionReminderBatchSize = 50;
+    /// <summary>Wait and Skip write nothing, so the pass walks the whole window page by page (by start, then id) instead of re-reading the same first page; the cap keeps one pass bounded.</summary>
+    public const int SessionReminderMaxPages = 40;
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE42.md §42.9.5 — the third pass: a confirmed booking of a company with <c>ServiceReminderHours</c> whose session starts within 25 hours is judged by the pure
+    /// <see cref="SessionReminderPolicy"/> in the company's local time. <c>Send</c>: a conditional UPDATE of <c>SessionReminderAtUtc</c> (once only; set even when no channel is available),
+    /// the event <c>SessionReminderSent</c> (journal + revision) and the notifications through the planner — all in one transaction. <c>Wait</c> and <c>Skip</c> write nothing.
+    /// </summary>
+    private async Task<int> SessionRemindersAsync(DateTime now, CancellationToken ct)
+    {
+        var horizon = now + SessionReminderHorizon;
+        var count = 0;
+        // Rows that were judged Wait/Skip stay in the selection (nothing is written), rows that were sent leave it: the next page starts after the ones that stayed.
+        var stayed = 0;
+        for (var page = 0; page < SessionReminderMaxPages; page++)
+        {
+            var query = from o in db.StayServiceOrders.AsNoTracking()
+                        join s in db.StayServiceSessions.AsNoTracking() on o.Id equals s.StayServiceOrderId
+                        join st in db.StaysSettings.AsNoTracking() on o.CompanyId equals st.CompanyId
+                        where o.Status == StayBookingStatus.Confirmed && o.SessionReminderAtUtc == null && st.ServiceReminderHours != null &&
+                              s.ReleasedAtUtc == null && s.StartUtc > now && s.StartUtc <= horizon
+                        select new { o.Id, o.CreatedAtUtc, o.TimeZoneIdSnapshot, s.StartUtc, Hours = st.ServiceReminderHours!.Value };
+            var batch = await query.OrderBy(x => x.StartUtc).ThenBy(x => x.Id).Skip(stayed).Take(SessionReminderBatchSize).ToListAsync(ct);
+            if (batch.Count == 0) break;
+            foreach (var c in batch)
+            {
+                var startLocal = StayTime.LocalDateTime(c.TimeZoneIdSnapshot, c.StartUtc);
+                var moment = SessionReminderPolicy.Moment(startLocal, c.Hours);
+                var decision = SessionReminderPolicy.Decide(moment, StayTime.LocalDateTime(c.TimeZoneIdSnapshot, c.CreatedAtUtc), StayTime.LocalDateTime(c.TimeZoneIdSnapshot, now), startLocal);
+                if (decision == ReminderDecision.Send && await SendSessionReminderAsync(c.Id, now, ct)) count++;
+                else stayed++;
+            }
+            if (batch.Count < SessionReminderBatchSize) break;
+        }
+        return count;
+    }
+
+    private async Task<bool> SendSessionReminderAsync(Guid orderId, DateTime now, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var rows = await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""UPDATE "StayServiceOrders" SET "SessionReminderAtUtc" = {now} WHERE "Id" = {orderId} AND "SessionReminderAtUtc" IS NULL AND "Status" = {(int)StayBookingStatus.Confirmed}""", ct);
+        if (rows == 1)
+        {
+            var order = await db.StayServiceOrders.AsNoTracking().FirstAsync(o => o.Id == orderId, ct);
+            await orderEventLog.AppendAsync(order, StayServiceOrderEventKind.SessionReminderSent, StayActor.System, order.Status, order.Status);
+            await db.SaveChangesAsync(ct);
+        }
+        await tx.CommitAsync(ct);
+        db.ChangeTracker.Clear();
+        return rows == 1;
     }
 
     private async Task<int> ArrivalRemindersAsync(DateTime now, CancellationToken ct)
