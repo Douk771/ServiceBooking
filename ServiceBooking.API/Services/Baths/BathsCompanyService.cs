@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Baths;
 using ServiceBooking.API.DTOs.Stays;
 using ServiceBooking.API.Services.PublicSites;
+using ServiceBooking.API.Services.Slots;
 using ServiceBooking.API.Services.Stays;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -9,18 +10,11 @@ using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services.Baths;
 
-/// <summary>The «Бани» tariff in force for an account. No row / expired / inactive = <see cref="HasActivePlan"/> false (no free tier).</summary>
-public sealed record BathsPlanFacts(
-    Guid? PlanId, string? PlanName, bool HasActivePlan, bool IsTrial, DateTime? PaidUntilUtc, int? MaxResources, bool WasEverSubscribed)
-{
-    public static BathsPlanFacts None { get; } = new(null, null, false, false, null, null, false);
-}
-
 /// <summary>
 /// ARCHITECTURE_CYCLE42.md §42.14, API_CONTRACT_CYCLE42.md §42.28 — the company-level read model of the «Бани» vertical: settings (stored in
 /// <c>StaysSettings</c>), the booking gate (unit = a published resource), the owner's checklist, the plan banner and the cabinet card.
 /// </summary>
-public class BathsCompanyService(AppDbContext db, StaysCompanyService stays, PublicSiteLinks links, IStaysClock clock)
+public class BathsCompanyService(AppDbContext db, StaysCompanyService stays, PublicSiteLinks links, IStaysClock clock, StaysPlanResolver plans)
 {
     public const int DefaultReminderHours = 3;
 
@@ -52,41 +46,12 @@ public class BathsCompanyService(AppDbContext db, StaysCompanyService stays, Pub
 
     // ── plan ──
 
-    // TODO(BE-42-2): replace by the vertical-aware StaysPlanResolver (Baths line) — this reads BathsSubscriptions directly so the cabinet card is honest until then.
-    public async Task<BathsPlanFacts> GetPlanAsync(Company company, DateTime nowUtc, CancellationToken ct)
-    {
-        if (company.BillingAccountId is not { } accountId) return BathsPlanFacts.None;
-        var sub = await db.BathsSubscriptions.AsNoTracking().Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == accountId, ct);
-        var plan = sub?.PlanConfig;
-        if (sub is null || plan is null) return BathsPlanFacts.None;
-        var live = sub.IsActive && (sub.PaidUntil is null || sub.PaidUntil >= nowUtc) && plan is { IsActive: true, Line: CompanyKind.Baths };
-        return new BathsPlanFacts(plan.Id, plan.Name, live, plan.Id == BathsPlans.TrialSeedId, sub.PaidUntil, plan.MaxResources, WasEverSubscribed: true);
-    }
+    private Task<StaysPlan> GetPlanAsync(Company company, DateTime nowUtc, CancellationToken ct) =>
+        company.BillingAccountId is { } accountId ? plans.GetForAccountAsync(SlotVerticals.Baths, accountId, nowUtc, ct) : Task.FromResult(StaysPlan.None);
 
     /// <summary>Published, non-archived resources of ALL «Бани» companies of the account (the unit of the tariff limit).</summary>
-    public Task<int> CountPublishedResourcesAsync(Company company, CancellationToken ct) =>
-        company.BillingAccountId is not { } accountId ? Task.FromResult(0)
-            : db.StayServices.AsNoTracking().CountAsync(s => s.IsPublished && s.ArchivedAtUtc == null &&
-                db.Companies.Any(c => c.Id == s.CompanyId && c.BillingAccountId == accountId && c.Kind == CompanyKind.Baths), ct);
-
-    public static (string Level, string? Text) Warning(BathsPlanFacts plan, int published, DateTime nowUtc)
-    {
-        if (!plan.WasEverSubscribed)
-            return ("NoPlan", "Тариф не выбран. Гости не могут бронировать, пока вы не выберете тариф или не активируете пробный период");
-        if (!plan.HasActivePlan)
-            return plan.IsTrial
-                ? ("Expired", "Пробный период закончился. Гости не могут бронировать, пока вы не выберете тариф")
-                : ("NoPlan", "Тариф не выбран или срок оплаты закончился. Гости не могут бронировать, пока вы не выберете тариф");
-        if (plan.MaxResources is { } max && published > max)
-            return ("OverLimit", $"Опубликовано {published} {StaysTexts.Plural(published, "ресурс", "ресурса", "ресурсов")} при лимите {max}: гости не могут бронировать. Снимите лишние ресурсы с публикации или смените тариф");
-        if (plan.IsTrial && plan.PaidUntilUtc is { } until)
-        {
-            var left = until - nowUtc;
-            if (left <= TimeSpan.FromDays(1)) return ("TrialEnding1d", "Пробный период закончится завтра");
-            if (left <= TimeSpan.FromDays(3)) return ("TrialEnding3d", $"Пробный период закончится через 3 дня — {StayFormat.Date(DateOnly.FromDateTime(until))}");
-        }
-        return ("None", null);
-    }
+    private Task<int> CountPublishedResourcesAsync(Company company, CancellationToken ct) =>
+        company.BillingAccountId is { } accountId ? plans.CountPublishedResourcesAsync(accountId, ct) : Task.FromResult(0);
 
     // ── gate ──
 
@@ -104,7 +69,7 @@ public class BathsCompanyService(AppDbContext db, StaysCompanyService stays, Pub
         var plan = await GetPlanAsync(company, clock.UtcNow, ct);
         var accountPublished = await CountPublishedResourcesAsync(company, ct);
         var prepay = MaxPrepay(await PublishedOfCompanyAsync(company.Id, ct));
-        return StaysBookingGate.Evaluate(company.IsActive, plan.HasActivePlan, accountPublished, plan.MaxResources, prepay, settings.PaymentDetails,
+        return StaysBookingGate.Evaluate(company.IsActive, plan.HasActivePlan, accountPublished, plan.MaxUnits, prepay, settings.PaymentDetails,
             StaysCompanyService.ProviderFacts(settings), GateUnit.Resource);
     }
 
@@ -121,9 +86,9 @@ public class BathsCompanyService(AppDbContext db, StaysCompanyService stays, Pub
         var accountPublished = await CountPublishedResourcesAsync(company, ct);
         var published = await PublishedOfCompanyAsync(company.Id, ct);
         var prepay = MaxPrepay(published);
-        var gate = StaysBookingGate.Evaluate(company.IsActive, plan.HasActivePlan, accountPublished, plan.MaxResources, prepay, settings.PaymentDetails,
+        var gate = StaysBookingGate.Evaluate(company.IsActive, plan.HasActivePlan, accountPublished, plan.MaxUnits, prepay, settings.PaymentDetails,
             StaysCompanyService.ProviderFacts(settings), GateUnit.Resource);
-        var (level, text) = Warning(plan, accountPublished, now);
+        var (level, text) = StaysPlanResolver.Warning(plan, accountPublished, now, GateUnit.Resource);
         int? awaiting = role == StaysMyRole.Housekeeper ? null
             : await db.StayServiceOrders.AsNoTracking().CountAsync(o => o.CompanyId == company.Id && o.Status == StayBookingStatus.AwaitingPaymentCheck, ct);
 

@@ -22,14 +22,15 @@ namespace ServiceBooking.API.Controllers.Baths;
 /// <summary>
 /// ARCHITECTURE_CYCLE42.md §42.4.1, API_CONTRACT_CYCLE42.md §42.27, §42.28 — the «Бани» company: creation, the cabinet list, the address, the card, settings, requisites,
 /// executor, QR code, notification settings, the schedule of the bath attendant and the revision. A company is a <c>Company</c> with <c>Kind = Baths</c>; a company of
-/// another kind, a missing or a foreign one is 404 with an empty body. The trial (<c>GET|POST /api/baths/trial</c>) belongs to BE-42-2.
+/// another kind, a missing or a foreign one is 404 with an empty body. The trial itself is <c>BathsTrialController</c>; here it is granted after the creation when <c>trialTermsVersion</c> is passed.
 /// </summary>
 [ApiController]
 [Route("api/baths")]
 [Authorize]
 public class BathsCompaniesController(
     AppDbContext dbArg, CompanyCreationService companyCreationArg, StaysAccessResolver accessArg, StaysCompanyService companyServiceArg,
-    PublicSiteLinks linksArg, ShopChannelReader channelReaderArg, IStaysClock clockArg, BathsCompanyService baths, BathsScheduleService schedule)
+    PublicSiteLinks linksArg, ShopChannelReader channelReaderArg, IStaysClock clockArg, BathsCompanyService baths, BathsScheduleService schedule,
+    StaysTrialService trial)
     : SlotCompanySettingsControllerBase(dbArg, companyCreationArg, accessArg, companyServiceArg, linksArg, channelReaderArg, clockArg)
 {
     protected override SlotVertical Vertical => SlotVerticals.Baths;
@@ -53,9 +54,9 @@ public class BathsCompaniesController(
         if (outcome.Error is not null) return outcome.Error;
 
         // After the commit; a refused trial never undoes the creation (API_CONTRACT_CYCLE42.md §42.27.1 п. 7).
-        // TODO(BE-42-2): grant the «Бани» trial here (BathsTrialService / StaysTrialService by vertical, BathsTrialTerms) when trialTermsVersion is passed.
-        StaysTrialOutcomeDto? trialOutcome = string.IsNullOrWhiteSpace(input.TrialTermsVersion) ? null
-            : new StaysTrialOutcomeDto(false, "TrialNotOffered", "Пробный период для «Бань» пока недоступен", null);
+        StaysTrialOutcomeDto? trialOutcome = null;
+        if (!string.IsNullOrWhiteSpace(input.TrialTermsVersion))
+            trialOutcome = await trial.GrantAsync(SlotVerticals.Baths, outcome.AccountId, UserId, input.TrialTermsVersion, HttpContext.RequestAborted);
 
         var dto = await baths.BuildManageAsync(outcome.Company!, StaysMyRole.Owner, HttpContext.RequestAborted);
         return StatusCode(StatusCodes.Status201Created, new BathsCompanyCreatedDto(dto, outcome.Token!, trialOutcome));
