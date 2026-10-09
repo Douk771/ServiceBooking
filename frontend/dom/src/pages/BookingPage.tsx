@@ -18,7 +18,9 @@ import { ProviderBlock } from '../components/ProviderBlock'
 import { ErrorState, Skeleton } from '../components/StatePanels'
 import { StayNotice } from '../components/StayNotice'
 import { StayTermsModal } from '../components/StayTermsModal'
-import type { PublicStayBookingDto, StayGuestConflictDto } from '../types'
+import { ArrivalReminderBlock } from '../components/services/ArrivalReminderBlock'
+import { BookingSessionsBlock } from '../components/services/BookingSessionsBlock'
+import type { PublicStayBookingWithServices, StayGuestConflictDto } from '../types'
 import { fmtDateTime } from '@/utils/dateFormat'
 import { formatDateWithWeekday, nightsLabel } from '../utils/stayDates'
 import { getStayErrorMessage, httpStatus, readConflict } from '../utils/stayError'
@@ -51,7 +53,7 @@ export function BookingPage() {
   })
   const booking = query.data
 
-  const setBooking = useCallback((b: PublicStayBookingDto) => qc.setQueryData(key, b), [qc, token]) // eslint-disable-line react-hooks/exhaustive-deps
+  const setBooking = useCallback((b: PublicStayBookingWithServices) => qc.setQueryData(key, b), [qc, token]) // eslint-disable-line react-hooks/exhaustive-deps
   const refetch = useCallback(() => void query.refetch(), [query])
 
   const cancel = useMutation({
@@ -63,7 +65,7 @@ export function BookingPage() {
     },
     onError: (err) => {
       const c = readConflict<StayGuestConflictDto>(err)
-      if (c?.booking) setBooking(c.booking)
+      if (c?.booking) setBooking(c.booking as PublicStayBookingWithServices)
       setCancelError(getStayErrorMessage(err, 'Не удалось отменить бронь.'))
     },
   })
@@ -293,6 +295,11 @@ export function BookingPage() {
           </dl>
           <CompanyMapLinks yandexUrl={b.house.yandexMapsUrl} twoGisUrl={b.house.twoGisUrl} className="mt-2" />
         </section>
+
+        <ArrivalReminderBlock reminder={b.arrivalReminder} />
+
+        {!terminal && <BookingSessionsBlock token={token} booking={b} onBooking={setBooking} />}
+        {terminal && (b.sessions?.length ?? 0) > 0 && <BookingSessionsBlock token={token} booking={b} onBooking={setBooking} />}
 
         <section className="rounded-2xl border border-line bg-white p-5" aria-labelledby="price-title">
           <h2 id="price-title" className="mb-2 text-[15px] font-semibold text-ink">

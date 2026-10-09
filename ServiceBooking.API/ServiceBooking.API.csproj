@@ -65,8 +65,8 @@
          embedded resource (SlugPolicy), by the goods frontend test and by QA. The Docker build context is the
          repository root (COPY . .), so the file is available there. -->
     <EmbeddedResource Include="..\contracts\cycle23\goods-routes.json" LogicalName="goods-routes.json" />
-    <!-- ARCHITECTURE_CYCLE37.md §37.4: the same for dom.ezbook.ru (StaysSlugPolicy). -->
-    <EmbeddedResource Include="..\contracts\cycle37\dom-routes.json" LogicalName="dom-routes.json" />
+    <!-- ARCHITECTURE_CYCLE37.md §37.4, cycle 39: the same for dom.ezbook.ru (StaysSlugPolicy), from the cycle 39 superset of the map. -->
+    <EmbeddedResource Include="..\contracts\cycle39\dom-routes.json" LogicalName="dom-routes.json" />
   </ItemGroup>
 
   <ItemGroup>

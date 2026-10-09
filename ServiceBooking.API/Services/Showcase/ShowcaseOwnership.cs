@@ -121,6 +121,17 @@ public static class ShowcaseOwnership
         ["StayGuestPushSubscriptions"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
         ["StayGuestPushNotifications"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
         ["StaysSubscriptions"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["StayServices"] = "cycle 39: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE39.md §39.2.6)",
+        ["StayServicePhotos"] = "cycle 39: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE39.md §39.2.6)",
+        ["StayServiceWeeklyWindows"] = "cycle 39: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE39.md §39.2.6)",
+        ["StayServiceDateOverrides"] = "cycle 39: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE39.md §39.2.6)",
+        ["StayServiceScheduleEvents"] = "cycle 39: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE39.md §39.2.6)",
+        ["StayServicePriceRules"] = "cycle 39: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE39.md §39.2.6)",
+        ["StayServiceItems"] = "cycle 39: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE39.md §39.2.6)",
+        ["StayServiceSessions"] = "cycle 39: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE39.md §39.2.6)",
+        ["StayServiceOrders"] = "cycle 39: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE39.md §39.2.6)",
+        ["StayServiceOrderEvents"] = "cycle 39: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE39.md §39.2.6)",
+        ["StaysReminderTemplateChanges"] = "cycle 39: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE39.md §39.2.6)",
     };
 
     /// <summary>All tables the eraser touches, for the model coverage test.</summary>

@@ -11,6 +11,7 @@
         "src/pages/RegisterPage",
         "src/pages/ProfilePage",
         "src/pages/CabinetPage",
+        "src/pages/CreateCompanyRoute",
         "src/hooks/usePhoneVerification",
         "src/components/ui/PhoneInput",
         "src/utils/authError",
@@ -48,6 +49,8 @@
         "src/components/company/",
         "src/pages/CompanyPage",
         "src/pages/HomePage",
+        "src/components/landing/",
+        "src/pages/home/",
         "src/pages/EmbedPage",
         "src/utils/company",
         "src/utils/publicAddress",
@@ -76,7 +79,8 @@
       "title": "Дома (dom)",
       "description": "Посуточная аренда домов: каталог, страница дома и брони, кабинет владельца, шахматка, график, расчёты по эталонным векторам, всё приложение dom.",
       "frontendPathPrefixes": [
-        "dom/src/"
+        "dom/src/",
+        "src/components/landing/"
       ]
     },
     {
@@ -101,6 +105,8 @@
         "goods/src/utils/serviceWorkerRouting",
         "goods/src/components/order/OrderPushCard",
         "goods/src/components/staffMax/",
+        "src/components/staffMax/",
+        "src/api/staffMax",
         "goods/src/pages/cabinet/ShopNotificationsPage",
         "goods/src/cabinetDevicesRedirect",
         "src/pages/owner/NotificationLogTab",
@@ -117,6 +123,9 @@
         "src/components/pricing/",
         "src/pages/BillingPage",
         "src/pages/PricingPage",
+        "goods/src/pricing/",
+        "goods/src/pages/PricingPage",
+        "goods/src/api/ordersPricing",
         "src/pages/billingPageHelpers",
         "src/pages/admin/Plans",
         "src/pages/admin/plan",

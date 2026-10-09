@@ -30,7 +30,8 @@ public sealed class AccountDeletionService(
             .AnyAsync(a => a.OwnerUserId == userId && a.TrialStartedAtUtc != null, ct);
         var stayBookings = await db.StayBookings.AsNoTracking().CountAsync(b => b.GuestUserId == userId, ct);
         return new AccountDeletionPreviewDto(
-            everHadTrial ? Services.Billing.TrialLegalNotices.TrialRegistryNoticeOnAccountDeletion : null, stayBookings);
+            everHadTrial ? Services.Billing.TrialLegalNotices.TrialRegistryNoticeOnAccountDeletion : null, stayBookings,
+            await db.StayServiceOrders.AsNoTracking().CountAsync(o => o.GuestUserId == userId, ct));
     }
 
     /// <summary><paramref name="requestAborted"/> is what the scope resolver was always given
@@ -215,7 +216,37 @@ public sealed class AccountDeletionService(
         if (erasedStayIds.Count > 0)
         {
             foreach (var e in await db.StayBookingEvents.Where(e => erasedStayIds.Contains(e.StayBookingId)).ToListAsync()) Stays.StayPersonalData.TombstoneGuestEvent(e);
-            db.StayGuestPushSubscriptions.RemoveRange(await db.StayGuestPushSubscriptions.Where(s => erasedStayIds.Contains(s.StayBookingId)).ToListAsync());
+            foreach (var session in await db.StayServiceSessions.Where(s => s.StayBookingId != null && erasedStayIds.Contains(s.StayBookingId.Value)).ToListAsync()) Stays.StayPersonalData.TombstoneSessionAuthor(session);
+            db.StayGuestPushSubscriptions.RemoveRange(await db.StayGuestPushSubscriptions.Where(s => s.StayBookingId != null && erasedStayIds.Contains(s.StayBookingId.Value)).ToListAsync());
+        }
+
+        // Step 3d (ARCHITECTURE_CYCLE39.md §39.13.1): stand-alone orders of services — the account's own, plus guest orders on a PROVEN number (the same gate). Depersonalised, never cancelled;
+        // the files of their proofs go at once, the fact of payment stays (ЮР-6); the sessions carry no personal data, so the owner's schedule is whole.
+        var svcOrdersToErase = await db.StayServiceOrders.Include(o => o.PaymentProofs)
+            .Where(o => o.GuestUserId == userId || (guestMatchPhone != null && o.GuestKind == StayActorKind.Guest && o.GuestPhone == guestMatchPhone && !db.Companies.Any(c => c.Id == o.CompanyId && c.IsShowcase)))  // SUBJECT-PHONE-GATE: gated — cycle 39, stand-alone orders follow the same gate as house bookings (ARCHITECTURE_CYCLE39.md §39.13.1)
+            .ToListAsync();
+        var erasedSvcOrderIds = svcOrdersToErase.Select(o => o.Id).ToList();
+        foreach (var svcOrder in svcOrdersToErase)
+        {
+            Stays.StayPersonalData.EraseOrder(svcOrder);
+            foreach (var proof in svcOrder.PaymentProofs.Where(p => p.StorageKey != null))
+            {
+                stayProofKeys.Add(proof.StorageKey!);
+                proof.StorageKey = null;
+                proof.PurgedAtUtc = DateTime.UtcNow;
+            }
+            svcOrder.PaymentProofsPurgedAtUtc ??= DateTime.UtcNow;
+            db.StayServiceOrderEvents.Add(new StayServiceOrderEvent
+            {
+                Id = Guid.NewGuid(), StayServiceOrderId = svcOrder.Id, CompanyId = svcOrder.CompanyId, Kind = StayServiceOrderEventKind.PersonalDataErased, OccurredAtUtc = DateTime.UtcNow,
+                ActorKind = StayActorKind.System, ActorNameSnapshot = "Система",
+            });
+        }
+        if (erasedSvcOrderIds.Count > 0)
+        {
+            foreach (var e in await db.StayServiceOrderEvents.Where(e => erasedSvcOrderIds.Contains(e.StayServiceOrderId)).ToListAsync()) Stays.StayPersonalData.TombstoneGuestEvent(e);
+            foreach (var session in await db.StayServiceSessions.Where(s => s.StayServiceOrderId != null && erasedSvcOrderIds.Contains(s.StayServiceOrderId.Value)).ToListAsync()) Stays.StayPersonalData.TombstoneSessionAuthor(session);
+            db.StayGuestPushSubscriptions.RemoveRange(await db.StayGuestPushSubscriptions.Where(s => s.StayServiceOrderId != null && erasedSvcOrderIds.Contains(s.StayServiceOrderId.Value)).ToListAsync());
         }
 
         // TD-05 (ARCHITECTURE_CYCLE16.md §247.2, no migration — §240.3/§247.1). Two rules, both scoped

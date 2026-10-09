@@ -21,6 +21,10 @@ public class StaffMaxMessage
     public Guid? StayBookingId { get; set; }
     public StayBooking? StayBooking { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE39.md §39.2.2: a message about a stand-alone order of a service.</summary>
+    public Guid? StayServiceOrderId { get; set; }
+    public StayServiceOrder? StayServiceOrder { get; set; }
+
     public string ChatKey { get; set; } = string.Empty;
     public NotificationType Type { get; set; }
     public string Text { get; set; } = string.Empty;

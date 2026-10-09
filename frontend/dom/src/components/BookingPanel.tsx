@@ -14,7 +14,8 @@ import { MessengerOptIn } from '@/components/notifications/MessengerOptIn'
 import { useMessengerOptInDefault } from '@/hooks/useMessengerOptInDefault'
 import { publicStaysApi } from '../api/publicStays'
 import { staysCompaniesApi } from '../api/staysCompanies'
-import type { PublicHouseDto, StayQuoteDto, StayRefusalDto } from '../types'
+import type { PublicHouseDto, StayQuoteWithServices, StayRefusalWithService } from '../types'
+import { ChosenStayService, StayServicesBlock } from './services/StayServicesBlock'
 import {
   COMMENT_MAX,
   MAX_ADULTS,
@@ -88,6 +89,9 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
   const [fieldErrors, setFieldErrors] = useState<GuestFieldErrors & { arrival?: string }>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [priceChanged, setPriceChanged] = useState<string | null>(null)
+  // Services of the stay (P1, US-39-10): nothing is chosen by default; the choice belongs to ONE range of dates.
+  const [stayServices, setStayServices] = useState<ChosenStayService[]>([])
+  useEffect(() => setStayServices([]), [range.checkIn, range.checkOut])
 
   // A range that came in the URL is only a suggestion: drop it when the calendar says it cannot be booked.
   useEffect(() => {
@@ -105,7 +109,8 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
   const rangeConfirmed = hasRange && !!calendar.data && validateSelection(calendar.data, range.checkIn!, range.checkOut!) === 'Ok'
   const guestsProblem = guestCountsProblem(house, counts)
   const debouncedCounts = useDebouncedValue(counts, 250)
-  const quoteInput = rangeConfirmed ? toQuoteInput(range.checkIn!, range.checkOut!, debouncedCounts) : null
+  const servicesBody = stayServices.length > 0 ? stayServices.map((c) => c.selection) : undefined
+  const quoteInput = rangeConfirmed ? { ...toQuoteInput(range.checkIn!, range.checkOut!, debouncedCounts), ...(servicesBody ? { services: servicesBody } : {}) } : null
   const settled = debouncedCounts === counts
 
   const quoteKey = ['stays-quote', house.id, quoteInput] as const
@@ -116,7 +121,7 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
     staleTime: 0,
     placeholderData: (prev) => prev,
   })
-  const q: StayQuoteDto | undefined = quote.data
+  const q: StayQuoteWithServices | undefined = quote.data
   const quoteFresh = !!q && !quote.isPlaceholderData && !quote.isFetching && settled
 
   // Cycle 40 (§40.11.4, §40.30.3): the checkbox appears only when the server offers it; the default comes from the signed-in guest's profile.
@@ -130,9 +135,8 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
 
   const create = useMutation({
     mutationFn: () =>
-      publicStaysApi.createBooking(
-        house.id,
-        toCreateInput({
+      publicStaysApi.createBooking(house.id, {
+        ...toCreateInput({
           checkIn: range.checkIn!,
           checkOut: range.checkOut!,
           counts,
@@ -143,7 +147,8 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
           idempotencyKey,
           captchaToken,
         }),
-      ),
+        ...(servicesBody ? { services: servicesBody } : {}),
+      }),
     onSuccess: (res) => {
       forgetBookingKey(house.id)
       void qc.invalidateQueries({ queryKey: ['stays-calendar', house.id] })
@@ -155,7 +160,7 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
         setCaptchaToken('')
         setCaptchaKey((k) => k + 1)
       }
-      const refusal = readConflict<StayRefusalDto>(err)
+      const refusal = readConflict<StayRefusalWithService>(err)
       if (refusal) {
         if (refusal.code === 'PriceChanged' && refusal.quote) {
           qc.setQueryData(quoteKey, refusal.quote)
@@ -165,6 +170,12 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
         }
         setPriceChanged(null)
         setFormError(refusal.message)
+        if (refusal.code === 'ServiceSlotUnavailable' || refusal.code === 'ServiceSelectionInvalid') {
+          // Neither the booking nor any session was created; the dates stay, the failed service is dropped from the request.
+          const i = refusal.serviceIndex
+          setStayServices((list) => (i == null ? [] : list.filter((_, j) => j !== i)))
+          return
+        }
         if (refusal.code !== 'NotAcceptingBookings' && refusal.code !== 'TooManyGuests' && refusal.code !== 'DogsNotAllowed' && refusal.code !== 'CotNotAvailable') {
           // The dates are no longer bookable: show the fresh calendar and start the dates over.
           setRange(EMPTY_RANGE)
@@ -216,7 +227,8 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
     )
   }
 
-  const canSubmit = hasRange && !guestsProblem && !!q && q.ok && quoteFresh && !create.isPending
+  const servicesOk = !q?.services || q.services.every((s) => s.ok)
+  const canSubmit = hasRange && !guestsProblem && !!q && q.ok && servicesOk && quoteFresh && !create.isPending
 
   return (
     <section id="booking" aria-label="Бронирование" className="rounded-3xl border border-line bg-white p-5 shadow-soft sm:p-6">
@@ -334,6 +346,20 @@ export function BookingPanel({ house, initial, onOpenTerms }: { house: PublicHou
           ) : null}
         </div>
       )}
+
+      <StayServicesBlock
+        companySlug={house.company.slug}
+        houseId={house.id}
+        checkIn={rangeConfirmed ? range.checkIn! : null}
+        checkOut={rangeConfirmed ? range.checkOut! : null}
+        chosen={stayServices}
+        quoteServices={q?.services}
+        onChange={(next) => {
+          setStayServices(next)
+          setPriceChanged(null)
+        }}
+        companyName={house.company.name}
+      />
 
       {priceChanged && (
         <div role="alert" className="mt-4 rounded-2xl bg-warning-bg px-4 py-3 text-sm text-warning" data-testid="price-changed">

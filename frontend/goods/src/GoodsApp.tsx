@@ -25,6 +25,7 @@ import { OrderPage } from './pages/OrderPage'
 import { MyOrdersPage } from './pages/MyOrdersPage'
 import { GoodsProfilePage } from './pages/GoodsProfilePage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { PricingPage } from './pages/PricingPage'
 import { CabinetHomePage } from './pages/cabinet/CabinetHomePage'
 import { CreateShopPage } from './pages/cabinet/CreateShopPage'
 import { ShopLayout } from './pages/cabinet/ShopLayout'
@@ -59,6 +60,7 @@ const CONSENT_GATE_BYPASS_PATHS = [
   '/payment-terms',
   '/data-request',
   '/profile/consents',
+  '/pricing',
 ]
 
 /** Signed-in only; otherwise to /login and back (`returnTo`), so a deep link into the cabinet survives sign-in. */
@@ -122,6 +124,7 @@ export function GoodsApp() {
                       <Route path="/login" element={<LoginPage />} />
                       <Route path="/register" element={<RegisterPage />} />
                       <Route path="/o/:token" element={<OrderPage />} />
+                      <Route path="/pricing" element={<PricingPage />} />
 
                       <Route element={<RequireAuth />}>
                         <Route path="/orders" element={<MyOrdersPage />} />

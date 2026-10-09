@@ -22,8 +22,9 @@ public static class StaysBookingGate
             return Fail(NotAcceptingReason.OverHouseLimit, $"Опубликовано {accountPublishedHouses} домов при лимите {max}: гости не могут бронировать. Снимите лишние дома с публикации или смените тариф");
         if (prepayPercent > 0 && string.IsNullOrWhiteSpace(paymentDetails))
             return Fail(NotAcceptingReason.NoPaymentDetails, "Заполните реквизиты для оплаты — без них гости не могут бронировать с предоплатой");
-        if (prepayPercent > 0 && !ProviderComplete(provider))
-            return Fail(NotAcceptingReason.NoProviderInfo, "Заполните сведения об исполнителе — без них гости не могут бронировать с предоплатой");
+        // ЮР39-2 (ARCHITECTURE_CYCLE39.md §39.7.6): the executor's details are mandatory ALWAYS, whatever the prepayment (closes §37.19 п. 5).
+        if (!ProviderComplete(provider))
+            return Fail(NotAcceptingReason.NoProviderInfo, "Заполните сведения об исполнителе — без них гости не могут бронировать");
         return GateResult.Ok;
     }
 

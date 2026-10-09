@@ -67,7 +67,9 @@ public class StaysPureRulesTests
         StaysBookingGate.Evaluate(true, true, 1, 1, 30, " ", FullProvider).ReasonCode.Should().Be(NotAcceptingReason.NoPaymentDetails);
         StaysBookingGate.Evaluate(true, true, 1, 1, 30, "карта", new(null, null, null, null, null)).ReasonCode.Should().Be(NotAcceptingReason.NoProviderInfo);
         StaysBookingGate.Evaluate(true, true, 1, 1, 30, "карта", FullProvider).Accepting.Should().BeTrue();
-        StaysBookingGate.Evaluate(true, true, 1, null, 0, null, new(null, null, null, null, null)).Accepting.Should().BeTrue();
+        // ЮР39-2 (changed requirement of cycle 39): the executor's details are mandatory ALWAYS, also with prepayment 0 %.
+        StaysBookingGate.Evaluate(true, true, 1, null, 0, null, new(null, null, null, null, null)).ReasonCode.Should().Be(NotAcceptingReason.NoProviderInfo);
+        StaysBookingGate.Evaluate(true, true, 1, null, 0, null, FullProvider).Accepting.Should().BeTrue();
     }
 
     [Fact]
@@ -101,8 +103,8 @@ public class StaysPureRulesTests
         StayNotificationPlan.ForEvent(StayBookingEventKind.PaymentConfirmed).Single().Type.Should().Be(NotificationType.StayGuestConfirmed);
         StayNotificationPlan.ForEvent(StayBookingEventKind.PaymentProofViewed).Should().BeEmpty();
         StayNotificationPlan.ForScheduled(StayScheduledKind.HoldExpiring).Type.Should().Be(NotificationType.StayGuestHoldExpiring);
-        // a stay type must never reach the salon bitmask (int, 31 usable bits)
-        Enum.GetValues<NotificationType>().Max(t => (int)t).Should().BeLessThan(31);
+        // a stay type must never reach the salon bitmask (int, 31 usable bits): the mask knows only the salon types, which all sit below bit 7
+        ServiceBooking.API.Services.Notifications.NotificationTypeCatalog.BookingTypes.Max(t => (int)t).Should().BeLessThan(7);
     }
 
     [Fact]
@@ -114,7 +116,7 @@ public class StaysPureRulesTests
         StaysAccess.Has(StaysMyRole.Manager, StaysPermission.ManageCompany).Should().BeFalse();
         StaysAccess.Has(StaysMyRole.Manager, StaysPermission.ManageHouses).Should().BeFalse();
         StaysAccess.Has(StaysMyRole.Manager, StaysPermission.ManageBookings).Should().BeTrue();
-        StaysAccess.For(StaysMyRole.Owner).Should().HaveCount(8);
+        StaysAccess.For(StaysMyRole.Owner).Should().HaveCount(11);
     }
 
     [Fact]

@@ -975,7 +975,7 @@ export interface components {
         /** @enum {string} */
         StaysMyRole: "Owner" | "Manager" | "Housekeeper" | "SuperAdmin";
         /** @enum {string} */
-        StaysPermission: "ManageCompany" | "ManageHouses" | "EditHouseContent" | "ViewBookings" | "ManageBookings" | "ManageBlocks" | "ViewSchedule" | "ViewCabinet";
+        StaysPermission: "ManageCompany" | "ManageHouses" | "EditHouseContent" | "ViewBookings" | "ManageBookings" | "ManageBlocks" | "ViewSchedule" | "ViewCabinet" | "ManageServices" | "EditServiceContent" | "ManageServiceDates";
         /** @enum {string} */
         StayBookingStatus: "Held" | "AwaitingPaymentCheck" | "Confirmed" | "ExpiredUnpaid" | "PaymentRejected" | "CancelledByGuest" | "CancelledByOwner";
         /**
@@ -1003,12 +1003,12 @@ export interface components {
         /** @enum {string} */
         CalendarDayState: "Free" | "MayFreeUp" | "Occupied" | "Unavailable";
         /**
-         * @description Строки суммы брони. Цикл 2 допишет ServiceSlot, ServiceItem.
+         * @description Строки суммы брони. Цикл 39 дописал ServiceSlot, ServiceItem.
          * @enum {string}
          */
-        StayChargeKind: "Nights" | "ExtraBeds" | "Dogs" | "Cot" | "ManualTotal";
+        StayChargeKind: "Nights" | "ExtraBeds" | "Dogs" | "Cot" | "ManualTotal" | "ServiceSlot" | "ServiceItem";
         /** @enum {string} */
-        StayRefusalCode: "InvalidDates" | "CheckInInPast" | "SameDayNotAllowed" | "BeyondHorizon" | "MaxNightsExceeded" | "DatesUnavailable" | "MinNightsNotMet" | "TooManyGuests" | "DogsNotAllowed" | "CotNotAvailable" | "NoPriceForNights" | "NotAcceptingBookings" | "PriceChanged";
+        StayRefusalCode: "InvalidDates" | "CheckInInPast" | "SameDayNotAllowed" | "BeyondHorizon" | "MaxNightsExceeded" | "DatesUnavailable" | "MinNightsNotMet" | "TooManyGuests" | "DogsNotAllowed" | "CotNotAvailable" | "NoPriceForNights" | "NotAcceptingBookings" | "PriceChanged" | "ServiceSlotUnavailable" | "ServiceSelectionInvalid";
         /** @enum {string} */
         NotAcceptingReason: "CompanyBlocked" | "NoPlan" | "OverHouseLimit" | "NoPaymentDetails" | "NoProviderInfo" | "HouseNotPublished";
         /** @enum {string} */
@@ -1016,7 +1016,7 @@ export interface components {
         /** @enum {string} */
         StayStaffConflictCode: "VersionMismatch" | "InvalidTransition";
         /** @enum {string} */
-        StaysConflictCode: "SlugInvalid" | "SlugReserved" | "SlugTaken" | "NoPrice" | "ObjectKindRequired" | "RegistryNumberRequired" | "AttestationRequired" | "HouseArchived" | "HouseHasBookings" | "PhotoLimitReached" | "PricePeriodOverlap" | "BlockConflictsWithBooking" | "BlockOverlapsBlock" | "MessengerUnavailable";
+        StaysConflictCode: "SlugInvalid" | "SlugReserved" | "SlugTaken" | "NoPrice" | "ObjectKindRequired" | "RegistryNumberRequired" | "AttestationRequired" | "HouseArchived" | "HouseHasBookings" | "PhotoLimitReached" | "PricePeriodOverlap" | "BlockConflictsWithBooking" | "BlockOverlapsBlock" | "MessengerUnavailable" | "ProviderRequiredForServiceOrders";
         /** @enum {string} */
         StayGuestAction: "AttachProof" | "Cancel";
         /** @enum {string} */
@@ -1044,7 +1044,7 @@ export interface components {
         };
         GateDto: {
             accepting: boolean;
-            reasonCode?: components["schemas"]["NotAcceptingReason"] | null;
+            reasonCode?: (string & components["schemas"]["NotAcceptingReason"]) | null;
             reasonText?: string | null;
         };
         /** @description Публично. У SelfEmployed/Individual name, ogrn, claimsAddress = null (ЮР-3). */
@@ -1093,7 +1093,7 @@ export interface components {
         StayRefusalDto: {
             code: components["schemas"]["StayRefusalCode"];
             message: string;
-            reasonCode?: components["schemas"]["NotAcceptingReason"] | null;
+            reasonCode?: (string & components["schemas"]["NotAcceptingReason"]) | null;
             /** @description только у PriceChanged */
             quote?: components["schemas"]["StayQuoteDto"] | null;
         };
@@ -1136,7 +1136,7 @@ export interface components {
         AddMemberInput: {
             phone: string;
             role: string;
-            position?: components["schemas"]["StaffPosition"] | null;
+            position?: (string & components["schemas"]["StaffPosition"]) | null;
         } & {
             [key: string]: unknown;
         };
@@ -1145,7 +1145,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             role: string;
-            position?: components["schemas"]["StaffPosition"] | null;
+            position?: (string & components["schemas"]["StaffPosition"]) | null;
         } & {
             [key: string]: unknown;
         };
@@ -1359,7 +1359,7 @@ export interface components {
             guestName: string;
             /** @description обязателен для анонима; у вошедшего игнорируется */
             guestPhone?: string | null;
-            arrivalTime?: components["schemas"]["TimeOfDay"] | null;
+            arrivalTime?: (string & components["schemas"]["TimeOfDay"]) | null;
             comment?: string | null;
             notifyByMessenger: boolean;
             expectedTotalRub: number;
@@ -1448,7 +1448,7 @@ export interface components {
             dogs: number;
             needCot: boolean;
             extraBeds: number;
-            arrivalTime?: components["schemas"]["TimeOfDay"] | null;
+            arrivalTime?: (string & components["schemas"]["TimeOfDay"]) | null;
             guestName: string | null;
             guestPhoneMasked: string | null;
             comment?: string | null;
@@ -1740,7 +1740,7 @@ export interface components {
             text: string;
         };
         HouseRegistryDto: {
-            objectKind?: components["schemas"]["HouseObjectKind"] | null;
+            objectKind?: (string & components["schemas"]["HouseObjectKind"]) | null;
             registryNumber?: string | null;
             registryUrl?: string | null;
             lastAttestation?: components["schemas"]["LastAttestationDto"];
@@ -1795,7 +1795,7 @@ export interface components {
             label: string;
             /** Format: date-time */
             holdExpiresAtUtc?: string | null;
-            blockKind?: components["schemas"]["HouseBlockKind"] | null;
+            blockKind?: (string & components["schemas"]["HouseBlockKind"]) | null;
             needsAction: boolean;
             /** @description комментарий блокировки (только kind = Block) — для правки блокировки без потери комментария; у броней и внешних периодов null */
             comment?: string | null;
@@ -1927,7 +1927,7 @@ export interface components {
             dogs: number;
             needCot: boolean;
             extraBeds: number;
-            arrivalTime?: components["schemas"]["TimeOfDay"] | null;
+            arrivalTime?: (string & components["schemas"]["TimeOfDay"]) | null;
             guestName?: string | null;
             guestPhone?: string | null;
             /** @enum {string} */
@@ -2004,7 +2004,7 @@ export interface components {
             houseId: string;
             houseName: string;
             checkInTime: components["schemas"]["TimeOfDay"];
-            arrivalTime?: components["schemas"]["TimeOfDay"] | null;
+            arrivalTime?: (string & components["schemas"]["TimeOfDay"]) | null;
             guestName?: string | null;
             adults: number;
             children: number;

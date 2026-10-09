@@ -44,6 +44,19 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<StayGuestPushSubscription> StayGuestPushSubscriptions => Set<StayGuestPushSubscription>();
     public DbSet<StayGuestPushNotification> StayGuestPushNotifications => Set<StayGuestPushNotification>();
     public DbSet<StaysSubscription> StaysSubscriptions => Set<StaysSubscription>();
+
+    // Cycle 39 (ARCHITECTURE_CYCLE39.md §39.2): time-slot services of «Дома».
+    public DbSet<StayService> StayServices => Set<StayService>();
+    public DbSet<StayServicePhoto> StayServicePhotos => Set<StayServicePhoto>();
+    public DbSet<StayServiceWeeklyWindow> StayServiceWeeklyWindows => Set<StayServiceWeeklyWindow>();
+    public DbSet<StayServiceDateOverride> StayServiceDateOverrides => Set<StayServiceDateOverride>();
+    public DbSet<StayServiceScheduleEvent> StayServiceScheduleEvents => Set<StayServiceScheduleEvent>();
+    public DbSet<StayServicePriceRule> StayServicePriceRules => Set<StayServicePriceRule>();
+    public DbSet<StayServiceItem> StayServiceItems => Set<StayServiceItem>();
+    public DbSet<StayServiceSession> StayServiceSessions => Set<StayServiceSession>();
+    public DbSet<StayServiceOrder> StayServiceOrders => Set<StayServiceOrder>();
+    public DbSet<StayServiceOrderEvent> StayServiceOrderEvents => Set<StayServiceOrderEvent>();
+    public DbSet<StaysReminderTemplateChange> StaysReminderTemplateChanges => Set<StaysReminderTemplateChange>();
     public DbSet<OrderMonthlyUsage> OrderMonthlyUsages => Set<OrderMonthlyUsage>();
     public DbSet<CompanyMember> CompanyMembers => Set<CompanyMember>();
     public DbSet<Service> Services => Set<Service>();
@@ -115,6 +128,33 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<GuestDataGateEvent> GuestDataGateEvents => Set<GuestDataGateEvent>();
     public DbSet<PlatformNotice> PlatformNotices => Set<PlatformNotice>();
     public DbSet<PlatformNoticeAcknowledgement> PlatformNoticeAcknowledgements => Set<PlatformNoticeAcknowledgement>();
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE39.md §39.5.2 — "the board revision is ALWAYS the last lock". Inside a transaction the bump of StaysSettings.BookingsRevision is only REMEMBERED here and
+    /// executed right before the next SaveChanges (the write of the transaction), so a lazy release or any journal append no longer holds the settings row while the transaction
+    /// goes on taking the locks of services, orders and bookings (that order of locks was the 40P01 of the review).
+    /// </summary>
+    public HashSet<Guid> PendingRevisionBumps { get; } = [];
+
+    public async Task BumpRevisionAsync(Guid companyId)
+    {
+        if (Database.CurrentTransaction is null) await ExecuteBumpAsync(companyId);
+        else PendingRevisionBumps.Add(companyId);
+    }
+
+    private Task<int> ExecuteBumpAsync(Guid companyId) =>
+        Database.ExecuteSqlInterpolatedAsync($"""UPDATE "StaysSettings" SET "BookingsRevision" = "BookingsRevision" + 1 WHERE "CompanyId" = {companyId}""");
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        if (PendingRevisionBumps.Count > 0)
+        {
+            var pending = PendingRevisionBumps.OrderBy(i => i).ToList();
+            PendingRevisionBumps.Clear();
+            foreach (var id in pending) await ExecuteBumpAsync(id);
+        }
+        return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -291,6 +331,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(s => s.ProviderOgrn).HasMaxLength(15);
             e.Property(s => s.ProviderClaimsAddress).HasMaxLength(500);
             e.Property(s => s.UpdatedByUserId).HasMaxLength(450);
+            // Cycle 39 (§39.2.2): companies of cycle 37 get 18:00, the default text, no push text, no orders without a stay.
+            e.Property(s => s.ArrivalReminderTime).HasDefaultValue(new TimeOnly(18, 0));
+            e.Property(s => s.ArrivalReminderTemplate).HasMaxLength(700);
+            e.Property(s => s.ArrivalReminderPushText).HasDefaultValue(false);
+            e.Property(s => s.AcceptServiceOrdersWithoutStay).HasDefaultValue(false);
             // A DB default on every NOT NULL column: StayBookingEventLog bumps the revision with a raw UPDATE/upsert.
             e.Property(s => s.BookingsRevision).HasDefaultValue(0L);
             e.ToTable(t =>
@@ -407,6 +452,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(b => b.StatusReason).HasMaxLength(300);
             e.Property(b => b.PaymentConfirmedByUserId).HasMaxLength(450);
             e.Property(b => b.PaymentConfirmedByNameSnapshot).HasMaxLength(200);
+            e.Property(b => b.ArrivalReminderPageText).HasMaxLength(1200);
             e.HasIndex(b => b.PublicToken).IsUnique();
             e.HasIndex(b => new { b.CompanyId, b.IdempotencyKey }).IsUnique();
             e.HasIndex(b => new { b.CompanyId, b.Status });
@@ -427,6 +473,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne<StayBooking>().WithMany(b => b.Charges).HasForeignKey(c => c.StayBookingId).OnDelete(DeleteBehavior.Cascade);
             e.Property(c => c.Label).HasMaxLength(200);
             e.HasIndex(c => new { c.StayBookingId, c.Position });
+            // Cycle 39 (§39.2.2): the lines of a session; a service is paid on site, never from the prepayment.
+            e.HasOne<StayServiceSession>().WithMany().HasForeignKey(c => c.ServiceSessionId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(c => c.ServiceSessionId).HasFilter("\"ServiceSessionId\" IS NOT NULL");
+            e.ToTable(t => t.HasCheckConstraint("CK_StayBookingCharges_ServiceNotPrepaid", "NOT (\"Kind\" IN (5, 6) AND \"PrepayEligible\")"));
         });
 
         builder.Entity<StayBookingEvent>(e =>
@@ -438,6 +488,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(v => v.DetailsJson).HasColumnType("jsonb");
             e.HasIndex(v => new { v.StayBookingId, v.OccurredAtUtc });
             e.HasIndex(v => v.OccurredAtUtc);
+            e.HasOne<StayServiceSession>().WithMany().HasForeignKey(v => v.ServiceSessionId).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<StayPaymentProof>(e =>
@@ -446,6 +497,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(p => p.StorageKey).HasMaxLength(200);
             e.Property(p => p.ContentType).HasMaxLength(50);
             e.HasIndex(p => p.StayBookingId);
+            // Cycle 39 (§39.2.2): the proof of a stand-alone order; exactly one owner.
+            e.HasOne<StayServiceOrder>().WithMany(o => o.PaymentProofs).HasForeignKey(p => p.StayServiceOrderId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(p => p.StayServiceOrderId).HasFilter("\"StayServiceOrderId\" IS NOT NULL");
+            e.ToTable(t => t.HasCheckConstraint("CK_StayPaymentProofs_OneOwner", "num_nonnulls(\"StayBookingId\", \"StayServiceOrderId\") = 1"));
         });
 
         builder.Entity<StayGuestPushSubscription>(e =>
@@ -455,6 +510,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(s => s.KeyId).HasMaxLength(16);
             e.HasIndex(s => new { s.StayBookingId, s.Endpoint }).IsUnique();
             e.HasIndex(s => s.CreatedAtUtc);
+            // Cycle 39 (§39.2.2): the browser of a guest on the page of a stand-alone order.
+            e.HasOne<StayServiceOrder>().WithMany().HasForeignKey(s => s.StayServiceOrderId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(s => new { s.StayServiceOrderId, s.Endpoint }).IsUnique().HasDatabaseName("UX_StayGuestPushSubscriptions_Order_Endpoint")
+                .HasFilter("\"StayServiceOrderId\" IS NOT NULL");
+            e.ToTable(t => t.HasCheckConstraint("CK_StayGuestPushSubscriptions_OneOwner", "num_nonnulls(\"StayBookingId\", \"StayServiceOrderId\") = 1"));
         });
 
         builder.Entity<StayGuestPushNotification>(e =>
@@ -471,6 +531,179 @@ public class AppDbContext : IdentityDbContext<AppUser>
                 .HasFilter("\"Status\" = 0")
                 .IncludeProperties(n => new { n.CompanyId, n.SubscriptionId });
             e.HasIndex(n => n.StayBookingId);
+            // Cycle 39: at most one owner (SetNull of the booking may leave none — that is why not «exactly one»).
+            e.HasOne<StayServiceOrder>().WithMany().HasForeignKey(n => n.StayServiceOrderId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(n => n.StayServiceOrderId).HasFilter("\"StayServiceOrderId\" IS NOT NULL");
+            e.ToTable(t => t.HasCheckConstraint("CK_StayGuestPushNotifications_OneOwner", "num_nonnulls(\"StayBookingId\", \"StayServiceOrderId\") <= 1"));
+        });
+
+        // ── Cycle 39: time-slot services (ARCHITECTURE_CYCLE39.md §39.2). EX_StayServiceSessions_NoOverlap is created by the migration with raw SQL (EF cannot model it). ──
+        builder.Entity<StayService>(e =>
+        {
+            e.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.Slug).HasMaxLength(50);
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.Property(x => x.Description).HasMaxLength(2000);
+            e.HasIndex(x => new { x.CompanyId, x.Slug }).IsUnique();
+            e.HasIndex(x => new { x.CompanyId, x.Position });
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_StayServices_Hours", "1 <= \"MinHours\" AND \"MinHours\" <= \"MaxHours\" AND \"MaxHours\" <= 12");
+                t.HasCheckConstraint("CK_StayServices_Step", "\"StepMinutes\" IN (30, 60)");
+                t.HasCheckConstraint("CK_StayServices_Buffer", "\"BufferMinutes\" BETWEEN 0 AND 240 AND \"BufferMinutes\" % 15 = 0");
+                t.HasCheckConstraint("CK_StayServices_Lead", "\"MinLeadMinutes\" BETWEEN 0 AND 2880 AND \"MinLeadMinutes\" % 30 = 0");
+                t.HasCheckConstraint("CK_StayServices_Prepay", "\"StandalonePrepayPercent\" IS NULL OR \"StandalonePrepayPercent\" BETWEEN 1 AND 100");
+                t.HasCheckConstraint("CK_StayServices_Boundary", "\"CancellationBoundaryHours\" BETWEEN 1 AND 24");
+                t.HasCheckConstraint("CK_StayServices_PublishedNotArchived", "NOT (\"IsPublished\" AND \"ArchivedAtUtc\" IS NOT NULL)");
+            });
+        });
+
+        builder.Entity<StayServicePhoto>(e =>
+        {
+            e.HasOne<StayService>().WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.Url).HasMaxLength(300);
+            e.Property(x => x.ThumbnailUrl).HasMaxLength(300);
+            e.HasIndex(x => new { x.ServiceId, x.Position });
+        });
+
+        builder.Entity<StayServiceWeeklyWindow>(e =>
+        {
+            e.HasOne<StayService>().WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.ServiceId, x.DayOfWeek });
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_StayServiceWeeklyWindows_Day", "\"DayOfWeek\" BETWEEN 1 AND 7");
+                t.HasCheckConstraint("CK_StayServiceWeeklyWindows_Minutes", "\"StartMinute\" >= 0 AND \"EndMinute\" > \"StartMinute\" AND \"EndMinute\" <= 2880");
+            });
+        });
+
+        builder.Entity<StayServiceDateOverride>(e =>
+        {
+            e.HasOne<StayService>().WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.WindowsJson).HasColumnType("jsonb");
+            e.Property(x => x.Comment).HasMaxLength(300);
+            e.Property(x => x.UpdatedByUserId).HasMaxLength(450);
+            e.HasIndex(x => new { x.ServiceId, x.BusinessDate }).IsUnique();
+        });
+
+        builder.Entity<StayServiceScheduleEvent>(e =>
+        {
+            e.HasOne<StayService>().WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.ActorUserId).HasMaxLength(450);
+            e.Property(x => x.ActorNameSnapshot).HasMaxLength(200);
+            e.Property(x => x.BeforeJson).HasColumnType("jsonb");
+            e.Property(x => x.AfterJson).HasColumnType("jsonb");
+            e.HasIndex(x => new { x.ServiceId, x.OccurredAtUtc });
+            e.HasIndex(x => x.OccurredAtUtc);
+        });
+
+        builder.Entity<StayServicePriceRule>(e =>
+        {
+            e.HasOne<StayService>().WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ServiceId);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_StayServicePriceRules_Days", "\"DaysMask\" BETWEEN 1 AND 127");
+                t.HasCheckConstraint("CK_StayServicePriceRules_Hours", "\"FromHour\" BETWEEN 6 AND 29 AND \"ToHour\" > \"FromHour\" AND \"ToHour\" <= 30");
+                t.HasCheckConstraint("CK_StayServicePriceRules_Price", "\"PriceRub\" BETWEEN 1 AND 100000");
+            });
+        });
+
+        builder.Entity<StayServiceItem>(e =>
+        {
+            e.HasOne<StayService>().WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.HasIndex(x => new { x.ServiceId, x.Position });
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_StayServiceItems_Price", "\"PriceRub\" BETWEEN 0 AND 100000");
+                t.HasCheckConstraint("CK_StayServiceItems_Max", "\"MaxPerSession\" BETWEEN 1 AND 50");
+            });
+        });
+
+        builder.Entity<StayServiceOrder>(e =>
+        {
+            e.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<StayService>().WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppUser>().WithMany().HasForeignKey(x => x.GuestUserId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.Property(x => x.PublicToken).HasMaxLength(64);
+            e.Property(x => x.StatusReason).HasMaxLength(300);
+            e.Property(x => x.GuestName).HasMaxLength(100);
+            e.Property(x => x.GuestPhone).HasMaxLength(20);
+            e.Property(x => x.Comment).HasMaxLength(500);
+            e.Property(x => x.TimeZoneIdSnapshot).HasMaxLength(64);
+            e.Property(x => x.PaymentDetailsSnapshot).HasMaxLength(1000);
+            e.Property(x => x.PaymentPurposeSnapshot).HasMaxLength(200);
+            e.Property(x => x.ProviderSnapshotJson).HasColumnType("jsonb");
+            e.Property(x => x.ConsentPrivacyVersion).HasMaxLength(64);
+            e.Property(x => x.ConsentTermsVersion).HasMaxLength(64);
+            e.Property(x => x.BookingNoticeVersion).HasMaxLength(64);
+            e.Property(x => x.BookingTermsVersion).HasMaxLength(64);
+            e.Property(x => x.CancellationTermsVersion).HasMaxLength(64);
+            e.Property(x => x.MessengerConsentVersion).HasMaxLength(64);
+            e.Property(x => x.PaymentConfirmedByUserId).HasMaxLength(450);
+            e.Property(x => x.PaymentConfirmedByNameSnapshot).HasMaxLength(200);
+            e.HasIndex(x => x.PublicToken).IsUnique();
+            e.HasIndex(x => new { x.CompanyId, x.IdempotencyKey }).IsUnique();
+            e.HasIndex(x => new { x.CompanyId, x.Status });
+            e.HasIndex(x => x.HoldExpiresAtUtc).HasDatabaseName("IX_StayServiceOrders_HoldExpiry").HasFilter("\"Status\" = 0");
+            e.HasIndex(x => new { x.GuestPhone, x.CreatedAtUtc }).HasDatabaseName("IX_StayServiceOrders_Phone").HasFilter("\"GuestPhone\" IS NOT NULL");
+            e.HasIndex(x => new { x.GuestUserId, x.CreatedAtUtc });
+            e.ToTable(t => t.HasCheckConstraint("CK_StayServiceOrders_Money", "\"TotalRub\" = \"ServiceAmountRub\" + \"ItemsAmountRub\" AND \"DueOnSiteRub\" = \"TotalRub\" - \"PrepayRub\""));
+        });
+
+        builder.Entity<StayServiceSession>(e =>
+        {
+            e.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<StayService>().WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<StayBooking>().WithMany().HasForeignKey(x => x.StayBookingId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<StayServiceOrder>().WithMany().HasForeignKey(x => x.StayServiceOrderId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.Property(x => x.ServiceNameSnapshot).HasMaxLength(100);
+            e.Property(x => x.HourPricesJson).HasColumnType("jsonb");
+            e.Property(x => x.ItemsJson).HasColumnType("jsonb");
+            e.Property(x => x.AddedByUserId).HasMaxLength(450);
+            e.Property(x => x.AddedByNameSnapshot).HasMaxLength(200);
+            e.Property(x => x.AddNoticeVersion).HasMaxLength(64);
+            e.Property(x => x.StatusReason).HasMaxLength(300);
+            e.HasIndex(x => x.StayServiceOrderId).IsUnique().HasDatabaseName("UX_StayServiceSessions_Order").HasFilter("\"StayServiceOrderId\" IS NOT NULL");
+            e.HasIndex(x => new { x.StayBookingId, x.IdempotencyKey }).IsUnique().HasDatabaseName("UX_StayServiceSessions_Booking_Key").HasFilter("\"IdempotencyKey\" IS NOT NULL");
+            e.HasIndex(x => new { x.ServiceId, x.StartUtc }).HasDatabaseName("IX_StayServiceSessions_Active").HasFilter("\"ReleasedAtUtc\" IS NULL");
+            e.HasIndex(x => x.StayBookingId);
+            e.HasIndex(x => new { x.CompanyId, x.BusinessDate });
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_StayServiceSessions_OneParent", "num_nonnulls(\"StayBookingId\", \"StayServiceOrderId\") = 1");
+                t.HasCheckConstraint("CK_StayServiceSessions_Times", "\"EndUtc\" > \"StartUtc\" AND \"OccupiedUntilUtc\" >= \"EndUtc\"");
+                t.HasCheckConstraint("CK_StayServiceSessions_Hours", "\"Hours\" BETWEEN 1 AND 12");
+                t.HasCheckConstraint("CK_StayServiceSessions_Released", "(\"ReleasedAtUtc\" IS NULL) = (\"State\" = 0)");
+                t.HasCheckConstraint("CK_StayServiceSessions_RequestBasis", "(\"AddedByKind\" IN (2, 3)) = (\"RequestBasis\" IS NOT NULL)");
+            });
+        });
+
+        builder.Entity<StayServiceOrderEvent>(e =>
+        {
+            e.HasOne<StayServiceOrder>().WithMany().HasForeignKey(x => x.StayServiceOrderId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.ActorUserId).HasMaxLength(450);
+            e.Property(x => x.ActorNameSnapshot).HasMaxLength(200);
+            e.Property(x => x.Reason).HasMaxLength(300);
+            e.Property(x => x.DetailsJson).HasColumnType("jsonb");
+            e.HasIndex(x => new { x.StayServiceOrderId, x.OccurredAtUtc });
+            e.HasIndex(x => x.OccurredAtUtc);
+        });
+
+        builder.Entity<StaysReminderTemplateChange>(e =>
+        {
+            e.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.ChangedByUserId).HasMaxLength(450);
+            e.Property(x => x.ChangedByNameSnapshot).HasMaxLength(200);
+            e.Property(x => x.PreviousTemplate).HasMaxLength(700);
+            e.Property(x => x.NewTemplate).HasMaxLength(700);
+            e.Property(x => x.OwnerNoticeVersion).HasMaxLength(80);
+            e.Property(x => x.PushNoticeVersion).HasMaxLength(80);
+            e.Property(x => x.CodeMarkersHit).HasMaxLength(200);
+            e.HasIndex(x => new { x.CompanyId, x.ChangedAtUtc });
         });
 
         builder.Entity<StaysSubscription>(e =>
@@ -1027,8 +1260,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // Cycle 37 (§37.2.1): a message about a house booking; at most one subject per row.
             e.HasOne(n => n.StayBooking).WithMany().HasForeignKey(n => n.StayBookingId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(n => n.StayBookingId);
+            // Cycle 39 (§39.2.2): a message about a stand-alone order of a service.
+            e.HasOne(n => n.StayServiceOrder).WithMany().HasForeignKey(n => n.StayServiceOrderId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(n => n.StayServiceOrderId).HasFilter("\"StayServiceOrderId\" IS NOT NULL");
             e.ToTable(t => t.HasCheckConstraint("CK_OutboundNotifications_OneSubject",
-                "(CASE WHEN \"BookingId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"OrderId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"StayBookingId\" IS NULL THEN 0 ELSE 1 END) <= 1"));
+                "num_nonnulls(\"BookingId\", \"OrderId\", \"StayBookingId\", \"StayServiceOrderId\") <= 1"));
             e.Property(n => n.RecipientPhone).HasMaxLength(20);
             e.Property(n => n.Body).HasMaxLength(2000);
             e.Property(n => n.ReasonDetail).HasMaxLength(300);
@@ -1106,8 +1342,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(n => n.OrderId);
             e.HasOne(n => n.StayBooking).WithMany().HasForeignKey(n => n.StayBookingId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(n => n.StayBookingId);
+            e.HasOne(n => n.StayServiceOrder).WithMany().HasForeignKey(n => n.StayServiceOrderId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(n => n.StayServiceOrderId).HasFilter("\"StayServiceOrderId\" IS NOT NULL");
             e.ToTable(t => t.HasCheckConstraint("CK_StaffPushNotifications_OneSubject",
-                "(CASE WHEN \"BookingId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"OrderId\" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN \"StayBookingId\" IS NULL THEN 0 ELSE 1 END) <= 1"));
+                "num_nonnulls(\"BookingId\", \"OrderId\", \"StayBookingId\", \"StayServiceOrderId\") <= 1"));
             e.HasOne(n => n.Subscription).WithMany().HasForeignKey(n => n.SubscriptionId).OnDelete(DeleteBehavior.SetNull);
             e.Property(n => n.Payload).HasMaxLength(1000);
             e.Property(n => n.ReasonDetail).HasMaxLength(300);
@@ -1149,6 +1387,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(m => m.OrderId);
             e.HasOne(m => m.StayBooking).WithMany().HasForeignKey(m => m.StayBookingId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(m => m.StayBookingId);
+            e.HasOne(m => m.StayServiceOrder).WithMany().HasForeignKey(m => m.StayServiceOrderId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(m => m.StayServiceOrderId).HasFilter("\"StayServiceOrderId\" IS NOT NULL");
+            e.ToTable(t => t.HasCheckConstraint("CK_StaffMaxMessages_OneSubject", "num_nonnulls(\"OrderId\", \"StayBookingId\", \"StayServiceOrderId\") <= 1"));
             e.Property(m => m.ChatKey).HasMaxLength(64);
             e.Property(m => m.Text).HasMaxLength(2000);
             e.Property(m => m.ReasonDetail).HasMaxLength(300);

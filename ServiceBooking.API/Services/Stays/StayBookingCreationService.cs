@@ -35,7 +35,8 @@ public sealed record StayCreateResult(ActionResult? Error, StayBooking? Booking 
 public class StayBookingCreationService(
     AppDbContext db, CaptchaService captcha, HouseOccupancyWriter occupancy, StayPhoneThrottle throttle,
     StayBookingEventLog eventLog, StayHoldExpirer expirer, LegalDocumentProvider legalProvider, IStaysClock clock,
-    StaysCompanyService companyService, ShopChannelReader channelReader, StayActorResolver actors, CheckInInfoReleaser checkInInfo)
+    StaysCompanyService companyService, ShopChannelReader channelReader, StayActorResolver actors, CheckInInfoReleaser checkInInfo,
+    ServiceSlotService slots, ServiceSessionWriter sessionWriter, ServiceHoldReleaser holdReleaser, IOptions<StaysOptions> options)
 {
     private const string IdempotencyIndex = "IX_StayBookings_CompanyId_IdempotencyKey";
 
@@ -75,12 +76,106 @@ public class StayBookingCreationService(
 
     // ── quote ──
 
-    public async Task<StayQuoteDto> QuoteAsync(StayHouseContext ctx, StayStayInput input, bool checkGate, CancellationToken ct)
+    public async Task<StayQuoteDto> QuoteAsync(
+        StayHouseContext ctx, StayStayInput input, bool checkGate, CancellationToken ct, IReadOnlyList<StayServiceSelectionInput>? services = null)
     {
         var now = clock.UtcNow;
         var eval = await EvaluateAsync(ctx, input, manual: !checkGate, now, ct);
         var gate = checkGate ? await companyService.EvaluateGateAsync(ctx.Company, ctx.Settings, ct) : GateResult.Ok;
-        return BuildQuoteDto(ctx, eval, gate);
+        var quote = BuildQuoteDto(ctx, eval, gate);
+        if (services is not { Count: > 0 }) return quote with { Services = [] };
+        return MergeServices(quote, await EvaluateServicesAsync(ctx, input, services, forWrite: false, gate, ct));
+    }
+
+    // ── services chosen together with the stay (US-39-10, P1) ──
+
+    /// <summary>The verdict on one chosen service: either the evaluation, or the reason there is none (the service is not in the company / not available for stays).</summary>
+    public sealed record StayServiceChoice(
+        int Index, StayServiceSelectionInput Input, ServiceScope? Scope, ServiceEvaluation? Evaluation, ServiceRefusalCode? Refusal, string? RefusalMessage, GateResult Gate)
+    {
+        public bool Ok => Evaluation is { Ok: true };
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE39.md §39.7.4 — every chosen service is checked against the stay (the times of the check-in and the check-out of the company), a later choice counts the earlier
+    /// ones of the SAME request as occupied. <paramref name="forWrite"/>: the services are locked in ascending order and expired holds are released first (the caller holds the house lock).
+    /// </summary>
+    public async Task<List<StayServiceChoice>> EvaluateServicesAsync(
+        StayHouseContext ctx, StayStayInput input, IReadOnlyList<StayServiceSelectionInput> services, bool forWrite, GateResult gate, CancellationToken ct)
+    {
+        var (house, company, settings) = ctx;
+        var stay = ServiceSlotService.StayRangeOf(company.TimeZoneId, input.CheckIn, settings.CheckInTime, input.CheckOut, settings.CheckOutTime);
+        var scopes = new List<ServiceScope?>();
+        foreach (var chosen in services) scopes.Add(chosen.ServiceId is { } id ? await slots.FindOfCompanyAsync(company.Id, id, ct) : null);
+        if (forWrite) await sessionWriter.LockServicesAsync(scopes.Where(sc => sc is not null).Select(sc => sc!.Service.Id));
+
+        var choices = new List<StayServiceChoice>();
+        var extra = new Dictionary<Guid, List<OccupiedSpec>>();
+        for (var i = 0; i < services.Count; i++)
+        {
+            var chosen = services[i];
+            var scope = scopes[i];
+            if (scope is null || !scope.Service.IsPublished || scope.Service.ArchivedAtUtc is not null || !scope.Service.AvailableForHouseBookings || chosen.BusinessDate is null)
+            {
+                choices.Add(new StayServiceChoice(i, chosen, scope, null, ServiceRefusalCode.ServiceNotAvailableForStays, ServiceTexts.NotAvailableForStays, gate));
+                continue;
+            }
+            var selection = new ServiceSelection(chosen.BusinessDate.Value, chosen.StartMinute ?? 0, chosen.Hours ?? 0, chosen.Items ?? []);
+            if (forWrite) await holdReleaser.ReleaseExpiredAsync(scope, selection.BusinessDate, ct);
+            var occupiedByThisRequest = extra.GetValueOrDefault(scope.Service.Id);
+            var evaluation = await slots.EvaluateAsync(scope, selection, staff: false, stay, includeExpiredHolds: forWrite, occupiedByThisRequest, prepayPercent: null, ct);
+            choices.Add(new StayServiceChoice(i, chosen, scope, evaluation, evaluation.Ok ? null : evaluation.Problems[0].Code, evaluation.Ok ? null : evaluation.Problems[0].Message, gate));
+            if (evaluation.Ok)
+            {
+                if (!extra.TryGetValue(scope.Service.Id, out var list)) extra[scope.Service.Id] = list = [];
+                list.Add(new OccupiedSpec(evaluation.StartUtc, evaluation.EndUtc.AddMinutes(scope.Service.BufferMinutes)));
+            }
+        }
+        return choices;
+    }
+
+    private static StayQuoteDto MergeServices(StayQuoteDto quote, List<StayServiceChoice> choices)
+    {
+        var lines = quote.Lines.ToList();
+        var dtos = new List<StayQuoteServiceDto>();
+        var total = quote.TotalRub;
+        var due = quote.DueAtCheckInRub;
+        foreach (var c in choices)
+        {
+            ServiceQuoteDto serviceQuote;
+            if (c.Scope is null || c.Evaluation is null)
+                serviceQuote = new ServiceQuoteDto(false, [new ServiceProblemDto(c.Refusal ?? ServiceRefusalCode.ServiceNotAvailableForStays, c.RefusalMessage ?? ServiceTexts.NotAvailableForStays)], null,
+                    [], [], 0, 0, 0, null, 0, 0, null, null, ServiceTexts.PayOnSite, true, null);
+            else
+                serviceQuote = ServiceQuoteBuilder.Build(c.Scope, c.Evaluation, null, c.Gate, c.Scope.Settings.HoldMinutes);
+            dtos.Add(new StayQuoteServiceDto(c.Index, c.Scope?.Service.Id ?? c.Input.ServiceId ?? Guid.Empty, c.Ok, serviceQuote));
+            if (!c.Ok || c.Evaluation?.Money is not { } m) continue;
+            lines.AddRange(ServiceLines(c.Scope!.Service.Name, c.Evaluation));
+            total += m.TotalRub;
+            due += m.TotalRub;
+        }
+        return quote with { Ok = quote.Ok && choices.All(c => c.Ok), Lines = lines, TotalRub = total, DueAtCheckInRub = due, Services = dtos };
+    }
+
+    private static IEnumerable<StayChargeLineDto> ServiceLines(string serviceName, ServiceEvaluation e)
+    {
+        var label = $"{serviceName} · {ServiceTimeFormat.Guest(e.BusinessDate, e.StartMinute, e.Hours)} · {e.Hours} ч";
+        yield return new StayChargeLineDto(StayChargeKind.ServiceSlot, label, 1, e.Money!.ServiceAmountRub, 0, e.Money.ServiceAmountRub, false);
+        foreach (var i in e.Items.Where(i => i.Quantity > 0))
+            yield return new StayChargeLineDto(StayChargeKind.ServiceItem, $"{i.Name} × {i.Quantity}", i.Quantity, i.UnitPriceRub, 0, i.UnitPriceRub * i.Quantity, false);
+    }
+
+    private static string? ServicesFormError(IReadOnlyList<StayServiceSelectionInput>? services, int maxInForm)
+    {
+        if (services is not { Count: > 0 }) return null;
+        if (services.Count > maxInForm) return ServiceTexts.TooManySessions(maxInForm);
+        foreach (var chosen in services)
+        {
+            if (chosen.ServiceId is null || chosen.ServiceId == Guid.Empty) return "Выберите услугу";
+            var error = ServiceOrderCreationService.ValidateSelection(chosen.BusinessDate, chosen.StartMinute, chosen.Hours, chosen.Items, out _);
+            if (error is not null) return error;
+        }
+        return null;
     }
 
     public StayQuoteDto BuildQuoteDto(StayHouseContext ctx, StayEvaluation eval, GateResult gate)
@@ -116,6 +211,8 @@ public class StayBookingCreationService(
         if (comment is { Length: > 500 }) return Bad("Комментарий — не длиннее 500 символов");
         if (dto.IdempotencyKey is null || dto.IdempotencyKey == Guid.Empty) return Bad("Нужен ключ запроса — обновите страницу");
         var idempotencyKey = dto.IdempotencyKey.Value;
+        var servicesError = ServicesFormError(dto.Services, options.Value.Services.MaxSessionsInBookingForm);
+        if (servicesError is not null) return Bad(servicesError);
 
         // 2. The house: none / not published / archived / not a «Дома» company → 404; a blocked company → 409.
         var ctx = await FindPublicHouseAsync(houseId, ct);
@@ -175,14 +272,33 @@ public class StayBookingCreationService(
 
         // 7. The house lock: lazy release → occupancy → rules → money.
         await occupancy.LockHouseAsync(house.Id);
+        // The locks of the chosen services come RIGHT AFTER the house lock and before anything that writes (§39.5.2: house → services ascending → rows → revision).
+        if (dto.Services is { Count: > 0 }) await sessionWriter.LockServicesAsync(dto.Services.Where(c => c.ServiceId is not null).Select(c => c.ServiceId!.Value));
         await expirer.ExpireOverlappingAsync(house.Id, input.CheckIn, input.CheckOut, now, ct);
         var eval = await EvaluateAsync(ctx, input, manual: false, now, ct);
         if (eval.Problems.Count > 0) return Refuse(eval.Problems[0].Code, eval.Problems[0].Message);
         var money = eval.Money!;
-        if (money.TotalRub != dto.ExpectedTotalRub)
+        // US-39-10: «all or nothing» — a refused service refuses the whole booking and nothing is written (the locks: house, then the services in ascending order).
+        List<StayServiceChoice> serviceChoices = [];
+        if (dto.Services is { Count: > 0 })
         {
-            var quote = BuildQuoteDto(ctx, eval, gate);
-            return new StayCreateResult(new ConflictObjectResult(new StayRefusalDto(StayRefusalCode.PriceChanged, StaysTexts.PriceChanged(money.TotalRub), null, quote)));
+            serviceChoices = await EvaluateServicesAsync(ctx, input, dto.Services, forWrite: true, gate, ct);
+            var refused = serviceChoices.FirstOrDefault(c => !c.Ok);
+            if (refused is not null)
+            {
+                var slotTaken = refused.Refusal == ServiceRefusalCode.SlotTaken;
+                var message = slotTaken
+                    ? ServiceTexts.SlotUnavailableInForm(refused.Scope!.Service.Name, ServiceTimeFormat.Guest(refused.Evaluation!.BusinessDate, refused.Evaluation.StartMinute, refused.Evaluation.Hours))
+                    : refused.RefusalMessage ?? ServiceTexts.NotAvailableForStays;
+                return new StayCreateResult(new ConflictObjectResult(new StayRefusalDto(
+                    slotTaken ? StayRefusalCode.ServiceSlotUnavailable : StayRefusalCode.ServiceSelectionInvalid, message, null, null, refused.Index)));
+            }
+        }
+        var servicesTotal = serviceChoices.Sum(c => c.Evaluation!.Money!.TotalRub);
+        if (money.TotalRub + servicesTotal != dto.ExpectedTotalRub)
+        {
+            var quote = MergeServicesOrSame(BuildQuoteDto(ctx, eval, gate), serviceChoices);
+            return new StayCreateResult(new ConflictObjectResult(new StayRefusalDto(StayRefusalCode.PriceChanged, StaysTexts.PriceChanged(money.TotalRub + servicesTotal), null, quote)));
         }
 
         // 8. The booking with every snapshot.
@@ -208,7 +324,10 @@ public class StayBookingCreationService(
         db.StayBookingCharges.AddRange(ChargesOf(booking.Id, money));
         occupancy.AddBooking(booking, now);
         var actor = await actors.ResolveGuestAsync(user, guestName, ct);
-        await eventLog.AppendAsync(booking, StayBookingEventKind.Created, actor, null, booking.Status);
+        // The booking of cycle 37 byte for byte when no service is chosen: the details of the event appear only with services.
+        await eventLog.AppendAsync(booking, StayBookingEventKind.Created, actor, null, booking.Status,
+            detailsJson: serviceChoices.Count > 0 ? System.Text.Json.JsonSerializer.Serialize(new { services = serviceChoices.Count }) : null);
+        if (serviceChoices.Count > 0) await AddSessionsAsync(booking, serviceChoices, actor, now);
         if (!held) await checkInInfo.ReleaseIfDueAsync(booking, StayActor.System, ct);
 
         // 9. Save. A race with another booking / block is the database's EXCLUDE constraint; a race of the same key is the unique index.
@@ -216,6 +335,12 @@ public class StayBookingCreationService(
         {
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
+        }
+        catch (Exception ex) when (ServiceSessionWriter.IsOverlapViolation(ex))
+        {
+            await tx.RollbackAsync(ct);
+            db.ChangeTracker.Clear();
+            return Refuse(StayRefusalCode.ServiceSlotUnavailable, "Это время уже занято. Выберите другое время или бронируйте без услуги");
         }
         catch (Exception ex) when (HouseOccupancyWriter.IsOverlapViolation(ex))
         {
@@ -313,6 +438,28 @@ public class StayBookingCreationService(
     }
 
     // ── helpers ──
+
+    private static StayQuoteDto MergeServicesOrSame(StayQuoteDto quote, List<StayServiceChoice> choices) => choices.Count == 0 ? quote : MergeServices(quote, choices);
+
+    /// <summary>The sessions chosen together with the stay: rows, charge lines and the totals of the booking (a service is paid on site: the prepayment does not change).</summary>
+    private async Task AddSessionsAsync(StayBooking booking, List<StayServiceChoice> choices, StayActor actor, DateTime now)
+    {
+        var noticeVersion = legalProvider.Current?.GetText(LegalTextKey.StayServiceAddNotice)?.Version;
+        var position = db.ChangeTracker.Entries<StayBookingCharge>().Count(e => e.Entity.StayBookingId == booking.Id);
+        foreach (var c in choices)
+        {
+            var evaluation = c.Evaluation!;
+            var session = sessionWriter.Add(new NewServiceSession(
+                booking.CompanyId, c.Scope!.Service, booking.Id, null, evaluation, actor.Kind, actor.UserId, actor.NameSnapshot, null, noticeVersion, null), now);
+            var lines = ServiceSessionAddService.ChargesOf(booking.Id, session, evaluation, position);
+            db.StayBookingCharges.AddRange(lines);
+            position += lines.Count;
+            booking.TotalRub += evaluation.Money!.TotalRub;
+            booking.DueAtCheckInRub += evaluation.Money.TotalRub;
+            await eventLog.AppendAsync(booking, StayBookingEventKind.ServiceSessionAdded, actor, booking.Status, booking.Status,
+                detailsJson: System.Text.Json.JsonSerializer.Serialize(new { sessionId = session.Id, addedByStaff = false, viaBooking = true }), serviceSessionId: session.Id);
+        }
+    }
 
     private StayBooking NewBooking(StayHouseContext ctx, StayStayInput input, StayEvaluation eval, StayQuoteResult money, DateTime now)
     {

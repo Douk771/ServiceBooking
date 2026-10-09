@@ -33,3 +33,24 @@ public record PublicOptionDto(
     string? UnitName,
     string? UnitPriceText,
     int SortOrder);
+
+/// <summary>ARCHITECTURE_CYCLE38.md §38.9, contracts/cycle38/openapi.yaml OrdersPublicPricingDto — GET /api/pricing/orders.</summary>
+public record OrdersPublicPricingDto(
+    string Version,
+    string Currency,
+    IReadOnlyList<OrdersPublicPlanDto> Plans,
+    string Notice,
+    string? LegalNotice);
+
+public record OrdersPublicPlanDto(
+    Guid Id,
+    string Name,
+    string? Description,
+    decimal PricePerMonth,
+    IReadOnlyList<string> Highlights,
+    int? IncludedShops,
+    int? IncludedMembers,
+    int IncludedProductsPerShop,
+    int? IncludedOrdersPerMonth,
+    int SortOrder,
+    bool IsFree);

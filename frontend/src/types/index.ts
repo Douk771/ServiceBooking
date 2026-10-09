@@ -4,6 +4,7 @@ import type { components as Cycle14Components } from './api-cycle14.generated'
 import type { components as Cycle31Components } from './api-cycle31.generated'
 import type { components as Cycle33Components } from './api-cycle33.generated'
 import type { components as Cycle37Components } from './api-cycle37.generated'
+import type { components as Cycle25Components } from './api-cycle25.generated'
 import type { components as Cycle40Components } from './api-cycle40.generated'
 
 // ── Cycle 19 (ARCHITECTURE_CYCLE19.md §388.5, API_CONTRACT_CYCLE19.md §413): automatic address checking removed,
@@ -925,3 +926,8 @@ export interface LegalReadiness {
 
 // ── Cycle 31 (API_CONTRACT_CYCLE31.md §31.21): salon catalog block. Read off the generated schema.
 export type SalonCatalogListingDto = Cycle31Components['schemas']['SalonCatalogListingDto']
+
+// ── Cycle 25 (API_CONTRACT_CYCLE25.md §523) — «Заказы в MAX» of the staff. The card moved from goods to `components/staffMax/` in cycle 39
+// (ARCHITECTURE_CYCLE39.md §39.15.1) so that dom shows it too; the types are read off the generated schema, goods re-exports them.
+export type StaffMaxStatusDto = Cycle25Components['schemas']['StaffMaxStatusDto']
+export type StaffMaxLinkSessionDto = Cycle25Components['schemas']['StaffMaxLinkSessionDto']

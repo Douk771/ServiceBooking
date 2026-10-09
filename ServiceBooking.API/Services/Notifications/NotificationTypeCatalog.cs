@@ -32,7 +32,21 @@ public static class NotificationTypeCatalog
         NotificationType.StayGuestArrivalReminder, NotificationType.StayGuestCheckInInfo
     ];
 
-    public static bool IsStayType(NotificationType type) => StayTypes.Contains(type);
+    /// <summary>
+    /// ARCHITECTURE_CYCLE39.md §39.9.1 — the time-slot services of «Дома» (27..38). Like <see cref="StayTypes"/> they have no bit in the salon mask: the mask
+    /// is built and read from <see cref="BookingTypes"/> only (a shift by ≥ 32 would wrap around in C# and flip a salon bit).
+    /// </summary>
+    public static readonly IReadOnlyList<NotificationType> ServiceTypes =
+    [
+        NotificationType.StaffStaySessionAdded, NotificationType.StaffServiceOrderCreated, NotificationType.StaffServiceOrderPaymentProofUploaded,
+        NotificationType.StaffServiceSessionCancelledByGuest, NotificationType.ServiceGuestOrderCreated, NotificationType.ServiceGuestHoldExpiring,
+        NotificationType.ServiceGuestHoldExpired, NotificationType.ServiceGuestConfirmed, NotificationType.ServiceGuestPaymentRejected,
+        NotificationType.ServiceGuestCancelledByOwner, NotificationType.StayGuestSessionAdded, NotificationType.StayGuestSessionCancelledByOwner
+    ];
+
+    public static bool IsServiceType(NotificationType type) => ServiceTypes.Contains(type);
+
+    public static bool IsStayType(NotificationType type) => StayTypes.Contains(type) || ServiceTypes.Contains(type);
 
     public static bool IsBookingType(NotificationType type) => BookingTypes.Contains(type);
 

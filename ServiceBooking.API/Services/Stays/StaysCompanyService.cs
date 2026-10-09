@@ -22,11 +22,15 @@ public class StaysCompanyService(AppDbContext db, StaysPlanResolver plans, Publi
     public static StayProviderFacts ProviderFacts(StaysSettings s) =>
         new(s.ProviderStatus, s.ProviderName, s.ProviderInn, s.ProviderOgrn, s.ProviderClaimsAddress);
 
-    public async Task<GateResult> EvaluateGateAsync(Company company, StaysSettings settings, CancellationToken ct = default)
+    public Task<GateResult> EvaluateGateAsync(Company company, StaysSettings settings, CancellationToken ct = default) =>
+        EvaluateGateAsync(company, settings, settings.PrepayPercent, ct);
+
+    /// <summary>The gate for a given prepayment: a stand-alone service has its own percent (<c>StandalonePrepayPercent ?? 0</c>), a session added to a booking has none (ARCHITECTURE_CYCLE39.md §39.7).</summary>
+    public async Task<GateResult> EvaluateGateAsync(Company company, StaysSettings settings, int prepayPercent, CancellationToken ct = default)
     {
         var plan = await plans.GetForCompanyAsync(company, clock.UtcNow, ct);
         var published = await plans.CountPublishedHousesForCompanyAsync(company, ct);
-        return StaysBookingGate.Evaluate(company.IsActive, plan.HasActivePlan, published, plan.MaxHouses, settings.PrepayPercent, settings.PaymentDetails, ProviderFacts(settings));
+        return StaysBookingGate.Evaluate(company.IsActive, plan.HasActivePlan, published, plan.MaxHouses, prepayPercent, settings.PaymentDetails, ProviderFacts(settings));
     }
 
     public static ProviderFullDto? ProviderFull(StaysSettings s) =>
@@ -58,7 +62,8 @@ public class StaysCompanyService(AppDbContext db, StaysPlanResolver plans, Publi
     public StaysSettingsDto ToDto(StaysSettings s, Company company) => new(
         StayFormat.Time(s.CheckInTime), StayFormat.Time(s.CheckOutTime), s.MinNights, s.MaxNights, s.HorizonDays, s.AllowGapFill,
         s.AllowSameDayCheckIn, s.HoldMinutes, s.PrepayPercent, s.CancellationPolicy, s.DogFeeRub, s.CotFeeRub, StayFormat.Time(s.CheckInInfoSendTime),
-        s.CheckInInfoText, s.CheckInInfoSendFullText, s.ArrivalReminderEnabled, s.HousekeeperSeesGuestComment, company.ShowInPublicListing);
+        s.CheckInInfoText, s.CheckInInfoSendFullText, s.ArrivalReminderEnabled, s.HousekeeperSeesGuestComment, company.ShowInPublicListing,
+        s.AcceptServiceOrdersWithoutStay);
 
     public async Task<StaysCompanyManageDto> BuildManageAsync(Company company, StaysMyRole role, CancellationToken ct = default)
     {
@@ -73,13 +78,14 @@ public class StaysCompanyService(AppDbContext db, StaysPlanResolver plans, Publi
         var (level, text) = StaysPlanResolver.Warning(plan, published, now);
         var anyPublished = await db.Houses.AsNoTracking().AnyAsync(h => h.CompanyId == company.Id && h.IsPublished && h.ArchivedAtUtc == null, ct);
         int? awaiting = role == StaysMyRole.Housekeeper ? null
-            : await db.StayBookings.AsNoTracking().CountAsync(b => b.CompanyId == company.Id && b.Status == StayBookingStatus.AwaitingPaymentCheck, ct);
+            : await db.StayBookings.AsNoTracking().CountAsync(b => b.CompanyId == company.Id && b.Status == StayBookingStatus.AwaitingPaymentCheck, ct)
+              + await db.StayServiceOrders.AsNoTracking().CountAsync(o => o.CompanyId == company.Id && o.Status == StayBookingStatus.AwaitingPaymentCheck, ct);
 
         var checklist = new List<ChecklistItemDto>
         {
             new("ProfileFilled", !string.IsNullOrWhiteSpace(company.Name) && !string.IsNullOrWhiteSpace(company.Phone), "Заполните название и телефон для гостей"),
             new("PaymentDetails", settings.PrepayPercent == 0 || !string.IsNullOrWhiteSpace(settings.PaymentDetails), "Заполните реквизиты для оплаты — без них гости не могут бронировать с предоплатой"),
-            new("ProviderInfo", settings.PrepayPercent == 0 || StaysBookingGate.ProviderComplete(ProviderFacts(settings)), "Заполните сведения об исполнителе"),
+            new("ProviderInfo", StaysBookingGate.ProviderComplete(ProviderFacts(settings)), "Заполните сведения об исполнителе"),
             new("HousePublished", anyPublished, "Опубликуйте хотя бы один дом"),
             new("Plan", plan.HasActivePlan, "Выберите тариф или активируйте пробный период"),
         };

@@ -17,7 +17,9 @@ public enum StayRefusalCode
     CotNotAvailable,
     NoPriceForNights,
     NotAcceptingBookings,
-    PriceChanged
+    PriceChanged,
+    ServiceSlotUnavailable,
+    ServiceSelectionInvalid
 }
 
 public readonly record struct StayRulesSettings(int MinNights, int MaxNights, int HorizonDays, bool AllowGapFill, bool AllowSameDayCheckIn);

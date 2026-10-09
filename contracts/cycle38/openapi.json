@@ -1,0 +1,304 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ServiceBooking API — цикл 38 (публичные тарифы «Заказов»)",
+    "version": "38.1.0",
+    "license": {
+      "name": "Proprietary"
+    },
+    "description": "Конвенции проекта без изменений: camelCase; деньги — number (рубли); 404 — пустое тело.\n\nГЛАВНЫЕ ПРАВИЛА ЦИКЛА, ЗАКРЕПЛЁННЫЕ ФОРМОЙ:\n  1. Анонимный маршрут, без переключателя публикации (решение заказчика Q38-3).\n  2. 404 с пустым телом, если в линейке «Заказы» нет ни одного активного публичного тарифа.\n  3. Только тарифы линейки «Заказы»; служебный «Демо» не попадает никогда; опций нет.\n  4. includedProductsPerShop никогда не null (технический потолок товаров в магазине).\n"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "dev (dotnet run)"
+    },
+    {
+      "url": "http://localhost:4038",
+      "description": "prism mock по этой схеме"
+    }
+  ],
+  "tags": [
+    {
+      "name": "pricing",
+      "description": "Публичные витрины тарифов. Сетка «Записи» — GET /api/pricing (контракт цикла 7, не меняется); сетка «Заказов» — здесь."
+    }
+  ],
+  "components": {
+    "headers": {
+      "ETag": {
+        "description": "Слабый ETag вида W/\"<16 hex>\"; то же значение без W/ и кавычек — в поле version.",
+        "schema": {
+          "type": "string",
+          "pattern": "^W/\"[0-9a-f]{16}\"$"
+        }
+      },
+      "CacheControl": {
+        "description": "Всегда «public, max-age=60».",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "public, max-age=60"
+          ]
+        }
+      }
+    },
+    "responses": {
+      "NotFound": {
+        "description": "Сетки нет — в линейке «Заказы» нет активного публичного тарифа. Пустое тело. Ожидаемое состояние, не ошибка."
+      },
+      "NotModified": {
+        "description": "If-None-Match совпал с текущим ETag. Пустое тело."
+      }
+    },
+    "schemas": {
+      "OrdersPublicPricingDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "currency",
+          "plans",
+          "notice",
+          "legalNotice"
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{16}$",
+            "description": "Совпадает со значением внутри ETag.",
+            "example": "3f9a0c1d2e4b5a69"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "RUB"
+            ]
+          },
+          "plans": {
+            "type": "array",
+            "minItems": 1,
+            "description": "По sortOrder, затем по pricePerMonth. Только линейка «Заказы», только IsActive && IsPublic, без служебного «Демо».",
+            "items": {
+              "$ref": "#/components/schemas/OrdersPublicPlanDto"
+            }
+          },
+          "notice": {
+            "type": "string",
+            "minLength": 1,
+            "example": "Подключение тарифа выполняет администратор платформы — оставьте заявку в кабинете, и мы свяжемся с вами."
+          },
+          "legalNotice": {
+            "type": "string",
+            "nullable": true,
+            "description": "Текст юриста под сеткой (PlatformSettings pricing.orders.legal-notice). null, пока не задан."
+          }
+        }
+      },
+      "OrdersPublicPlanDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "description",
+          "pricePerMonth",
+          "highlights",
+          "includedShops",
+          "includedMembers",
+          "includedProductsPerShop",
+          "includedOrdersPerMonth",
+          "sortOrder",
+          "isFree"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "example": "Лавка"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "pricePerMonth": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Рублей в месяц. 0 — бесплатный тариф.",
+            "example": 690
+          },
+          "highlights": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          "includedShops": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "description": "MaxCompanies тарифа — магазинов на аккаунт. null — без ограничения."
+          },
+          "includedMembers": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "description": "MaxEmployees тарифа — участников вместе с владельцем. null — без ограничения."
+          },
+          "includedProductsPerShop": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "min(MaxProductsPerShop ?? потолок, потолок), потолок = Orders:MaxProductsPerShop (1000). Никогда не null.",
+            "example": 300
+          },
+          "includedOrdersPerMonth": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "description": "MaxOrdersPerMonth тарифа — заказов в календарный месяц на аккаунт. null — без ограничения.",
+            "example": 1500
+          },
+          "sortOrder": {
+            "type": "integer"
+          },
+          "isFree": {
+            "type": "boolean",
+            "description": "Системный бесплатный тариф линейки (IsSystemFree)."
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/pricing/orders": {
+      "get": {
+        "tags": [
+          "pricing"
+        ],
+        "operationId": "pricingGetOrders",
+        "summary": "Публичная сетка тарифов «Заказов» (анонимно, из кеша 60 с)",
+        "description": "Без авторизации, без rate limit, без переключателя публикации. Тело кешируется на сервере 60 с; правка тарифа в\nадминке сбрасывает кеш сразу. GET /api/pricing этим маршрутом не затрагивается.\n",
+        "security": [],
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "ETag из прошлого ответа; при совпадении — 304.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Сетка опубликована (есть хотя бы один активный публичный тариф линейки «Заказы»).",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrdersPublicPricingDto"
+                },
+                "example": {
+                  "version": "3f9a0c1d2e4b5a69",
+                  "currency": "RUB",
+                  "notice": "Подключение тарифа выполняет администратор платформы — оставьте заявку в кабинете, и мы свяжемся с вами.",
+                  "legalNotice": null,
+                  "plans": [
+                    {
+                      "id": "0c24f0e5-6a3d-4a5e-9b1f-2d4c7e8a9b01",
+                      "name": "Бесплатный",
+                      "description": "Чтобы начать: один магазин, приём заказов по ссылке, QR-коду и из каталога.",
+                      "pricePerMonth": 0,
+                      "highlights": [
+                        "Экран заказов со звуком нового заказа",
+                        "Время получения: как можно скорее или к часу",
+                        "Показ в каталоге goods"
+                      ],
+                      "includedShops": 1,
+                      "includedMembers": 2,
+                      "includedProductsPerShop": 50,
+                      "includedOrdersPerMonth": 150,
+                      "sortOrder": 10,
+                      "isFree": true
+                    },
+                    {
+                      "id": "5a1e0c38-0000-4000-8000-000000000020",
+                      "name": "Лавка",
+                      "description": "Для пекарни, кофейни или небольшого магазина с постоянным потоком заказов.",
+                      "pricePerMonth": 690,
+                      "highlights": [
+                        "Всё, что в бесплатном",
+                        "Предзаказ на дату и меню на день",
+                        "Весовые товары с точной суммой при выдаче"
+                      ],
+                      "includedShops": 1,
+                      "includedMembers": 5,
+                      "includedProductsPerShop": 300,
+                      "includedOrdersPerMonth": 1500,
+                      "sortOrder": 20,
+                      "isFree": false
+                    },
+                    {
+                      "id": "5a1e0c38-0000-4000-8000-000000000030",
+                      "name": "Магазин",
+                      "description": "Для магазина с несколькими точками: до 3 магазинов на одной подписке.",
+                      "pricePerMonth": 1490,
+                      "highlights": [
+                        "Всё, что в «Лавке»",
+                        "До 3 магазинов на одной подписке",
+                        "Отчёты: история заказов, сводка, лист сборки"
+                      ],
+                      "includedShops": 3,
+                      "includedMembers": 15,
+                      "includedProductsPerShop": 1000,
+                      "includedOrdersPerMonth": 5000,
+                      "sortOrder": 30,
+                      "isFree": false
+                    },
+                    {
+                      "id": "5a1e0c38-0000-4000-8000-000000000040",
+                      "name": "Сеть магазинов",
+                      "description": "Для сети от 4 магазинов. Стоимость от 2 990 ₽ в месяц, зависит от числа магазинов.",
+                      "pricePerMonth": 2990,
+                      "highlights": [
+                        "Всё, что в «Магазине»",
+                        "Магазины и участники без ограничения",
+                        "Итоговая цена — после заявки, по числу магазинов"
+                      ],
+                      "includedShops": null,
+                      "includedMembers": null,
+                      "includedProductsPerShop": 1000,
+                      "includedOrdersPerMonth": null,
+                      "sortOrder": 40,
+                      "isFree": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    }
+  }
+}

@@ -120,6 +120,16 @@ public abstract class Cycle35DemoScenarioBase
                 foreach (var card in g.GetProperty("orders").EnumerateArray()) yield return card;
     }
 
+    /// <summary>The card of a just-placed order. The daily number is unique only within (shop, PICKUP day) — the demo board also holds seeded orders of other pickup
+    /// days with the same number, so the number alone is ambiguous (and which ones collide depends on the time of day). The pair number + pickup date is the key.</summary>
+    protected static JsonElement CardOf(JsonElement board, JsonElement placedOrder)
+    {
+        var number = placedOrder.GetProperty("number").GetInt32();
+        var pickupDate = placedOrder.GetProperty("pickup").GetProperty("date").GetString();
+        return BoardCards(board).Single(c => c.GetProperty("number").GetInt32() == number
+            && c.GetProperty("pickup").GetProperty("date").GetString() == pickupDate);
+    }
+
     protected static int Count(JsonElement board, string column) =>
         board.TryGetProperty(column, out var list) && list.ValueKind == JsonValueKind.Array ? list.GetArrayLength() : 0;
 
@@ -154,6 +164,22 @@ public sealed class Cycle35DemoScenarioFixture : IAsyncLifetime
 public class Cycle35DemoScenarioTests(Cycle35DemoScenarioFixture fixture) : Cycle35DemoScenarioBase, IClassFixture<Cycle35DemoScenarioFixture>
 {
     protected override DemoScenarioState State => fixture.State;
+
+    [Fact, TestCase("CY38-B06-01")]
+    public async Task Cycle38_OrdersPricing_AfterDemoReset_Is200_WithoutDemoTariff()
+    {
+        // The reset truncates SubscriptionPlanConfigs and re-applies the tariff catalog: the public Orders price list must exist right after it.
+        using (var scope = _factory.Services.CreateScope())
+            scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Billing.PricingCatalogCache>().Invalidate();
+        var response = await Client().GetAsync("/api/pricing/orders");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var body = await J(response);
+        OpenApiContract.Load("cycle38").AssertResponse("get", "/api/pricing/orders", 200, body);
+        var names = body.GetProperty("plans").EnumerateArray().Select(p => p.GetProperty("name").GetString()).ToList();
+        names.Should().Contain(["Лавка", "Магазин", "Сеть магазинов"]);
+        names.Should().NotContain(n => n!.Contains("Демо") || n.Contains("Витрина"));
+        body.GetProperty("plans").EnumerateArray().Select(p => p.GetProperty("id").GetGuid()).Should().NotContain(ShowcaseCatalog.OrdersShowcasePlanId);
+    }
 
     [Fact, TestCase("CY35-10")]
     public async Task FiveShops_AreInCatalog_WithLogoPhotosPhoneHours_AndAllCitiesShowsAllFive()
@@ -605,7 +631,7 @@ public class Cycle35DemoMutationATests : Cycle35DemoMutationBase
 
         var board = await BoardAsync(coffee, staff.Token);
         board.GetProperty("revision").GetInt64().Should().BeGreaterThan(revisionBefore, "the board notices a new order by its revision");
-        var card = BoardCards(board).Single(c => c.GetProperty("number").GetInt32() == created.GetProperty("order").GetProperty("number").GetInt32());
+        var card = CardOf(board, created.GetProperty("order"));
         var orderId = card.GetProperty("id").GetGuid();
         var version = card.GetProperty("version").GetInt32();
         var asStaff = Client(staff.Token);
@@ -747,7 +773,7 @@ public class Cycle35DemoMutationBTests : Cycle35DemoMutationBase
         await OpenAllDayAsync(coffee, owner.Token);
         var (productId, price) = await AnyPieceProductAsync(coffee);
 
-        async Task<(string Token, int Number)> Place(string name, bool messenger)
+        async Task<(string Token, JsonElement Order)> Place(string name, bool messenger)
         {
             var r = await Client().PostAsJsonAsync($"/api/storefront/{coffee.Slug}/orders", new
             {
@@ -755,12 +781,12 @@ public class Cycle35DemoMutationBTests : Cycle35DemoMutationBase
                 customerName = name, customerPhone = "7999" + Random.Shared.Next(1_000_000, 9_999_999), notifyByMessenger = messenger,
             });
             var j = await J(r, HttpStatusCode.Created);
-            return (j.GetProperty("order").GetProperty("token").GetString()!, j.GetProperty("order").GetProperty("number").GetInt32());
+            return (j.GetProperty("order").GetProperty("token").GetString()!, j.GetProperty("order").Clone());
         }
 
         var asStaff = Client(staff.Token);
-        var (t1, n1) = await Place("Гость Один", messenger: true);
-        var card = BoardCards(await BoardAsync(coffee, staff.Token)).Single(c => c.GetProperty("number").GetInt32() == n1);
+        var (t1, o1) = await Place("Гость Один", messenger: true);
+        var card = CardOf(await BoardAsync(coffee, staff.Token), o1);
         var id = card.GetProperty("id").GetGuid();
         var v = card.GetProperty("version").GetInt32();
         if (card.GetProperty("status").GetString() == "New")
@@ -777,8 +803,8 @@ public class Cycle35DemoMutationBTests : Cycle35DemoMutationBase
         // the customer cancels his own order; another is rejected
         var (t2, _) = await Place("Гость Два", messenger: true);
         (await Client().PostAsync($"/api/orders/public/{t2}/cancel", null)).StatusCode.Should().Be(HttpStatusCode.OK);
-        var (_, n3) = await Place("Гость Три", messenger: false);
-        var c3 = BoardCards(await BoardAsync(coffee, staff.Token)).Single(c => c.GetProperty("number").GetInt32() == n3);
+        var (_, o3) = await Place("Гость Три", messenger: false);
+        var c3 = CardOf(await BoardAsync(coffee, staff.Token), o3);
         (await asStaff.PostAsJsonAsync($"/api/shops/{coffee.Id}/orders/{c3.GetProperty("id").GetGuid()}/reject", new { expectedVersion = c3.GetProperty("version").GetInt32(), reason = "нет" }))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 

@@ -13,13 +13,13 @@ public class StayBookingEventLog(AppDbContext db, StayNotificationPlanner planne
 {
     public async Task<StayBookingEvent> AppendAsync(
         StayBooking booking, StayBookingEventKind kind, StayActor actor, StayBookingStatus? from, StayBookingStatus? to,
-        string? reason = null, string? detailsJson = null)
+        string? reason = null, string? detailsJson = null, Guid? serviceSessionId = null)
     {
         var ev = new StayBookingEvent
         {
             Id = Guid.NewGuid(), StayBookingId = booking.Id, CompanyId = booking.CompanyId, Kind = kind, OccurredAtUtc = clock.UtcNow,
             ActorKind = actor.Kind, ActorUserId = actor.UserId, ActorNameSnapshot = actor.NameSnapshot, FromStatus = from, ToStatus = to,
-            Reason = reason, DetailsJson = detailsJson,
+            Reason = reason, DetailsJson = detailsJson, ServiceSessionId = serviceSessionId,
         };
         db.StayBookingEvents.Add(ev);
         await BumpRevisionAsync(booking.CompanyId);
@@ -28,7 +28,5 @@ public class StayBookingEventLog(AppDbContext db, StayNotificationPlanner planne
     }
 
     /// <summary>Also used by HouseBlockWriter: the board polls this counter (`changed: false` costs one PK lookup).</summary>
-    public Task BumpRevisionAsync(Guid companyId) =>
-        db.Database.ExecuteSqlInterpolatedAsync(
-            $"""UPDATE "StaysSettings" SET "BookingsRevision" = "BookingsRevision" + 1 WHERE "CompanyId" = {companyId}""");
+    public Task BumpRevisionAsync(Guid companyId) => db.BumpRevisionAsync(companyId);
 }

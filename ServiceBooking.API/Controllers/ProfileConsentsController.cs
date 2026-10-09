@@ -431,9 +431,13 @@ public class ProfileConsentsController(
             var activeStatuses = new[] { StayBookingStatus.Held, StayBookingStatus.AwaitingPaymentCheck, StayBookingStatus.Confirmed };
             var stays = await db.StayBookings.Where(b => b.GuestUserId == userId && b.NotifyByMessenger && activeStatuses.Contains(b.Status)).ToListAsync();
             stayMessengerOff = stays.Count;
-            if (apply && stays.Count > 0)
+            // ARCHITECTURE_CYCLE39.md §39.36: the same for the account's active stand-alone orders of services.
+            var serviceOrders = await db.StayServiceOrders.Where(o => o.GuestUserId == userId && o.NotifyByMessenger && activeStatuses.Contains(o.Status)).ToListAsync();
+            stayMessengerOff += serviceOrders.Count;
+            if (apply && (stays.Count > 0 || serviceOrders.Count > 0))
             {
                 foreach (var b in stays) b.NotifyByMessenger = false;
+                foreach (var o in serviceOrders) o.NotifyByMessenger = false;
                 await db.SaveChangesAsync();
             }
         }

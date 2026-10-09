@@ -30,6 +30,14 @@ public class StaysSettings
     /// <summary>ЮР-4: false — only a link goes to a messenger.</summary>
     public bool CheckInInfoSendFullText { get; set; }
     public bool ArrivalReminderEnabled { get; set; } = true;
+    /// <summary>ARCHITECTURE_CYCLE39.md §39.11: the time of the reminder the day before the check-in (08:00…22:00, step 30).</summary>
+    public TimeOnly ArrivalReminderTime { get; set; } = new(18, 0);
+    /// <summary>NULL = the default text (the old code of cycle 37, byte for byte). Never longer than 700 characters.</summary>
+    public string? ArrivalReminderTemplate { get; set; }
+    /// <summary>ЮР39-3: the template reaches a web-push only when this is on; off by default.</summary>
+    public bool ArrivalReminderPushText { get; set; }
+    /// <summary>ЮР39-2/US-39-11: accept orders of services without a stay. Off by default.</summary>
+    public bool AcceptServiceOrdersWithoutStay { get; set; }
     /// <summary>ЮР-5: false — the guest's comment is hidden from the housekeeper.</summary>
     public bool HousekeeperSeesGuestComment { get; set; }
     public bool GuestWebPushEnabled { get; set; } = true;

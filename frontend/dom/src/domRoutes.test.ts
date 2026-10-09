@@ -1,23 +1,26 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import routesJson from '../../../contracts/cycle37/dom-routes.json'
+import routesJson from '../../../contracts/cycle39/dom-routes.json'
 import legalJson from '../../../contracts/cycle11/legal-routes.json'
 import domSource from './DomApp.tsx?raw'
 
-// ARCHITECTURE_CYCLE37.md §37.4, §37.14.5 — dom-routes.json is the SINGLE source of the dom route map and the reserved words.
+// ARCHITECTURE_CYCLE39.md §39.14.1 — dom-routes.json is the SINGLE source of the dom route map and the reserved words.
 interface DomRoutes {
   spaRoutes: string[]
   reservedSlugs: string[]
   companyPagePattern: string
   housePagePattern: string
+  servicePagePattern: string
+  serviceOrderPagePattern: string
+  reservedHouseSlugs: string[]
 }
 const routes = routesJson as DomRoutes
 
 const firstSegment = (path: string) => path.split('/').filter(Boolean)[0]
 // Routes of DomApp that are not in `spaRoutes` on purpose: the two address patterns and the not-found catch-all.
-const EXTRA = new Set([routes.companyPagePattern, routes.housePagePattern, '*'])
+const EXTRA = new Set([routes.companyPagePattern, routes.housePagePattern, routes.servicePagePattern, '*'])
 
-describe('DomApp routes vs contracts/cycle37/dom-routes.json', () => {
+describe('DomApp routes vs contracts/cycle39/dom-routes.json', () => {
   it('has a <Route> for every spaRoute', () => {
     for (const path of routes.spaRoutes) expect(domSource, `expected a <Route path="${path}"> in DomApp.tsx`).toContain(`path="${path}"`)
   })
@@ -34,6 +37,14 @@ describe('DomApp routes vs contracts/cycle37/dom-routes.json', () => {
       const seg = firstSegment(path)
       if (seg) expect(reserved.has(seg), `first segment "${seg}" of ${path} must be in reservedSlugs`).toBe(true)
     }
+  })
+
+  it('routes the service page /:slug/uslugi/:serviceSlug and the order page /s/:token, and reserves the word «uslugi» under a company', () => {
+    expect(domSource).toContain(`path="${routes.servicePagePattern}"`)
+    expect(routes.spaRoutes).toContain(routes.serviceOrderPagePattern)
+    expect(routes.reservedHouseSlugs).toContain('uslugi')
+    // the three-segment service route must rank by specificity, not by order, but is declared before the two-segment house route
+    expect(domSource.indexOf(`path="${routes.servicePagePattern}"`)).toBeLessThan(domSource.indexOf(`path="${routes.housePagePattern}"`))
   })
 
   it('has the company and house address routes after the static ones', () => {

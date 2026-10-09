@@ -167,7 +167,7 @@ public sealed class StaffMaxDispatchTask(
         Order? order = null;
         if (row.Type != NotificationType.OwnerOrderLimitWarning)
         {
-            var shopEnabled = row.StayBookingId != null
+            var shopEnabled = row.StayBookingId != null || row.StayServiceOrderId != null
                 ? await scopedDb.StaysSettings.AsNoTracking().Where(s => s.CompanyId == row.CompanyId).Select(s => (bool?)s.StaffMaxEnabled).FirstOrDefaultAsync(runnerCt) ?? true
                 : await scopedDb.ShopSettings.AsNoTracking().Where(s => s.CompanyId == row.CompanyId)
                     .Select(s => (bool?)s.StaffMaxEnabled).FirstOrDefaultAsync(runnerCt) ?? true;
@@ -186,7 +186,7 @@ public sealed class StaffMaxDispatchTask(
         {
             var recipient = row.Type == NotificationType.OwnerOrderLimitWarning
                 ? ownerUserId == candidate.UserId
-                : row.StayBookingId != null
+                : row.StayBookingId != null || row.StayServiceOrderId != null
                     ? await Stays.StayStaffRecipients.IsRecipientAsync(scopedDb, row.CompanyId, candidate.UserId, runnerCt)
                     : candidate.UserId != order?.CustomerUserId && await CompanyMembership.IsStaffAsync(scopedDb, row.CompanyId, candidate.UserId);
             if (!recipient) continue;

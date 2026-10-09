@@ -108,6 +108,7 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysCatalogService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysHousePageService>();
     builder.Services.AddSingleton<ServiceBooking.API.Services.Stays.StayProofIpLimiter>();
+    builder.Services.AddSingleton<ServiceBooking.API.Services.Stays.StaySessionIpLimiter>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.HouseBlockWriter>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayStaffPushQueue>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayStaffMaxQueue>();
@@ -119,6 +120,23 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaysGuestPushDispatchTask>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysBoardService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysScheduleService>();
+    // Cycle 39 (ARCHITECTURE_CYCLE39.md §39.16): time-slot services of «Дома».
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceSlotService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceSessionWriter>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayBookingReleaser>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayServiceOrderEventLog>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceOrderTransitionService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceOrderHoldExpirer>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceOrderThrottle>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceHoldReleaser>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceOrderCreationService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceOrderProofService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceDtoMapper>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceSessionAddService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceCatalogService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ArrivalReminderService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceDayService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceScheduleWriter>();
 
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopManageMapper>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.CatalogMapper>();
@@ -372,6 +390,17 @@ internal static class ApplicationServicesExtensions
         ServiceBooking.API.Services.Retention.Rules.StayGuestPushSubscriptionRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.StayGuestPushNotificationRule>();
+    // ARCHITECTURE_CYCLE39.md §39.13.3 — retention of stand-alone orders of services.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayServiceOrderPaymentProofRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayServiceOrderUnpaidPersonalizationRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayServiceOrderPersonalizationRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayServiceOrderEventRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.StayServiceScheduleEventRule>();
     // ARCHITECTURE_CYCLE23.md §398.5 — order-personalization (does nothing while Retention:OrderPersonalDataDays is 0).
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.OrderPersonalizationRule>();

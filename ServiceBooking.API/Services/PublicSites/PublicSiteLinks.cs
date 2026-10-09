@@ -47,6 +47,15 @@ public sealed class PublicSiteLinks(IOptions<PublicSitesOptions> options)
     /// <summary>{Stays}/cabinet/{companyId}/bookings/{bookingId} — the staff's booking card (absolute: a push may open it from another site's worker).</summary>
     public string StaysCabinetBookingUrl(Guid companyId, Guid bookingId) => $"{SiteBaseUrl(CompanyKind.Stays)}/cabinet/{companyId}/bookings/{bookingId}";
 
+    /// <summary>{Stays}/s/{token} — the page of a stand-alone service order.</summary>
+    public string StayServiceOrderPageUrl(string token) => $"{SiteBaseUrl(CompanyKind.Stays)}/s/{token}";
+
+    /// <summary>{Stays}/cabinet/{companyId}/service-sessions/{sessionId} — the staff's session card (absolute).</summary>
+    public string StaysCabinetServiceSessionUrl(Guid companyId, Guid sessionId) => $"{SiteBaseUrl(CompanyKind.Stays)}/cabinet/{companyId}/service-sessions/{sessionId}";
+
+    /// <summary>{Stays}/{companySlug}/uslugi/{serviceSlug}.</summary>
+    public string ServicePageUrl(string companySlug, string serviceSlug) => $"{SiteBaseUrl(CompanyKind.Stays)}/{companySlug}/uslugi/{serviceSlug}";
+
     /// <summary>{Stays}/cabinet/subscription.</summary>
     public string StaysSubscriptionUrl() => $"{SiteBaseUrl(CompanyKind.Stays)}/cabinet/subscription";
 

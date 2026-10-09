@@ -1,12 +1,80 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-> **Циклы 32, 35, 36 и 37 влиты в `develop`** (✔ `git merge-base --is-ancestor`): цикл 32 — мердж `09344b1` (2026-10-01, ещё до
-> снимка `c28ccbb`), цикл 35 — fast-forward до `c28ccbb`, цикл 36 — мердж `c43ec62`, цикл 37 — мердж `a7e3168`. Цикл 32 (общий
+> **Циклы 32, 35, 36, 37 и 38 влиты в `develop`** (✔ `git merge-base --is-ancestor` для 32–37): цикл 32 — мердж `09344b1` (2026-10-01, ещё до
+> снимка `c28ccbb`), цикл 35 — fast-forward до `c28ccbb`, цикл 36 — мердж `c43ec62`, цикл 37 — мердж `a7e3168`, цикл 38 — мердж
+> `origin/develop` (`ece8038`) в `cycle/038-unified-landing-template` с последующим вливанием в `develop`. Цикл 32 (общий
 > `CompanyProfileCard`, `SalonProfileSection`, `BookingRulesSection`, новая раскладка `SettingsTab`, удалён `CompanyAddressField`;
 > сервер не менялся) в разделах ниже описан только этой плашкой: описания настроек салона — до цикла 32.
 
-**Актуально по состоянию на коммит: `a7e3168` (`develop` = `origin/develop` = HEAD ветки `docs/cycle37-closing`, мердж «Merge cycle/037-stays-houses into develop (цикл 37: «Дома», dom.ezbook.ru)»; дата коммита — 2026-10-08), дата обновления: 2026-10-08.**
-**Режим: обновление поверх полного сканирования на `1837373`** (прежние точечные обновления — на `b9c2a79`, `aeed251`, `364cc2b`, `050816f`, `2834e00`, `a1e2259`, `c28ccbb`, `f60da0d`).
+> **Циклы 38, 41 и 39 влиты в `develop`** (✔ `git merge-base --is-ancestor` и `git log --first-parent ece8038..5bcd0153`): цикл 38 —
+> мердж `a9ee820`, затем фиксы `0a9c0b7` и `050c3d0` (`171e623`); цикл 41 — мердж `68e9ba9` (вторым родителем — `eaf47d2`, закрывающие
+> документы поверх `707899e`); цикл 39 «Дома, цикл 2» — мердж `5bcd015` (внутри ветки — мердж `c2cf651` «origin/develop → cycle/039»).
+> Открытых веток циклов с невлитым кодом на 09.10 по локальным ссылкам нет. Номер 40 (iCal) зарезервирован, цикла ещё нет.
+
+**Актуально по состоянию на коммит: `5bcd015` (`develop`, мердж цикла 39; правка сделана в ветке `docs/cycle39-closing` от него), дата: 2026-10-09.**
+**Следующий diff отсчитывайте от `5bcd015` (если эта правка будет влита отдельным мерджем — от него, вписав хеш сюда).**
+
+**Обновление на `5bcd015`** (✔ `git diff --stat 68e9ba9..5bcd015`: 368 файлов в диапазоне `ece8038..5bcd015`, из них по циклу 39 —
+~17 000 строк генератов (`Cycle39StaysServices.Designer.cs`, снапшот, `contracts/cycle39/openapi.json`, `api-cycle39.generated.ts`);
+**codebase-analyst ничего не запускал** — ни тесты, ни сборку, ни `redocly`, ни `tools/bench/cycle39`). Это **цикл 39 «Дома, цикл 2 —
+услуги-слоты (баня, чан, фурако), напоминание накануне заезда, хвосты цикла 37»**; iCal из названия ветки (`039-stays-slots-ical`) в
+цикл **не вошёл** — перенесён в цикл 40 (заделы — §5.15). Цикл 41 до мерджа уже описан этим файлом на `707899e`; между `707899e` и
+мерджем `68e9ba9` — только документы (`eaf47d2`: CHANGELOG, README, этот файл, TEST_CATALOG, DEPLOY §30). Обновлены: шапка, §0 (ветки),
+§1 (стек — без новых зависимостей), §2, §3 (блок «Дома, цикл 39»), §4 (59 маршрутов и маршруты dom), §5.1, §5.5 (блок «Цикл 39»),
+§5.6, §5.12 (пометка), §5.14 (статус — влит), §5.15 (новый — услуги-слоты и напоминание), §6.2, §7.1–§7.4, §9.5 (флак демо цикла 35),
+§9.7 (C37-3/4/5 — статус), §9.9 (C41-8/9), §9.10 (новый — долг цикла 39), §10. Источник намерения — `SPEC_CYCLE39_STAYS_SLOTS_ICAL.md`,
+`ARCHITECTURE_CYCLE39.md` (§39.0a — решения заказчика по юробзору ЮР39-1…10 приоритетнее SPEC), `API_CONTRACT_CYCLE39.md`,
+`LEGAL_REVIEW_CYCLE39.md`, раздел «Цикл 39» `TEST_CATALOG.md`, `DEPLOY.md` §28а. Где документы расходятся с кодом, записано по коду.
+Архива `docs/history/` в проекте нет: документы циклов лежат в корне под именами `*_CYCLE<N>*.md` (§10.5) — переносить нечего.
+- **Нумерация с циклом 41 (C41-9).** Цикл 39 своих разделов в этом файле не заводил (правок `CURRENT_STATE.md` в ветке нет), в `DEPLOY.md`
+  взял **§28а** (а не §31, как предлагал §41.11). Здесь цикл 39 получил **§5.15** и **§9.10**.
+- **Состояние машины** (🖥 со слов заказчика при постановке задачи, 09.10, в репозитории не проверяемо): цикл 39 задеплоен на стенд
+  (он же бой), миграция `Cycle39StaysServices` применена. Обновлённый vhost dom (маскирование `/s/<token>` и
+  `/api/stays/service-orders/public/<token>` в логах) на сервер **ещё не перенесён** — это ручной шаг заказчика (`DEPLOY.md` §28а); до
+  него токены заказов услуг попадают в access log открытым текстом.
+
+*Ниже — шапка прежнего обновления (цикл 41, до мерджа), сохранена для истории.*
+> **Цикл 41 «Главная „Домов“ на едином шаблоне» в `develop` НЕ влит.** Правка этого файла сделана в ветке
+> `cycle/041-stays-landing` (закрывающая задача T-41-06) до мерджа. Ветка цикла 39 (`origin/cycle/039-stays-slots-ical`, «Дома», цикл 2)
+> тоже открыта и в `develop` не влита (на 09.10 в ней только документы: SPEC, юробзор). (✔ на `5bcd015`: оба влиты, см. выше.)
+
+**Прежняя отметка: `707899e` (ветка `cycle/041-stays-landing`; база — `develop` = `origin/develop` = `050c3d0`), дата: 2026-10-09.**
+
+**Обновление на `707899e`** (✔ `git log develop..HEAD`: 5 коммитов `e24199a`…`707899e`; `git diff --stat develop...HEAD`: 24 файла,
++2 117/−270, из них ~1 000 строк — документы цикла; **codebase-analyst ничего не запускал** — ни тесты, ни сборку, ни `tsc`). Это
+**цикл 41 «Главная „Домов“ (dom.ezbook.ru) на едином шаблоне»**: шаблон цикла 38 получил второй вариант шапки — с боковой панелью
+(`layout: 'panel'`, слот `heroAside`, фон «горы»), главная dom (`CatalogPage`) переведена на `ServiceLanding`, добавлены «Для гостей»,
+полный блок «Для владельцев» и FAQ; `HouseCard` больше не обрезает название и адрес. **Только фронтенд**: бэкенд, API, БД, миграции,
+контракты OpenAPI, nginx, `ci.yml`, пакеты npm/NuGet и переменные боя не менялись (✔ `git diff --stat`). Обновлены: шапка, §2
+(строки `frontend/src/components/landing/` и `frontend/dom/` дополнены), §5.5 (блок «Цикл 41»), §5.12 (пометка о главной), §5.13
+(пометки: второй вариант шапки, фото «Записи» снято), §5.14 (новый), §6.2, §7.2 (область `stays`), §9.9 (новый — долг цикла 41), §10.1,
+§10.2, §10.4, §10.5. Заодно (та же задача T-41-06) правлены `CHANGELOG.md`, `README.md`, `TEST_CATALOG.md`, `DEPLOY.md` (§30). Источник намерения — `BRIEF_CYCLE41_STAYS_LANDING.md` (ответы заказчика Q41-1…Q41-4 приоритетнее SPEC),
+`SPEC_CYCLE41_STAYS_LANDING.md`, `ARCHITECTURE_CYCLE41.md` (§41.0–§41.13); `API_CONTRACT_CYCLE41.md` и `contracts/cycle41/` не
+создавались (API не меняется). Где документы расходятся с кодом, записано по коду (§9.9).
+- **Что лежит между прежней отметкой и базой ветки** (✔ `git log --first-parent ff73c2e..050c3d0`): мердж цикла 38 в `develop`
+  `a9ee820` (через `6266edf` — слияние с циклом 37, его и описывает прежняя шапка ниже), фикс CI `0a9c0b7` (пропущенный `\` в шаге
+  «Lint API contracts» после слияния 37 и 38) и `fix/landing-no-featured-plan-no-photo` (`171e623`, мердж `050c3d0`): у `PlanCard`
+  удалён проп `featured` и подсветка первого платного тарифа на `/pricing` всех сервисов (`pickFeaturedPlanId` удалён из
+  `utils/pricingFormat.ts`), у `zapisLanding` удалён `media` — **фото салона на главной «Записи» больше нет**, файл
+  `src/assets/salon-hero.jpg` удалён. В `CHANGELOG.md` этот фикс отдельно не записан (✔ grep; раздел цикла 38 по-прежнему говорит
+  «фото салона — ниже списка компаний»).
+- **Нумерация с циклом 39.** Цикл 41 занял **§5.14** и **§9.9**, раздел выката — `DEPLOY.md` **§30**. §9.8 занят циклом 38, а
+  `SPEC_CYCLE39_STAYS_SLOTS_ICAL.md` той ветки собирается «дополнить §5.12 и завести §9.8» — при её слиянии разделы цикла 39 нужно
+  перенумеровать (§9.10, при необходимости §5.15 и `DEPLOY.md` §31), см. §9.9 C41-9.
+
+*Ниже — шапка прежнего обновления (слияние циклов 37 и 38), сохранена для истории.*
+**Прежняя отметка: мердж `origin/develop` (`ece8038`, цикл 37 «Дома» с закрывающими документами) в ветку `cycle/038-unified-landing-template` (`57a356e`, цикл 38 «Единый шаблон главной») — хеш коммита слияния уточняется после его создания (на момент правки слияние не закоммичено), дата обновления: 2026-10-08.** (✔ на 09.10: слияние — `6266edf`, мердж в `develop` — `a9ee820`.)
+**Режим: обновление поверх полного сканирования на `1837373`** (прежние точечные обновления — на `b9c2a79`, `aeed251`, `364cc2b`, `050816f`, `2834e00`, `a1e2259`, `c28ccbb`, `f60da0d`, `a7e3168`, `ff73c2e`).
+**Сведение двух параллельных обновлений.** Циклы 37 («Дома») и 38 (единый шаблон главной) шли параллельно от общей базы `18db9be`;
+каждый обновил этот файл в своей ветке. Цикл 37 влит в `develop` первым (мердж `a7e3168`, затем документы `98d87a2`, `12d1e3f`,
+мердж `ece8038`), цикл 38 влит поверх него. Ниже оба блока обновления сохранены: сначала «Дома» (на `a7e3168`), затем цикл 38 (на
+`ff73c2e`; после него в ветке — коммит перенумерации `57a356e` «цикл 37 → 38»: файлы `*CYCLE38*`, `contracts/cycle38/`, тесты `CY38-`,
+GUID тарифов `5a1e0c38…`). Подразделы цикла 38 получили номера **§5.13** и **§9.8** (§5.12 и §9.7 — «Дома»); раздел выката цикла 38 —
+`DEPLOY.md` **§29** (§28 — «Дома»). Общие файлы (`ci.yml`, `contracts-to-json.mjs`, `contracts/redocly.yaml`, `CHANGELOG.md`, `DEPLOY.md`,
+`TEST_CATALOG.md`, этот файл) сведены при слиянии с сохранением обеих сторон. Закрывающий коммит «Домов» `12d1e3f` после снимка
+`a7e3168` добавил раздел цикла 37 в `CHANGELOG.md`, «Дома» в `README.md` и обновил статус в `DEPLOY.md` §28 — часть пунктов C37-2/C37-8
+(§9.7) этим снята, см. пометки там. **Ничего не запускалось** — ни тесты, ни сборка.
+
 **Обновление на `a7e3168`** (✔ `git diff f60da0d..a7e3168`: 396 файлов, +56 215/−1 472, из них ~13 000 строк — генераты
 (`Cycle37Stays.Designer.cs`, снапшот, `contracts/cycle37/openapi.json`, `api-cycle37.generated.ts`); 74 коммита; после `git fetch`;
 **ничего не запускалось** — ни тесты, ни сборка, ни смоук, ни `npm audit`, ни `redocly`). В диапазоне по первому родителю: мердж
@@ -22,8 +90,21 @@
 `LEGAL_REVIEW_CYCLE37.md`, `TEST_CATALOG.md` (раздел «Цикл 37»), `DEPLOY.md` §28; код сверен с ними выборочно (✔ по diff). **Раздела
 цикла 37 в `CHANGELOG.md` и упоминания «Домов» в `README.md` на `a7e3168` нет** (✔ `git diff --stat`: оба файла циклом 37 не
 тронуты; README не менялся во всём диапазоне). Факты о машине по циклу 37 (выкат dom, vhost, certbot, DNS, SmartCaptcha,
-`btree_gist`) — 🖥 **со слов заказчика при постановке задачи (2026-10-08)**, в репозитории их не видно. **Следующий diff
-отсчитывайте от `a7e3168`.**
+`btree_gist`) — 🖥 **со слов заказчика при постановке задачи (2026-10-08)**, в репозитории их не видно.
+
+**Обновление на `ff73c2e`** (✔ `git log develop..HEAD`: 5 коммитов `8ec6764`…`ff73c2e`; `git diff develop...HEAD`: 98 файлов; база ветки —
+`develop` = `55d01ee`; **codebase-analyst ничего не запускал** — ни тесты, ни сборку, ни `ops`). Это **цикл 38 «Единый шаблон главной
+страницы сервисов, FAQ, публичные тарифы „Заказов“»**. Правка делалась в ветке цикла до вливания, тогда
+`develop` был `55d01ee`. Миграций, новых пакетов NuGet/npm и переменных боя нет. Обновлены:
+шапка, §2, §4 (маршрут `GET /api/pricing/orders`, маршруты фронта), §5.4, §5.5 (блок «Цикл 38»), §5.7 (пометка об устаревании),
+§5.13 (новый — шаблон главной и тарифы «Заказов»), §6.2, §7.1–§7.4, §9.8 (новый — долг цикла 38), §10. Источник намерения —
+`BRIEF_CYCLE38_UNIFIED_LANDING.md`, `SPEC_CYCLE38_UNIFIED_LANDING.md`, `ARCHITECTURE_CYCLE38.md`, `API_CONTRACT_CYCLE38.md`; где они
+расходятся с кодом, записано по коду.
+- **Что лежит между прежней шапкой и базой ветки** (✔ `git log f60da0d..55d01ee`): мердж цикла 36 `c43ec62` (+ документы `b80b88a`,
+  `7c24c88`, `a86ecb9`), фиксы деплоя `fix/dockerignore-state-dirs` (`3677e6f`, мердж `0f9b9fb`: `state` и `state-demo` в
+  `.dockerignore`) и `fix/green-api-instance-creation-env` (`e56a9fa`, мердж `55d01ee`: `InstanceCreationEnabled` и `ServerCountry`
+  GREEN-API в compose, `.env`-примеры и `DEPLOY.md`). Отдельно они здесь не описаны, кроме строки в §5.2.
+**Следующий diff отсчитывайте от коммита слияния цикла 38 в `develop` (его хеш вписать сюда после коммита).**
 
 *Ниже — шапка прежнего обновления на `f60da0d`, сохранена для истории.*
 **Обновление на `f60da0d`** (✔ `git log origin/develop..HEAD`: 55 коммитов `36cfe77`…`f60da0d`, включая мердж `bb4e03e`
@@ -108,10 +189,28 @@
 - 🖥 — факт о боевой машине. В репозитории его нет, в этом сканировании он не проверялся (SSH не использовался).
   Источник — прежняя редакция, блок «🚀20», проверено по SSH 30.09.2026.
 
+**Ветки на `5bcd015`** (✔ локальные ссылки, 2026-10-09; `git fetch` не делался): `develop` = `5bcd015` (мердж цикла 39); ветка этой
+правки `docs/cycle39-closing` создана от него. Циклы 38, 41, 39 влиты (шапка). Ориентиры: 1 459 коммитов, 2 815 отслеживаемых файлов
+(✔ `git rev-list --count 5bcd015`, `git ls-files`).
+**Ветки на `707899e`** (✔ локальные ссылки, `git branch -a`, 2026-10-09): `develop` = `origin/develop` = `050c3d0` (цикл 38 влит
+мерджем `a9ee820`, затем фиксы `0a9c0b7` и `171e623`). Ветка этой правки `cycle/041-stays-landing` = `707899e`: 5 коммитов поверх
+`050c3d0`, не влита. `origin/cycle/039-stays-slots-ical` = `fd22a97`: 3 коммита документов поверх `ece8038`, не влита. Ориентиры:
+1 401 коммит, 2 687 отслеживаемых файлов (✔ `git rev-list --count HEAD`, `git ls-files`).
+**Ветки на момент слияния цикла 38** (✔ локальные ссылки, `.git/MERGE_HEAD`, 2026-10-08): `origin/develop` = `ece8038` (мердж
+`docs/cycle37-closing`: `98d87a2` — этот файл на `a7e3168`, `12d1e3f` — CHANGELOG/README/DEPLOY цикла 37). В ветку
+`cycle/038-unified-landing-template` (HEAD до слияния — `57a356e`: `ff73c2e`, мердж `63d80f3` «develop → cycle/037-unified-landing-template»
+и перенумерация 37 → 38) вливается `ece8038`; общая база — `18db9be`. Ориентиры до слияния: `origin/develop` — 1 383 коммита, ветка
+цикла 38 — 1 325, 8 коммитов ветки ещё не в `develop`; 2 687 отслеживаемых файлов в рабочей копии слияния (✔ `git rev-list --count`,
+`git ls-files`).
 **Ветки на `a7e3168`** (✔ после `git fetch`, 2026-10-08): `develop` = `origin/develop` = `a7e3168`; от него — ветка этой правки
 `docs/cycle37-closing`. `origin/cycle/037-stays-houses` = `a33ee57` (второй родитель мерджа, влита целиком);
 `origin/cycle/036-test-suite-audit` влита мерджем `c43ec62`. Ориентиры: 1 380 коммитов, 2 620 отслеживаемых файлов (✔
 `git rev-list --count`, `git ls-files`).
+**Ветки на `ff73c2e`** (✔ локальные ссылки и `git fetch --dry-run`, 2026-10-08): локальный `develop` = `55d01ee` (цикл 36 влит
+мерджем `c43ec62`, плюс два фикса деплоя), `origin/develop` = `18db9be` (+ правка этого файла, перенесена сюда, см. шапку).
+`cycle/038-unified-landing-template` = `ff73c2e`: 5 коммитов поверх `55d01ee`, на origin тогда не найдена (✔ `git branch -a`). Номер 37
+был занят веткой `origin/cycle/037-stays-houses` («Дома»), поэтому цикл переименован в 38 (§9.8 C38-1, снято). Ориентиры: 1 319 коммитов, 2 418
+отслеживаемых файлов (✔ `git rev-list --count HEAD`, `git ls-files`).
 
 **Ветки на `f60da0d`** (✔ после `git fetch`, 2026-10-02): `origin/develop` = `0099efc` (после `c28ccbb` — только два
 коммита документов цикла 35). `cycle/036-test-suite-audit` = `origin/cycle/036-test-suite-audit` = `f60da0d`: 55 коммитов
@@ -221,13 +320,20 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 - Push гостю брони дома (`stays-guest-push-dispatch`) и push персоналу о бронях идут через **тот же** `IWebPushSender`, что
   выбирается `WEBPUSH_STAFFPUSH_PROVIDER`. На бою он `web-push` (строка таблицы выше) — значит, push гостю **на бою живой**, если
   у компании `StaysSettings.GuestWebPushEnabled` (по умолчанию `true`) и гость подписался. ⚠️ `ARCHITECTURE_CYCLE37.md` R37-5 и
-  `DEPLOY.md` §28 п. 7 пишут «уведомления гостю на бою выключены (`logging`)» — это верно было до включения web-push 08.10.2026.
+  `DEPLOY.md` §28 п. 7 писали «уведомления гостю на бою выключены (`logging`)» — это верно было до включения web-push 08.10.2026.
+  `DEPLOY.md` §28 п. 7 исправлен коммитом `12d1e3f`; R37-5 в `ARCHITECTURE_CYCLE37.md` — нет (C37-2).
 - WhatsApp/MAX гостю — только при `StaysSettings.GuestMessengerEnabled` (по умолчанию **`false`**), галочке гостя и доступном
   оплаченном канале компании (`IsMessengerAvailableAsync`); провайдер на бою `green-api`, живой отправки не было ни разу.
 - MAX персоналу о бронях — тот же `STAFFMAX_ENABLED` (на бою `false`).
 - Адрес третьего сайта — `PublicSites:StaysBaseUrl` (в `appsettings.json` = `https://dom.ezbook.ru`, новой обязательной
   переменной боя нет; в `.env.dev.example` — `SB_DOM_WEB_PORT=5175` и закомментированная подсказка `# PublicSites__StaysBaseUrl=http://localhost:5175`).
 - SmartCaptcha на форме брони — тот же ключ сборки; домен `dom.ezbook.ru` в консоли Яндекса добавлен 🖥 (со слов заказчика, 2026-10-08).
+
+**Цикл 39 и интеграции** (✔ по коду на `5bcd015`): новых пакетов NuGet/npm и новых интеграций нет (✔ `git diff` csproj/`package.json`:
+в csproj только перенос встраиваемого ресурса `dom-routes.json` на `contracts/cycle39/`, в `package.json` — скрипт `types:api:cycle39`).
+`tstzrange`/`EXCLUDE` по сеансам работают на уже включённом `btree_gist`. Заказы услуг и напоминание накануне ездят на тех же
+каналах, что брони домов: push гостю (`IWebPushSender`), WhatsApp/MAX гостю (флаг компании), push и MAX персоналу. Новых обязательных
+переменных окружения нет; новые настройки — `Stays:Services:*` и сроки `Retention:StayService*` в `appsettings.json` (§5.15).
 
 **Интеграций, которых нет** (✔): платёжного шлюза нет — ни YooKassa, ни Robokassa, ни других. Предоплата — флаг
 `Company.RequirePrepayment` и `PaymentStatus.Pending`, в «Оплачено» запись переводит персонал
@@ -241,7 +347,7 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | Путь | Что там |
 |---|---|
 | `ServiceBooking.Core/` | `Entities/` (67 файлов, POCO-сущности), `Enums/` (47). Зависит только от `Microsoft.AspNetCore.Identity.EntityFrameworkCore` |
-| `ServiceBooking.Infrastructure/` | `Data/AppDbContext.cs` (1 086 строк, вся Fluent-конфигурация) и `Migrations/` (79 миграций + снапшот; последняя — `Cycle28ShowcaseMarks`, цикл 28). **На `a7e3168`** (✔ `wc -l`, `ls`): `AppDbContext.cs` — 1 338 строк, 81 строка с `DbSet<`; 80 миграций, последняя — `20261008070135_Cycle37Stays`. `Core/Entities` — 74 файла, `Core/Enums` — 49 (+`StaysEnums.cs`) |
+| `ServiceBooking.Infrastructure/` | `Data/AppDbContext.cs` (1 086 строк, вся Fluent-конфигурация) и `Migrations/` (79 миграций + снапшот; последняя — `Cycle28ShowcaseMarks`, цикл 28). **На `a7e3168`** (✔ `wc -l`, `ls`): `AppDbContext.cs` — 1 338 строк, 81 строка с `DbSet<`; 80 миграций, последняя — `20261008070135_Cycle37Stays`. `Core/Entities` — 74 файла, `Core/Enums` — 49 (+`StaysEnums.cs`). **На `5bcd015`** (✔): `AppDbContext.cs` — 1 579 строк, 92 строки с `DbSet<`; 81 миграция, последняя — `20261008220221_Cycle39StaysServices`; `Core/Entities` — 75 файлов (новый `StayService.cs` — все сущности услуг в одном файле) |
 | `ServiceBooking.API/` | Веб-приложение, в нём же **вся бизнес-логика** (отдельного слоя Application нет) |
 | `ServiceBooking.API/Program.cs` | **Точка входа**, 48 строк — только порядок вызовов расширений |
 | `ServiceBooking.API/Startup/` | Инфраструктура запуска: `ApiExtensions` (MVC/JSON/CORS/Swagger/обработчик 500/раздача загрузок), `AuthenticationExtensions` (JWT, `OnTokenValidated`), `ApplicationServicesExtensions` (DI прикладных сервисов, фоновые задачи, подтверждение телефона), `NotificationServicesExtensions` (транспорты, реестры, Web Push), `RateLimitingExtensions`, `DeploymentValidationExtensions` (fail-fast проверки прод-конфигурации), `HealthEndpointsExtensions` (`/api/health/live`, `/api/health/ready`), `LoggingExtensions`, `StartupSeedingExtensions` (миграции, роли, суперадмин) |
@@ -256,15 +362,24 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | `frontend/src/` | Приложение **ezbook.ru** (запись на услуги). Точка входа — `main.tsx` → `App.tsx` |
 | `frontend/goods/` | Приложение **goods.ezbook.ru** (заказы на самовывоз). Точка входа — `goods/src/main.tsx` → `GoodsApp.tsx`; `goods/index.html`, `goods/public/` (свой `sw.js`, манифест) |
 | ~~`frontend/scripts/merge-goods-dist.mjs`~~ → `frontend/scripts/merge-site-dist.mjs` | С цикла 37 (✔ `a7e3168`) старый скрипт **удалён**; новый принимает список сайтов (`node scripts/merge-site-dist.mjs goods dom`) и кладёт `dist-<site>/` в `dist/__<site>/`, чтобы три сайта уезжали одним релизом |
-| `frontend/dom/` | **Цикл 37.** Приложение **dom.ezbook.ru** («Дома», посуточная аренда). Точка входа — `dom/src/main.tsx` → `DomApp.tsx`; `dom/index.html`, `dom/public/` (свой `sw.js` без `fetch`/Cache API, манифест, иконки). Внутри `dom/src/`: `api/` (7 модулей), `components/` (+ `board/`, `cabinet/`, `houses/`), `hooks/`, `pages/` (+ `cabinet/` — 15 страниц кабинета), `utils/` (чистые функции: даты, деньги, цена ночи, возврат, выбор дат, права, формы — у большинства есть `*.test.ts`), `test/` (фикстуры), `types.ts`. Алиас `@dom` (vitest) |
+| `frontend/dom/` | **Цикл 37.** Приложение **dom.ezbook.ru** («Дома», посуточная аренда). Точка входа — `dom/src/main.tsx` → `DomApp.tsx`; `dom/index.html`, `dom/public/` (свой `sw.js` без `fetch`/Cache API, манифест, иконки). Внутри `dom/src/`: `api/` (7 модулей), `components/` (+ `board/`, `cabinet/`, `houses/`), `hooks/`, `pages/` (+ `cabinet/` — 15 страниц кабинета), `utils/` (чистые функции: даты, деньги, цена ночи, возврат, выбор дат, права, формы — у большинства есть `*.test.ts`), `test/` (фикстуры), `types.ts`. Алиас `@dom` (vitest). **С цикла 41** (§5.14): `landing/` (`stayLanding.ts` — конфиг главной, `stayFaq.ts` — 8 вопросов, `configs.guard.test.ts`), `components/catalog/` (`StaySearchPanel`, `StayCatalog`), `hooks/useCatalogFilters.ts`; `pages/CatalogPage.tsx` — одна строка `<ServiceLanding …>`. **С цикла 39** (§5.15): `components/services/` (гостевые блоки: выбор времени `ServiceTimePicker`, `ServicePickDialog`, `ServiceOrderPanel`, `BookingSessionsBlock`, `StayServicesBlock`, `ArrivalReminderBlock`, диалоги отмены) с подпапками `cabinet/` (вкладки карточки услуги: содержание, правила, расписание + `WindowsEditor`, цены, позиции) и `staff/` («День услуг», сеансы, ручной заказ, добавление сеанса к брони с основанием); `components/cabinet/ArrivalReminderCard.tsx`; страницы `ServicePage` (`/:slug/uslugi/:serviceSlug`), `ServiceOrderPage` (`/s/:token`) и в кабинете — `ServicesPage`, `ServiceCreatePage`, `ServiceEditPage`, `ServiceDayPage`, `ServiceSessionPage` (22 страницы кабинета); `api/` — 10 модулей (+ `publicServices`, `serviceOrders`, `staysServices`); чистые `utils/businessClock`, `serviceDay`, `serviceWindows`, `serviceForms`, `serviceMoney`, `serviceTimeFormat`, `reminderTemplate`, `serviceSelection`, `serviceUrl`, `slug` (почти все с `*.test.ts`) |
 | `frontend/shared-sources.js` (+ `.d.ts`) | **Цикл 37.** Обобщение `goods-shared-sources.js`: один список ezbook-исходников (`SHARED_EZBOOK_PAGES`, `SCANNED_EZBOOK_DIRS`, `MARKUP_FREE_EZBOOK_DIRS`, `SHARED_EZBOOK_FILES`), разрешённых вторичным приложениям `SECONDARY_APPS = ['goods', 'dom']`; функции `appTailwindContent(app)` и `appAllowedPagesRegex()`. Из него строятся ESLint (`eslint.config.js`: goods и dom не импортируют чужие страницы и друг друга) и Tailwind обоих приложений; полноту держат guard-тесты `goods/src/sharedSources.guard.test.ts` и `dom/src/sharedSources.guard.test.ts`. `goods-shared-sources.js` остался (−/+38 строк) |
 | `frontend/src/components/sites/` | **Цикл 37.** Общие для вторичных сайтов `UpdateBanner.tsx`, `useAppUpdate.ts` и `UpdateBanner.acceptance.test.tsx` (перенесены из `goods/src/`, единственный перенос цикла) |
-| `ServiceBooking.API/Services/Stays/` | **Цикл 37.** 46 файлов: чистые правила (`StayRules`, `StayMoney`, `StayRefund`, `HousePricing`, `StayStateMachine`, `HousePublishRules`, `StaysBookingGate`, `StaysAccess`, `StaysSlugPolicy`, `StayEvaluator`, `CheckInInfoRelease`, `StaysSettingsRules`, `HousePricePeriodRules`), единственные писатели (`HouseOccupancyWriter` — занятость, `HouseBlockWriter` — блокировки, `StayBookingEventLog` — журнал и ревизия), сервисы (`StayBookingCreationService`, `StayBookingTransitionService`, `StayPaymentProofService`, `StaysCatalogService` с 30-секундным кешем базы, `StaysHousePageService`, `StaysCompanyService`, `StaysTrialService`, `StaysPlanResolver`, `StaysBoardService`, `StaysScheduleService`, `HouseService`), уведомления (`StayNotificationPlanner`/`Queues`/`Texts`, `StayMessageScheduler`), тексты `StaysTexts`, `StaysOptions`, часы `IStaysClock` |
-| `ServiceBooking.API/Controllers/Stays/` | **Цикл 37.** 6 контроллеров: `StaysPublicController`, `StayBookingsPublicController`, `StaysCompaniesController`, `StaysHousesController`, `StaysBoardController`, `StaysStaffBookingsController`; DTO — `DTOs/Stays/StaysCommonDtos.cs` |
-| `contracts/cycle37/` | **Цикл 37.** `openapi.yaml` (OpenAPI 3.0.3, ~2 900 строк) + `openapi.json`, `dom-routes.json` (маршруты dom, формат и резерв slug — встраивается в API для `StaysSlugPolicy`), `stay-vectors.json` (эталон расчёта для юнит-тестов C# и TS) |
+| `ServiceBooking.API/Services/Stays/` | **Цикл 37.** 46 файлов: чистые правила (`StayRules`, `StayMoney`, `StayRefund`, `HousePricing`, `StayStateMachine`, `HousePublishRules`, `StaysBookingGate`, `StaysAccess`, `StaysSlugPolicy`, `StayEvaluator`, `CheckInInfoRelease`, `StaysSettingsRules`, `HousePricePeriodRules`), единственные писатели (`HouseOccupancyWriter` — занятость, `HouseBlockWriter` — блокировки, `StayBookingEventLog` — журнал и ревизия), сервисы (`StayBookingCreationService`, `StayBookingTransitionService`, `StayPaymentProofService`, `StaysCatalogService` с 30-секундным кешем базы, `StaysHousePageService`, `StaysCompanyService`, `StaysTrialService`, `StaysPlanResolver`, `StaysBoardService`, `StaysScheduleService`, `HouseService`), уведомления (`StayNotificationPlanner`/`Queues`/`Texts`, `StayMessageScheduler`), тексты `StaysTexts`, `StaysOptions`, часы `IStaysClock`. **С цикла 39** (✔ `ls` на `5bcd015`): в корне 48 файлов (+`StayBookingReleaser` — единственная точка каскада «бронь → ночи → сеансы», `StaySessionIpLimiter`, `StayPersonalData`) и подкаталог **`Services/`** (28 файлов, namespace `ServiceBooking.API.Services.Stays`): чистые `BusinessClock`, `ServiceSlotCalculator`, `ServicePricing`, `ServiceRefund`, `ServiceScheduleRules`, `ServicePublishRules`, `ServiceTimeFormat`, `ArrivalReminderTemplate`, `ServiceCodes`, `ServiceTexts`; писатели `ServiceSessionWriter`, `ServiceScheduleWriter`, `StayServiceOrderEventLog`; сервисы `ServiceSlotService`, `ServiceCatalogService`, `ServiceDayService`, `ServiceOrderCreationService`, `ServiceOrderTransitionService`, `ServiceOrderProofService`, `ServiceSessionAddService`, `ServiceHoldReleaser`, `ServiceOrderThrottle`, `ServiceQuoteBuilder`, `ServiceDtoMapper`, `ArrivalReminderService`, `ServiceNotificationTexts` |
+| `ServiceBooking.API/Controllers/Stays/` | **Цикл 37.** 6 контроллеров: `StaysPublicController`, `StayBookingsPublicController`, `StaysCompaniesController`, `StaysHousesController`, `StaysBoardController`, `StaysStaffBookingsController`; DTO — `DTOs/Stays/StaysCommonDtos.cs`. **С цикла 39** — 10 контроллеров: + `StaysServicesController` (кабинет услуг), `StaysServiceSessionsController` (сеансы, «День услуг», напоминание), `StaysServicesPublicController`, `StayServiceOrdersPublicController`; DTO услуг — `DTOs/Stays/ServiceDtos.cs` |
+| `contracts/cycle37/` | **Цикл 37.** `openapi.yaml` (OpenAPI 3.0.3, ~2 900 строк) + `openapi.json`, `dom-routes.json` (маршруты dom, формат и резерв slug — встраивается в API для `StaysSlugPolicy`), `stay-vectors.json` (эталон расчёта для юнит-тестов C# и TS). Цикл 39 дописал сюда значения перечислений и почистил под `redocly lint` (US-39-22); `dom-routes.json` здесь больше **не** встраивается в API |
+| `contracts/cycle39/` | **Цикл 39.** `openapi.yaml` (~3 560 строк: новые маршруты целиком + изменённые маршруты цикла 37 частичными DTO с `additionalProperties: true`) + `openapi.json`; `dom-routes.json` — надмножество карты dom (+ `/:slug/uslugi/:serviceSlug`, `/s/:token`, маршруты кабинета услуг, резерв `uslugi` и слов календарей в адресах домов) — **его** теперь встраивает API для `StaysSlugPolicy`; `service-vectors.json` — общий эталон времени/цены/возврата/пересечений для C# `ServiceVectorsTests` и TS `serviceVectors.test.ts` |
+| `frontend/src/components/staffMax/` | **Цикл 39** (US-39-21, C37-4): общая карточка «MAX для сотрудника» `StaffMaxCard.tsx` (+ тест, `staffMaxPolling.ts`), API — `frontend/src/api/staffMax.ts` (перенесён из `goods/src/api/`). goods держит тонкую обёртку `goods/src/components/staffMax/StaffMaxCard.tsx` (свои тексты ошибок и панели состояний), dom вызывает общую карточку из `ProfilePage.tsx` |
+| `tools/bench/cycle39/` | **Цикл 39** (US-39-23): `bench_catalog.py` + `README.md` — замер p95 каталога dom на 500 домах; **ни разу не прогонялся** (§9.10) |
 | `frontend/scripts/contracts-to-json.mjs` | Цикл 31: `npm run contracts:json` — `contracts/<цикл>/openapi.yaml` → `openapi.json` через `js-yaml`. Список циклов в скрипте на `2834e00` — `['cycle31', 'cycle32']`; **`cycle33` в нём нет** (§5.10, §9.1 C33-1) |
 | `frontend/goods-shared-sources.js` (+ `.d.ts`) | Цикл 31: **единый список** ezbook-исходников, которые можно импортировать из goods. Из него строятся `content` в `tailwind.goods.config.js` и регэксп ESLint; полноту списка проверяет guard-тест `goods/src/sharedSources.guard.test.ts` (§5.8, §6.2) |
-| `frontend/src/components/company/` | Общие компоненты карточки и кабинета компании для обоих сайтов: `CompanyCard`, `CompanyMapLinks`, `CompanyLogoMark`, `CompanyPhotoGallery`; с цикла 31 ещё `CompanyPhotosSection` (переехал из `src/pages/owner/`), `usePhotoBatchUpload`, `CatalogListingCard`, `companyActionLink.ts` |
+| `frontend/src/components/company/` | Общие компоненты карточки и кабинета компании для обоих сайтов: `CompanyCard`, `CompanyMapLinks`, `CompanyLogoMark`, `CompanyPhotoGallery`; с цикла 31 ещё `CompanyPhotosSection` (переехал из `src/pages/owner/`), `usePhotoBatchUpload`, `CatalogListingCard`, `companyActionLink.ts`; с цикла 38 — `CreateCompanyDialog` (диалог «Создать компанию», вынесен из `CabinetPage`, §5.13) |
+| `frontend/src/components/landing/` | Цикл 38: **единый шаблон главной** обоих сайтов (§5.13) — `ServiceLanding` (порядок секций), `LandingHero`, `LandingCatalogFrame`, `LandingMedia`, `LandingClientsSection`, `LandingBusinessSection`, `LandingStepsPanel`, `LandingScreenshot` (`LandingScreenshotFigure` + заглушка), `LandingPricingSection`, `FaqSection`, `LandingActionLink`, `CatalogCard` (общая карточка каталога салона/магазина), `types.ts` (типы конфига), `classes.ts` (общие классы секций), `testConfig.ts` (конфиг для тестов). **С цикла 41** (§5.14): второй вариант шапки — `LandingPanelHero` (шапка с панелью-слотом) и `LandingHeroBackdrop` (SVG «горы»), типы `LandingPanelConfig`/`LandingPanelHeroConfig`/`HeroFacts`/`HeroBackdrop`, константа `CONTAINER` в `classes.ts`, `makePanelConfig` в `testConfig.ts`, эталон разметки ветки по умолчанию `landingReference.ts` (только для T41-02); пользуется им пока только dom |
+| `frontend/src/pages/home/` | Цикл 38: содержимое главной «Записи» — `zapisLanding.ts` (конфиг), `zapisFaq.ts` (8 вопросов), `ZapisCompanyCatalog.tsx` (каталог салонов, вынесен из `HomePage`) |
+| `frontend/goods/src/landing/` | Цикл 38: содержимое главной «Заказов» — `goodsLanding.ts` (конфиг, тексты бывших `BuyersBlock`/`BusinessBlock`), `goodsFaq.ts` (8 вопросов) и перенесённые тесты блоков. Каталог магазинов — `goods/src/components/ShopCatalog.tsx` |
+| `frontend/goods/src/pricing/`, `goods/src/api/ordersPricing.ts` | Цикл 38: линейка тарифов «Заказов» (`ordersPricingLine.ts`) и HTTP-модуль `GET /api/pricing/orders`; страница `goods/src/pages/PricingPage.tsx` |
+| `frontend/src/components/pricing/` | Общая витрина тарифов; с цикла 38 — абстракция «линейка» `pricingLine.ts` (`PricingLine`, `usePricingGrid`), `zapisPricingLine.ts`, общее тело страницы `/pricing` `PricingPageBody.tsx`; `PricingTeaser.tsx` удалён |
+| `frontend/src/components/auth/ProtectedRoute.tsx` | Цикл 38: защита маршрутов ezbook вынесена из `App.tsx` (параметры `roles`, `returnToPath`, `deniedTo`) |
 | `frontend/scripts/screenshots/` | Цикл 30: локальный стенд `sb-shots` (`stack.sh`), засев демо-данных goods через HTTP API (`seed-goods-demo.mjs`, `demo-data.mjs`), съёмка кадров (`capture-goods-screenshots.mjs`), `README.md` пересъёмки. В сборку и CI не входят (§5.7) |
 | `frontend/goods/src/assets/screenshots/` | Цикл 30: 5 WebP-кадров главной goods, манифест `screenshots.json`, модуль подключения `shots.ts` |
 | `contracts/` | Машиночитаемые контракты по циклам (`cycleN/openapi.yaml`, JSON-схемы и векторы), `redocly.yaml`. Цикл 30 — только JSON-схемы `cycle30/screenshots-manifest.schema.json` и `seed-state.schema.json`, OpenAPI нет. Цикл 31 — `cycle31/openapi.yaml` + `openapi.json`. Цикл 33 — **только** `cycle33/openapi.yaml` (дельта `/api/push/*` + схема тела push `StaffPushPayload`), `openapi.json` не сгенерирован (§9.1 C33-1) |
@@ -448,6 +563,45 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
     `Cycle37Stays` с фиксированным Id (`StaysPlans.TrialSeedId`), удалить или выключить его админкой нельзя (409).
 - (цикл 37) Занятость дома пишет **только** `HouseOccupancyWriter`, блокировки — только `HouseBlockWriter`, журнал брони и
   `BookingsRevision` — только `StayBookingEventLog`. Перечисления «Домов» (`StaysEnums.cs`) хранятся числом, только дописыванием в конец.
+- (цикл 39) Ночи по-прежнему пишет только `HouseOccupancyWriter`, но вызывать `ReleaseBookingAsync` разрешено только из
+  `StayBookingReleaser` (страж-тест `StayBookingReleaserGuardTests`); сеансы освобождает только `ServiceSessionWriter`. Значения
+  `NotificationType` 39 и 40 зарезервированы под цикл 40 (iCal).
+
+**«Дома», цикл 39 — услуги-слоты, миграция `20261008220221_Cycle39StaysServices`** (✔ по миграции, `Entities/StayService.cs`,
+`StaysEnums.cs` на `5bcd015`; подробная форма — `ARCHITECTURE_CYCLE39.md` §39.2). Миграция одна; Up — добавления схемы и одно
+изменение данных: дома со slug из резерва (`uslugi`, `services`, `bani`, `banya`, `kalendar`, `kalendari`, `calendar`, `ical`) получают
+суффикс `-dom` (на стенде ожидалось 0 строк; `DEPLOY.md` §28а пишет «Up — только добавления», это неточно). Конвенции
+цикла 37 те же (деньги — `int` рублей, моменты — `timestamptz`). **Время суток услуги — `int` минут от 00:00 даты бизнес-дня** в
+`[B, B + 1440]`, `B = Stays:Services:BusinessDayStartMinute = 360` (06:00): «02:00 следующих суток» — это минута 1560; правила цены —
+часы `FromHour/ToHour` 6…30.
+- **11 новых таблиц:** `StayServices` (услуга компании: slug, описание, шаг 30/60 мин, мин./макс. часов 1…12, зазор `BufferMinutes`
+  0…240 кратно 15, мин. упреждение, рубеж отмены 1…24 ч (валидатор конфигурации — 3…24, по умолчанию 12), политика отмены,
+  `StandalonePrepayPercent`, публикация/архив; CHECK `CK_StayServices_*`), `StayServiceWeeklyWindows` (недельный шаблон окон, минуты до
+  2880), `StayServiceDateOverrides` (ручной день вместо шаблона), `StayServicePriceRules` (цена за час: маска дней недели × часы),
+  `StayServiceItems` (позиции/доп. товары: цена 0…100 000, максимум на сеанс 1…50), `StayServicePhotos`, `StayServiceScheduleEvents`
+  (журнал правок расписания), **`StayServiceSessions`** (сеанс — одна сущность для обоих видов: ровно один родитель — бронь дома
+  `StayBookingId` **или** заказ `StayServiceOrderId`, CHECK `num_nonnulls(...) = 1`; `StartUtc`/`EndUtc`/`OccupiedUntilUtc` = конец +
+  зазор (снимок), часы 1…12, снимки цен по часам и позиций, `State` (`Active`, `CancelledByGuest`, `CancelledByOwner`,
+  `ReleasedWithBooking`, `ReleasedWithOrder`), `AddedByKind` + обязательное `RequestBasis` (`Phone`/`InPerson`/`Messenger`), если сеанс
+  добавил персонал — ЮР39-6), `StayServiceOrders` (заказ услуги без проживания — «конверт» над одним сеансом: токен, статус — **тот же
+  `StayBookingStatus`**, удержание, предоплата, снимки исполнителя/реквизитов/условий, согласия; CHECK денег `TotalRub = ServiceAmountRub +
+  ItemsAmountRub`, `DueOnSiteRub = TotalRub − PrepayRub`), `StayServiceOrderEvents` (журнал заказа), `StaysReminderTemplateChanges`
+  (журнал правок шаблона напоминания и переключателя push).
+- **Исключающее ограничение сеансов** `EX_StayServiceSessions_NoOverlap` (23P01 → 409 `SlotTaken` в `ServiceSessionWriter`): `EXCLUDE USING gist ("ServiceId" WITH =, tstzrange("StartUtc", "OccupiedUntilUtc", '[)') WITH &&)
+  WHERE ("ReleasedAtUtc" IS NULL)` — реальные моменты, поэтому полночь и граница 06:00 для запрета пересечений не существуют; зазор входит
+  в занятый интервал. Поверх — advisory-lock `stay-service:{serviceId}` в едином порядке блокировок (§5.15).
+- **Изменения существующих таблиц:** `StaysSettings` + `ArrivalReminderTime` (по умолчанию 18:00), `ArrivalReminderTemplate` (NULL —
+  прежний текст цикла 37 байт-в-байт), `ArrivalReminderPushText` (по умолчанию `false`), `AcceptServiceOrdersWithoutStay` (по умолчанию
+  `false`); `StayBookings` + `ArrivalReminderPageText` (снимок напоминания для страницы брони, с именем гостя — стирается при
+  обезличивании), `ArrivalReminderSentAtUtc`; `StayBookingEvents.ServiceSessionId`, `StayBookingCharges.ServiceSessionId` (виды строк
+  `ServiceSlot = 5`, `ServiceItem = 6`, CHECK `CK_StayBookingCharges_ServiceNotPrepaid` — с сеансов в брони предоплата не берётся);
+  второй владелец у общих механизмов — nullable `StayServiceOrderId` + CHECK «ровно один владелец» в `StayPaymentProofs` (у них
+  `StayBookingId` стал nullable), `StayGuestPushSubscriptions`, `StayGuestPushNotifications`, `StaffPushNotifications`, `StaffMaxMessages`,
+  `OutboundNotifications` (CHECK `*_OneSubject` пересозданы). Новые значения `StayBookingEventKind` 11…15 (сеансы, `ArrivalReminderSent`).
+- Все 11 таблиц — в `ShowcaseOwnership.NeverWritten` (витрина/демо их не пишут). **Откат `Down()`** рискованный (комментарий в
+  миграции): возвращает NOT NULL у `StayPaymentProofs.StayBookingId` и `StayGuestPushSubscriptions.StayBookingId` и **упадёт**, если уже
+  есть подтверждения оплаты или push-подписки заказов услуг (строки молча не удаляются); переименование slug домов не откатывается.
+  `DEPLOY.md` §28а: только с `pg_dump` и решением заказчика. Накат → откат → накат на пустых данных проверяет CY39-140.
 
 ---
 
@@ -566,7 +720,18 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
 - `GET /api/billing/subscription`, `POST|DELETE /api/billing/subscription/request`.
 - `GET|POST /api/billing/trial`, `POST /api/billing/trial/terms-acknowledgement`.
 - `GET|PUT /api/billing/operator-details`.
-- `GET /api/pricing` — anon, витрина тарифов.
+- `GET /api/pricing` — anon, витрина тарифов «Записи» (только `Line == Services`; 404 при выключенном `pricing.public-enabled`
+  или черновом `TermsOwner`). Цикл 38 его не менял (действие, DTO и ключ кеша прежние).
+- `GET /api/pricing/orders` — **цикл 38**, anon, витрина тарифов «Заказов» (`PricingController.GetOrdersPublicPricing`, ✔ строка в
+  `Cycle22RouteTable.golden.txt`). Переключателя и правового гейта нет: 200, если в линейке Orders есть хотя бы один тариф
+  `IsActive && IsPublic`, кроме служебного «Демо» (`ShowcaseCatalog.IsServicePlan`); иначе **404 с пустым телом**. Кеш 60 с в памяти
+  (ключ `pricing:public:orders`, кешируется и «пусто»), `ETag` (`W/"…"`), `If-None-Match` → 304, `Cache-Control: public, max-age=60`;
+  без rate limit. Тело `OrdersPublicPricingDto { version, currency: "RUB", plans[], notice, legalNotice }`, план
+  `OrdersPublicPlanDto { id, name, description, pricePerMonth, highlights (≤ 5), includedShops, includedMembers,
+  includedProductsPerShop (никогда не null: min(тариф ?? потолок, потолок `Orders:MaxProductsPerShop`), не меньше 1),
+  includedOrdersPerMonth, sortOrder, isFree }`; опций нет. `legalNotice` — необязательный ключ `pricing.orders.legal-notice` в
+  `PlatformSettings` (экрана в админке нет). Контракт — `contracts/cycle38/openapi.yaml` + `openapi.json`.
+  `PricingCatalogCache.Invalidate()` (его вызывают действия админки тарифов и опций) сбрасывает оба ключа.
 
 **Правовое**
 - anon: `GET /api/legal/documents[/{type}]`, `GET /api/legal/texts/{key}`.
@@ -647,6 +812,40 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
   аккаунта, отзыв согласия — охватывают брони домов; `GET /api/admin/retention/policy` — шесть сроков «Домов».
 - Ответы 429 новых политик и лимиты — `RateLimitingExtensions` (+41 строка), в `appsettings.Testing.json` подняты до 10000.
 
+**«Дома», цикл 39 — услуги-слоты и напоминание** (✔ атрибуты `Controllers/Stays/*.cs` и diff эталона `Cycle22RouteTable.golden.txt`
+`68e9ba9..5bcd015`: **+59 строк, удалённых нет, итого 391 строка** эталона). Форма — `contracts/cycle39/openapi.yaml`, словами —
+`API_CONTRACT_CYCLE39.md` и `API_DOCUMENTATION.md` §4.22 (заголовок раздела до сих пор говорит «НЕ ВЫПУЩЕНО — доступно с ветки», §9.10).
+- **Публичные, anon** (`StaysServicesPublicController`, `api/stays/public`, `stays-public`): `GET companies/{slug}/services/{serviceSlug}`,
+  `GET services/{serviceId}/availability|starts`, `POST services/{serviceId}/quote`; `POST services/{serviceId}/orders` — заказ услуги без
+  проживания (`stay-service-create`: 5/ч на IP анонима, 20/ч на пользователя; капча; лимиты по номеру `Stays:Services:PhoneLimits`).
+- **Страница заказа по токену, anon** (`StayServiceOrdersPublicController`, `api/stays/service-orders`): `GET public/{token}`,
+  `GET public/{token}/payment-proofs/{proofId}`, `POST public/{token}/cancel` (`stay-public`), `POST public/{token}/payment-proofs`
+  (`stay-proof`), `POST public/{token}/push-subscription` и `…/remove` (`stay-push`).
+- **Сеансы к брони гостем, anon** (`StayBookingsPublicController`): `GET public/{token}/services`,
+  `GET public/{token}/services/{serviceId}/starts`, `POST public/{token}/services/{serviceId}/quote`, `POST public/{token}/sessions`
+  (`stay-session-add`: 10/ч на токен + `StaySessionIpLimiter` 30/ч на IP), `POST public/{token}/sessions/{sessionId}/cancel`.
+- **Кабинет, auth** (новые права `ManageServices` — только владелец; `EditServiceContent`, `ManageServiceDates` — владелец и управляющий;
+  сеансы — `ViewBookings`/`ManageBookings`/`ViewSchedule`; напоминание — `ManageCompany`):
+  - `StaysServicesController` (`api/stays/companies/{companyId}/services`, 27 маршрутов): список, создание, `PUT order`, карточка,
+    удаление, `PUT {id}/setup|content`, `POST {id}/publish|unpublish|archive`, `GET|PUT {id}/weekly-schedule`, `GET {id}/date-overrides`,
+    `PUT|DELETE {id}/date-overrides/{date}`, CRUD `{id}/price-rules`, CRUD + `PUT order` `{id}/items`, фото (`POST`, `PUT order`, `DELETE`;
+    `company-photos`/`company-photos-edit`); фильтр `RequiresOwnerTerms` — на записывающих маршрутах (в эталоне — у 24 из 59 новых строк);
+  - `StaysServiceSessionsController` (`api/stays/companies/{companyId}`): `GET service-day` (`stays-board`), `GET services/{id}/starts|availability`,
+    `POST service-sessions/quote`, `GET service-sessions` (`stays-board`), `POST service-sessions` (ручной заказ персоналом),
+    `GET service-sessions/{id}`, `POST service-sessions/{id}/confirm-payment|reject-payment|cancel`,
+    `GET service-sessions/{id}/payment-proofs/{proofId}`, `POST bookings/{bookingId}/sessions` (сеанс к брони персоналом, с основанием);
+  - `StaysCompaniesController`: `GET|PUT companies/{id}/arrival-reminder`, `GET …/arrival-reminder/history`, `POST …/arrival-reminder/preview`.
+- **Изменены существующие** (✔ выборочно; перечень — `API_CONTRACT_CYCLE39.md`, ответы cycle37 расширены полями, которые
+  `Cycle37ContractTests` пропускает белым списком, §9.10): публичная компания — `services[]`, `acceptsServiceOrdersWithoutStay`;
+  страница дома — `servicesForStay`; `quote` и создание брони дома — `services` (бронь дома с сеансами «всё или ничего», 409 с
+  `serviceIndex`); страница брони — `sessions`, `servicesBlock`, `arrivalReminder`; карточка брони персонала — `sessions`, действие
+  `AddSession`; настройки компании — `acceptServiceOrdersWithoutStay` (включить без сведений об исполнителе — 409
+  `ProviderRequiredForServiceOrders`); счётчик «ждут проверки» — брони + заказы; шахматка — группа «Услуги», график — `sessions[]`;
+  `GET /api/profile/export` — `stayServiceOrders[]` и `sessions[]`/`arrivalReminderText` в бронях; превью удаления аккаунта —
+  `stayServiceOrders`; отзыв согласия выключает мессенджер и у заказов услуг; `GET /api/admin/retention/policy` — ещё 4 срока;
+  `CompanyNotificationsController.BuildMask` теперь учитывает только `BookingTypes` (раньше сдвигал любой тип из запроса — в C#
+  `1 << 32 == 1`).
+
 **Маршруты фронтенда** (✔ `App.tsx`, `GoodsApp.tsx`; dom — ✔ `DomApp.tsx` на `a7e3168`):
 - dom (цикл 37; эталон — `contracts/cycle37/dom-routes.json`, его сверяет `dom/src/domRoutes.test.ts`, бэкенд читает как ресурс
   для `StaysSlugPolicy`): `/` (каталог, фильтры в URL), `/:slug` (компания), `/:slug/:houseSlug` (дом), `/b/:token` (бронь),
@@ -654,15 +853,19 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
   `/terms-owner`, `/pdn-consent`, `/channel-risk`, `/offer-channel`, `/payment-terms`, `/data-request`); кабинет — `/cabinet`,
   `/cabinet/new`, `/cabinet/subscription`, `/cabinet/:companyId` и `/cabinet/:companyId/{board,bookings,bookings/:bookingId,schedule,
   houses,houses/new,houses/:houseId,settings,staff,notifications,link}`. Slug компании — общее пространство платформы (тот же
-  уникальный индекс, что у салонов и магазинов).
+  уникальный индекс, что у салонов и магазинов). **С цикла 39** (эталон — `contracts/cycle39/dom-routes.json`): + `/:slug/uslugi/:serviceSlug`
+  (услуга), `/s/:token` (заказ услуги без проживания), `/cabinet/:companyId/{services,services/new,services/:serviceId,
+  service-day/:date,service-sessions/:sessionId}`.
 - ezbook: `/`, `/login`, `/register`, `/company/:slug`, `/embed/:slug` (виджет без навбара), `/my-bookings`,
-  `/my-visits`, `/cabinet`, `/dashboard`, `/owner`, `/owner/company/:id`, `/admin`, `/billing`, `/pricing`, `/profile`,
+  `/my-visits`, `/cabinet` (с цикла 38 вошедший без ролей `Master`/`CompanyOwner`/`SuperAdmin` уходит на `/cabinet/new`, гость — на
+  `/login?returnTo=/cabinet`), `/cabinet/new` (цикл 38: «Подключить салон» — любой вошедший, гость — на `/login?returnTo=/cabinet/new`), `/dashboard`, `/owner`, `/owner/company/:id`, `/admin`, `/billing`, `/pricing`, `/profile`,
   `/profile/consents`, `/profile/delete`, `/notices`, `/u/:token` (отписка),
   `/companies/:companyId/clients/:clientKey/health-consent-form`, правовые алиасы (`/privacy`, `/terms`,
   `/terms-owner`, `/pdn-consent`, `/channel-risk`, `/offer-channel`, `/payment-terms`, `/data-request`).
 - goods:
   - `/`, `/city/:cityId` (каталог), `/:slug` (витрина), `/o/:token` (заказ), `/orders`, `/login`, `/register`,
-    `/profile[/consents]`, `/notices`, те же правовые алиасы;
+    `/profile[/consents]`, `/notices`, те же правовые алиасы; с цикла 38 — `/pricing` (публичный, в `CONSENT_GATE_BYPASS_PATHS`,
+    в `goods-routes.json → spaRoutes`);
   - кабинет: `/cabinet`, `/cabinet/new`, `/cabinet/devices` (с цикла 33 — только `<Navigate to="/profile#devices" replace />`
     из `goods/src/cabinetDevicesRoute.tsx`; страницы нет, маршрут и запись в `goods-routes.json` оставлены), `/cabinet/subscription`,
     `/cabinet/:shopId/{orders,catalog,menu,hours,settings,notifications,staff,link,history,summary,picklist}`,
@@ -698,7 +901,14 @@ dom задеплоен на ту же машину (она и стенд, и б�
 сертификат certbot, домен в SmartCaptcha и расширение `btree_gist` в боевой БД — значит, миграция `Cycle37Stays` на бою применена.
 Сайт закрыт от индексации (`X-Robots-Tag: noindex, nofollow` в vhost, ✔ по файлу). **Реальных владельцев не приглашать до вычитки
 живым юристом** (Т37-15, R37-1; тексты триала «Дома» и заверения реестра — черновые, §9.7). ⚠️ `DEPLOY.md` §28 на `a7e3168` всё
-ещё начинается словами «Цикл 37 dom на машину не выкатывает» — документ отстал от факта (§9.7).
+ещё начинается словами «Цикл 37 dom на машину не выкатывает» — документ отстал от факта (§9.7). ✔ Исправлено коммитом `12d1e3f`
+(в `develop` с `ece8038`): §28 начинается со «Статус на 2026-10-08» — dom влит и задеплоен на стенд, ручные шаги сделаны заказчиком.
+
+**Цикл 39 («Дома» — услуги-слоты, напоминание)** — 🖥 со слов заказчика при постановке задачи (2026-10-09): задеплоен на ту же машину,
+миграция `Cycle39StaysServices` применена. Обновлённый vhost `deploy/nginx/dom.ezbook.conf` (маскирование токенов `/s/` и
+`api/stays/service-orders/public/`) на сервер **не перенесён** — ручной шаг заказчика (`DEPLOY.md` §28а: правка `map` руками или
+повтор certbot после копирования). Статус выката циклов 38 и 41 в этом обновлении не проверялся. Ограничение вертикали прежнее:
+реальных владельцев не приглашать до вычитки текстов живым юристом (все новые тексты `Stay*` цикла 39 — тоже черновые).
 
 ### 5.2 Код есть целиком, но выключен переключателем (✔ дефолты; 🖥 бой)
 - **Уведомления клиентам салонов в WhatsApp/MAX через GREEN-API.** Каналы, шаблоны, очередь, диспетчер, вебхуки, отписка —
@@ -749,12 +959,72 @@ dom задеплоен на ту же машину (она и стенд, и б�
   (тексты переехали в `src/utils/staffPushTexts.ts`; сам `pushAvailability.ts` с `getPushUnavailableReason` остался), ветка
   `'staff'` в `goods/src/utils/goodsPush.ts`. В `OrderStaffPushQueue` удалено поле `PayloadOptions` (единые опции —
   `StaffPushPayloadJson.Options`, им пользуется и `CustomerOrderPushQueue`).
+- **Удалено циклом 38** (✔ `git diff develop...HEAD`, grep: ссылок в коде не осталось, только упоминания в комментариях):
+  `goods/src/components/BuyersBlock.tsx`, `BusinessBlock.tsx`, `ScreenshotFigure.tsx` (разметка ушла в шаблон `src/components/landing/`,
+  тесты переехали в `goods/src/landing/`), `src/components/pricing/PricingTeaser.tsx` (→ `LandingPricingSection`), локальный
+  `ProtectedRoute` в `App.tsx` (→ `src/components/auth/ProtectedRoute.tsx`), встроенный `<footer>` главной ezbook, ключ кеша
+  react-query `['public-pricing']` (→ `['public-pricing', 'services' | 'orders']`). Генерат `api-cycle38.generated.ts` — не только
+  сверочный: из него берёт типы `goods/src/api/ordersPricing.ts`; CI его сверяет (§7.3).
+- **Константа без потребителя в продукте** (✔ grep): `OrdersTariffCatalog.FreeHighlights` (три преимущества бесплатного тарифа
+  «Заказов») читает только юнит-тест `OrdersTariffCatalogTests`; сидер её в БД не пишет (§5.13, §9.8 C38-2).
 - `openapi-cycle6.yaml` в корне и `contracts/cycle{10,11,15,17}/openapi.yaml` — исторические контракты, в CI не линтуются.
 - Корневые `ARCHITECTURE.md` и `API_CONTRACT.md` — это документы **цикла 3** (последняя правка — 2026-09-17), а не текущая
   архитектура.
 - ↪ C22-1: восемь навигационных свойств EF без ссылок в коде.
 
 ### 5.5 Что сделали последние циклы
+
+**Цикл 39 — «Дома», цикл 2: услуги-слоты, напоминание накануне заезда, хвосты цикла 37** (✔ `git diff 68e9ba9..5bcd015`; влит
+мерджем `5bcd015`). Подробно — §5.15, долг — §9.10. Коротко:
+- услуги-слоты компании «Дома» (баня, чан, фурако): карточка, недельный шаблон окон и ручные дни, цены «дни недели × часы», позиции,
+  фото, публикация; бизнес-день с 06:00 и сеансы через полночь; защита от двойной брони — `EXCLUDE` по `tstzrange` с зазором;
+- три способа занять услугу: **заказ без проживания** (`/s/<token>`, свой статус по той же машине состояний, предоплата по
+  проценту услуги, возврат по ЮР39-1 — «Без удержаний» / «Расходы на подготовку»), **сеанс в брони дома** (гость по ссылке брони,
+  персонал с основанием по ЮР39-6, бронь дома с сеансами сразу «всё или ничего»), ручной заказ персоналом;
+- кабинет: список и карточка услуги (5 вкладок), «День услуг», карточка сеанса, группа «Услуги» в шахматке, сеансы в графике;
+- напоминание накануне заезда — редактируемые время и шаблон, три канала (мессенджер, страница брони, push с фильтром строк и
+  переключателем, по умолчанию выключен), предпросмотр и журнал;
+- права `ManageServices`/`EditServiceContent`/`ManageServiceDates`, 12 новых типов уведомлений (27…38), 5 новых правил retention,
+  ПДн заказов услуг в выгрузке/удалении/отзыве согласия; ЮР39-2 — сведения об исполнителе обязательны всегда, и для домов с
+  предоплатой 0 %;
+- хвосты цикла 37: MAX-карточка сотрудника перенесена в общий код и показана в профиле dom (C37-4), `redocly lint` cycle37/cycle39 —
+  без замечаний (C37-3, ↪ со слов постановки, не перезапускалось), скрипт замера p95 (`tools/bench/cycle39`, C37-5 — не прогонялся);
+  nginx dom маскирует `/s/<token>` (+ проверка в CI);
+- вне цикла, в той же ветке: исправлен нестабильный тест демо цикла 35 (`515fff3`, §9.5).
+
+**Цикл 41 — главная «Домов» на едином шаблоне** (✔ `git diff develop...707899e`; влита мерджем `68e9ba9` — до мерджа ветка
+`cycle/041-stays-landing`). Подробно — §5.14, долг — §9.9. Коротко:
+- шаблон главной (`src/components/landing/`) получил второй вариант шапки: `layout: 'panel'` — текст слева, белая рамка со слотом
+  `heroAside` справа (с 1024 px), до трёх фактов под абзацем, полоса во всю ширину с линейным SVG гор внизу. Ветка по умолчанию
+  («Запись», «Заказы») разметку не поменяла — это держит тест с эталоном `innerHTML` (T41-02);
+- главная dom (`/`) = `ServiceLanding` + `stayLanding` + слоты `StaySearchPanel` (форма «Подбор дома», перенесена как есть) и
+  `StayCatalog` (список, состояния, пагинация, новый `h2` «Дома в Шерегеше»); фильтры по-прежнему только в URL (`useCatalogFilters`);
+- новые секции dom: «Для гостей», полный блок «Для владельцев» (вместо тёмной плашки; кнопка «Мой кабинет» только для вошедшего
+  заменена на «Войти в кабинет» для всех), FAQ из 8 вопросов. Тарифов и медиа-блока нет (решение Q41-3);
+- `HouseCard`: название компании, дома и адрес переносятся по словам и не обрезаются (`line-clamp-2` у адреса снят) — видно и на
+  `/:slug`;
+- бэкенд, API, БД, CI, nginx — без изменений; новых npm-пакетов нет. В `contracts/cycle36/test-areas.json` области `stays` добавлен
+  префикс `src/components/landing/`.
+
+**Между циклами 38 и 41 — фикс `fix/landing-no-featured-plan-no-photo`** (`171e623`, мердж `050c3d0`, ✔ по diff): на `/pricing` всех
+сервисов первый платный тариф больше не подсвечивается (`PlanCard` без `featured`), с главной «Записи» убрано фото салона
+(`zapisLanding.media` и `salon-hero.jpg` удалены) — медиа-блока теперь нет ни у одного сервиса. Плюс `0a9c0b7` — синтаксическая правка
+шага lint контрактов в `ci.yml`.
+
+**Цикл 38 — единый шаблон главной, FAQ, публичные тарифы «Заказов»** (✔ `git diff develop...ff73c2e`; ветка
+`cycle/038-unified-landing-template`, шла параллельно с циклом 37 и влита в `develop` поверх него). Подробно — §5.13, долг — §9.8. Коротко:
+- главные «Записи» (`src/pages/HomePage.tsx`) и «Заказов» (`goods/src/pages/CatalogHomePage.tsx`) — теперь по 8 строк: конфиг +
+  свой каталог + общий шаблон `ServiceLanding` из `src/components/landing/`; порядок секций у обеих одинаковый (первый экран →
+  каталог → [фото] → для клиентов/покупателей → для бизнеса → тарифы → FAQ); у «Записи» каталог поднялся наверх, появился блок
+  «Для бизнеса», встроенный второй футер убран;
+- FAQ на обеих главных (по 8 вопросов, тексты в коде сервиса);
+- бэкенд: `GET /api/pricing/orders`, каталог платных тарифов «Заказов» `OrdersTariffCatalog` («Лавка» 690, «Магазин» 1 490, «Сеть
+  магазинов» от 2 990) и раздел «Заказы» в `ops tariffs plan|apply`; бесплатный тариф «Заказов» `apply` переименовывает в
+  «Бесплатный», но **не публикует** (§5.13);
+- goods: блок «Тарифы» на главной, страница `/pricing`, ссылка «Тарифы» в шапке — только когда сетка есть (200);
+- ezbook: маршрут `/cabinet/new` («Подключить салон» для любого вошедшего), диалог `CreateCompanyDialog` общий для кабинета и этого
+  маршрута, `ProtectedRoute` вынесен и умеет `returnTo` и `deniedTo`;
+- миграций, новых пакетов и переменных боя нет; выкат — `DEPLOY.md` §29.
 
 **Цикл 37 — «Дома», цикл 1: посуточная аренда домов в Шерегеше на `dom.ezbook.ru`** (✔ `git diff f60da0d..a7e3168`; ветка
 `cycle/037-stays-houses`, влита мерджем `a7e3168` 2026-10-08). Третья вертикаль платформы: вид компании `Stays`, своя модель данных
@@ -1071,6 +1341,12 @@ dom задеплоен на ту же машину (она и стенд, и б�
 
 К правилам retention задачи `data-retention` цикл 37 добавил **шесть** (✔ +6 регистраций `IRetentionRule` в
 `ApplicationServicesExtensions`; файл `Services/Retention/Rules/StayRetentionRules.cs`, §5.12).
+**Цикл 39 новых задач не добавил** (✔ diff `ApplicationServicesExtensions`, `appsettings.json`), расширил две: `stays-hold-expiry` —
+второй проход по заказам услуг (`ServiceOrderHoldExpirer`, освобождает сеанс); `stays-scheduled-messages` — «осталось 10 минут» по заказам
+услуг (только при `HoldMinutes ≥ 20`), время напоминания накануне берётся из `StaysSettings.ArrivalReminderTime` (вместо зашитых 18:00),
+текст — из шаблона компании (`ArrivalReminderTemplate.Render`), снимок для страницы брони пишется в `StayBookings.ArrivalReminderPageText`
+и событие `ArrivalReminderSent`. Retention: **+5 правил** (`stay-service-order-payment-proofs`, `stay-service-order-unpaid-personalization`,
+`stay-service-order-personalization`, `stay-service-order-events`, `stay-service-schedule-events`; §5.15) — итого правил «Домов» 11.
 Задачи до цикла 37:
 
 | Задача | Полоса | Что делает |
@@ -1092,6 +1368,9 @@ dom задеплоен на ту же машину (она и стенд, и б�
 Тик `main` — 10 с, тик `realtime` — 1 с. В окружении `Testing` все задачи выключены (`appsettings.Testing.json`).
 
 ### 5.7 Главная goods, путь покупателя, доска заказов, изображения во фронте — цикл 30 (✔ по коду на `aeed251`)
+> ⚠️ **С цикла 38 описание главной goods ниже (порядок внутри `CatalogHomePage`, файлы `BuyersBlock`/`BusinessBlock`/`ScreenshotFigure`,
+> паритет T30-13) устарело**: файлов больше нет, разметка — в общем шаблоне, тексты — в `goods/src/landing/goodsLanding.ts`, текущее
+> устройство — §5.13. Путь покупателя, статусы, доска заказов и стенд скриншотов ниже по-прежнему верны.
 Раздел описывает состояние **после цикла 30** («блок „Для покупателей“ и настоящие скриншоты на главной goods»). Ветка
 `cycle/030-user-section-screenshots` влита в `develop` мерджем `e1d7cdb`. Документы цикла: спека в архиве
 `SPEC_CYCLE30_USER_SECTION_SCREENSHOTS.md`, `ARCHITECTURE_CYCLE30.md` (§30.0–§30.15), `API_CONTRACT_CYCLE30.md`
@@ -1602,6 +1881,14 @@ goods нет (✔ grep по `frontend/goods/src`); гостевой заказ �
 
 ### 5.12 «Дома» (dom.ezbook.ru) — цикл 37 (✔ по коду на `a7e3168`, ничего не запускалось)
 
+> **С цикла 39 (влит, `5bcd015`)** у компании «Дома» есть услуги-слоты, заказы услуг без проживания, сеансы в бронях и редактируемое
+> напоминание накануне; часть пунктов ниже изменилась: гейт приёма требует сведения об исполнителе **всегда** (ЮР39-2, не только при
+> предоплате > 0), «услуг-слотов нет» и «нет MAX-карточки в профиле dom» больше не верны, retention «Домов» — 11 правил. Подробно — §5.15.
+
+> **С цикла 41 (влит мерджем `68e9ba9`)** главная dom `/` устроена иначе, чем описано ниже для цикла 37: она собрана на
+> общем шаблоне (`ServiceLanding`), форма подбора и каталог разнесены по слотам, внизу — «Для гостей», «Для владельцев» и FAQ, а
+> `HouseCard` не обрезает название и адрес. Поведение каталога (фильтры в URL, запрос, тексты состояний, пагинация) — прежнее. Подробно — §5.14.
+
 **Что есть и работает по коду** (покрыто CY37-* и юнит-тестами, §7.1; на бою 🖥 — §5.1):
 - **Компания «Дома».** Создаётся только в городе «Шерегеш» (сервер подставляет сам; пояс — по городу), с соглашением владельца и,
   по желанию, триалом. Настройки — правила заезда/выезда, мин./макс. ночей, горизонт, «закрыть разрыв», заезд в тот же день,
@@ -1690,6 +1977,279 @@ goods нет (✔ grep по `frontend/goods/src`); гостевой заказ �
 - Живой отправки уведомлений гостю (WhatsApp/MAX) не было; push гостю на бою — не подтверждён письменно.
 - Ручных проверок на стенде, записанных в `TEST_CATALOG.md`, у цикла 37 нет (раздел каталога — только автотесты).
 
+### 5.13 Единый шаблон главной, FAQ, тарифы «Заказов», `/cabinet/new` — цикл 38 (✔ по коду на `ff73c2e`, ничего не запускалось)
+Документы цикла: `BRIEF_CYCLE38_UNIFIED_LANDING.md` (решения заказчика Q38-1…Q38-6 и уточнения 7–8 от 08.10 — приоритетнее текста
+SPEC), `SPEC_CYCLE38_UNIFIED_LANDING.md`, `ARCHITECTURE_CYCLE38.md` (§38.0–§38.17), `API_CONTRACT_CYCLE38.md` (§38.20–§38.27),
+`contracts/cycle38/`. Миграций нет, схема БД не менялась.
+
+**Шаблон** — `frontend/src/components/landing/` (лежит в `src/components/**`, поэтому goods импортирует его без правки
+`goods-shared-sources.js`).
+> **После цикла 38** (✔ по коду на `707899e`): у `ServiceLanding` появилась вторая ветка разметки — шапка с панелью (цикл 41, §5.14);
+> ветка, описанная ниже, не изменилась. Фото салона на главной «Записи» (`media`) снято фиксом `171e623` — медиа-блока сейчас нет ни у
+> одного сервиса, сам `LandingMedia` в шаблоне остался. Подсветки первого платного тарифа в `PlanCard` больше нет (тот же фикс).
+- `ServiceLanding({ config, catalog })` рисует `<main class="max-w-[1180px] …">` и фиксирует порядок: `LandingHero` → `LandingCatalogFrame`
+  (`section` с `id`/`aria-label` из конфига, `scroll-mt-24`; содержимое — компонент каталога сервиса) → необязательный `LandingMedia`
+  (картинка после каталога, `loading="lazy"`, `object-contain`, без обрезки) → `LandingClientsSection` → `LandingBusinessSection` →
+  необязательный `LandingPricingSection` → `FaqSection`. **Футер в шаблон не входит** (общий `Footer`/`GoodsFooter` раскладки).
+- Конфиг — `LandingConfig` (`types.ts`): `hero`, `catalog`, `media?`, `clients`, `business`, `pricing?`, `faq`. Типы держат форму:
+  ровно 3 шага (`ThreeSteps`), 1–2 кнопки у клиентов и ровно 2 у бизнеса, FAQ не меньше 6 (`FaqItems`; «не больше 8» — тестом
+  конфига). Полей `className`/`style`/`as` в типах нет — перекрасить секцию из конфига нельзя. Кнопки — `LandingAction`: `anchor`
+  (`<a href="#…">`), `route` (`Link`), `auth-route` (`guestTo`/`authedTo` по `authStore.isAuthenticated()`), рисует `LandingActionLink`.
+  Классы секций — `classes.ts` (`SECTION`, `H2`, `BTN_PRIMARY`, `BTN_SECONDARY`, `FOCUS_RING`).
+- Скриншоты: `LandingScreenshotFigure` (бывший `ScreenshotFigure`: `<picture>` + `<source>` + `img loading="lazy"`). Если у сервиса
+  нет скриншота, рисуется **одна** заглушка «Здесь будут скриншоты» на страницу (`data-testid="landing-screenshot-placeholder"`) —
+  в первом пустом слоте (секция 3, иначе 4). У «Записи» скриншотов нет → заглушка в «Для клиентов»; у «Заказов» оба есть → заглушки нет.
+- `FaqSection` — `section#faq` с `h2#faq-title` «Частые вопросы»; пункт — `h3 > button[aria-expanded][aria-controls]`, ответ —
+  `div[hidden]`; все свёрнуты, раскрывать можно несколько. Ответ — только текстовые узлы React (строка или массив абзацев), HTML не
+  интерпретируется; необязательная ссылка `link: {to, label}`.
+- `LandingPricingSection` (бывший `PricingTeaser`): пока грузится, при 404, ошибке и пустом списке — ничего; иначе `h2` «Тарифы», строка
+  «{lead} — от {самый дешёвый платный}», до 3 карточек по `sortOrder` и ссылка «Все тарифы» → `/pricing`.
+- `CatalogCard` — общая карточка каталога салона и магазина: название и адрес **не обрезаются** (`break-words
+  [overflow-wrap:anywhere]`, без `truncate`), карточки в ряду растягиваются по высоте.
+- Guard-тесты (T38-09): `src/components/landing/landing.guard.test.ts` (нет `dangerouslySetInnerHTML`, нет импортов из `pages`/goods,
+  нет `className|style|as` в типах) и `goods/src/landing/configs.guard.test.ts` (в конфигах нет `className`/JSX, в
+  `HomePage.tsx`/`CatalogHomePage.tsx` нет `<section|<h1|<h2`, у goods 6–8 вопросов и **нет ссылки и упоминания раздела «Тарифы»** в FAQ).
+
+**Главная «Записи»** — `HomePage` = `ServiceLanding` + `zapisLanding` + `ZapisCompanyCatalog`.
+- Первый экран: «Онлайн-запись за пару минут», `h1` «Красота и уход, / подобранные под вас», кнопка «Найти специалиста» → `#companies`,
+  якорь «Как записаться» → `#clients-title`. Картинки справа нет; фото салона (`assets/salon-hero.jpg`) — медиа-блок **после каталога**.
+- Каталог `section#companies` (`ZapisCompanyCatalog`, логика прежней главной: город в `localStorage['home-city']`, поиск с задержкой,
+  пагинация, `ShowcaseBadge`, плашка «Онлайн-запись»), карточки — `CatalogCard`.
+- «Для клиентов» (`h2#clients-title`): шаги прежнего `#how` (с «напоминанием накануне визита», Q38-6), список «Что ещё можно», пометка
+  «Оплата — в салоне», кнопки «Найти специалиста» и «Мои визиты». «Для бизнеса» (`h2#biz-title`) — **новый блок**: 5 преимуществ,
+  3 шага, кнопки «Подключить салон» (`auth-route`: гость → `/register?returnTo=%2Fcabinet%2Fnew`, вошедший → `/cabinet/new`) и
+  «Войти в кабинет» → `/cabinet`. Тексты `clients.text`/`business.text` в коде помечены как черновики на вычитку заказчиком.
+- Тарифы — `zapisPricingLine` (`GET /api/pricing`), lead «Онлайн-запись и аналитика». FAQ — `zapisFaq` (8 вопросов; у вопроса о цене
+  для салона ссылка «Тарифы и цены» → `/pricing`).
+- Блока `#how` и собственного `<footer>` больше нет; на `/` один футер.
+
+**Главная «Заказов»** — `CatalogHomePage` = `ServiceLanding` + `goodsLanding` + `ShopCatalog` (маршруты `/`, `/city/:cityId`).
+Тексты бывших `BuyersBlock`/`BusinessBlock` перенесены в конфиг дословно; id сохранены (`#shop-list`, `buyers-title`,
+`buyers-steps-title`, `buyers-track-title`, `biz-title`, `biz-steps-title`, `data-testid="catalog-list"`/`catalog-shop`); форма поиска,
+«Открыто сейчас», «Поделиться» и фильтры в URL — в `ShopCatalog`. Медиа-блока нет. «Подключить магазин» → `/register?returnTo=%2Fcabinet%2Fnew`
+/ `/cabinet/new` (страница создания магазина goods существовала и раньше). Тарифы — `ordersPricingLine`, lead «Приём заказов с
+самовывозом». FAQ — `goodsFaq` (8 вопросов, без ссылки на `/pricing`).
+
+**Тарифы на фронте — абстракция «линейка»** (`src/components/pricing/pricingLine.ts`): `PricingLine { queryKey, fetchGrid }`,
+`usePricingGrid(line)` (react-query, `retry: false`, `staleTime` 20 с); в кеше лежит уже приведённый вид `PricingGridView` (у плана —
+готовые строки лимитов `limitLines`). Линейки: `zapisPricingLine` (`['public-pricing','services']`, лимиты «компании/сотрудники») и
+`goods/src/pricing/ordersPricingLine.ts` (`['public-pricing','orders']`, лимиты «магазины/участники/товаров в магазине/заказов в месяц»
+или «Заказы без ограничений»; у товаров «без ограничений» не бывает). Потребители — `PricingNavLink line=…` (шапки `Navbar` и `GoodsNavbar`,
+ссылка только при 200), `LandingPricingSection`, `PricingPageBody` (общее тело `/pricing`: при 404 «Тарифы пока не опубликованы.»,
+`notice` и `legalNotice` под сеткой). `PlanCard` печатает `limitLines` + `highlights` (слова «компании/сотрудники» в нём больше не
+зашиты). `formatIncludedLimit` теперь форматирует число по `ru-RU` («до 1 500»). Страницы: `src/pages/PricingPage.tsx` («Тарифы и цены —
+EZBOOK», CTA «Зарегистрировать компанию» → `/register`) и `goods/src/pages/PricingPage.tsx` («Тарифы и цены — EZBOOK Заказы», CTA
+«Подключить магазин»).
+
+**Тарифы «Заказов» на бэкенде.**
+- `ServiceBooking.API/Services/Showcase/Tariffs/OrdersTariffCatalog.cs` — чистое описание платной сетки (утверждено заказчиком, Q38-1):
+
+  | Тариф | Id | Цена, ₽/мес | Магазинов | Участников | Товаров в магазине | Заказов в месяц | SortOrder |
+  |---|---|---|---|---|---|---|---|
+  | «Лавка» | `5a1e0c38-0000-4000-8000-000000000020` | 690 | 1 | 5 | 300 | 1 500 | 20 |
+  | «Магазин» | `5a1e0c38-…-000000000030` | 1 490 | 3 | 15 | 1 000 | 5 000 | 30 |
+  | «Сеть магазинов» | `5a1e0c38-…-000000000040` | 2 990 (в описании «от 2 990») | без огр. | без огр. | 1 000 | без огр. | 40 |
+
+  У каждого — описание и 3 преимущества. Создаются с `IsActive = IsPublic = true`, `AllowOrders`, `AllowPublicListing`,
+  `AllowNotificationChannel` = true, остальные `Allow*` = false, `PhotoQuotaMb` 100.
+- Бесплатный тариф «Заказов» (`IsSystemFree && Line == Orders`, сид миграции цикла 24: «Заказы · Бесплатно», 1/2/50/150,
+  `IsPublic = false`, `Highlights = NULL`, `SortOrder = -1`). Целевые значения в каталоге: «Бесплатный», новое описание, `SortOrder` 10,
+  `FreeHighlights` (3 строки).
+- `TariffCatalogSeeder` (`ops tariffs plan|apply`) получил раздел «Заказы» (`RunOrdersAsync`, после раздела «Записи», в той же
+  транзакции и под тем же замком): ищет тариф по Id, затем по имени **только среди линейки Orders**; найденный не трогает и пишет
+  расхождения в отчёт (цена, лимиты, `IsPublic`, `IsActive`); недостающий создаёт. Правила опций: у созданных —
+  `notifications.whatsapp` = `Extra`, остальные `Unavailable`; у найденных — только недостающие строки и только `Unavailable`.
+  `AlignOrdersFreeTariff` меняет у бесплатного **только** название, описание и `SortOrder` и только пока в поле значение сида; **`IsPublic`,
+  `Highlights` и лимиты не трогает никогда** (правка ревью `8310306`; держит CY38-B04-02). Следствие: после `apply` на базе с сидом
+  цикла 24 бесплатный тариф остаётся непубличным и без преимуществ — в сетке только три платных; публикуют его руками в админке
+  (`DEPLOY.md` §29 п. 2). `TariffCatalogReport` дополнен полями `OrdersPlansCreated`, `OrdersRulesAdded`, `OrdersFreeFieldsAligned`.
+- Сброс демо (`DemoResetService`) вызывает тот же `ApplyAsync`, поэтому на demo.zakaz сетка «Заказов» засевается сама; бесплатный
+  тариф там тоже не публикуется (таблица тарифов сбросом не очищается — `DemoResetTables.Kept`, ручная правка переживает сброс).
+- Публичный эндпоинт — §4. Сборка ответа — чистая статика `Services/Billing/OrdersPricingCatalogBuilder.cs` (фильтр Orders + `IsActive` +
+  `IsPublic` + не служебный, сортировка `SortOrder`, затем цена; `PricingCatalogBuilder.SplitHighlights` стал `internal` и общий).
+  `PricingCatalogCache` получил `IOptions<OrdersOptions>` (потолок товаров) и `GetOrdersAsync`.
+- Кабинет goods (`/cabinet/subscription`, `availablePlans`) новые тарифы видит сразу после `apply`; подключение — как раньше, заявкой,
+  тариф назначает суперадмин. Нового биллинга нет.
+
+**`/cabinet/new` и `CreateCompanyDialog` (ezbook).**
+- `src/components/company/CreateCompanyDialog.tsx` (273 строки) — диалог «Создать компанию» целиком перенесён из `CabinetPage.tsx`
+  (`CabinetPage` −286 строк, использует диалог по кнопке, как раньше). Пропсы `onClose`, необязательный `onCreated(company)`. После
+  `POST` создания компании сохраняет новый токен из ответа и **добавляет роль `CompanyOwner` в сохранённого пользователя без
+  перелогина** (`utils/ownerRole.ts → withOwnerRole`), сбрасывает `['my-companies']`.
+- `src/pages/CreateCompanyPage.tsx` — маршрут `/cabinet/new` (`ProtectedRoute returnToPath="/cabinet/new"`, без ролей): заголовок
+  «Подключить салон», тот же диалог; после создания — `/cabinet`, по закрытию — `/`.
+- `src/components/auth/ProtectedRoute.tsx`: гость → `/login` (с `?returnTo=` при `returnToPath`), вошедший без роли → `deniedTo`
+  (по умолчанию `/`). `/cabinet` теперь `deniedTo="/cabinet/new"`: клиент без роли попадает на создание салона, а не на главную.
+- Тесты — `src/pages/CreateCompanyRoute.test.tsx` (область `account` в `test-areas.json`).
+
+**Тесты цикла** (✔ по файлам; прогоны codebase-analyst не делал): фронт — тесты шаблона (`ServiceLanding`, `FaqSection`,
+`LandingPricingSection`, `LandingMedia`, `LandingActionLink`, `CatalogCard`, guard), главных (`HomePage.test.tsx`,
+`goods/.../CatalogHomePage.test.tsx`), `zapisFaq.test.ts`, `ordersPricingLine.test.ts`, `zapisPricingLine.test.ts`, `PricingPage.test.tsx`
+(goods), `GoodsNavbar.test.tsx`, `PlanCard.test.tsx`, `CreateCompanyRoute.test.tsx`; тесты `BuyersBlock`/`BusinessBlock` переехали в
+`goods/src/landing/goodsLanding.*.test.tsx` (T30-13 «паритет классов» удалён — его держит тест шаблона; реестр — `TEST_CATALOG.md`,
+«Цикл 38»). Бэкенд — функциональные `Cycle38OrdersPricingTests.cs` (4 класса, 8 `[Fact]`, CY38-B04-01…B05-06) и CY38-B06-01 в
+`Cycle35DemoScenarioTests` (на демо-базе после сброса — у этого класса это клон засеянного шаблона, §7.5 — `GET /api/pricing/orders` —
+200 по контракту, три платных тарифа есть, «Демо» нет; `TEST_CATALOG.md` называет это «настоящим `ResetAsync`»);
+юнит — `OrdersPricingCatalogBuilderTests.cs` (8) и `OrdersTariffCatalogTests.cs` (9).
+
+### 5.14 Главная «Домов» на едином шаблоне, шапка с панелью — цикл 41 (✔ по коду на `707899e`; влит мерджем `68e9ba9`, ничего не запускалось)
+Документы цикла: `BRIEF_CYCLE41_STAYS_LANDING.md` (ответы заказчика Q41-1…Q41-4 от 09.10 — приоритетнее SPEC),
+`SPEC_CYCLE41_STAYS_LANDING.md` (US-41-01…09), `ARCHITECTURE_CYCLE41.md` (§41.0–§41.13). API, БД, контракты, nginx и CI не менялись;
+каталог по-прежнему ходит в `GET /api/stays/catalog` (контракт цикла 37, `contracts/cycle37/dom-routes.json` не тронут).
+
+**Шаблон: второй вариант шапки** (`frontend/src/components/landing/`).
+- Типы (`types.ts`): `LandingPanelHeroConfig { layout: 'panel', eyebrow, title, intro, howTo: AnchorAction, facts: HeroFacts, backdrop:
+  HeroBackdrop }`; `HeroFacts` — кортеж из 0–3 `HeroFact { icon: IconName, text }` (4 факта — ошибка `tsc`); `HeroBackdrop = 'none' |
+  'mountains'` (закрытый список); `LandingPanelConfig = Omit<LandingConfig, 'hero'> & { hero: LandingPanelHeroConfig }`. В обычный
+  `LandingHeroConfig` дописано `layout?: never` — поэтому панельный конфиг нельзя передать как обычный. Основной кнопки у панельной
+  шапки нет, `primaryAction` в типе отсутствует.
+- `ServiceLanding(props: ServiceLandingProps)` — объединение пропсов: `{ config: LandingConfig; catalog; heroAside?: undefined }` |
+  `{ config: LandingPanelConfig; catalog; heroAside: ReactElement }` (слот обязателен, `null` не принимается). Ветка выбирается
+  предикатом `isPanelProps` (`config.hero.layout === 'panel'`). Секции 2–6 (`LandingCatalogFrame` → `LandingMedia?` →
+  `LandingClientsSection` → `LandingBusinessSection` → `LandingPricingSection?` → `FaqSection`) вынесены в общий фрагмент
+  `LandingSections`, правило «одна заглушка скриншота» считается там же. Ветка по умолчанию: `<main class="max-w-[1180px] mx-auto
+  px-4 sm:px-8 pt-10 md:pt-16 pb-10">` + `LandingHero` + секции — как в цикле 38 (эталон `innerHTML` — `landingReference.ts`). Ветка
+  `panel`: `<main class="pb-10">` (без `max-w`/`px`) → `LandingPanelHero` → `<div class={CONTAINER}>` с секциями;
+  `CONTAINER = 'max-w-[1180px] mx-auto px-4 sm:px-8'` (`classes.ts`).
+- `LandingPanelHero` — полоса во всю ширину `main` (`relative overflow-hidden border-b bg-gradient-to-b from-cream-deep to-cream`, без
+  `100vw`); внутри контейнер с `pt-10 md:pt-16 pb-20 md:pb-28` и сеткой `lg:grid-cols-[1.05fr_1fr]` (только когда есть слот).
+  eyebrow — на белой плашке-«пилюле» (`text-gold-dark`), `h1` с теми же классами, что у `LandingHero`, выделение — `em.text-gold-dark`,
+  якорь `howTo` — `min-h-[44px]`, факты — `ul[role=list]` с декоративными иконками (`aria-hidden`), ключ пункта — индекс + текст
+  (`707899e`). Слот кладётся в рамку шаблона `rounded-3xl border bg-white p-5 shadow-soft sm:p-6`; без слота (обход типов) рамки и
+  второй колонки нет, страница не падает.
+- `LandingHeroBackdrop` — `Record<'mountains', () => JSX.Element>`: один `svg[aria-hidden="true"][focusable="false"]`, `viewBox 0 0 1200 120`,
+  `preserveAspectRatio="none"`, `absolute bottom-0 h-16 md:h-24 text-line-strong`, два контура хребта без заливки (дальний — `opacity
+  0.6`), без `title` и текста. Сетевых запросов не добавляет.
+- Пользуется вариантом `panel` пока только dom; «Запись» и «Заказы» — на обычной шапке, их конфиги и тесты не менялись (✔ `git diff
+  --stat`: `src/pages/home/`, `goods/src/landing/`, `LandingHero.tsx` не тронуты).
+
+**Главная dom `/`** — `dom/src/pages/CatalogPage.tsx` (было 262 строки, стало 12): `<ServiceLanding config={stayLanding}
+heroAside={<StaySearchPanel />} catalog={<StayCatalog />} />`. Своих `main`/`section`/`h1`/`h2` в странице нет; `DomApp` не менялся
+(один `main` из шаблона, один `DomFooter`).
+- `dom/src/hooks/useCatalogFilters.ts` — `{ filters, setFilters, resetFilters }` поверх `useSearchParams`: `parseCatalogFilters` /
+  `toSearchParams` из прежнего `utils/catalogQuery.ts` (не менялся); каждая запись — новая запись истории. URL — единственное общее
+  состояние панели и каталога (ни пропсов, ни контекста между ними).
+- `dom/src/components/catalog/StaySearchPanel.tsx` — бывшая форма шапки, перенесена без изменения поведения и текстов:
+  `form[aria-label="Подбор дома"]`, 4 поля с `label` («Заезд», «Выезд», «Гостей», «Цена за ночь до, ₽»), `min` заезда — дата устройства
+  (`deviceToday` переехала сюда), `min` выезда — заезд + 1; очистка выезда при заезде ≥ выезда; подсказки «Укажите обе даты…» / «Дата
+  выезда должна быть позже даты заезда» в `p[role=status]`; «Гостей» и «Цена» пишутся в URL с задержкой (`useDebouncedValue`, одна
+  запись истории); «Сбросить фильтры» (`ghost`, только при активных фильтрах) — `resetFilters()` + сброс подсказки. Классов карточки у
+  формы больше нет (рамку даёт шаблон). Это единственное место, где URL пишется из эффекта.
+- `dom/src/components/catalog/StayCatalog.tsx` — `h2#houses-title` «Дома в Шерегеше» (новый) вне `aria-live`, под ним `div[aria-live=
+  polite]`: три скелета / ошибка с повтором / два пустых состояния (с фильтрами — кнопка «Сбросить фильтры») / счётчик «Все дома: N» или
+  «Свободно на ваши даты: N» + сетка `HouseCard` + `Pagination` (12 на страницу). queryKey `['stays-catalog', toApiQuery(filters)]`,
+  `placeholderData: prev` — как раньше. URL пишет только по клику (страница, сброс). `useAuthStore` в каталоге больше не используется.
+- `dom/src/landing/stayLanding.ts` (`LandingPanelConfig`, только данные): шапка — eyebrow «Шерегеш · посуточно», `h1` «Дом на склоне, / а
+  не номер в отеле» (неразрывный пробел сохранён), прежний абзац «…напрямую владельцу — без комиссии с гостя», якорь «Как
+  забронировать» → `#guests-title`, факты «Только дома в Шерегеше» / «Свободные даты видны сразу» / «Предоплата — напрямую владельцу»,
+  `backdrop: 'mountains'`; каталог `section#houses[aria-label="Дома в Шерегеше"]`; «Для гостей» (`h2#guests-title`, кнопки «Выбрать дом»
+  → `#houses` и «Мои брони» → `/bookings`, 3 шага, список «Что важно знать» из 5 пунктов, пометка про предоплату); «Для владельцев»
+  (`h2#biz-title`, текст прежней тёмной плашки, 6 преимуществ, 3 шага, кнопки «Подключить дома» (`auth-route`: гость →
+  `/register?returnTo=%2Fcabinet%2Fnew`, вошедший → `/cabinet/new`) и «Войти в кабинет» → `/cabinet` для всех); скриншотов нет →
+  одна заглушка в «Для гостей». **`pricing` и `media` нет.** В комментарии файла тексты помечены черновиками на вычитку заказчиком и
+  юристом вместе с комплектом `Stay*`.
+- `dom/src/landing/stayFaq.ts` — 8 вопросов (регистрация, оплата, время на оплату, подтверждение, отмена, собаки, «В каких местах есть
+  дома?» → «Только в Шерегеше.», «Как сдавать свои дома через EZBOOK Дома?»), без `link`, без цен. Ответ п. 1 («бронь появится в „Моих
+  бронях“») сверен разработчиком по коду — комментарий в файле ссылается на `StayBookingCreationService` и `GET /stays/bookings/my`.
+- Порядок на странице: `h1` → форма «Подбор дома» → `section#houses` → `#guests-title` → `#biz-title` → `section#faq`. Новые id:
+  `houses`, `houses-title`, `guests-title`, `guests-steps-title`, `guests-list-title`, `biz-title`, `biz-steps-title`, `faq`, `faq-title`.
+- Сеть на `/`: один `GET /api/stays/catalog`; тарифов не запрашивает (в конфиге нет `pricing`, в `DomNavbar` нет `PricingNavLink`).
+  `noindex` — как в цикле 37: заголовок `X-Robots-Tag: noindex, nofollow` в `deploy/nginx/dom.ezbook.conf` **и** `<meta name="robots"
+  content="noindex, nofollow">` в `frontend/dom/index.html` (с цикла 37; React-код главной своих `meta`/`canonical`/JSON-LD не
+  добавляет).
+
+**`HouseCard`** (`dom/src/components/HouseCard.tsx`): у названия компании (`p`) и дома (`h3`) добавлены `break-words
+[overflow-wrap:anywhere]`, у адреса `line-clamp-2` заменён на `min-w-0 break-words [overflow-wrap:anywhere]`. Остальное без изменений.
+Карточка та же и на странице компании `/:slug` — высота карточек там тоже может меняться. Общий `CatalogCard` для домов не используется.
+
+**Тесты цикла** (✔ по файлам; прогоны codebase-analyst не делал; реестр — `TEST_CATALOG.md`, «Цикл 41»): vitest, 41 `it` в 4 файлах —
+`src/components/landing/LandingPanelHero.test.tsx` (T41-01 a–h, T41-01t — 7 строк `@ts-expect-error`, проверяет `tsc`, T41-02 — 2 `it`, в т.ч.
+эталон `innerHTML`; 11 `it`), `dom/src/landing/configs.guard.test.ts` (T41-03, 10), `dom/src/pages/CatalogPage.test.tsx` (T41-04, 16;
+`createMemoryRouter`, мок `publicStaysApi`), `dom/src/components/HouseCard.test.tsx` (T41-05, 4). Фикстуры — `catalogItemFixture`,
+`catalogPageFixture` в `dom/src/test/fixtures.ts`, `makePanelConfig` в `src/components/landing/testConfig.ts`. Область быстрого контура:
+`npm run test:area -- stays` теперь включает и тесты шаблона (§7.2). Функциональных тестов бэкенда цикл не добавлял. Плюс
+`.claude/launch.json` — конфигурация `frontend-dom` (`npm run dev:dom`, порт 5175) для локального запуска в IDE-агенте.
+
+### 5.15 «Дома», цикл 2 — услуги-слоты и напоминание накануне заезда — цикл 39 (✔ по коду на `5bcd015`, ничего не запускалось)
+Документы цикла: `SPEC_CYCLE39_STAYS_SLOTS_ICAL.md` (US-39-01…28), `ARCHITECTURE_CYCLE39.md` (§39.0a — решения заказчика ЮР39-1…10 по
+`LEGAL_REVIEW_CYCLE39.md`, приоритетнее SPEC; §39.0 — сводка A39-1…14), `API_CONTRACT_CYCLE39.md`, `contracts/cycle39/`, `DEPLOY.md` §28а.
+Схема — §3 («Дома», цикл 39), маршруты — §4. iCal в цикл не вошёл (цикл 40).
+
+**Что есть по коду** (покрыто CY39-* и юнит-тестами, §7.1):
+- **Услуга** — у компании «Дома» до `MaxPerCompany` = 20 услуг; карточка (slug в адресе `/<slug компании>/uslugi/<slug услуги>`,
+  описание с обязательным текстом `StayServiceSafetyOwnerNotice`, фото до 10), правила (шаг 30/60 мин, мин./макс. часов, зазор на
+  подготовку, мин. упреждение, рубеж отмены, политика отмены, процент предоплаты для заказа без проживания), недельный шаблон окон +
+  ручные дни (правка расписания сеансы не отменяет, а предупреждает о сеансах вне новых окон), цены за час «маска дней × часы 6…30»
+  (без пересечений), позиции (по умолчанию количество 0 — ЮР39-6), публикация по `ServicePublishRules` (нужны цена и окна), снятие,
+  архив/удаление.
+- **Бизнес-день** — с 06:00 (`Stays:Services:BusinessDayStartMinute = 360`, менять только на пустых данных — `DEPLOY.md` §28а). Окно
+  «22:00–02:00» — один день; `BusinessClock` (C# и TS двойник по общим векторам) переводит минуты бизнес-дня в моменты и обратно.
+  Гостю время сеанса через полночь показывается **двумя календарными датами** (ЮР39-8), персоналу — в формате бизнес-дня.
+- **Доступные старты** — чистая `ServiceSlotCalculator` (салонный `SlotCalculator` не обобщался): окна дня, упреждение, занятые
+  интервалы с зазором; занятость, чей родитель — истёкшее удержание, считается свободной (снимается лениво).
+- **Цена** — `ServicePricing.HourPrices` (цена каждого часа по правилу его часа; час без правила — старт недоступен) +
+  `ServiceQuoteBuilder`/`ServiceMoney` (позиции, предоплата с округлением); снимок цен и позиций — в сеансе, поздняя смена цен на
+  созданный сеанс не влияет.
+- **Заказ без проживания** (`POST …/services/{id}/orders`, страница `/s/<token>`): только если у компании включено
+  `AcceptServiceOrdersWithoutStay` (включить без сведений об исполнителе нельзя — 409). Предоплата > 0 → `Held` с таймером `HoldMinutes`,
+  загрузка подтверждения оплаты (те же правила файлов, что у броней), подтверждение/отклонение персоналом; предоплата 0 → сразу
+  `Confirmed`. Статусы — `StayBookingStatus`, переходы — та же `StayStateMachine` (`ServiceOrderTransitionService`). Отмена гостем —
+  возврат по `ServiceRefund.Compute` (ЮР39-1): «Без удержаний» (по умолчанию) — вся предоплата; «Расходы на подготовку» — позже рубежа
+  компания удерживает только фактические расходы, **не больше стоимости первого часа** (`MaxDeductionHours` 0/1); при нулевом остатке
+  текст «только фактические расходы, не больше N ₽», формулировки «к возврату не меньше 0 ₽» нет; отмена владельцем — полный возврат.
+  Шаблона «Стандартный» нет ни в каком виде. Лимиты по номеру — `Stays:Services:PhoneLimits` (2 удержанных на номер, 1 на номер в
+  компании, 10 созданий в сутки), идемпотентность, капча.
+- **Сеансы в брони дома** — гость по ссылке брони (до `MaxSessionsPerBooking` = 5, оплата на месте, без предоплаты — CHECK
+  `CK_StayBookingCharges_ServiceNotPrepaid`), персонал из карточки брони с обязательным основанием (телефон/лично/мессенджер, ЮР39-6,
+  уведомление гостю и бесплатная отмена), бронь дома сразу с сеансами (до `MaxSessionsInBookingForm` = 3, «всё или ничего»; в форме
+  брони услуга по умолчанию не выбрана). Судьба сеансов — по брони: конечный статус брони освобождает их в той же транзакции через
+  `StayBookingReleaser` (событие `ServiceSessionsReleased`).
+- **Порядок замков** (расширение C37-9, `ARCHITECTURE_CYCLE39.md` §39.5.2): `stay-guest-phone` → `stay-house` → `stay-service:*` (по
+  возрастанию Guid) → замок подтверждений → строка брони/заказа → ночи → сеансы (+ строки суммы) → **ревизия `StaysSettings.BookingsRevision`
+  всегда последней, в конце транзакции**. Снятие чужой истёкшей брони под замком услуги — только `pg_try_advisory_xact_lock` (не
+  получилось — 409 `SlotTaken`), ожидания нет.
+- **Кабинет** — `ServicesPage` (список, порядок), `ServiceEditPage` (вкладки содержание/правила/расписание/цены/позиции), «День услуг»
+  (`service-day`: минуты бизнес-дня, полоса подготовки, перенос зазора за 06:00 в следующий день), карточка сеанса, группа «Услуги» в
+  шахматке, сеансы в графике (`sessions[]` в `ScheduleDayDto`; горничной — имя, время, дом, позиции, без телефона и сумм — ЮР39-9).
+- **Напоминание накануне заезда** (`ArrivalReminderCard`, права `ManageCompany`): время 08:00…22:00 с шагом 30 мин (по умолчанию 18:00),
+  шаблон до 700 символов с белым списком подстановок (`ArrivalReminderTemplate`; NULL — прежний текст цикла 37 байт-в-байт), проверки
+  при сохранении (отказ на «задаток / невозвратный / депозит», мягкие предупреждения, диалог подтверждения при признаках кодов
+  доступа — ЮР39-4), предпросмотр и журнал `StaysReminderTemplateChanges`. Три канала: мессенджер (как раньше), **страница брони**
+  (снимок `ArrivalReminderPageText`, пишется задачей и без каналов, стирается при обезличивании — ЮР39-5), **push** — текст шаблона
+  идёт в push только при `ArrivalReminderPushText = true` (по умолчанию выключен, включение — с текстом `StayReminderPushOwnerNotice` и
+  записью в журнал) и через жёсткий фильтр строк (≥ 4 цифр подряд вне подстановок, ссылки, e-mail, телефоны, «код / пароль / Wi-Fi /
+  ключниц / сейф / домофон» — строка выпадает; ЮР39-3).
+- **Права** (`StaysAccess`, имена уходят во фронт, только дописывание): `ManageServices` — владелец (включение заказов без проживания,
+  создание/удаление/публикация услуг); `EditServiceContent`, `ManageServiceDates` — владелец и управляющий (`Manager`); горничная
+  (`Housekeeper`) — только график. Должности сотрудников — те же, что в цикле 37.
+- **Уведомления** — `NotificationType` 27…38 (персоналу: сеанс добавлен, заказ создан, подтверждение оплаты, отмена гостем; гостю:
+  заказ создан, «осталось 10 минут», удержание истекло, подтверждён, оплата отклонена, отменён владельцем, сеанс добавлен/отменён).
+  Салонная маска `EnabledTypeMask` их не видит (`BuildMask` фильтрует `BookingTypes`); 39–40 — резерв цикла 40. Тексты — без ПДн в push.
+- **ПДн и retention** — выгрузка `stayServiceOrders[]` и `sessions[]` в бронях, удаление аккаунта обезличивает заказы услуг, отзыв
+  согласия выключает мессенджер у активных заказов. Пять новых правил (`Retention:*`): подтверждения оплаты заказов, обезличивание
+  неоплаченных (`StayServiceOrderUnpaidDays` = 30) и прочих (`StayServiceOrderPersonalDataDays` = 1095) заказов, журналы заказа и расписания
+  (по 1095 дн.); три правила цикла 37 расширены на сеансы. Отсчёт — от конца сеанса (ЮР39-9).
+- **ЮР39-2** — `StaysBookingGate`: `NoProviderInfo` больше не зависит от процента предоплаты — без сведений об исполнителе компания не
+  принимает **ни брони домов (в том числе с предоплатой 0 %), ни заказы услуг**. Для существующих компаний без этих сведений это
+  меняет поведение на бою: каталог перестаёт принимать брони их домов.
+- **Правовые тексты** — 9 новых ключей `Stay*` (`StayServiceBookingNotice`, `StayServiceBookingTerms`, `StayServiceCancellationTerms`,
+  `StayServiceAddNotice`, `StayServiceCancellationOwnerNotice`, `StayServiceCommentNotice`, `StayReminderTemplateOwnerNotice`,
+  `StayReminderPushOwnerNotice`, `StayServiceSafetyOwnerNotice`) — **вне `LegalTextKey.All`**, фронт показывает запасной текст
+  (`dom/src/utils/stayTexts.ts`) на 404. Все — черновые.
+- **Хвосты цикла 37:** MAX-карточка сотрудника — общий `src/components/staffMax/StaffMaxCard.tsx`, в профиле dom есть (C37-4 снят);
+  `contracts/cycle37/openapi.yaml` почищен под `redocly lint` (C37-3); скрипт `tools/bench/cycle39/bench_catalog.py` для p95 каталога
+  на 500 домах есть, прогона нет (C37-5 открыт); `deploy/nginx/dom.ezbook.conf` маскирует `/s/<token>` и
+  `/api/stays/service-orders/public/<token>` (+ скрипт `deploy/nginx/test-dom-masking.sh`, шаг CI).
+
+**Тесты цикла** (✔ по файлам; реестр — `TEST_CATALOG.md`, «Цикл 39»; ничего не запускалось): функциональные — 11 классов
+`ServiceBooking.Tests/Tests/Cycle39*.cs` (Services, Order, Session, Midnight, Concurrency, Reminder, Notifications, Privacy, Edge,
+Contract, MigrationRollback) + `Infrastructure/Cycle39TestBase.cs`; 136 атрибутов `[Fact]`/`[Theory]`, кейсы пронумерованы CY39-01…181
+с пропусками (134 строки в таблице каталога; число «181 функциональный тест» из отчёта QA ↪ — вероятно, с развёрткой `[Theory]`, не
+пересчитывалось). Юнит — `ArrivalReminderTemplateTests` (13), `ServiceTextsTests` (5), `ServiceVectorsTests` (25), `StaysServicesAccessTests`
+(7), `StayBookingReleaserGuardTests`, правки `StaysPureRulesTests`, `ShowcaseOwnershipCoverageTests`. Фронт (vitest) — 16 новых файлов,
+84 `it` (в т.ч. `serviceVectors.test.ts` по общим векторам, `guestServicesQa.test.tsx`, `guestCopy.guard.test.ts` — запрет слов
+«бизнес-день»/«задаток» и т.п. в текстах для гостя). Ручных проверок на стенде в каталоге нет.
+
 ## 6. Конвенции проекта (✔ выборочно по коду; им следовать, а не вводить рядом свои)
 
 ### 6.1 Бэкенд (C#)
@@ -1776,8 +2336,21 @@ goods нет (✔ grep по `frontend/goods/src`); гостевой заказ �
 - **Типы окружения в tsconfig** (с цикла 30): браузерные `tsconfig.json`/`tsconfig.goods.json` — только
   `types: ["vite/client"]`; файл, которому нужны node-API (`fs`, `path`, импорт `.mjs`-скрипта), исключается из обоих и
   вписывается в `include` `tsconfig.node.json` (проверка — `npm run typecheck:node`). Node-типы в браузерный код не тянуть.
-- **Картинки goods** — в `frontend/goods/src/assets/…`, импортом из исходников (хеш от Vite), WebP; скриншоты — только
-  через `ScreenshotFigure` и манифест `screenshots.json`, размеры и alt не хардкодятся в JSX.
+- **Картинки goods** — в `frontend/goods/src/assets/…`, импортом из исходников (хеш от Vite), WebP; скриншоты — через
+  манифест `screenshots.json`, размеры и alt не хардкодятся в JSX. С цикла 38 `ScreenshotFigure` удалён: скриншот передаётся в конфиг
+  главной (`LandingScreenshot`) и рисуется шаблоном (`LandingScreenshotFigure`).
+- **Главная сервиса — только через шаблон** (с цикла 38, §5.13): страница = конфиг `LandingConfig` (данные без `className` и JSX) +
+  свой компонент каталога + `<ServiceLanding>`. Разметку секций 1, 3–6 в странице не пишут, порядок секций не меняют — это проверяют
+  guard-тесты. Тексты главной и FAQ (`{question, answer, link?}`, 6–8 штук, ответ — простой текст) лежат в коде сервиса рядом с
+  конфигом (`src/pages/home/`, `goods/src/landing/`). Карточка каталога — общий `CatalogCard`.
+  **С цикла 41** (§5.14): шапка выбирается полем `hero.layout` — обычная (поле не задаётся, тип `LandingConfig`) или `'panel'` (тип
+  `LandingPanelConfig` + обязательный слот `heroAside`). Новые мотивы фона и варианты — только дописыванием закрытых списков
+  (`HeroBackdrop` + SVG в `LandingHeroBackdrop.tsx`), без `className` в конфиге. Слот (`heroAside`, `catalog`) — компонент сервиса со своими
+  классами, без собственной карточки и без `main`/`section`/`h1`; общее состояние слотов — URL (у dom — `useCatalogFilters`). Конфиги dom —
+  `dom/src/landing/`; guard dom — `dom/src/landing/configs.guard.test.ts` (отдельно от goods-guard). Ветку по умолчанию держит эталон
+  `landingReference.ts`: правка разметки обычной шапки сломает T41-02 — это сигнал остановиться, а не обновлять эталон.
+- **Публичная сетка тарифов — через «линейку»** (`PricingLine` + `usePricingGrid`, §5.13): новый потребитель берёт линейку сервиса, а
+  не зовёт `pricingApi` с собственным ключом кеша; 404 от API — ожидаемое «сетки нет» (`null`), а не ошибка.
 - Service worker'ы не должны ловить `fetch` и трогать Cache API — это проверяет CI. С цикла 33 воркер регистрируется
   **только** через `src/utils/pushWorker.ts` (`registerPushWorker`/`refreshPushWorkerPeer`), а не прямым
   `navigator.serviceWorker.register('/sw.js')`; правка маршрутизации нажатия вносится в **оба** `sw.js` одинаково и в общую
@@ -1789,6 +2362,12 @@ goods нет (✔ grep по `frontend/goods/src`); гостевой заказ �
   чистые функции с соседним `*.test.ts`; общие страницы и компоненты — только из списка `frontend/shared-sources.js` (ESLint запрещает
   остальное, а также импорт `@/App` и взаимный импорт goods ↔ dom); новое общее для вторичных сайтов кладётся в `src/components/sites/`.
   Новый файл vitest dom автоматически попадает в область `stays`. Своё Tailwind-окружение — `tailwind.dom.config.js`.
+- **Услуги dom (цикл 39)** — образец для дальнейших правок вертикали: время услуги — минуты бизнес-дня, переводы только через
+  `BusinessClock` (C#) / `utils/businessClock.ts` (TS), форматирование — `ServiceTimeFormat` / `utils/serviceTimeFormat.ts` (тексты для
+  гостя собирает сервер); общие расчёты держатся эталоном `contracts/cycle39/service-vectors.json` для обеих сторон (как
+  `stay-vectors.json` у ночей). Новые компоненты услуг — в `dom/src/components/services/` (`cabinet/`, `staff/`). Общее для двух
+  вторичных сайтов, но не ezbook (как `StaffMaxCard`), кладётся в `src/components/<домен>/` с тонкой обёрткой на стороне goods.
+  В текстах для гостя запрещены «бизнес-день», «задаток / невозвратный / депозит» и т.п. (`dom/src/guestCopy.guard.test.ts`).
 
 ### 6.3 Правовые тексты
 Правится только `legal-drafts/`, потом `dotnet run --project ServiceBooking.LegalKit -- build` и коммит обоих деревьев
@@ -1868,6 +2447,17 @@ goods нет (✔ grep по `frontend/goods/src`); гостевой заказ �
 | functional | 1 267 (1 266 + 1 красный — CY20-SR-01, «красный по четвергам») | 1 267, все зелёные | **1 300**, все зелёные (1 267 + 32 цикла 35 + CY36-03) |
 | vitest | 1 541 | 1 536 (−7 дублей, +2 guard) | в отчётах не мерялся; тесты фронта цикла 35 пришли мерджем (R36-M021…M026) |
 
+**На `ff73c2e` (цикл 38)** (✔ `git ls-files`, подсчёт `[Fact]` в новых файлах; **прогонов codebase-analyst не делал, числа прогонов
+цикла при постановке задачи не передавались**): фронт — 219 файлов `*.test.ts(x)` (+14 к циклу 36: шаблон, главные, тарифы goods,
+`/cabinet/new`; тесты `BuyersBlock`/`BusinessBlock` переименованы в `goods/src/landing/goodsLanding.*.test.tsx`);
+`ServiceBooking.Tests/Tests/` — 97 файлов `.cs` (+`Cycle38OrdersPricingTests.cs`, 8 `[Fact]`; ещё 1 `[Fact]` CY38-B06-01 в
+`Cycle35DemoScenarioTests.cs`); `ServiceBooking.UnitTests` — 207 файлов `.cs` (было 205; +`OrdersPricingCatalogBuilderTests.cs` 8 и
+`OrdersTariffCatalogTests.cs` 9). Подмножество цикла: `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle38"` (плюс
+`Cycle35DemoScenarioTests` для CY38-B06-01 — демо-класс, нужен Docker и демо-слот); юнит — `--filter
+"FullyQualifiedName~OrdersPricingCatalogBuilder|FullyQualifiedName~OrdersTariffCatalog"`; vitest —
+`cd frontend && npm run test:area -- companies billing orders account` (шаблон и главная «Записи» — `companies`, тарифы — `billing`, весь
+goods — `orders`, `/cabinet/new` — `account`). Запускает qa-engineer, не codebase-analyst.
+
 Времена этих прогонов — §7.5. Последний прогон CI на `f60da0d` (✔ `gh run view 36903494650`, только чтение): все три джоба
 зелёные (§7.3).
 
@@ -1884,6 +2474,15 @@ Permission 7, TariffTrial 7, Notifications 5, Contract 4, MigrationRollback 1) �
 CY37-140 (`Cycle37MigrationRollbackTests`) создаёт и удаляет **отдельную базу** `sbtest_cy37mig_<12 hex>` на тестовом сервере и гоняет
 на ней накат → откат → накат миграций — запись только в тестовый сервер. CY37-60…75 — целостность (параллельные брони, гонки
 «истёк таймер / приложено подтверждение», отмены).
+
+**На `5bcd015` (цикл 39)** (✔ подсчёт по diff; **ничего не запускалось**): функциональные — 11 классов `Cycle39*Tests.cs` со **136**
+атрибутами `[Fact]/[Theory]` + `Infrastructure/Cycle39TestBase.cs` (хост — тот же `StaysTestFactory`); CY39-140
+(`Cycle39MigrationRollbackTests`) так же создаёт и сносит отдельную базу на тестовом сервере; CY39-90…104 — параллельные сценарии
+(двойная бронь сеанса, гонки с таймером и каскадом). Изменены `Cycle37ContractTests` (белый список полей цикла 39 в ответах cycle37),
+`Cycle37BookingFlowTests` (CY37-43: предоплата 0 % без исполнителя → `NoProviderInfo`), `Cycle35DemoScenarioTests` (§9.5),
+`OpenApiContractValidatorTests`; в сеансовых тестах подключён анализатор xUnit1031 (`7ec7479`). Юнит — +5 файлов (§5.15). Фронт —
+16 новых файлов vitest, 84 `it`. Эталон маршрутов — 391 строка. Число «181 функциональный» из постановки задачи ↪ не пересчитывалось
+(в каталоге — номера CY39-01…181 с пропусками, 134 строки).
 
 Прогоны различаются по объёму: в прогоне считаются и наборы `[Theory]`, поэтому число прогонов больше числа атрибутов.
 Были ли в отчёте цикла 31 зелёные `tsc`, `lint`, `typecheck:node`, `build:release` и сколько тестов упало, в этом
@@ -1991,10 +2590,22 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   отдельную базу `sbtest_cy37mig_*` на **тестовом** сервере — с `SERVICEBOOKING_TEST_CONNECTION` на чужой сервер это особенно важно
   проверить. Юнит — `dotnet test ServiceBooking.UnitTests --filter "FullyQualifiedName~Stay|FullyQualifiedName~CompanyKind"`. Vitest —
   `cd frontend && npm run test:area -- stays` (новая, одиннадцатая область `stays` в `contracts/cycle36/test-areas.json` = весь
-  `dom/src/`) или `npx vitest run dom/src`; типы — `npx tsc --noEmit -p tsconfig.dom.json`. Полная последовательность «как в CI» с циклом
+  `dom/src/`; **с цикла 41** — ещё и `src/components/landing/`, этот префикс теперь и у `companies`, и у `stays`) или `npx vitest run dom/src`;
+  набор проверок цикла 41 перед сдачей — `ARCHITECTURE_CYCLE41.md` §41.10.3 (`test:area -- stays companies orders`, полный `npx vitest run`
+  не параллельно с другим полным прогоном, `tsc` трёх приложений, `lint`, три сборки); типы — `npx tsc --noEmit -p tsconfig.dom.json`. Полная последовательность «как в CI» с циклом
   37 дополняется `npx tsc --noEmit -p tsconfig.dom.json`, а `build:release` собирает три сайта.
+- **Цикл 39 «Дома, цикл 2»** (запускает qa-engineer, не codebase-analyst): функциональные —
+  `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle39"` (регрессия вертикали — вместе с `~Cycle37`; побочные эффекты те
+  же, CY39-140 создаёт и сносит отдельную базу на **тестовом** сервере). Юнит —
+  `dotnet test ServiceBooking.UnitTests --filter "FullyQualifiedName~Stay|FullyQualifiedName~Service|FullyQualifiedName~ArrivalReminder"`
+  (фильтр составлен по именам классов, ↪ в документах цикла не зафиксирован). Vitest — `cd frontend && npm run test:area -- stays`.
+  Проверка маскирования nginx — `bash deploy/nginx/test-dom-masking.sh` (нужен локальный `nginx`; в CI ставится `nginx-light`).
+  ⚠️ `tools/bench/cycle39/bench_catalog.py` — не тест, а нагрузочный замер (засевает 500 домов); на боевой машине не запускать
+  (`DEPLOY.md` §28а). ⚠️ Параллельные полные прогоны из разных сессий на одной машине мешают друг другу: контейнеры Testcontainers у
+  каждой сессии свои, общая нагрузка ложится на одну VM colima — прогоны заметно замедляются (↪ из отчётов цикла 39).
 - `npm run contracts:json` — не тест: скрипт **перезаписывает** `contracts/cycle31/openapi.json` и `contracts/cycle32/openapi.json`
   (с цикла 35 — и `contracts/cycle35/openapi.json`, с цикла 37 — и `contracts/cycle37/openapi.json`).
+  (с цикла 35 — и `contracts/cycle35/openapi.json`, с цикла 38 — `contracts/cycle38/openapi.json`, с цикла 39 — `contracts/cycle39/openapi.json`).
   В базовый прогон не входит, в CI запускается как сверка (§7.3). JSON цикла 33 он не создаёт (C33-1).
 
 ### 7.3 CI — `.github/workflows/ci.yml` (push в `master`, `release-candidate`, `develop`, `cycle/**`, `fix/**` и любой PR)
@@ -2046,6 +2657,11 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   **Контракт 35** (✔ `ci.yml` на `c28ccbb`) охвачен целиком с первого коммита цикла: `redocly lint ../contracts/cycle35/openapi.yaml`,
   `npm run types:api:cycle35` + `api-cycle35.generated.ts` в `git diff --exit-code`, шаг «Contract JSON must match cycle31, cycle32
   and cycle35 yaml». Новых шагов и инлайн-скриптов в `ci.yml` цикл не добавлял; `demo-zakaz-smoke.sh` CI не запускает.
+  **Контракт 38** (✔ `ci.yml` на `ff73c2e`) охвачен так же, дописыванием в существующие списки (новых шагов нет): `redocly lint
+  ../contracts/cycle38/openapi.yaml`, `npm run types:api:cycle38` + `api-cycle38.generated.ts` в `git diff --exit-code`, шаг переименован
+  в «Contract JSON must match cycle31, cycle32, cycle35 and cycle38 yaml» (+ `contracts/cycle38/openapi.json`); `cycle38` добавлен в
+  `scripts/contracts-to-json.mjs` и в комментарий `contracts/redocly.yaml`. JSON 38 читает и валидатор функциональных тестов
+  (`OpenApiContract.Load("cycle38")` в CY38-B05-02 и CY38-B06-01). Живого парсинга `ci.yml` codebase-analyst не делал.
   Guard-тест общих исходников goods (§5.8) отдельного шага не имеет: он часть `test:run`. JSON-схемы `contracts/cycle30/*.schema.json` в CI **не**
   проверяются: сверку манифеста скриншотов со схемой делает человек при пересъёмке (`ajv-cli`), а форму манифеста в
   каждом прогоне держит vitest T30-15. Скрипты засева и съёмки CI не запускает.
@@ -2056,6 +2672,11 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   `deploy/ci/smoke-frontend.sh` с `SMOKE_PROFILE=dom`, `DIST_DIR=frontend/dist/__dom`, порт 4175. Джоб `backend` не менялся (новые
   тесты идут в общем прогоне). Вне цикла 37, коммитом `b80b88a` (документы цикла 36), порог `functionalWallSecondsWarn` в `tools/test-timing/thresholds.json` снижен с 350 до **305 с**. Результатов CI на `a7e3168` в этом
   обновлении не смотрели.
+- **Цикл 39** (✔ diff `ci.yml` `68e9ba9..5bcd015`): `cycle39/openapi.yaml` дописан в список `redocly lint` (с общим конфигом; в
+  комментарии-перечне `contracts/redocly.yaml` cycle39 не добавлен — косметика), `npm run types:api:cycle39` + `api-cycle39.generated.ts` в
+  `git diff --exit-code`, `cycle39/openapi.json` в шаге «Contract JSON must match cycle31, cycle32, cycle35, cycle37, cycle38 and cycle39
+  yaml»; **новый шаг** «Check dom nginx log masking» — ставит `nginx-light` и гоняет `deploy/nginx/test-dom-masking.sh` (токены `/b/`, `/s/`
+  и API `public/<token>` не должны попадать в access log). Джоб `backend` не менялся. Результатов CI на `5bcd015` в этом обновлении не смотрели.
 - **Время CI, цикл 36** (↪ таблицы «CI: до / после» в `docs/testing-isolation.md`; последняя строка — ✔ `gh run view`, только чтение):
 
   | Что | `backend` | Функциональные | `frontend` | vitest | `docker-build` |
@@ -2093,10 +2714,18 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   обычный `rollback.sh` (три сайта одним symlink); схему «Домов» вручную не сносить, пока в ней есть брони (ПДн гостей). Инструкция —
   `DEPLOY.md` §28. 🖥 На машине, со слов заказчика (2026-10-08), vhost, certbot, DNS, SmartCaptcha и `btree_gist` уже сделаны, dom
   задеплоен (§5.1).
-- Подробная инструкция — `DEPLOY.md` (§0–§24; на `a7e3168` — до §28, 2 777 строк); отдельно — `DEPLOY-windows.md`. С циклов 28 и 35 — §25 (демо `demo.visit`), §26
+- **Цикл 39** (✔ `DEPLOY.md` §28а, diff `dom.ezbook.conf`): в vhost dom регэкспы `map` маскируют ещё `/s/<token>`,
+  `/api/stays/service-orders/public/<token>` и Referer со `/s/`. Vhost по-прежнему ставится руками: правку `map` внести в установленный
+  файл или после копирования повторить `certbot --nginx -d dom.ezbook.ru`, затем `nginx -t && reload`. Миграция `Cycle39StaysServices`
+  применяется при старте API нового кода независимо от vhost; новых обязательных переменных нет. 🖥 Со слов заказчика (09.10): код и
+  миграция на машине, vhost ещё не обновлён (сделает заказчик).
+- Подробная инструкция — `DEPLOY.md` (§0–§24; после слияния цикла 38 — до §29, 2 790 строк; на `a7e3168` было до §28, 2 777 строк); отдельно — `DEPLOY-windows.md`. С циклов 28 и 35 — §25 (демо `demo.visit`), §26
   (тарифы и витрина на бою), §27 (демо «Заказов» `demo.zakaz`: DNS, `free -m`, `.env.demo`, перезапуск `api-demo`, `ops demo reset --yes`
   с замером, vhost, certbot, SmartCaptcha, `DEMO_ZAKAZ_ENABLED=true` в `.env` боя, смоуки обоих демо, замер памяти через сутки,
-  откат).
+  откат). С цикла 38 — **§29 «Единый шаблон главной и тарифы „Заказов“»** (§28 — «Дома», см. выше): миграций нет; на бою `ops tariffs apply` до ответа юриста
+  не запускать (кода-гейта нет, барьер — этот ручной шаг); после `apply` вручную опубликовать в админке бесплатный тариф «Заказов» и
+  заполнить ему преимущества (иначе «Бесплатного» в сетке не будет); `legal-notice` — ключ `PlatformSettings`; демо засевается сбросом;
+  откат — снять `IsPublic` у платных (у опубликованного системного бесплатного админка снять его не даёт, 409).
 - **Демо-стек** (✔ по файлам): `docker-compose.demo.yml` + `.env.demo.example`, vhost-ы `deploy/nginx/demo.visit.ezbook.conf` и
   `deploy/nginx/demo.zakaz.ezbook.conf` (ставятся руками), смоуки `deploy/ci/demo-smoke.sh` и `deploy/ci/demo-zakaz-smoke.sh`.
   `deploy-remote.sh` в шаге демо гоняет `demo-smoke.sh`, а `demo-zakaz-smoke.sh` — только при `DEMO_ZAKAZ_ENABLED=true`; сбой демо —
@@ -2563,6 +3192,10 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 - Не сделано по решению (не долг кода, для справки): магазин одежды из брифа (нет вариантов товара), «симулятор покупателя»
   (новые заказы днём сами не появляются), единый вход на два демо, ссылки на демо с боевых сайтов, отдельная редакция правовых
   документов для демо.
+- ✔ **Снято `515fff3` (в `develop` с `5bcd015`): нестабильный `Cycle35DemoScenarioTests`.** Причина — номер заказа уникален только в паре
+  (магазин, день выдачи): на доске демо-кофейни лежат посевные заказы других дней с тем же номером, и после ~21:00 UTC (полночь МСК)
+  новый заказ совпадал с ними. Тест теперь ищет карточку по номеру **и** `pickup.date`. Код продукта не менялся. Это же свойство
+  номеров стоит помнить любому коду/тесту, который ищет заказ только по номеру.
 
 ### 9.6 Долг цикла 36 (ревизия и ускорение тестов) — ✔ по коду и документам на `f60da0d`, ничего не запускалось
 Источники: `TEST_CATALOG.md` (раздел цикла 36, «Долг цикла 36»), `tools/test-timing/results/*.md`, `docs/testing-isolation.md`,
@@ -2638,15 +3271,20 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   п. 7: «выключены (`logging`)». По коду push гостю идёт через общий `IWebPushSender`, а на бою `WEBPUSH_STAFFPUSH_PROVIDER=web-push`
   (§1) → push гостю **включён**, если гость подписался (по умолчанию у компании `GuestWebPushEnabled = true`). WhatsApp/MAX гостю —
   выключен флагом компании по умолчанию и требует оплаченного канала; живой отправки не было ни разу. Письменной проверки push гостя на
-  стенде нет.
+  стенде нет. ✔ **Частично снято `12d1e3f`:** `DEPLOY.md` §28 п. 7 теперь говорит «Web Push гостю на бою включён». В `ARCHITECTURE_CYCLE37.md`
+  R37-5 (таблица рисков) по-прежнему «Уведомления гостю на бою выключены (`logging`)» (✔ grep).
 - **C37-3 — ↪ `redocly lint` контракта cycle37 без конфига даёт 30 замечаний.** CI линтует его с общим
   `--config ../contracts/redocly.yaml` (§7.3); замечания видны при запуске без конфига (по умолчанию — `recommended`). Не разбирались.
+  ✔ **Снято циклом 39** (`7e4dd90`, US-39-22): контракт почищен, по отчёту цикла `lint` cycle37 и cycle39 чистый (↪ codebase-analyst
+  `redocly` не запускал). Остаток — косметика: в комментарии-перечне `contracts/redocly.yaml` нет cycle39 (§9.10).
 - **C37-4 — нет MAX-карточки персонала в профиле dom.** В `dom/src/pages/ProfilePage.tsx` нет подключения бота MAX. У goods это
   `StaffMaxCard` в `GoodsProfilePage.tsx` из `goods/src/components/staffMax/`; перенос этой папки в общий `src/components/staffMax/`,
   запланированный `ARCHITECTURE_CYCLE37.md` §37.14.3, **не сделан** (✔ `ls`). На странице уведомлений компании есть только тумблер `staffMaxEnabled`. Сотрудник «Домов» не может
   привязать MAX с dom (на бою `STAFFMAX_ENABLED=false`, так что сейчас это не проявляется).
+  ✔ **Снято циклом 39** (US-39-21): карточка перенесена в `src/components/staffMax/`, dom показывает её в `ProfilePage.tsx`, goods — тонкая обёртка.
 - **C37-5 — замер p95 каталога на 500 домах не сделан** (BE-37-7, `ARCHITECTURE_CYCLE37.md` §37.11.2: оценка «p95 ≪ 500 мс» —
-  расчётная). Скриптов в `tools/bench/` для цикла 37 нет.
+  расчётная). Скриптов в `tools/bench/` для цикла 37 нет. ⚠️ **Частично (цикл 39, US-39-23):** скрипт `tools/bench/cycle39/bench_catalog.py`
+  появился, но **прогона не было** — p95 по-прежнему не измерен (§9.10 C39-2).
 - **C37-6 — остатки после `Down()` миграции `Cycle37Stays`.** Откат удаляет 15 таблиц, колонки, тарифы и триалы линейки 2 и возвращает
   прежние индексы триала (дубль номера «Записи»/«Домов» больше не роняет откат — строки линейки 2 удаляются до пересоздания индекса,
   CY37-140). Но остаются: строка города «Шерегеш» в `Cities`, компании `Kind = 2` в `Companies` (без `StaysSettings`), устройства
@@ -2661,6 +3299,9 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   есть — номер раздела повторяется (ср. C23-8). `TEST_CATALOG.md`, последний абзац раздела «Цикл 37»: «Каталог „Домов“ кешируется на
   30 с и не сбрасывается при публикации/блокировке — тесты вызывают `InvalidateCatalog()`» — после `b3d21ee` кеш сбрасывается, а
   CY37 `ReviewFixes` проверяют это без ручного сброса; остальные классы `InvalidateCatalog()` по-прежнему вызывают.
+  ✔ **Частично снято `12d1e3f`** (в `develop` с `ece8038`): статус в `DEPLOY.md` §28 обновлён, в `CHANGELOG.md` есть раздел цикла 37, в
+  `README.md` — «Дома» (блок «Посуточная аренда домов — `dom.ezbook.ru`»). Открыты: дубль номера `4.21` в `API_DOCUMENTATION.md` (✔ `## 4.21`
+  «Дома» и `### 4.21` витрины цикла 28 — оба на месте) и устаревшая фраза про кеш каталога в `TEST_CATALOG.md` (✔ абзац не менялся).
 - **C37-9 — хрупкое место: конкурентность броней.** Корректность держат три слоя (исключающее ограничение, advisory-lock дома,
   единый порядок блокировок «дом → бронь → занятость → ревизия»). Взаимоблокировки 40P01 и гонки «истёк таймер / приложено
   подтверждение», «двойной клик», «отмена гостем истёкшего удержания» найдены QA и ревью уже после реализации (`fd3e824`, `fa11d5b`,
@@ -2674,6 +3315,132 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   SPEC, `ARCHITECTURE_CYCLE37.md` §37.18). Загрузка HEIC из других браузеров/приложений будет отклонена.
 - **C37-13 — ручных проверок на стенде нет в каталоге.** Раздел «Цикл 37» в `TEST_CATALOG.md` — только автотесты CY37-*; таблицы
   `M37-` и вердиктов QA нет. Проверка dom на живой машине после выката заказчиком письменно не зафиксирована.
+
+### 9.8 Долг и риски цикла 38 (единый шаблон главной, тарифы «Заказов») — ✔ по коду и документам на `ff73c2e`, ничего не запускалось
+- ~~**C38-1 — номер 37 занят другой веткой.**~~ **Снято.** Параллельно шла `cycle/037-stays-houses` («Дома»), поэтому наш цикл
+  переименован в 38 (коммит `57a356e`): файлы, скрипт и ключи этого цикла (`ARCHITECTURE_CYCLE38.md`, `API_CONTRACT_CYCLE38.md`,
+  `contracts/cycle38/`, `types:api:cycle38`, `OpenApiContract.Load("cycle38")`, тесты `CY38-`, раздел `DEPLOY.md` §29) по именам с «Домами»
+  (`*37*`, `DEPLOY.md` §28) не пересекаются. Общие файлы (`ci.yml`, `contracts-to-json.mjs`, `redocly.yaml`, `CHANGELOG.md`, `DEPLOY.md`,
+  `TEST_CATALOG.md`, `CURRENT_STATE.md`) при вливании цикла 38 поверх цикла 37 дали конфликты; они разрешены при слиянии с сохранением
+  обеих сторон. ↪ Что сводные `ci.yml`, `Cycle22RouteTable.golden.txt` и `test-areas.json` действительно проходят в CI — в этой правке не
+  проверялось (ничего не запускалось).
+- **C38-2 — бесплатный тариф «Заказов» после `ops tariffs apply` не публикуется.** На любой базе с сидом цикла 24 (бой, demo.zakaz)
+  у него остаются `IsPublic = false` и `Highlights = NULL`: сидер намеренно не трогает эти поля (`AlignOrdersFreeTariff`, правка ревью
+  `8310306`). Итог без ручного шага — публичная сетка из трёх платных тарифов без «Бесплатного», хотя заказчик решил показывать его (Q38-2).
+  Заготовленные преимущества `OrdersTariffCatalog.FreeHighlights` в БД не попадают ни при каком пути (константу читает только юнит-тест).
+  Ручной шаг записан в `DEPLOY.md` §29 п. 2 (и п. 3 для демо). Функциональный CY38-B05-02 проверяет «Бесплатный» в сетке, только
+  предварительно выставив ему `IsPublic = true` в тестовой БД.
+- **C38-3 — публикацию после включения бесплатного нельзя полностью откатить из админки.** `AdminPlansController` отвечает 409 «Системный
+  бесплатный тариф нельзя убрать с витрины.» на снятие `IsPublic` у опубликованного системного бесплатного тарифа; `DEPLOY.md` §29 п. 4
+  («снять `IsPublic` → 404») после публикации «Бесплатного» даёт сетку из одного тарифа, а не 404.
+- **C38-4 — правового гейта у сетки «Заказов» нет в коде** (решение заказчика Q38-3). Барьер L14 — только то, что оператор не запускает
+  `ops tariffs apply` на бою до ответа юриста; любой `apply` (в том числе ради тарифов «Записи») публикует платные тарифы «Заказов» сразу.
+  Новые тарифы с `IsActive = true` сразу видны и в кабинете goods (`availablePlans`). Юрист по L14, формулировке «от 2 990 ₽» и ответам FAQ
+  о деньгах (SPEC §9) — заключения в репозитории нет.
+- **C38-5 — тексты-черновики.** FAQ обоих сервисов, `clients.text`/`business.text` «Записи» помечены в коде как черновики на вычитку
+  заказчиком. FAQ «Записи» (вопрос о цене для салона) ссылается на `/pricing` и говорит о «разделе „Тарифы“»; при выключенной витрине
+  «Записи» (`pricing.public-enabled`, по README на бою выключена, 🖥 не проверялось) ссылка ведёт на «Тарифы пока не опубликованы.» —
+  у goods такую ситуацию guard-тест запрещает, у «Записи» — нет.
+- **C38-6 — главная ezbook заметно изменилась** (каталог наверху, новый «Для бизнеса», фото салона ниже каталога, «Как записаться» ведёт на
+  `#clients-title` вместо прежнего `#how`; внешние ссылки на `/#how` больше никуда не ведут — ✔ id `how` в коде нет). Ручные кейсы цикла
+  (360 px без горизонтальной прокрутки, демо-режимы demo.visit/demo.zakaz) в `TEST_CATALOG.md` не описаны и вердиктов не имеют (✔ grep `M38`
+  — пусто).
+- **C38-7 — `API_DOCUMENTATION.md` не обновлён:** `GET /api/pricing/orders` там нет (✔ grep); описание — только `API_CONTRACT_CYCLE38.md`
+  §38.22 и `contracts/cycle38/`.
+- **C38-8 — `/cabinet/new` на ezbook не проверяет, есть ли у пользователя компания:** владелец, нажавший «Подключить салон», попадает в
+  форму создания ещё одной компании (так задумано маршрутом «для любого вошедшего»; ограничение числа компаний — тарифом на сервере).
+- **C38-9 — корневой `SPEC.md` — по-прежнему спека цикла 36**, спека 38 лежит сразу под архивным именем `SPEC_CYCLE38_UNIFIED_LANDING.md`;
+  архивной копии спеки 36 (`SPEC_CYCLE36_*.md`) нет.
+
+### 9.9 Долг и риски цикла 41 (главная «Домов» на шаблоне) — ✔ по коду и документам на `707899e`, в `develop` не влит, ничего не запускалось
+- **C41-1 — контраст eyebrow у «Записи» и «Заказов» ниже AA.** Обычная шапка (`LandingHero`) рисует eyebrow 13 px цветом `gold-dark`
+  (#8F6C46) прямо на фоне `cream` — 4.4:1 при норме 4.5:1 (расчёт `ARCHITECTURE_CYCLE41.md` §41.3.4, R41-9). В панельной шапке dom
+  eyebrow стоит на белой плашке (4.8:1). Разметку обычной шапки цикл намеренно не трогал (US-41-07, эталон T41-02) — исправление
+  потребует и обновления эталона `landingReference.ts`.
+- **C41-2 — бренд в шапке и подвале dom не совпадает с решением Q41-4.** Заказчик выбрал «EZBOOK Дома»; на главной оно встречается
+  один раз (вопрос 8 FAQ), а `DomNavbar` (видимый текст и `aria-label="ezbook · Дома"` ссылки на `/`) и `DomFooter` («© … ezbook · Дома»)
+  по-прежнему пишут «ezbook · Дома» (✔ grep). Guard T41-03 запрещает «ezbook ·» только в конфиге и FAQ главной. Привести к одному
+  написанию — отдельная правка по команде заказчика (§41.13 п. 1).
+- **C41-3 — название каталога читается дважды.** `LandingCatalogFrame` даёт `section#houses[aria-label="Дома в Шерегеше"]`, а внутри
+  `StayCatalog` стоит `h2#houses-title` с тем же текстом: читалка объявит область «Дома в Шерегеше» и сразу заголовок «Дома в
+  Шерегеше». `aria-labelledby` у рамки шаблона нет (тип `LandingCatalogFrameConfig` задаёт только `ariaLabel`).
+- **C41-4 — «Сбросить фильтры» в пустом состоянии каталога не гасит подсказку о датах в панели.** Кнопка в `StayCatalog` вызывает
+  только `resetFilters()`; `dateHint` — локальное состояние `StaySearchPanel`, эффект синхронизации с URL его не сбрасывает. Сбрасывает
+  подсказку только кнопка в самой панели. Так было и до цикла (§41.4.2) — перенесено как есть.
+- **C41-5 — тарифов «Домов» на главной нет и не будет до отдельного цикла.** Линейка `Stays` в БД есть (три платных + триал), но
+  публичного `GET /api/pricing/stays`, `PricingLine` для dom и маршрута `/pricing` в `DomApp` нет (SPEC §6). Условие отдельного цикла —
+  ответ юриста по L10 цикла 37 и снятие ограничения `DEPLOY.md` §28 п. 7. Guard T41-03 запрещает в конфиге и FAQ `/pricing`,
+  «тариф» в любой форме, `₽`, `руб`.
+- **C41-6 — тексты главной и FAQ — черновики, ждут `legal-counsel` вместе с комплектом `Stay*`.** «Для гостей», «Для владельцев» и
+  8 ответов FAQ (оплата, срок удержания, отмена и возврат, собаки) помечены в коде как черновики; до снятия `noindex` и приглашения
+  реальных владельцев их вычитывают `legal-counsel` и живой юрист вместе с правовыми текстами `Stay*` (§41.9, R41-4). Заключения в
+  репозитории нет.
+- **C41-7 — ручные проверки цикла (T-41-07) не выполнены и не описаны в каталоге.** 360/768/1024/1280 px, нет горизонтальной прокрутки
+  (Windows с постоянной полосой), iOS Safari с полями `type=date` 2×2 на 360 px (R41-12), VoiceOver, клавиатура, «назад/вперёд», сеть на
+  `/` — описаны в `ARCHITECTURE_CYCLE41.md` §41.12 и списком в `DEPLOY.md` §30; таблицы `M41-` в `TEST_CATALOG.md` нет, вердиктов QA нет. ⚠️ Формулировка §41.12 «в DOM
+  нет `meta robots`» неверна для страницы целиком: `frontend/dom/index.html` (с цикла 37) содержит `<meta name="robots"
+  content="noindex, nofollow">`; верно лишь то, что React-код главной своих `meta`/`canonical`/JSON-LD не добавляет.
+- **C41-8 — после слияния цикла 39 (услуги-слоты) тексты главной об услугах молчат.** «Для гостей» и FAQ услуги не упоминают; добавлять
+  их — отдельной правкой конфига по решению заказчика (§41.13 п. 2). После слияния стоит глазами проверить `/:slug` с блоком «Услуги»
+  цикла 39 и длинными названиями (`HouseCard` теперь не обрезает текст, R41-7, R41-11). ✔ На `5bcd015` слияние произошло; тексты главной
+  и FAQ об услугах по-прежнему молчат, ручной проверки `/:slug` с блоком «Услуги» в каталоге нет.
+- **C41-9 — нумерация разделов при слиянии с циклом 39.** `SPEC_CYCLE39_STAYS_SLOTS_ICAL.md` (ветка `origin/cycle/039-stays-slots-ical`)
+  планирует «дополнить §5.12 и завести §9.8», но §9.8 занят циклом 38, §5.14/§9.9 — циклом 41, `DEPLOY.md` §30 — циклом 41. По правилу
+  §41.11 цикл, который вливается вторым, берёт следующие свободные номера (§5.15, §9.10, `DEPLOY.md` §31) и правит ссылки на себя; разделы
+  `CHANGELOG.md`, `TEST_CATALOG.md`, `DEPLOY.md` сводятся вручную по строкам. ✔ **Снято на `5bcd015`:** цикл 39 в этом файле получил §5.15 и
+  §9.10, в `DEPLOY.md` — §28а (не §31); в `TEST_CATALOG.md` раздел «Цикл 39» стоит перед «Цикл 41». Раздела цикла 39 в `CHANGELOG.md` и
+  упоминания услуг в `README.md` нет (§9.10 C39-9).
+- **C41-10 — фикс `171e623` не отражён в `CHANGELOG.md` и `README.md`** (✔ grep): раздел цикла 38 в `CHANGELOG.md` (строки ~38 и ~42)
+  и абзац «С цикла 38» в `README.md` (~232) говорят «фото салона ниже списка», а фото уже снято; что подсветки первого платного тарифа
+  больше нет, тоже нигде не записано. Правка этой задачи (T-41-06) их не трогала.
+- **C41-11 — эталон `landingReference.ts` лежит в исходниках шаблона, а не рядом с тестом.** Импортирует его только
+  `LandingPanelHero.test.tsx`; файл попадает в сканирование Tailwind (`src/components/**`) и под guard `landing.guard.test.ts`. Любая
+  законная правка обычной шапки или секций (в том числе C41-1) требует пересъёмки этой строки.
+
+### 9.10 Долг и риски цикла 39 («Дома», цикл 2 — услуги-слоты, напоминание) — ✔ по коду и документам на `5bcd015`, ничего не запускалось
+Пометка ↪ — со слов постановки задачи / отчётов цикла, codebase-analyst не перепроверял.
+- **C39-1 — US-39-28 (P1) не сделан: админская статистика услуг «Домов».** SPEC: «администратор платформы видит, что у компании есть
+  услуги» (число услуг и сеансов за 30 дней, BE-39-7). В админских контроллерах ничего об услугах нет (✔ grep: `AdminPlatformController`
+  получил только сроки retention). Перенесено.
+- **C39-2 — p95 каталога на 500 домах не измерен** (US-39-23, продолжение C37-5). Скрипт `tools/bench/cycle39/bench_catalog.py` + README
+  есть, прогона нет; оценка нагрузки по-прежнему расчётная. Засевает данные — только на отдельной базе, не на боевой машине (`DEPLOY.md` §28а).
+- **C39-3 — iCal не сделан, перенесён в цикл 40.** Заделы в коде (§39.15.4): ночи пишет только `HouseOccupancyWriter`, каскад «бронь →
+  сеансы» — через `StayBookingReleaser`; `OccupancySource.ExternalCalendar = 2` не используется; `NotificationType` 39–40 и слова
+  календарей в адресах домов зарезервированы, `/api/stays/ical/` свободен. Название ветки (`…-slots-ical`) и `SPEC_CYCLE39_STAYS_SLOTS_ICAL.md`
+  вводят в заблуждение — iCal-кода в репозитории нет.
+- **C39-4 — `Cycle37ContractTests` держится белым списком.** Ответы маршрутов cycle37 теперь содержат поля цикла 39 (`sessions`,
+  `servicesBlock`, `arrivalReminder`, `services`, `acceptServiceOrdersWithoutStay`, действие `AddSession` и др.), а `contracts/cycle37/openapi.yaml`
+  их не описывает; тест пропускает их по регэкспам `Cycle39Additions` на конкретные операции. Новое поле в ответах cycle37 без правки списка
+  уронит тест; поле, ошибочно попавшее под регэксп, тест не заметит. Полная форма — только в частичных DTO `contracts/cycle39/` (`additionalProperties: true`).
+- **C39-5 — лимит удержанных заказов на номер срабатывает и для бесплатных заказов.** `ServiceOrderThrottle` проверяет «≥ 2 удержанных на
+  номер / ≥ 1 в компании» до расчёта денег; бесплатный заказ (предоплата 0 → сразу `Confirmed`) сам удержания не создаёт, но гостю с двумя
+  неоплаченными заказами откажут и в бесплатном (текст `TooManyHeldOrders`). Поведение не по смыслу лимита, решения нет.
+- **C39-6 — vhost dom на машине не обновлён** (🖥 со слов заказчика, 09.10). Пока `deploy/nginx/dom.ezbook.conf` цикла 39 не перенесён,
+  токены `/s/<token>` и `/api/stays/service-orders/public/<token>` пишутся в access log и уходят в Referer открытым текстом — это доступ к
+  заказу (имя, маска телефона, реквизиты). Ручной шаг заказчика — `DEPLOY.md` §28а (копирование поверх сносит 443-блок certbot).
+- **C39-7 — ЮР39-2 меняет поведение существующих компаний.** `StaysBookingGate` требует сведения об исполнителе всегда: компании «Дома»
+  с предоплатой 0 % без этих сведений после выката перестали принимать брони (`NoProviderInfo`). Сколько таких на стенде — не проверялось.
+- **C39-8 — правовые тексты черновые** (продолжение C37-1). 9 новых ключей `Stay*` вне `LegalTextKey.All`, гость и владелец видят запасные
+  тексты команды; правки Политики/Соглашения (Т39-17) — задача legal-counsel/заказчика. Реальных владельцев по-прежнему не приглашать.
+- **C39-9 — документы отстали.** В `CHANGELOG.md` нет раздела цикла 39, `README.md` (~557) и `CHANGELOG.md` (~364, раздел цикла 37) всё ещё
+  говорят «у „Домов“ пока нет услуг-слотов»; `API_DOCUMENTATION.md` §4.22 озаглавлен «НЕ ВЫПУЩЕНО — доступно с ветки
+  `cycle/039-stays-slots-ical`», хотя цикл влит и выкачен; `DEPLOY.md` §28а пишет «Up — только добавления», а миграция ещё и
+  переименовывает slug домов из резерва (§3); в комментарии-перечне `contracts/redocly.yaml` нет cycle39 (косметика, на CI не влияет).
+- **C39-10 — хрупкое место: конкурентность сеансов.** Корректность держат `EX_StayServiceSessions_NoOverlap`, advisory-lock услуги и
+  расширенный порядок замков «телефон → дом → услуги ↑ → подтверждения → строка брони/заказа → ночи → сеансы → ревизия в конце
+  транзакции»; снятие чужой брони под замком услуги — только неблокирующим `TryAcquire`. Любая правка путей записи броней, заказов, сеансов
+  или каскада должна сохранять этот порядок и единственных писателей (`HouseOccupancyWriter`, `ServiceSessionWriter`, `StayBookingReleaser`);
+  регресс — CY39-90…104 и CY37-60…75.
+- **C39-11 — `BusinessDayStartMinute` нельзя менять после появления сеансов**: окна и правила цены хранятся минутами/часами от границы
+  бизнес-дня, смена сдвинет принадлежность существующих сеансов дням (валидатора «на непустых данных» нет — только предупреждение в `DEPLOY.md`).
+- **C39-12 — откат миграции падает при наличии данных** (продолжение C37-6): `Down()` возвращает NOT NULL у `StayPaymentProofs.StayBookingId`
+  и `StayGuestPushSubscriptions.StayBookingId` и упадёт, если у заказов услуг уже есть подтверждения оплаты или push-подписки; переименование
+  slug домов не откатывается.
+- **C39-13 — ложные и нестабильные тесты, ↪.** По отчётам цикла в наборе остаются нестабильные/ложноположительные тесты (кроме исправленного
+  демо цикла 35, §9.5); конкретного списка в репозитории нет. Параллельные полные прогоны из разных сессий на одной машине замедляют друг
+  друга (у каждой сессии свои контейнеры, общая нагрузка на одну VM colima) — таймауты и «время» в таких прогонах не показательны.
+- **C39-14 — ручных проверок цикла в каталоге нет.** Раздел «Цикл 39» `TEST_CATALOG.md` — только автотесты CY39-*; таблицы `M39-` и вердиктов
+  QA на стенде нет (выбор времени через полночь на iOS, push с фильтром, страница `/s/` на 360 px — не зафиксированы).
 
 ---
 
@@ -2712,6 +3479,27 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   и ускорение регрессионных тестов (цикл технический)` (строка 19), под ним цикл 35 (124), фикс календаря (328), цикл 33 (338)…; **раздела
   цикла 37 нет** (C37-8, §9.7). Во вступлении — «тридцать четыре» раздела «Не выпущено». Шаблон подзаголовков раздела цикла 36: «Время
   прогона: было и стало», тематические блоки, «Чего этот цикл не даёт», «Для команды».
+- **На `ff73c2e` (цикл 38, правка этой же задачи)**: в `CHANGELOG.md` самым верхним разделом добавлен «Не выпущено — цикл 38: единая главная
+  у „Записи“ и „Заказов“, частые вопросы, публичные тарифы „Заказов“» (подзаголовки по шаблону: «Что стоит прочитать до выката»,
+  тематические блоки, «Чего этот цикл не даёт», «Для команды»); во вступлении — «тридцать пять» разделов «Не выпущено» (✔ совпадает со
+  счётом `grep -c '^## Не выпущено'`). В `README.md` («О проекте») цикл 38 упомянут точечно: устройство главной goods и ezbook, публичная сетка
+  тарифов «Заказов», `/cabinet/new`. Разделы цикла 36 и фиксов деплоя после него в README не вписывались.
+- **После слияния цикла 38 поверх цикла 37** (✔ `grep -n '^## '`, `wc -l`): `CHANGELOG.md` — 5 190 строк; сверху цикл 38 (строка 19), под
+  ним цикл 37 (125, добавлен `12d1e3f`), цикл 36 (339), цикл 35 (444), фикс календаря (648)…; разделов «Не выпущено» — 36, во вступлении
+  исправлено на «тридцать шесть» (обе ветки писали «тридцать пять»), порядок «цикл 37 → цикл 38 выше всех» вписан в перечень порядка.
+  `README.md` — 946 строк; «Дома» — абзац во вступлении (строка ~8) и блок «Посуточная аренда домов — `dom.ezbook.ru`» (~114), цикл 38 —
+  точечные абзацы «С цикла 38 (пока не выкачено)» в блоках goods и ezbook; дублей заголовков нет.
+- **На `707899e` (цикл 41, правка этой же задачи, ветка не влита)** (✔ `grep -n '^## '`, `grep -c`, `wc -l`): `CHANGELOG.md` — 5 251
+  строка; самым верхним разделом добавлен «Не выпущено — цикл 41: главная „Домов“ (dom.ezbook.ru) на общем шаблоне…» (строка 19;
+  подзаголовки по шаблону цикла 38: «Что стоит прочитать до выката», «Главная dom.ezbook.ru», «Карточка дома», «Чего этот цикл не даёт»,
+  «Для команды»), под ним цикл 38 (80), цикл 37 (186)…; разделов «Не выпущено» — 37, во вступлении исправлено на «тридцать семь» и
+  дописан порядок «цикл 41 выше цикла 38». В `README.md` («О проекте») цикл 41 — одна вставка «С цикла 41 (пока не выкачено)…» в конце
+  пункта «каталог и страницы для гостя» блока «Посуточная аренда домов» (~строка 129). Фикс `171e623` ни в один из файлов не вписан (C41-10).
+- **На `5bcd015` (цикл 39 влит)** (✔ `git diff --stat 68e9ba9..5bcd015`, `grep -n '^## '`, `wc -l`): цикл 39 **не трогал** ни `CHANGELOG.md`
+  (5 251 строка, самый верхний раздел — по-прежнему цикл 41, строка 19; затем 38 — 80, 37 — 186), ни `README.md` (949 строк). Раздела
+  цикла 39 нет; README (~557) и раздел цикла 37 в CHANGELOG (~364) говорят «услуг-слотов у „Домов“ пока нет» — устарело (§9.10 C39-9).
+  Раздел цикла 39 по сложившемуся шаблону («Что стоит прочитать до выката», тематические блоки, «Чего этот цикл не даёт», «Для команды»)
+  встаёт самым верхним; во вступлении — счёт разделов «Не выпущено» (сейчас «тридцать семь»).
 - Releases на GitHub и wiki не используются: тегов нет, ссылок на wiki в репозитории нет.
 - Внутренние справки: `BRIEF_BRAND_AND_DOMAINS.md` (бренд и домены «EZBOOK Запись» / «EZBOOK Заказы»),
   `BENCHMARK_CYCLE22.md`.
@@ -2730,10 +3518,10 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   команды, флаги, коды выхода).
 - **Руководства по dom.ezbook.ru («Дома») в `docs/` нет** (✔ grep: ни «Дома», ни `dom.ezbook` в `docs/*.md`); тексты-подсказки
   владельцу и гостю живут в самом приложении (`dom/src/utils/stayTexts.ts`, блоки `StayNotice`, запасные правовые тексты `Stay*`).
-- Эксплуатация «Домов» — `DEPLOY.md` **§28 «dom.ezbook.ru — третий сайт, „Дома“»** (строка ~2457; на `a7e3168` файл — 2 777 строк):
+- Эксплуатация «Домов» — `DEPLOY.md` **§28 «dom.ezbook.ru — третий сайт, „Дома“»** (строка ~2457; после слияния цикла 38 следом идёт §29 цикла 38, файл — 2 790 строк):
   что готово в репозитории, предупреждение «миграция применится при любом деплое `develop`», порядок (DNS, `btree_gist`, vhost +
   certbot, SmartCaptcha, деплой, смоук, «не приглашать реальных владельцев»), откат, локальный стенд (`npm run dev:dom`, prism-мок
-  `contracts/cycle37/openapi.yaml` на порту 4037). Текст §28 написан до выката заказчиком (C37-8). Правовой обзор вертикали —
+  `contracts/cycle37/openapi.yaml` на порту 4037). Текст §28 написан до выката заказчиком; статус в начале раздела и п. 7 обновлены в `12d1e3f` (C37-8, C37-2). Правовой обзор вертикали —
   `LEGAL_REVIEW_CYCLE37.md` (803 строки, markdown: §0 оговорка, §1 резюме для заказчика, далее разделы по вопросам L1–L10 — реестр,
   исполнитель, данные гостя, отмена, предоплата, сроки хранения, доступ горничной, заселение и каналы, каталог; тексты `Stay*` — §15–§16).
 - **Руководства по goods.ezbook.ru нет.** Магазины упоминаются только в `docs/personal-data.md`.
@@ -2742,6 +3530,18 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   включение на оба сайта (C33-4). Инструкции по push сотрудникам магазина в `docs/` нет вовсе.
 - Справки внутри приложения: правовые документы и тексты интерфейса отдаются из `/api/legal/*` (исходники —
   `legal-drafts/`) и показываются на `/privacy`, `/terms` и т.д. Отдельной базы знаний или сайта документации нет.
+- **С цикла 38 — FAQ на главных обоих сайтов** (секция `#faq`, 8 вопросов у каждого сервиса; данные — `frontend/src/pages/home/zapisFaq.ts`
+  и `frontend/goods/src/landing/goodsFaq.ts`, массив `{question, answer, link?}`, тексты — черновики). Это **второй, независимый** от
+  `docs/faq.md` набор частых вопросов: он короче, адресован посетителю главной, и между ними нет ни общей правки, ни ссылок. FAQ «Заказов»
+  — первый пользовательский текст «вопрос-ответ» по goods (в `docs/` руководства по goods по-прежнему нет).
+- **С цикла 41 (не влит) — FAQ и на главной «Домов»**: `frontend/dom/src/landing/stayFaq.ts` (8 вопросов, тот же формат
+  `{question, answer}`, без `link`; черновики до юриста, §9.9 C41-6). Это третий набор «вопрос-ответ» на главных и первый пользовательский
+  текст такого рода по dom; руководства по dom в `docs/` по-прежнему нет. Выкат и ручные проверки главной dom — `DEPLOY.md` **§30**.
+- **Цикл 39** (✔ `git diff --stat`): `docs/` не трогал — руководства по услугам dom и напоминанию нет; подсказки владельцу и гостю — в
+  самом приложении (запасные тексты `Stay*` в `dom/src/utils/stayTexts.ts`, `ArrivalReminderCard`). Выкат — `DEPLOY.md` **§28а «Выкат цикла
+  39»** (строка ~2507, подраздел внутри §28: vhost руками, миграция, `BusinessDayStartMinute`, откат, смоук; файл — 2 828 строк). Правовой
+  обзор — `LEGAL_REVIEW_CYCLE39.md` (643 строки, markdown: §0 оговорка, §1 резюме, §2–§10 по вопросам L39-*, §11 iCal предварительно,
+  §12 черновые тексты, §13 требования Т39-01…17, §14 развилки, §16 что проверяет живой юрист).
 - Руководства по демо-стендам для пользователей в `docs/` нет (✔ цикл 35 `docs/` не трогал); описание демо — только README и CHANGELOG.
 - Эксплуатация: на `c28ccbb` `DEPLOY.md` — 2 724 строки, §25 (демо `demo.visit`), §26 (тарифы и витрина), **§27 «Демо „Заказов“
   demo.zakaz.ezbook.ru»** (строка ~2399: §27.1 порядок, §27.2 перед встречей с клиентом, §27.3 откат, §27.4 замер памяти M35).
@@ -2768,6 +3568,9 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
     **`## 4.21. «Дома» — посуточная аренда домов (цикл 37, dom.ezbook.ru; НЕ ВЫПУЩЕНО)`** (строка ~4597) с подзаголовками «Правила,
     которые закреплены кодом», «Публичные маршруты», «Кабинет», «Изменения существующих маршрутов». ⚠️ Номер 4.21 уже занят разделом
     витрины цикла 28 (`### 4.21`, строка ~4203) — дубль номера (C37-8).
+  - **Цикл 39 вписан** (✔ на `5bcd015`, 4 807 строк): **`## 4.22. «Дома» — услуги-слоты и напоминание накануне заезда (цикл 39; НЕ
+    ВЫПУЩЕНО — доступно с ветки …)`** (строка ~4658) с подзаголовками «Правила, которые закреплены кодом», «Публичные маршруты»,
+    «Кабинет», «Изменения существующих маршрутов» (тот же шаблон, что у §4.21 «Дома»). Пометка «НЕ ВЫПУЩЕНО — с ветки» устарела (C39-9).
 - **OpenAPI по циклам** — `contracts/cycleN/openapi.yaml` для циклов 7, 9, 10, 11, 13–20, 23–26, 29, 31. У 26, 29 и 31
   есть ещё `openapi.json`. JSON 26 и 29 читает валидатор функциональных тестов `OpenApiContract.cs`, JSON 31 генерирует
   `npm run contracts:json` и сверяет CI, но тесты его не читают (C29-1, C31-6). Кроме того, есть
@@ -2781,7 +3584,16 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 - **С цикла 37** — `contracts/cycle37/openapi.yaml` + `openapi.json` (OpenAPI 3.0.3, весь `/api/stays/*` и изменения существующих
   маршрутов; JSON читает валидатор `OpenApiContract.cs` в `Cycle37ContractTests`; в CI — lint, генерат `api-cycle37.generated.ts`, JSON),
   `contracts/cycle37/dom-routes.json` (маршруты dom и политика slug), `contracts/cycle37/stay-vectors.json` (векторы расчёта).
+- **С цикла 39** — `contracts/cycle39/openapi.yaml` + `openapi.json` (OpenAPI 3.0.3, ~3 560 строк: 59 новых маршрутов целиком и изменённые
+  маршруты cycle37 частичными DTO с `additionalProperties: true`; JSON читает `OpenApiContract` в `Cycle39ContractTests`; в CI — lint,
+  генерат `api-cycle39.generated.ts`, JSON), `contracts/cycle39/dom-routes.json` (надмножество карты dom; встраивается в API вместо cycle37 —
+  в cycle37-файле пометка `_supersededBy`), `contracts/cycle39/service-vectors.json` (векторы времени, цены, возврата, пересечений).
+  Словами — `API_CONTRACT_CYCLE39.md` (535 строк, §39.20–§39.3x: конвенции, изменения маршрутов cycle37, маршруты по группам, лимиты §39.32).
 - Прочие контракты: `contracts/cycle23/goods-routes.json`, `order-money-vectors.json`, `cycle24/pickup-schedule-vectors.json`,
+- **С цикла 38** — `contracts/cycle38/openapi.yaml` + `openapi.json` (дельта: `GET /api/pricing/orders`, схемы `OrdersPublicPricingDto`,
+  `OrdersPublicPlanDto`); JSON читает `OpenApiContract.Load("cycle38")`; в CI — lint, генерат, JSON (§7.3). Словесное описание —
+  `API_CONTRACT_CYCLE38.md` §38.22–§38.24. В `API_DOCUMENTATION.md` не вписано (C38-7). Номер 37 — у «Домов», у этого цикла — 38 (C38-1, снято).
+- Прочие контракты: `contracts/cycle23/goods-routes.json` (с цикла 38 в `spaRoutes` есть `/pricing`), `order-money-vectors.json`, `cycle24/pickup-schedule-vectors.json`,
   `cycle11/*.schema.json`, `legal-routes.json`, `contracts/legal/runtime-value-forms.json`, `cycle30/screenshots-manifest.schema.json`
   и `cycle30/seed-state.schema.json` (JSON Schema файлов съёмки, не API). Линт — `contracts/redocly.yaml`.
 - Исторический `openapi-cycle6.yaml` лежит в корне.
@@ -2840,12 +3652,43 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
     `CY37-106b`, до CY37-140), строка «Прогон: `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle37"`» и абзац «Найденное
     QA» (двойное «Забронировать»; фраза про несбрасываемый кеш каталога устарела — C37-8). **Ручных кейсов `M37-` и вердиктов QA нет**;
     vitest dom в каталоге не перечислены (ID — в названиях `it`/файлах `frontend/dom/src/**/*.test.ts(x)`).
+  - **На `ff73c2e`** (7 444 строки, ✔ `git diff`): в конце файла, после цикла 36, — **«Цикл 38 — перенос главных на единый шаблон (FE,
+    T-38-08…10)»**: таблица `Было | Стало` (куда переехали тесты `BuyersBlock`/`BusinessBlock`, T30-13 удалён — его держит тест шаблона),
+    строка со списком новых vitest T38-09…T38-15 (ID без таблицы), и подраздел **«Цикл 38 — функциональные тесты бэкенда (QA, T38-B04…B06)»**:
+    таблица `Id | Класс | Что проверяет | Критерий` (CY38-B04-01…B06-01) и абзац о контрактной проверке. Ручных кейсов `M38-` и вердиктов
+    QA нет (C38-6).
+  - **После слияния** (7 564 строки, ✔ `grep -n '^## Цикл'`): цикл 36 (~6806), цикл 37 «Дома» (~7413), цикл 38 (~7533, подраздел
+    функциональных тестов бэкенда — ~7548); разделы идут подряд, дублей заголовков нет.
+  - **На `707899e` (цикл 41, ветка не влита)** (7 581 строка): последним идёт **«Цикл 41 — главная „Домов“ на едином шаблоне, шапка с
+    панелью (FE, vitest, T41-01…05)»** (строка ~7566): вводная (только vitest, поиск ID через `grep`, области `stays`/`companies`, ссылка на
+    регрессию §41.10.2), таблица `Id | Файл | it | Что проверяет | US` (T41-01 a–h, T41-01t, T41-02, T41-03, T41-04, T41-05), строка про
+    фикстуры и абзац о ручных кейсах T-41-07 — **таблицы `M41-` и вердиктов QA нет** (C41-7).
+  - **На `5bcd015` (циклы 41 и 39 влиты)** (7 742 строки, ✔ `grep -n '^## Цикл'`): … цикл 37 (~7413), цикл 38 (~7533), **цикл 39 (~7566)**,
+    цикл 41 (~7727). Раздел цикла 39 — «Цикл 39 — „Дома“: услуги-слоты, напоминание накануне заезда (`CY39-`, `ServiceBooking.Tests/Tests/Cycle39*.cs`)»:
+    вводная (кейсы по SPEC/ARCHITECTURE §39.0a/LEGAL_REVIEW/контракту, помощник `Cycle39TestBase`), **таблица групп** `Группа | Кейсы |
+    Критерии` (11 групп CY39-01…16, …, 170…181 с привязкой к US-39/ЮР39/Т39), запись реестра QA об изменённом CY37-43, строка о фронтовых
+    тестах QA, таблица `Кейс | Класс | Метод` (134 строки, CY39-01…181 с пропусками) и строка «Прогон: `dotnet test ServiceBooking.Tests
+    --filter "FullyQualifiedName~Cycle39"`» (+ `DOCKER_HOST`/`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`). **Ручных кейсов `M39-` и вердиктов нет** (C39-14).
   - ↪ TD16-7: вердикты раздела «Цикл 16» устарели.
 - ID кейсов продублированы в коде атрибутом `[TestCase("CY26-01")]` на тестах `ServiceBooking.Tests`.
 - Ручные живые проверки выката — чек-листы в `DEPLOY.md` (§16 и шаги циклов).
 - Отдельного `TESTPLAN.md` или `docs/testing/` нет. Каталог сценариев — только `TEST_CATALOG.md`.
 
 ### 10.5 Документы циклов
+- **На `5bcd015`** (✔ `ls`, `wc -l`): корневой `SPEC.md` — всё ещё спека **цикла 36**. Цикл 39 положил документы сразу под архивными
+  именами: `SPEC_CYCLE39_STAYS_SLOTS_ICAL.md` (913 строк, US-39-01…28; iCal в нём описан, но вынесен в цикл 40), `ARCHITECTURE_CYCLE39.md`
+  (1 134 строки, §39.0a решения ЮР39-1…10, §39.0 сводка A39-1…14, §39.1–§39.19: модель, бизнес-день, старты, двойная бронь и порядок
+  замков §39.5, деньги, жизненный цикл, возврат §39.8, уведомления, шахматка, напоминание §39.11, права, ПДн, фронт, хвосты 37 §39.15,
+  структура, задачи, риски §39.18, вопросы §39.19), `API_CONTRACT_CYCLE39.md` (535 строк), `LEGAL_REVIEW_CYCLE39.md` (643 строки),
+  `contracts/cycle39/`. Брифа цикла 39 нет. `docs/history/` нет, архив — суффиксы в корне; переносить нечего.
+- **На `707899e`** (✔ `ls`, `wc -l`; ветка `cycle/041-stays-landing`, не влита): корневой `SPEC.md` — всё ещё спека **цикла 36**. Цикл 41
+  положил документы сразу под архивными именами: `BRIEF_CYCLE41_STAYS_LANDING.md` (44 строки: бриф, словарь заказчика, ответы Q41-1…Q41-4
+  от 09.10 — приоритетнее SPEC), `SPEC_CYCLE41_STAYS_LANDING.md` (370 строк, §0–§10: US-41-01…09, тексты секций §4, FAQ §5, решение по
+  тарифам §6, пересечения с циклом 39 §8), `ARCHITECTURE_CYCLE41.md` (551 строка, §41.0–§41.13: решения заказчика, шаблон §41.3, перенос
+  `CatalogPage` §41.4, конфиг §41.5, тесты §41.10, документы и нумерация §41.11, задачи T-41-01…07 §41.12, риски R41-1…12 §41.13).
+  `API_CONTRACT_CYCLE41.md` и `contracts/cycle41/` нет — API не менялся. Ветка цикла 39 (`origin/cycle/039-stays-slots-ical`) держит
+  `SPEC_CYCLE39_STAYS_SLOTS_ICAL.md` и `LEGAL_REVIEW_CYCLE39.md`; номера 39 и 40 зарезервированы за ней (iCal вынесен в 40). В этом обновлении
+  ничего не переносилось: `docs/history/` нет, архив — суффиксы в корне.
 - **На `a7e3168`** (✔ `ls`, `head`, `wc -l`): корневой `SPEC.md` (303 строки) — **по-прежнему спека цикла 36**; архивной копии
   `SPEC_CYCLE36_*.md` нет. Цикл 37 положил спеку сразу под архивным именем — `SPEC_CYCLE37_STAYS_HOUSES.md` (803 строки, §0–§10: решения
   заказчика Q1–Q5, user stories блоков A–L, НФТ, риски, вопросы к legal-counsel). Добавились `ARCHITECTURE_CYCLE37.md` (1 323 строки,
@@ -2854,6 +3697,11 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   задачи BE-37/FE-37/DO-37/QA, риски R37-*, открытые вопросы §37.19), `API_CONTRACT_CYCLE37.md` (688 строк, §37.20–§37.36),
   `LEGAL_REVIEW_CYCLE37.md` (803 строки), `contracts/cycle37/`. В этом обновлении ничего не переносилось: `docs/history/` нет, архив —
   суффиксы в корне.
+- **На `ff73c2e`** (✔ `ls`, `head`): корневой `SPEC.md` — всё ещё спека **цикла 36**; цикл 38 положил свои документы сразу под
+  архивными именами: `BRIEF_CYCLE38_UNIFIED_LANDING.md` (бриф и ответы заказчика Q38-1…6, уточнения 7–8), `SPEC_CYCLE38_UNIFIED_LANDING.md`
+  (311 строк), `ARCHITECTURE_CYCLE38.md` (823 строки, §38.0–§38.17; риски R38-1…11 — §38.11, выкат — §38.15), `API_CONTRACT_CYCLE38.md`
+  (168 строк, §38.20–§38.27), `contracts/cycle38/`. В этом обновлении ничего не переносилось: `docs/history/` нет, архив — суффиксы в
+  корне. Документы «Домов» — под номером 37 (`ARCHITECTURE_CYCLE37.md` и т.д.), цикла 38 — под номером 38 (C38-1, снято).
 - **На `f60da0d`** (✔ `ls`, `head`, `wc -l`): корневой `SPEC.md` (303 строки) — спека **цикла 36** («ревизия регрессионных тестов и
   ускорение полного прогона», отправная точка `a1e2259`); архивной копии `SPEC_CYCLE36_*.md` нет — по конвенции её сделает
   следующий цикл (архивы предыдущих — `SPEC_CYCLE33_UNIFIED_NOTIFICATIONS_PROFILE.md` и `SPEC_CYCLE35_GOODS_DEMO_STAND.md` — в

@@ -35,6 +35,10 @@ public class StaffPushNotification
     public Guid? StayBookingId { get; set; }
     public StayBooking? StayBooking { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE39.md §39.2.2: a message about a stand-alone order of a service.</summary>
+    public Guid? StayServiceOrderId { get; set; }
+    public StayServiceOrder? StayServiceOrder { get; set; }
+
     /// <summary>The specific device this row targets. Null only if the subscription was deleted between
     /// queueing and send (defensive — normally set).</summary>
     public Guid? SubscriptionId { get; set; }

@@ -117,6 +117,19 @@ export function HousePage() {
               </p>
             )}
             <StayNotice textKey="StayTouristTaxNotice" variant="plain" className="mt-1.5 max-w-[560px]" />
+            {house.servicesForStay && house.servicesForStay.length > 0 && (
+              <p className="mt-4 text-sm text-ink-soft" data-testid="services-for-stay">
+                К проживанию можно добавить:{' '}
+                {house.servicesForStay.map((s, i) => (
+                  <span key={s.url}>
+                    {i > 0 && ', '}
+                    <Link to={s.url} className="font-semibold text-gold-dark underline">
+                      {s.name}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            )}
           </header>
 
           <HouseDetails house={house} onOpenTerms={() => setTermsOpen(true)} />

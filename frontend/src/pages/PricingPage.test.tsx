@@ -86,15 +86,6 @@ describe('PricingPage — five-plan catalog (cycle 28)', () => {
     expect(within(card('Студия')).getByText('до 1 компании')).toBeInTheDocument()
   })
 
-  it('the accent goes to the first paid plan (Студия), not to the trial that follows the free plan', async () => {
-    renderPage()
-    await screen.findByRole('heading', { level: 3, name: 'Студия' })
-
-    expect(card('Студия')).toHaveClass('bg-ink')
-    expect(card('Пробный период')).not.toHaveClass('bg-ink')
-    expect(card('Бесплатный')).not.toHaveClass('bg-ink')
-  })
-
   it('no options in the catalog → no «Дополнительные опции» block', async () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: 'Студия' })

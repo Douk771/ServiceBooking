@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { fmtDateTime } from '@/utils/dateFormat'
 import { formatPhone, telHref } from '@/utils/phone'
+import { formatRub } from '@/utils/money'
 import { staysBoardApi } from '../../api/staysBoard'
 import { PriceBreakdown } from '../../components/PriceBreakdown'
 import { ProofFileButton } from '../../components/ProofFileButton'
@@ -12,7 +13,8 @@ import { StatusBadge } from '../../components/StatusBadge'
 import { ErrorState, LoadingList } from '../../components/StatePanels'
 import { StayNotice } from '../../components/StayNotice'
 import { useStaysCompany } from '../../hooks/useStaysCompany'
-import type { StaffStayAction, StaffStayBookingCardDto } from '../../types'
+import { StaffAddServiceDialog } from '../../components/services/staff/StaffAddServiceDialog'
+import type { StaffStayAction, StaffStayBookingCardDto, StaffStayBookingCardWithServices } from '../../types'
 import { can } from '../../utils/permissions'
 import { formatDateWithWeekday, formatInstantInZone } from '../../utils/stayDates'
 import { getStayErrorMessage, httpStatus } from '../../utils/stayError'
@@ -35,6 +37,7 @@ export function BookingCardPage() {
   const canManage = can(company.myPermissions, 'ManageBookings')
   const [dialog, setDialog] = useState<'reject' | 'cancel' | null>(null)
   const [banner, setBanner] = useState('')
+  const [addService, setAddService] = useState(false)
 
   const q = useQuery({
     queryKey: key,
@@ -50,8 +53,9 @@ export function BookingCardPage() {
     if (card) document.title = `Бронь ${card.guestName ?? ''} — ${card.house.name}`
   }, [card])
 
-  const applyCard = (c: StaffStayBookingCardDto) => {
-    qc.setQueryData(key, c)
+  // the actions and the 409 answer with the same card (the sessions of the booking included, API_CONTRACT_CYCLE39.md §39.21.2)
+  const applyCard = (c: StaffStayBookingCardDto | StaffStayBookingCardWithServices) => {
+    qc.setQueryData(key, c as StaffStayBookingCardWithServices)
     void qc.invalidateQueries({ queryKey: ['stays-bookings', company.id] })
     void qc.invalidateQueries({ queryKey: ['stays-board', company.id] })
     refresh()
@@ -99,7 +103,7 @@ export function BookingCardPage() {
   }
 
   const tz = company.timeZoneId
-  const allowed = (a: StaffStayAction) => canManage && card.availableActions.includes(a)
+  const allowed = (a: StaffStayAction) => canManage && (card.availableActions as string[]).includes(a)
 
   return (
     <main className="mx-auto max-w-[900px] px-4 pb-8 pt-6 sm:px-8">
@@ -217,6 +221,44 @@ export function BookingCardPage() {
           )}
         </section>
 
+        {((card.sessions?.length ?? 0) > 0 || (canManage && card.availableActions.includes('AddSession'))) && (
+          <section className="rounded-2xl border border-line bg-white p-5 md:col-span-2" aria-labelledby="ss-h" data-testid="card-sessions">
+            <h3 id="ss-h" className="mb-3 text-[15px] font-semibold text-ink">
+              Услуги к проживанию
+            </h3>
+            {(card.sessions?.length ?? 0) === 0 ? (
+              <p className="text-sm text-ink-soft">Услуг пока нет.</p>
+            ) : (
+              <ul className="flex flex-col gap-2.5">
+                {card.sessions.map((s) => (
+                  <li key={s.id} className="rounded-2xl border border-line bg-cream/40 px-4 py-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <Link to={`/cabinet/${company.id}/service-sessions/${s.id}`} className="font-medium !text-ink underline">
+                          {s.serviceName}
+                        </Link>
+                        <p className="text-sm text-ink-soft">{s.time.label}</p>
+                        {s.items.length > 0 && <p className="text-xs text-muted">{s.items.map((i) => `${i.name} × ${i.quantity}`).join(', ')}</p>}
+                        <p className="text-xs text-muted">{s.addedByText}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold tabular-nums text-ink">{formatRub(s.totalRub)}</p>
+                        <p className="text-xs text-muted">{s.stateText}</p>
+                      </div>
+                    </div>
+                    {s.statusReason && <p className="mt-1 text-xs text-ink-soft">Причина: {s.statusReason}</p>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {canManage && card.availableActions.includes('AddSession') && (
+              <Button variant="secondary" className="mt-3 min-h-[44px]" onClick={() => setAddService(true)}>
+                Добавить услугу
+              </Button>
+            )}
+          </section>
+        )}
+
         <section className="rounded-2xl border border-line bg-white p-5" aria-labelledby="p-h">
           <h3 id="p-h" className="mb-2 text-[15px] font-semibold text-ink">
             Подтверждение оплаты
@@ -280,6 +322,10 @@ export function BookingCardPage() {
             ))}
           </ul>
         </section>
+      )}
+
+      {addService && (
+        <StaffAddServiceDialog companyId={company.id} card={card} onAdded={applyCard} onClose={() => setAddService(false)} />
       )}
 
       {dialog && (

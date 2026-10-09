@@ -20,10 +20,19 @@ public sealed class StayMessageScheduler(
     AppDbContext db, AccountMessagingReader messagingReader, MessengerConsentResolver consentResolver, PublicSiteLinks links,
     IOptions<NotificationOptions> notificationOptions, IOptions<StaysOptions> options, IStaysClock clock)
 {
-    public async Task QueueAsync(StayBooking booking, Company company, string marker, NotificationType type, StayTextFacts facts, CancellationToken ct)
+    public Task QueueAsync(StayBooking booking, Company company, string marker, NotificationType type, StayTextFacts facts, CancellationToken ct) =>
+        QueueAsync(StayNotificationSubject.Of(booking), booking.GuestPhone, booking.GuestName, booking.GuestUserId, booking.PersonalDataErased, company, marker, type,
+            unsubscribeUrl => StayNotificationTexts.Messenger(type, facts, links.StayBookingPageUrl(booking.PublicToken), unsubscribeUrl), ct, booking.NotifyByMessenger);
+
+    /// <summary>
+    /// The one path of every messenger message of «Дома» (a booking or a stand-alone order): the gate, the routing and the funding are the same; <paramref name="bodyOf"/> receives the
+    /// guest's unsubscribe link (or null) and returns the text. Nothing is queued for a depersonalised subject.
+    /// </summary>
+    public async Task QueueAsync(
+        StayNotificationSubject subject, string? phone, string? recipientName, string? recipientUserId, bool personalDataErased, Company company, string marker,
+        NotificationType type, Func<string?, string> bodyOf, CancellationToken ct, bool notifyByMessenger = true)
     {
-        var phone = booking.GuestPhone;
-        if (string.IsNullOrEmpty(phone) || booking.PersonalDataErased) return; // depersonalised: nobody to write to
+        if (string.IsNullOrEmpty(phone) || personalDataErased) return; // depersonalised: nobody to write to
 
         var now = clock.UtcNow;
         var outdatedAtUtc = now.AddMinutes(options.Value.GuestMessageTtlMinutes);
@@ -34,19 +43,19 @@ public sealed class StayMessageScheduler(
 
         var priorityTransport = settings?.PriorityTransport ?? new CompanyNotificationSettings().PriorityTransport;
 
-        // Consent (a house booking always carries a bool mark) → the cycle-40 gate → routing over the routable transports.
-        var consent = await consentResolver.DecideAsync(booking.NotifyByMessenger, booking.GuestUserId, phone, ct);
+        // Consent (a house booking or order always carries a bool mark; the planner calls only for a true one) → the cycle-40 gate → routing over the routable transports.
+        var consent = await consentResolver.DecideAsync(notifyByMessenger, recipientUserId, phone, ct);
         var decision = MessagingQueueing.Decide(type, messaging, settings, optedOut, consent, now, outdatedAtUtc);
         if (decision.IsSkipped)
         {
-            await AddIfNew(booking, company, marker, type, string.Empty, priorityTransport, decision.RepresentativeChannelId, outdatedAtUtc,
+            await AddIfNew(subject, phone, recipientName, recipientUserId, company, marker, type, string.Empty, priorityTransport, decision.RepresentativeChannelId, outdatedAtUtc,
                 NotificationStatus.Skipped, decision.SkipReason, ct);
             return;
         }
 
-        var body = StayNotificationTexts.Messenger(type, facts, links.StayBookingPageUrl(booking.PublicToken), UnsubscribeUrl(phone));
+        var body = bodyOf(UnsubscribeUrl(phone));
         foreach (var target in decision.Targets)
-            await AddIfNew(booking, company, marker, type, body, target.Transport, target.ChannelId, outdatedAtUtc, NotificationStatus.Pending, null, ct);
+            await AddIfNew(subject, phone, recipientName, recipientUserId, company, marker, type, body, target.Transport, target.ChannelId, outdatedAtUtc, NotificationStatus.Pending, null, ct);
     }
 
     private string? UnsubscribeUrl(string phone)
@@ -56,16 +65,17 @@ public sealed class StayMessageScheduler(
     }
 
     private async Task AddIfNew(
-        StayBooking booking, Company company, string marker, NotificationType type, string body, NotificationTransport transport, Guid? channelId,
-        DateTime outdatedAtUtc, NotificationStatus status, NotificationReason? reason, CancellationToken ct)
+        StayNotificationSubject subject, string phone, string? recipientName, string? recipientUserId, Company company, string marker, NotificationType type, string body,
+        NotificationTransport transport, Guid? channelId, DateTime outdatedAtUtc, NotificationStatus status, NotificationReason? reason, CancellationToken ct)
     {
         // One event/marker — one message per channel: the key is the whole guarantee (unique index), the existence check only avoids an exception.
-        var key = $"{type}:stay:{marker}:{transport}";
+        var key = $"{type}:{subject.KeyPart}:{marker}:{transport}";
         if (await db.OutboundNotifications.AnyAsync(n => n.IdempotencyKey == key, ct)) return;
         db.OutboundNotifications.Add(new OutboundNotification
         {
-            Id = Guid.NewGuid(), CompanyId = company.Id, ChannelId = channelId, Transport = transport, StayBookingId = booking.Id, Type = type,
-            RecipientPhone = booking.GuestPhone!, RecipientName = booking.GuestName, RecipientUserId = booking.GuestUserId, Body = body,
+            Id = Guid.NewGuid(), CompanyId = company.Id, ChannelId = channelId, Transport = transport, StayBookingId = subject.StayBookingId,
+            StayServiceOrderId = subject.StayServiceOrderId, Type = type,
+            RecipientPhone = phone, RecipientName = recipientName, RecipientUserId = recipientUserId, Body = body,
             DueAtUtc = clock.UtcNow, VisitStartUtc = outdatedAtUtc, Status = status, Reason = reason, Generation = 0, IdempotencyKey = key,
         });
     }

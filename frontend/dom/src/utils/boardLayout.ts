@@ -46,7 +46,7 @@ export function rowsOf(board: Pick<StaysBoardDto, 'houses' | 'items'>): BoardRow
  * Applies a poll answer. `changed: false` carries no arrays — only a fresh revision, time and «today» — so the arrays of the last full
  * answer stay; a full answer replaces everything.
  */
-export function mergeBoard(prev: StaysBoardDto | undefined, next: StaysBoardDto): StaysBoardDto {
+export function mergeBoard<T extends StaysBoardDto>(prev: T | undefined, next: T): T {
   if (next.changed || !prev) return next
   return { ...prev, revision: next.revision, serverTimeUtc: next.serverTimeUtc, today: next.today, changed: true }
 }

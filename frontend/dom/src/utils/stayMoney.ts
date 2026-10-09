@@ -111,5 +111,9 @@ export function previewLineLabel(l: MoneyLine): string {
       return `Детская кроватка, ${nightsLabel(l.nights ?? 0)}`
     case 'ManualTotal':
       return 'Итог изменён вручную'
+    case 'ServiceSlot':
+      return 'Услуга'
+    case 'ServiceItem':
+      return 'Позиция услуги'
   }
 }

@@ -35,6 +35,25 @@ public class PricingController(PricingCatalogCache cache) : ControllerBase
         return Ok(dto);
     }
 
+    // ARCHITECTURE_CYCLE38.md §38.9.5. Anonymous, no switch, no legal gate (Q38-3). 404 (empty body) only when the Orders line has no active public tariff.
+    [HttpGet("api/pricing/orders")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetOrdersPublicPricing(CancellationToken ct)
+    {
+        var cached = await cache.GetOrdersAsync(ct);
+        if (cached is null) return NotFound();
+
+        if (Request.Headers.TryGetValue("If-None-Match", out var ifNoneMatch) &&
+            ifNoneMatch.Any(v => v == cached.ETag))
+        {
+            return StatusCode(StatusCodes.Status304NotModified);
+        }
+
+        Response.Headers.ETag = cached.ETag;
+        Response.Headers.CacheControl = "public, max-age=60";
+        return Ok(cached.Dto);
+    }
+
     // SuperAdmin. Same shape as GET /api/pricing but ignores the publication switch and never caches/
     // ETags — the admin/legal-review screen must always show the current draft, published or not.
     [HttpGet("api/admin/pricing/preview")]

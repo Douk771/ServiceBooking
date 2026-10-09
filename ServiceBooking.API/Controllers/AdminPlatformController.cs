@@ -259,7 +259,8 @@ public class AdminPlatformController(
             p.OrderPushSubscriptionDays, p.CustomerOrderPushNotificationDays,
             p.StaffMaxStoppedLinkDays, p.StaffMaxLinkSessionDays, p.StaffMaxMessageDays,
             p.StayPaymentProofDays, p.StayUnpaidBookingDays, p.StayBookingPersonalDataDays,
-            p.StayBookingEventDays, p.StayGuestPushSubscriptionDays, p.StayGuestPushNotificationDays));
+            p.StayBookingEventDays, p.StayGuestPushSubscriptionDays, p.StayGuestPushNotificationDays,
+            p.StayServiceOrderUnpaidDays, p.StayServiceOrderPersonalDataDays, p.StayServiceOrderEventDays, p.StayServiceScheduleEventDays));
     }
 
     // ARCHITECTURE_CYCLE20.md §406.2, API_CONTRACT_CYCLE20.md §436.2 (US-20-05, Т20-06) — the journal's
@@ -324,7 +325,9 @@ public record RetentionPolicyDto(
     int StaffMaxStoppedLinkDays = 0, int StaffMaxLinkSessionDays = 0, int StaffMaxMessageDays = 0,
     // ARCHITECTURE_CYCLE37.md §37.13.3 (ЮР-6) — the six periods of «Дома», appended at the end (§49.5: the policy is read from the running configuration).
     int StayPaymentProofDays = 0, int StayUnpaidBookingDays = 0, int StayBookingPersonalDataDays = 0,
-    int StayBookingEventDays = 0, int StayGuestPushSubscriptionDays = 0, int StayGuestPushNotificationDays = 0);
+    int StayBookingEventDays = 0, int StayGuestPushSubscriptionDays = 0, int StayGuestPushNotificationDays = 0,
+    // ARCHITECTURE_CYCLE39.md §39.13.3 — four periods of services, appended at the end.
+    int StayServiceOrderUnpaidDays = 0, int StayServiceOrderPersonalDataDays = 0, int StayServiceOrderEventDays = 0, int StayServiceScheduleEventDays = 0);
 
 // ARCHITECTURE_CYCLE20.md §406.2, API_CONTRACT_CYCLE20.md §436.2 (US-20-05, Т20-06). 🔴 No IP, no
 // User-Agent, no phone in any form, no counts — the schema behind this DTO has no such columns

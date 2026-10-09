@@ -27,7 +27,8 @@ export function StayNotice({ textKey, variant = 'box', companyName, onOpenTerms,
 
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
     const a = (e.target as HTMLElement).closest('a')
-    if (a && a.getAttribute('href') === '#stay-terms' && onOpenTerms) {
+    const href = a?.getAttribute('href')
+    if (a && (href === '#stay-terms' || href === '#service-terms') && onOpenTerms) {
       e.preventDefault()
       onOpenTerms()
     }

@@ -248,7 +248,7 @@ describe('BookingPage — confirmed and final', () => {
     await screen.findByTestId('booking-status')
     expect(screen.getByText('Иванов Иван Иванович')).toBeInTheDocument()
     expect(screen.getByText('Новокузнецк, ул. Мира, 1')).toBeInTheDocument()
-    expect(screen.getByText(/Цена указана без туристического налога/)).toBeInTheDocument()
+    expect(screen.getByText(/Цена проживания указана без туристического налога/)).toBeInTheDocument()
   })
 })
 
