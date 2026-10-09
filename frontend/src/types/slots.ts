@@ -8,6 +8,12 @@ import type { components as C39 } from '@/types/api-cycle39.generated'
 type S37 = C37['schemas']
 type S39 = C39['schemas']
 
+// Shared by the services of both verticals (moved from dom/src/types.ts, 42.12.1).
+export type StayDisplayStatus = S37['StayDisplayStatus']
+export type ProviderPublicDto = S37['ProviderPublicDto']
+export type ProviderFullDto = S37['ProviderFullDto']
+export type StaysConflictDto = S37['StaysConflictDto']
+
 export type PaymentProofDto = S37['PaymentProofDto']
 export type PushSubscriptionInput = S37['PushSubscriptionInput']
 export type MinuteOfBusinessDay = S39['MinuteOfBusinessDay']

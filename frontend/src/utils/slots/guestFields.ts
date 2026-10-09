@@ -30,3 +30,18 @@ export function validateGuestFields(f: GuestFields, opts: { anonymous: boolean; 
   if (opts.anonymous && opts.captchaRequired && !opts.captchaToken) e.captcha = 'Подтвердите, что вы не робот'
   return e
 }
+
+/**
+ * A 400 of the booking form is a bare string; this finds the field it belongs to so the text appears under that field
+ * (API_CONTRACT_CYCLE37.md §37.36: «фронт показывает дословно у поля»). Unknown text stays a form-level error.
+ */
+export function fieldOfBookingError(text: string): keyof GuestFieldErrors | 'arrival' | 'dates' | 'guests' | null {
+  if (/^Укажите имя|^Имя — /.test(text)) return 'name'
+  if (/номер телефона/.test(text)) return 'phone'
+  if (/^Комментарий/.test(text)) return 'comment'
+  if (/не робот/.test(text)) return 'captcha'
+  if (/^Время прибытия/.test(text)) return 'arrival'
+  if (/дат[ыа] (заезда|выезда)|формат даты|^Укажите даты/.test(text)) return 'dates'
+  if (/^(Взрослых|Детей|Собак) — /.test(text)) return 'guests'
+  return null
+}
