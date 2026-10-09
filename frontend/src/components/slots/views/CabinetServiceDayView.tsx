@@ -7,7 +7,7 @@ import { ManualServiceOrderDialog } from '@/components/slots/services/staff/Manu
 import { ServiceDayList, ServiceDayScale } from '@/components/slots/services/staff/ServiceDayView'
 import { EmptyState, ErrorState, LoadingList } from '@/components/slots/ui/StatePanels'
 import { useMediaQuery } from '@/hooks/slots/useMediaQuery'
-import { useCabinetCompany, useSlotVertical } from '@/components/slots/SlotVerticalContext'
+import { useCabinetCompany, useCabinetWords, useSlotVertical } from '@/components/slots/SlotVerticalContext'
 import { businessDateOf } from '@/utils/slots/businessClock'
 import { can } from '@/utils/slots/slotPermissions'
 import { businessDateLabel } from '@/utils/slots/serviceTimeFormat'
@@ -23,6 +23,7 @@ const SERVICE_DAY_POLL_MS = 30_000
  */
 export function CabinetServiceDayView() {
   const { api, paths, NotFound } = useSlotVertical()
+  const cw = useCabinetWords()
   const staysBoardApi = api.sessions
   const { date = '' } = useParams()
   const { company } = useCabinetCompany()
@@ -44,7 +45,7 @@ export function CabinetServiceDayView() {
     retry: 1,
   })
   if (!allowed) return <NotFound title="Раздел недоступен" />
-  if (!valid) return <NotFound title="Неверная дата" hint="Откройте «День услуг» из раздела «Услуги»." />
+  if (!valid) return <NotFound title="Неверная дата" hint={`Откройте «${cw.dayLink}» из раздела «${cw.servicesTitle}».`} />
 
   const go = (d: string) => navigate(paths.cabinetDay(company.id, d))
   const today = q.data?.today ?? businessDateOf(new Date()).businessDate
@@ -71,7 +72,7 @@ export function CabinetServiceDayView() {
         </div>
         {canBook && (
           <Button className="min-h-[44px]" onClick={() => setManual(true)}>
-            <Icon name="plus" size={15} /> Ручной заказ
+            <Icon name="plus" size={15} /> {cw.manualOrder}
           </Button>
         )}
       </div>
@@ -82,7 +83,7 @@ export function CabinetServiceDayView() {
       ) : q.isError && !day ? (
         <ErrorState message={getStayErrorMessage(q.error, 'Не удалось загрузить день услуг.')} onRetry={() => void q.refetch()} />
       ) : !day || day.services.length === 0 ? (
-        <EmptyState title="Услуг пока нет" text="Когда у компании появятся услуги, здесь будет их день: окна, сеансы и время на подготовку." />
+        <EmptyState title={cw.dayEmptyTitle} text="Когда у компании появятся услуги, здесь будет их день: окна, сеансы и время на подготовку." />
       ) : (
         <>
           {q.isError && (

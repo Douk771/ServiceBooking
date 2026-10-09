@@ -9,7 +9,7 @@ import { formatRub } from '@/utils/money'
 import { ProofFileButton } from '@/components/slots/ui/ProofFileButton'
 import { ErrorState, LoadingList } from '@/components/slots/ui/StatePanels'
 import { StatusBadge } from '@/components/slots/ui/StatusBadge'
-import { useCabinetCompany, useSlotVertical } from '@/components/slots/SlotVerticalContext'
+import { useCabinetCompany, useCabinetWords, useSlotVertical } from '@/components/slots/SlotVerticalContext'
 import type { ServiceStaffAction, ServiceStaffConflictDto, StaffServiceSessionCardDto } from '@/types/slots'
 import { can } from '@/utils/slots/slotPermissions'
 import { REASON_MAX, reasonProblem } from '@/utils/slots/slotReason'
@@ -30,6 +30,7 @@ const KIND_TEXT: Record<StaffServiceSessionCardDto['addedBy']['kind'], string> =
  */
 export function CabinetServiceSessionView() {
   const { api, paths, words, NotFound } = useSlotVertical()
+  const cw = useCabinetWords()
   const staysBoardApi = api.sessions
   const { sessionId = '' } = useParams()
   const { company, refresh } = useCabinetCompany()
@@ -50,8 +51,8 @@ export function CabinetServiceSessionView() {
   const card = q.data
 
   useEffect(() => {
-    if (card) document.title = `Сеанс ${card.serviceName} — ${card.guestName ?? 'гость'}`
-  }, [card])
+    if (card) document.title = `${cw.sessionTitle} ${card.serviceName} — ${card.guestName ?? 'гость'}`
+  }, [card, cw.sessionTitle])
 
   const applyCard = (c: StaffServiceSessionCardDto) => {
     qc.setQueryData(key, c)
@@ -94,7 +95,7 @@ export function CabinetServiceSessionView() {
       </main>
     )
   }
-  if (q.isError && httpStatus(q.error) === 404) return <NotFound title="Сеанс не найден" hint="Его нет в этой компании." />
+  if (q.isError && httpStatus(q.error) === 404) return <NotFound title={cw.sessionNotFound} hint="Его нет в этой компании." />
   if (q.isError || !card) {
     return (
       <main className="mx-auto max-w-[760px] px-4 pt-8 sm:px-8">
@@ -108,7 +109,7 @@ export function CabinetServiceSessionView() {
   return (
     <main className="mx-auto max-w-[900px] px-4 pb-8 pt-6 sm:px-8">
       <Link to={paths.cabinetDay(company.id, card.time.businessDate)} className="text-xs font-medium text-ink-soft hover:text-gold-dark">
-        ← День услуг
+        ← {cw.dayLink}
       </Link>
 
       <header className="mt-1 flex flex-wrap items-start justify-between gap-3">

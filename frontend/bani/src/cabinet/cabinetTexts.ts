@@ -1,4 +1,5 @@
 import type { SlotText } from '@/utils/slots/slotTexts'
+import type { SlotCabinetWords } from '@/utils/slots/slotCabinetWords'
 
 /**
  * The only owner text of the cabinet that `utils/baniTexts.ts` (FE-42-3, §11.0–§11.5) does not carry: the «no people in the frame» line
@@ -17,3 +18,27 @@ export const CITY_MISSING_TEXT = 'Вашего города пока нет в �
 
 /** The support contact of the platform. The repository has none yet; while it is null the line above is shown without a link (open question to architect). */
 export const SUPPORT_MAILTO: string | null = null
+
+/** The cabinet speaks of «бронь» and «ресурс», never «заказ», «сеанс» or «услуга» (LEGAL_REVIEW_CYCLE42.md §3.3, §10; FE-42-8). */
+export const BANI_CABINET_WORDS: SlotCabinetWords = {
+  manualOrder: 'Ручная бронь',
+  manualOrderTitle: 'Ручная бронь',
+  manualOrderStepTitle: 'Ручная бронь ресурса',
+  manualOrderCreateError: 'Не удалось создать бронь.',
+  manualOrderNoServices: 'У компании нет ресурсов. Добавьте ресурс в разделе «Ресурсы».',
+  servicesTitle: 'Ресурсы',
+  servicesLoadError: 'Не удалось загрузить ресурсы.',
+  addService: 'Добавить ресурс',
+  dayLink: 'День броней',
+  sessionTitle: 'Бронь',
+  sessionNotFound: 'Бронь не найдена',
+  allServices: 'Все ресурсы',
+  newServiceTitle: 'Новый ресурс',
+  createService: 'Создать ресурс',
+  dayEmptyTitle: 'Ресурсов пока нет',
+  ordersEmptyAwaiting: 'Нет броней, ожидающих проверки оплаты',
+  ordersEmptyHeld: 'Нет броней, которые ждут оплаты',
+  ordersEmptyConfirmed: 'Нет подтверждённых броней',
+  ordersLoadError: 'Не удалось загрузить брони.',
+  ordersStatusLabel: 'Статус брони',
+}

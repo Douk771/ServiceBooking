@@ -7,15 +7,15 @@ import { formatRub } from '@/utils/money'
 import type { StaffServiceSessionListItemDto } from '@/types/slots'
 import { EmptyState, ErrorState, LoadingList } from '@/components/slots/ui/StatePanels'
 import { getStayErrorMessage } from '@/utils/slots/slotError'
-import { useSlotVertical } from '@/components/slots/SlotVerticalContext'
+import { useCabinetWords, useSlotVertical } from '@/components/slots/SlotVerticalContext'
 
 const PAGE_SIZE = 20
 const POLL_MS = 15_000
 
 const SESSION_PRESETS = [
-  { id: 'AwaitingPaymentCheck', label: 'Ожидают проверки оплаты', empty: 'Нет заказов услуг, ожидающих проверки оплаты' },
-  { id: 'Held', label: 'Ждут оплаты', empty: 'Нет заказов услуг, которые ждут оплаты' },
-  { id: 'Confirmed', label: 'Подтверждённые', empty: 'Нет подтверждённых заказов услуг' },
+  { id: 'AwaitingPaymentCheck', label: 'Ожидают проверки оплаты', empty: 'ordersEmptyAwaiting' },
+  { id: 'Held', label: 'Ждут оплаты', empty: 'ordersEmptyHeld' },
+  { id: 'Confirmed', label: 'Подтверждённые', empty: 'ordersEmptyConfirmed' },
 ] as const
 type PresetId = (typeof SESSION_PRESETS)[number]['id']
 const presetOf = (v: string | null): PresetId => SESSION_PRESETS.find((p) => p.id === v)?.id ?? 'AwaitingPaymentCheck'
@@ -26,6 +26,7 @@ const presetOf = (v: string | null): PresetId => SESSION_PRESETS.find((p) => p.i
  */
 export function SessionsList({ companyId, awaitingCount }: { companyId: string; awaitingCount?: number }) {
   const staysBoardApi = useSlotVertical().api.sessions
+  const cw = useCabinetWords()
   const [sp, setSp] = useSearchParams()
   const preset = presetOf(sp.get('sstatus'))
   const page = Math.max(1, Number(sp.get('spage')) || 1)
@@ -45,11 +46,11 @@ export function SessionsList({ companyId, awaitingCount }: { companyId: string; 
     setSp(next)
   }
   const list = q.data
-  const empty = SESSION_PRESETS.find((p) => p.id === preset)!.empty
+  const empty = cw[SESSION_PRESETS.find((p) => p.id === preset)!.empty]
 
   return (
     <div data-testid="sessions-list">
-      <div role="tablist" aria-label="Статус заказа услуги" className="-mx-4 mb-5 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0">
+      <div role="tablist" aria-label={cw.ordersStatusLabel} className="-mx-4 mb-5 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0">
         {SESSION_PRESETS.map((p) => (
           <button
             key={p.id}
@@ -68,7 +69,7 @@ export function SessionsList({ companyId, awaitingCount }: { companyId: string; 
       {q.isLoading ? (
         <LoadingList rows={4} />
       ) : q.isError && !list ? (
-        <ErrorState message={getStayErrorMessage(q.error, 'Не удалось загрузить заказы услуг.')} onRetry={() => void q.refetch()} />
+        <ErrorState message={getStayErrorMessage(q.error, cw.ordersLoadError)} onRetry={() => void q.refetch()} />
       ) : !list || list.items.length === 0 ? (
         <EmptyState title={empty} />
       ) : (

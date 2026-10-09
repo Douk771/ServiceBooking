@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { useSlotGuestPush, type GuestPushApi } from '@/hooks/slots/useSlotGuestPush'
 import { guestPushMessage } from '@/utils/slots/slotPush'
+import { useGuestWords } from '@/components/slots/SlotVerticalContext'
 import { InlineError } from '@/components/slots/ui/StatePanels'
 
 /**
@@ -21,6 +22,7 @@ export function GuestPushCard({
   /** The routes of the page `kind` points at (the vertical picks them). */
   api: GuestPushApi
 }) {
+  const gw = useGuestWords()
   const push = useSlotGuestPush({ kind, token, publicKey: info.publicKey, api })
   if (!info.available) return null
 
@@ -42,7 +44,7 @@ export function GuestPushCard({
         </div>
       ) : (
         <div className="mt-1.5 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-ink-soft">Браузер сообщит, когда компания подтвердит оплату и когда будет готова информация к заселению.</p>
+          <p className="text-sm text-ink-soft">{gw.pushHint}</p>
           <Button size="sm" loading={push.busy} onClick={() => void push.enable()} className="min-h-[44px]">
             Уведомлять в этом браузере
           </Button>

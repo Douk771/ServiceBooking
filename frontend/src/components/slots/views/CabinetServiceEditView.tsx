@@ -8,7 +8,7 @@ import { ServiceRulesTab } from '@/components/slots/services/cabinet/ServiceRule
 import { ServiceScheduleTab } from '@/components/slots/services/cabinet/ServiceScheduleTab'
 import { ServiceTabProvider } from '@/components/slots/services/cabinet/serviceContext'
 import { ErrorState, LoadingList } from '@/components/slots/ui/StatePanels'
-import { useCabinetCompany, useSlotVertical } from '@/components/slots/SlotVerticalContext'
+import { useCabinetCompany, useCabinetWords, useSlotVertical } from '@/components/slots/SlotVerticalContext'
 import type { ServiceManageDto } from '@/types/slots'
 import { can } from '@/utils/slots/slotPermissions'
 import { getStayErrorMessage, isNotFound } from '@/utils/slots/slotError'
@@ -22,6 +22,7 @@ type TabId = 'desc' | 'schedule' | 'prices' | 'items' | 'rules'
  */
 export function CabinetServiceEditView() {
   const { api, paths, NotFound } = useSlotVertical()
+  const cw = useCabinetWords()
   const staysServicesApi = api.cabinet
   const { serviceId = '' } = useParams()
   const { company } = useCabinetCompany()
@@ -79,7 +80,7 @@ export function CabinetServiceEditView() {
     <ServiceTabProvider value={{ companyId: company.id, service, setService, canManage, canEditContent, canManageDates }}>
       <main className="mx-auto max-w-[900px] px-4 pb-6 pt-6 sm:px-8">
         <Link to={paths.cabinetServices(company.id)} className="text-xs font-medium text-ink-soft hover:text-gold-dark">
-          ← Все услуги
+          ← {cw.allServices}
         </Link>
         <div className="mt-1">
           <h2 className="truncate font-serif text-[28px] leading-tight text-ink">{service.name}</h2>

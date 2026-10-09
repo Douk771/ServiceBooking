@@ -20,7 +20,7 @@ import { ServiceTermsModal } from '@/components/slots/services/ServiceTermsModal
 import type { PublicServiceOrderDto, ServiceOrderGuestConflictDto } from '@/types/slots'
 import { getStayErrorMessage, httpStatus, readConflict } from '@/utils/slots/slotError'
 import { BOOKING_POLL_MS, TONE_CLASSES, isTerminal, statusTone } from '@/utils/slots/slotStatus'
-import { useGuestWords, useSlotVertical } from '@/components/slots/SlotVerticalContext'
+import { useCabinetWords, useGuestWords, useSlotVertical } from '@/components/slots/SlotVerticalContext'
 
 /**
  * `/s/:token` — a separate session of the guest (US-39-12/13, no login: the token is the access, the page says «не пересылайте»).
@@ -31,6 +31,7 @@ import { useGuestWords, useSlotVertical } from '@/components/slots/SlotVerticalC
 export function ServiceOrderView() {
   const { api, words, legal, NotFound } = useSlotVertical()
   const gw = useGuestWords()
+  const cw = useCabinetWords()
   const serviceOrdersApi = api.orders
   const { token = '' } = useParams<{ token: string }>()
   const location = useLocation()
@@ -259,7 +260,7 @@ export function ServiceOrderView() {
 
         <section className="rounded-2xl border border-line bg-white p-5" aria-labelledby="session-title">
           <h2 id="session-title" className="mb-3 text-[15px] font-semibold text-ink">
-            Сеанс
+            {cw.sessionTitle}
           </h2>
           <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[170px_1fr]">
             <dt className="text-muted">Время</dt>
