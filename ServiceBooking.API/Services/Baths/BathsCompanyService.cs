@@ -41,7 +41,6 @@ public class BathsCompanyService(AppDbContext db, StaysCompanyService stays, Pub
         settings.HousekeeperSeesGuestComment = input.HousekeeperSeesGuestComment;
         settings.ServiceReminderHours = input.SessionReminderEnabled ? input.SessionReminderHours : null;
         company.ShowInPublicListing = input.ShowInCatalog;
-        // TODO(BE-42-4): invalidate the cache of the catalog base (BathsCatalogService) when it exists — «showInCatalog» changes the visibility.
     }
 
     // ── plan ──
@@ -104,6 +103,8 @@ public class BathsCompanyService(AppDbContext db, StaysCompanyService stays, Pub
             new("Plan", plan.HasActivePlan, "Выберите тариф или активируйте пробный период"),
         };
 
+        // the bath attendant gets the card without anything of the tariff and the setup (§42.6): an empty checklist, a plan without the numbers, a gate without the reason
+        var isHousekeeper = role == StaysMyRole.Housekeeper;
         return new BathsCompanyManageDto(
             company.Id, company.Name, company.Slug, company.Description, company.Phone, company.Email, company.LogoUrl, company.Address,
             company.YandexMapsUrl, company.TwoGisUrl, company.CityId, cityName ?? string.Empty, company.TimeZoneId, company.TimeZoneIsManual, company.IsActive,
@@ -111,8 +112,11 @@ public class BathsCompanyService(AppDbContext db, StaysCompanyService stays, Pub
             role == StaysMyRole.Housekeeper ? null : ToSettingsDto(settings, company),
             canManage ? new PaymentDetailsDto(settings.PaymentDetails, settings.PaymentPurpose) : null,
             canManage ? StaysCompanyService.ProviderFull(settings) : null,
-            new GateDto(gate.Accepting, gate.ReasonCode?.ToString(), gate.ReasonText), checklist,
-            new BathsPlanSummaryDto(plan.PlanName, plan.IsTrial, plan.PaidUntilUtc, plan.MaxResources, accountPublished, level, text), awaiting);
+            isHousekeeper ? new GateDto(gate.Accepting, null, null) : new GateDto(gate.Accepting, gate.ReasonCode?.ToString(), gate.ReasonText),
+            isHousekeeper ? [] : checklist,
+            isHousekeeper ? new BathsPlanSummaryDto(null, false, null, null, 0, "None", null)
+                : new BathsPlanSummaryDto(plan.PlanName, plan.IsTrial, plan.PaidUntilUtc, plan.MaxResources, accountPublished, level, text),
+            awaiting);
     }
 
     public async Task<List<BathsCompanyListItemDto>> ListMineAsync(string userId, CancellationToken ct)
