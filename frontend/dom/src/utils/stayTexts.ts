@@ -1,4 +1,5 @@
 import { findSection, splitLegalSections } from '@/utils/legalSections'
+import { resolveSlotText, type SlotText } from '@/utils/slots/slotTexts'
 
 /**
  * Legal microcopy of the «Дома» vertical (LEGAL_REVIEW_CYCLE37.md §15, ARCHITECTURE_CYCLE37.md §37.13.4). The keys are kept
@@ -34,12 +35,7 @@ export type StayTextKey =
   | 'StayReminderPushOwnerNotice'
   | 'StayServiceSafetyOwnerNotice'
 
-export interface StayText {
-  /** Always-visible part (for texts without sections, the whole text). */
-  short: string
-  /** Expandable part behind «Подробнее», when the text has one. */
-  full: string | null
-}
+export type StayText = SlotText
 
 const COMPANY = '<span data-legal-when="companyName">компанией «<span data-legal-value="companyName"></span>»</span><span data-legal-unless="companyName">компанией, которая сдаёт этот дом</span>'
 const COMPANY_CAP = '<span data-legal-when="companyName">Компания «<span data-legal-value="companyName"></span>»</span><span data-legal-unless="companyName">Компания, которая сдаёт дом,</span>'
@@ -207,19 +203,9 @@ export const STAY_FALLBACKS: Record<StayTextKey, StayText> = {
   },
 }
 
-/**
- * The text to show: the lawyer's version when the server has one, the fallback otherwise. A server text with «Короткая строка» /
- * «Полный текст» sections is split between the always-visible line and the expandable part; one without sections is shown
- * whole (showing the lawyer's text in the wrong spot beats dropping it because a heading was reworded — same rule as
- * `findSection` everywhere).
- */
+/** The text to show: the lawyer's version when the server has one, the fallback otherwise (rules: `resolveSlotText`). */
 export function resolveStayText(key: StayTextKey, serverHtml: string | null | undefined): StayText {
-  if (!serverHtml || !serverHtml.trim()) return STAY_FALLBACKS[key]
-  const sections = splitLegalSections(serverHtml)
-  const short = findSection(sections, 'Короткая строка')?.html
-  const full = findSection(sections, 'Полный текст')?.html
-  if (short) return { short, full: full ?? null }
-  return { short: serverHtml, full: null }
+  return resolveSlotText(STAY_FALLBACKS, key, serverHtml)
 }
 
 /** Section of a multi-part text by heading (used by the cancellation terms: «Общее»). */

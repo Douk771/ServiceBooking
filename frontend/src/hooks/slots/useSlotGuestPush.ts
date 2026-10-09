@@ -3,17 +3,24 @@ import { describeDevice } from '@/hooks/useWebPush'
 import { registerPushWorker } from '@/utils/pushWorker'
 import { arrayBufferToBase64Url, urlBase64ToUint8Array } from '@/utils/webPushEncoding'
 import { detectIosEnvironment, getPushUnavailableReason, type PushUnavailableReason } from '@/utils/pushAvailability'
-import { guestBookingsApi } from '../api/guestBookings'
-import { serviceOrdersApi } from '../api/serviceOrders'
-import { getStayErrorMessage } from '../utils/stayError'
-import { bookingPushAtKey, bookingPushKey, pruneBookingPushStorage } from '../utils/stayPush'
+import type { PushSubscriptionInput } from '@/types/slots'
+import { getStayErrorMessage } from '@/utils/slots/slotError'
+import { bookingPushAtKey, bookingPushKey, pruneBookingPushStorage } from '@/utils/slots/slotPush'
 
-interface Options {
+/** The two push routes of a guest page (a booking, a separate session): the endpoints differ, the mechanism is the same. */
+export interface GuestPushApi {
+  pushSubscribe: (token: string, input: PushSubscriptionInput) => Promise<void>
+  pushUnsubscribe: (token: string, endpoint: string) => Promise<void>
+}
+
+export interface SlotGuestPushOptions {
   /** A booking (`/b/<token>`) or a separate session (`/s/<token>`); the endpoints differ, the mechanism is the same. */
   kind?: 'booking' | 'order'
   token: string
   /** `BookingNotificationsDto.webPush.publicKey`. */
   publicKey: string | null | undefined
+  /** Routes of the page `kind` points at (the vertical picks them). */
+  api: GuestPushApi
 }
 
 function supported(): boolean {
@@ -38,8 +45,7 @@ function readStored(token: string): string | null {
  * `enable()` (a click), never on mount. `disable()` removes the SERVER row only and never calls `PushSubscription.unsubscribe()`:
  * one browser has one subscription shared with the staff role (ARCHITECTURE_CYCLE37.md §37.14.6).
  */
-export function useStayGuestPush({ kind = 'booking', token: rawToken, publicKey }: Options) {
-  const api = kind === 'order' ? serviceOrdersApi : guestBookingsApi
+export function useSlotGuestPush({ kind = 'booking', token: rawToken, publicKey, api }: SlotGuestPushOptions) {
   // one browser may follow a booking and a session with different tokens; the memory keys never collide
   const token = kind === 'order' ? `so:${rawToken}` : rawToken
   const [permission, setPermission] = useState(readPermission)
