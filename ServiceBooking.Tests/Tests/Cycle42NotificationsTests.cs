@@ -257,6 +257,9 @@ public class Cycle42NotificationsTests(TestDatabaseFixture fixture) : Cycle42Tes
             });
             await db.SaveChangesAsync();
             await NotificationTestBase.EnsureWhatsAppPaidAsync(db, accountId);
+            // Cycle 40 (§40.3.1): a row without its own date rides the account's «Записи» subscription, which a «Бани»/«Дома» account lacks — the row gets its own term.
+            await db.AccountSubscriptionOptions.Where(o => o.BillingAccountId == accountId && o.Option.Code == ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode)
+                .ExecuteUpdateAsync(o => o.SetProperty(x => x.PaidUntilUtc, DateTime.UtcNow.AddDays(30)));
         });
     }
 

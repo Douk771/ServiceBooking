@@ -1,6 +1,8 @@
 using FluentAssertions;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Baths;
+using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.API.Services.Notifications.Funding;
 using ServiceBooking.API.Services.Slots;
 using ServiceBooking.API.Services.Stays;
 using ServiceBooking.Core.Entities;
@@ -73,8 +75,46 @@ public class BathsPlanTests
         StaysPlanResolver.Warning(plan, 3, Now, GateUnit.House).Should().Be(StaysPlanResolver.Warning(plan, 3, Now));
     }
 
-    // TODO(C42-channels): tests of SubscriptionResolver.PaidNumbers / LineChannelGrant (the baths line funds a number) removed in the merge of develop:
-    // cycle 40 deleted the mechanism (payment per transport through AccountMessagingReader / ChannelOptionFunding). Re-create for the baths line there.
+    // Since cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.1, A1) a number is paid by the account's OWN option row, never by a line's tariff rule:
+    // «Бани» is therefore covered by the same pure function as every line. These tests pin that for an account that owns a «Бани» company.
+    private static readonly LegacySubscriptionFacts NoServicesSubscription = new(false, null);
+
+    private static TransportPayment Pay(OptionRowFacts? row, DateTime? trialEnd = null) =>
+        ChannelOptionFunding.Evaluate(row, trialEnd, NoServicesSubscription, Now);
+
+    [Fact]
+    public void A_baths_only_account_without_an_option_row_has_no_paid_number_whatever_its_baths_plan_says()
+    {
+        var plan = StaysPlanResolver.ResolveBaths(Sub(BathsPlans.TrialSeedId, null, Now.AddDays(5)), Now);
+        plan.HasActivePlan.Should().BeTrue();
+        Pay(null).Paid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void An_option_rows_own_term_governs_the_number_of_a_baths_account()
+    {
+        Pay(new OptionRowFacts(null, Now.AddDays(1), false, Now.AddDays(-30), Quantity: 2)).Paid.Should().BeTrue();
+        Pay(new OptionRowFacts(null, Now.AddDays(-1), false, Now.AddDays(-30), Quantity: 2)).Paid.Should().BeFalse();
+        Pay(new OptionRowFacts(Now.AddDays(-1), Now.AddDays(10), false, Now.AddDays(-30))).Paid.Should().BeFalse("EndsAtUtc in the past closes the row");
+    }
+
+    [Fact]
+    public void A_trial_row_is_paid_until_the_trial_end_and_not_after_it()
+    {
+        var trialRow = new OptionRowFacts(null, null, true, Now.AddDays(-3));
+        Pay(trialRow, Now.AddDays(11)).Should().Match<TransportPayment>(p => p.Paid && p.IsTrial);
+        Pay(trialRow, Now.AddDays(-1)).Paid.Should().BeFalse();
+        Pay(trialRow, null).Paid.Should().BeFalse("no trial, no payment");
+    }
+
+    [Fact]
+    public void A_transport_without_a_row_is_not_routable_even_inside_a_baths_trial()
+    {
+        var closed = new TransportOptionState(false, false, null);
+        var state = AccountMessagingReader.BuildTransport(NotificationTransport.Max, null, Now.AddDays(5), NoServicesSubscription, Now, [], closed, true);
+        state.Paid.Should().BeFalse();
+        state.Routable.Should().BeFalse();
+    }
 
     [Fact]
     public void Each_vertical_owns_its_trial_plan_and_terms()

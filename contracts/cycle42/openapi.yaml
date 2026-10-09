@@ -962,7 +962,8 @@ components:
         awaitingPaymentCount: { type: integer, nullable: true }
     NotificationSettingsDto:
       type: object
-      required: [staffPushEnabled, staffMaxEnabled, guestWebPushEnabled, guestMessengerEnabled, messengerAvailable]
+      description: 'Тот же ответ, что у «Домов» (StaysNotificationSettingsDto цикла 40): messengerAvailable = у аккаунта оплачен хотя бы один транспорт; messagingActive, deliveryChoiceVisible, priorityWarning добавлены циклом 40.'
+      required: [staffPushEnabled, staffMaxEnabled, guestWebPushEnabled, guestMessengerEnabled, messengerAvailable, messagingActive, deliveryChoiceVisible]
       properties:
         staffPushEnabled: { type: boolean }
         staffMaxEnabled: { type: boolean }
@@ -971,6 +972,9 @@ components:
         messengerAvailable: { type: boolean }
         deliveryMode: { type: string, nullable: true }
         priorityTransport: { type: string, nullable: true }
+        messagingActive: { type: boolean, description: 'Сообщения гостям реально уходят (платформа включена, есть работающий маршрутизируемый транспорт).' }
+        deliveryChoiceVisible: { type: boolean, description: 'Есть смысл показывать выбор способа доставки (два маршрутизируемых транспорта).' }
+        priorityWarning: { type: string, nullable: true, description: 'Предупреждение, если выбранный приоритетный транспорт не работает.' }
     NotificationSettingsInput:
       type: object
       additionalProperties: false

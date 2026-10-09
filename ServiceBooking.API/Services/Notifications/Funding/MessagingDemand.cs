@@ -32,7 +32,7 @@ public static class MessagingDemand
         {
             CompanyKind.Services => ((c.EnabledTypeMask ?? Core.Entities.CompanyNotificationSettings.DefaultEnabledTypeMask) & BookingTypesMask) != 0,
             CompanyKind.Orders => c.ShopCustomerMessengerEnabled,
-            CompanyKind.Stays => c.StaysGuestMessengerEnabled,
+            CompanyKind.Stays or CompanyKind.Baths => c.StaysGuestMessengerEnabled, // «Бани» keep the guest flag in the same StaysSettings
             _ => false,
         };
     }

@@ -219,7 +219,7 @@
 | `PUT …/{id}/provider` | `ManageCompany` | как §37.27 (ЮР-3, `InnValidator`) → `BathsCompanyManageDto` |
 | `PUT …/{id}/slug` | `ManageCompany` | `BathsSlugPolicy`, 409 `BathsConflictDto` → `BathsCompanyManageDto`; `[DemoForbidden]` |
 | `GET …/{id}/qr` | `ViewCabinet` | PNG, адрес `https://bani.ezbook.ru/<slug>` |
-| `GET|PUT …/{id}/notification-settings` | `ViewCabinet` / `ManageCompany` | как §37.27; включение мессенджера гостю без оплаченного канала → 409 `MessengerUnavailable` «Подключите канал WhatsApp или MAX, чтобы отправлять сообщения гостям» |
+| `GET|PUT …/{id}/notification-settings` | `ViewCabinet` / `ManageCompany` | как §37.27; включение мессенджера гостю без оплаченного транспорта аккаунта → 409 `MessengerUnavailable` «Подключите канал WhatsApp или MAX, чтобы отправлять сообщения гостям». Ответ — как у «Домов» после цикла 40: `messengerAvailable` = оплачен хотя бы один транспорт аккаунта; добавлены `messagingActive`, `deliveryChoiceVisible`, `priorityWarning` (nullable). 402 «недоступно на тарифе» и 400 на неоплаченный приоритет не бывает. Назначения компании на канал у «Бань» нет (общий `/api/notification-channels/{id}/companies` отвечает 410 для любых компаний, цикл 40) |
 | `GET …/{id}/schedule?from=&days=` | `ViewSchedule` | §42.33 |
 | `GET …/{id}/revision` | `ViewCabinet` или `ViewSchedule` | `{revision}` — `StaysSettings.BookingsRevision` |
 

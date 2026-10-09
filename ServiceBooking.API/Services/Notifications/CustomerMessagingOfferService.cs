@@ -44,7 +44,7 @@ public sealed class CustomerMessagingOfferService(
         {
             CompanyKind.Services => (settings.EnabledTypeMask & ((1 << (int)NotificationType.BookingConfirmed) | (1 << (int)NotificationType.Reminder))) != 0,
             CompanyKind.Orders => await db.ShopSettings.AsNoTracking().Where(s => s.CompanyId == company.Id).Select(s => s.CustomerMessengerEnabled).FirstOrDefaultAsync(ct),
-            CompanyKind.Stays => await db.StaysSettings.AsNoTracking().Where(s => s.CompanyId == company.Id).Select(s => s.GuestMessengerEnabled).FirstOrDefaultAsync(ct),
+            CompanyKind.Stays or CompanyKind.Baths => await db.StaysSettings.AsNoTracking().Where(s => s.CompanyId == company.Id).Select(s => s.GuestMessengerEnabled).FirstOrDefaultAsync(ct),
             _ => false,
         };
         var messaging = await messagingReader.ForCompanyAsync(company.Id, ct: ct);
