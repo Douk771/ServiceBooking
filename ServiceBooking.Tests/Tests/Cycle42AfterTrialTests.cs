@@ -16,16 +16,9 @@ namespace ServiceBooking.Tests.Tests;
 /// Цикл 42, «Бани»: после окончания триала или тарифа управление принятыми бронями доступно (Т42-10, CY42-60…63; ARCHITECTURE_CYCLE42.md §42.5.7,
 /// API_CONTRACT_CYCLE42.md §42.32). Гейт проверяется только при публичном создании брони, расчёте и публикации; подтверждение оплаты, отмена, «День услуг»
 /// и расписание банщика от тарифа не зависят, а публичное создание брони — закрыто.
-/// <para>
-/// ВНИМАНИЕ: сценарии идут через публичные маршруты брони (<c>/api/baths/public/…</c>, <c>/api/baths/service-orders/public/…</c>) и маршруты сеансов персонала
-/// (<c>/api/baths/companies/{id}/service-sessions…</c>, <c>service-day</c>) — их реализует BE-42-4. На момент написания (ветка BE-42-I) этих контроллеров нет, поэтому
-/// тесты помечены Skip и не выполнялись; снять Skip после влития BE-42-4 и прогнать (<see cref="SkipUntilBe424"/>).
-/// </para>
 /// </summary>
 public class Cycle42AfterTrialTests(TestDatabaseFixture fixture) : Cycle39TestBase(fixture)
 {
-    private const string SkipUntilBe424 = "Нужны публичные маршруты брони и маршруты сеансов персонала «Бань» (BE-42-4): снять Skip после влития и прогнать.";
-
     private sealed record Scene(AuthResponseDto Owner, string OwnerToken, Guid CompanyId, Guid ServiceId);
 
     private async Task<Scene> AcceptingBathAsync()
@@ -107,7 +100,7 @@ public class Cycle42AfterTrialTests(TestDatabaseFixture fixture) : Cycle39TestBa
 
     // ── CY42-60: подтверждение оплаты после конца триала ─────────────────────────
 
-    [Fact(Skip = SkipUntilBe424), TestCase("CY42-60")]
+    [Fact, TestCase("CY42-60")]
     public async Task AfterTrial_OwnerConfirmsPayment_OfAnAlreadyAcceptedBooking()
     {
         await using var host = new StaysTestFactory(ConnectionString);
@@ -131,7 +124,7 @@ public class Cycle42AfterTrialTests(TestDatabaseFixture fixture) : Cycle39TestBa
 
     // ── CY42-61: отмена и отклонение; администратор тоже ─────────────────────────
 
-    [Fact(Skip = SkipUntilBe424), TestCase("CY42-61")]
+    [Fact, TestCase("CY42-61")]
     public async Task AfterTrial_OwnerCancels_AndAdministratorRejects_TimeIsFreed_RefundIsFull()
     {
         await using var host = new StaysTestFactory(ConnectionString);
@@ -159,7 +152,7 @@ public class Cycle42AfterTrialTests(TestDatabaseFixture fixture) : Cycle39TestBa
 
     // ── CY42-62: публичное создание брони закрыто ────────────────────────────────
 
-    [Fact(Skip = SkipUntilBe424), TestCase("CY42-62")]
+    [Fact, TestCase("CY42-62")]
     public async Task AfterTrial_PublicBookingIsClosed_QuoteSaysNotAccepting_ButThePagesStay()
     {
         await using var host = new StaysTestFactory(ConnectionString);
@@ -194,7 +187,7 @@ public class Cycle42AfterTrialTests(TestDatabaseFixture fixture) : Cycle39TestBa
 
     // ── CY42-63: «День услуг», расписание банщика и ревизия ──────────────────────
 
-    [Fact(Skip = SkipUntilBe424), TestCase("CY42-63")]
+    [Fact, TestCase("CY42-63")]
     public async Task AfterTrial_ServiceDay_Schedule_AndRevision_StillShowTheAcceptedBooking()
     {
         await using var host = new StaysTestFactory(ConnectionString);
