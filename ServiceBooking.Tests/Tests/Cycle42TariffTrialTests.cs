@@ -743,15 +743,4 @@ public class Cycle42TariffTrialTests(TestDatabaseFixture fixture) : Cycle39TestB
             if (other.IsSuccessStatusCode) (await other.Content.ReadAsStringAsync()).Should().NotContain("Одна баня").And.NotContain(name);
         }
     }
-
-    // ── CY42-29: опция канала (WhatsApp, платные номера) в триале ────────────────
-
-    private async Task<EffectivePlan> EffectivePlanOfAccountAsync(Guid accountId)
-    {
-        using var scope = Factory.Services.CreateScope();
-        return await scope.ServiceProvider.GetRequiredService<SubscriptionResolver>().GetEffectivePlanForAccountAsync(accountId);
-    }
-
-    // TODO(C42-channels): CY42-29 (PaidNumbers_CountInTheBathsTrial..., PaidNumbers_BathsTrialDoesNotFundAnAccountWithoutBathsCompanies) removed in the merge of develop:
-    // EffectivePlan.PaidNotificationNumbers no longer exists (cycle 40). Re-create over AccountMessagingReader for the baths line (trial funds a number; no baths companies = no funding).
 }
