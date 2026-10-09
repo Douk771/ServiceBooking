@@ -84,9 +84,9 @@ public class ServiceCatalogService(AppDbContext db, ServiceSlotService slots, St
 
     // ── the public page ──
 
-    public async Task<PublicServiceDto?> PageAsync(string companySlug, string serviceSlug, CancellationToken ct)
+    public async Task<PublicServiceDto?> PageAsync(CompanyKind kind, string companySlug, string serviceSlug, CancellationToken ct)
     {
-        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Slug == companySlug && c.Kind == CompanyKind.Stays, ct);
+        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Slug == companySlug && c.Kind == kind, ct);
         if (company is null) return null;
         var s = await db.StayServices.AsNoTracking().FirstOrDefaultAsync(x => x.CompanyId == company.Id && x.Slug == serviceSlug, ct);
         if (s is null || (!s.IsPublished && s.ArchivedAtUtc == null)) return null;
