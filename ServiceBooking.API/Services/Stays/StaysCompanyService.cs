@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Stays;
 using ServiceBooking.API.Services.PublicSites;
+using ServiceBooking.API.Services.Slots;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -22,15 +23,30 @@ public class StaysCompanyService(AppDbContext db, StaysPlanResolver plans, Publi
     public static StayProviderFacts ProviderFacts(StaysSettings s) =>
         new(s.ProviderStatus, s.ProviderName, s.ProviderInn, s.ProviderOgrn, s.ProviderClaimsAddress);
 
-    public Task<GateResult> EvaluateGateAsync(Company company, StaysSettings settings, CancellationToken ct = default) =>
-        EvaluateGateAsync(company, settings, settings.PrepayPercent, ct);
+    public async Task<GateResult> EvaluateGateAsync(Company company, StaysSettings settings, CancellationToken ct = default) =>
+        await EvaluateGateAsync(company, settings, await CompanyPrepayPercentAsync(company, settings, ct), ct);
 
     /// <summary>The gate for a given prepayment: a stand-alone service has its own percent (<c>StandalonePrepayPercent ?? 0</c>), a session added to a booking has none (ARCHITECTURE_CYCLE39.md §39.7).</summary>
     public async Task<GateResult> EvaluateGateAsync(Company company, StaysSettings settings, int prepayPercent, CancellationToken ct = default)
     {
+        var vertical = SlotVerticals.Find(company.Kind) ?? SlotVerticals.Stays;
         var plan = await plans.GetForCompanyAsync(company, clock.UtcNow, ct);
-        var published = await plans.CountPublishedHousesForCompanyAsync(company, ct);
-        return StaysBookingGate.Evaluate(company.IsActive, plan.HasActivePlan, published, plan.MaxHouses, prepayPercent, settings.PaymentDetails, ProviderFacts(settings));
+        var published = await plans.CountPublishedUnitsForCompanyAsync(company, ct);
+        return StaysBookingGate.Evaluate(company.IsActive, plan.HasActivePlan, published, plan.MaxUnits, prepayPercent, settings.PaymentDetails, ProviderFacts(settings), vertical.Unit);
+    }
+
+    /// <summary>
+    /// The prepayment the company-level gate (checklist, cabinet card, catalog "base", complex page) is judged by (ARCHITECTURE_CYCLE42.md §42.5.2): for «Бани»
+    /// the maximum <c>StandalonePrepayPercent ?? 0</c> over the published, non-archived resources of the company, so the owner sees "no payment details" in
+    /// advance; for "Дома" the company's own percent, as before. A booking uses its resource's percent instead.
+    /// </summary>
+    public async Task<int> CompanyPrepayPercentAsync(Company company, StaysSettings settings, CancellationToken ct = default)
+    {
+        if (company.Kind != CompanyKind.Baths) return settings.PrepayPercent;
+        var max = await db.StayServices.AsNoTracking()
+            .Where(s => s.CompanyId == company.Id && s.IsPublished && s.ArchivedAtUtc == null)
+            .MaxAsync(s => (int?)s.StandalonePrepayPercent, ct);
+        return max ?? 0;
     }
 
     public static ProviderFullDto? ProviderFull(StaysSettings s) =>
