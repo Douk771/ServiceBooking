@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import type { ServiceDayBarDto } from '../types'
+import type { ServiceDayBarDto } from '@/types/slots'
 import { axisTicks, barBox, barTimeText, sortedBars } from './serviceDay'
 
 const axis = { fromMinute: 1080, toMinute: 1560, midnightMinute: 1440 as const }
