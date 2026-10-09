@@ -229,9 +229,9 @@ public class AdminBillingController(
         var account = await db.BillingAccounts.Include(a => a.Owner).FirstOrDefaultAsync(a => a.Id == accountId);
         if (account is null) return NotFound();
         if (dto.Line is { } requestedLine && !Enum.IsDefined(requestedLine)) return BadRequest("Неизвестная линейка.");
-        if (dto.Line is CompanyKind.Orders or CompanyKind.Stays) return await AssignOrdersSubscriptionAsync(account, dto, dto.Line.Value);
-        // A request of the "Заказы" / «Дома» line is closed by an assignment of that line only.
-        if (dto.RequestId.HasValue && account.RequestedAtUtc is not null && account.RequestedLine is CompanyKind.Orders or CompanyKind.Stays)
+        if (dto.Line is CompanyKind.Orders or CompanyKind.Stays or CompanyKind.Baths) return await AssignOrdersSubscriptionAsync(account, dto, dto.Line.Value);
+        // A request of the "Заказы" / «Дома» / «Бани» line is closed by an assignment of that line only.
+        if (dto.RequestId.HasValue && account.RequestedAtUtc is not null && account.RequestedLine is CompanyKind.Orders or CompanyKind.Stays or CompanyKind.Baths)
             return Conflict("Заявка уже обработана.");
 
         if (dto.PaidUntil is { } paidUntilDate && paidUntilDate.ToDateTime(TimeOnly.MinValue) < DateTime.UtcNow.Date.AddDays(-1))
@@ -477,6 +477,7 @@ public class AdminBillingController(
     private async Task<IActionResult> AssignOrdersSubscriptionAsync(BillingAccount account, AssignSubscriptionInput dto, CompanyKind kind)
     {
         var accountId = account.Id;
+        var vertical = Services.Slots.SlotVerticals.Find(kind);
         if (dto.PaidUntil is { } paidUntilDate && paidUntilDate.ToDateTime(TimeOnly.MinValue) < DateTime.UtcNow.Date.AddDays(-1))
             return BadRequest("Дата окончания оплаты не может быть в прошлом.");
         if (SubscriptionAssignmentValidator.RequiresPaidUntil(dto.PlanId, dto.PaidUntil))
@@ -492,8 +493,8 @@ public class AdminBillingController(
             plan = await db.SubscriptionPlanConfigs.FindAsync(dto.PlanId.Value);
             if (plan is null) return NotFound("Тариф не найден.");
             if (plan.Line != kind) return BadRequest(BillingTexts.AdminDifferentLine);
-            // ARCHITECTURE_CYCLE37.md §37.10.2: the trial of «Дома» is granted only by StaysTrialService (the once-only checks live there).
-            if (kind == CompanyKind.Stays && plan.Id == StaysPlans.TrialSeedId)
+            // ARCHITECTURE_CYCLE37.md §37.10.2, ARCHITECTURE_CYCLE42.md §42.5.5: the trial of «Дома» / «Бани» is granted only by StaysTrialService (the once-only checks live there).
+            if (vertical is not null && plan.Id == vertical.TrialPlanId)
                 return Conflict(new DTOs.Billing.TrialRefusalDto("TrialPlanNotAssignableHere",
                     "Пробный тариф нельзя назначить через это действие — он выдаётся владельцем при активации пробного периода."));
             // ARCHITECTURE_CYCLE35.md §35.3.3: the hidden demo tariff of «Заказы» is for showcase accounts only, like the one of «Записи».
@@ -528,31 +529,53 @@ public class AdminBillingController(
         var changedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var now = DateTime.UtcNow;
 
-        // The new limits vs what is already occupied IN THIS LINE (shops, seats incl. the owner; for «Дома» — published houses).
-        if (kind == CompanyKind.Stays)
+        // The new limits vs what is already occupied IN THIS LINE (shops, seats incl. the owner; for «Дома» — published houses; for «Бани» — published resources).
+        if (vertical is not null)
         {
-            var housesPublished = await db.Houses.AsNoTracking().CountAsync(h => h.IsPublished && h.ArchivedAtUtc == null && h.Company.BillingAccountId == accountId && h.Company.Kind == CompanyKind.Stays);
-            if (!dto.ConfirmLimitOverflow && plan?.MaxHouses is { } maxHouses && housesPublished > maxHouses)
-                return Conflict($"На новом тарифе доступно {maxHouses} домов, опубликовано {housesPublished}. Подтвердите превышение лимита, чтобы продолжить.");
+            var unitsPublished = await new Services.Stays.StaysPlanResolver(db).CountPublishedUnitsAsync(vertical, accountId);
+            var maxUnits = vertical.Kind == CompanyKind.Baths ? plan?.MaxResources : plan?.MaxHouses;
+            if (!dto.ConfirmLimitOverflow && maxUnits is { } limit && unitsPublished > limit)
+                return Conflict(vertical.Kind == CompanyKind.Baths
+                    ? $"На новом тарифе доступно {limit} ресурсов, опубликовано {unitsPublished}. Подтвердите превышение лимита, чтобы продолжить."
+                    : $"На новом тарифе доступно {limit} домов, опубликовано {unitsPublished}. Подтвердите превышение лимита, чтобы продолжить.");
         }
-        var systemFree = await db.SubscriptionPlanConfigs.AsNoTracking().FirstOrDefaultAsync(p => p.IsSystemFree && p.Line == CompanyKind.Orders);
-        var newPlan = kind == CompanyKind.Stays ? OrdersPlan.FallbackFree : plan is not null
-            ? OrdersPlanResolver.Resolve(new OrdersSubscription { PlanConfig = plan, PlanConfigId = plan.Id, IsActive = true }, systemFree, now)
-            : OrdersPlanResolver.Resolve(null, systemFree, now);
-        var usage = (await usageReader.GetAsync([accountId], CompanyKind.Orders)).GetValueOrDefault(accountId) ?? new AccountUsage(accountId, 0, 0);
-        if (!dto.ConfirmLimitOverflow && kind == CompanyKind.Orders)
+        else if (kind == CompanyKind.Orders)
         {
-            if (newPlan.MaxShops is { } maxShops && usage.CompaniesUsed > maxShops)
-                return Conflict($"На новом тарифе доступно {maxShops} магазинов, занято {usage.CompaniesUsed}. Подтвердите превышение лимита, чтобы продолжить.");
-            if (newPlan.MaxSeats is { } maxSeats && usage.SeatsUsed > maxSeats)
-                return Conflict($"На новом тарифе доступно {maxSeats} мест, занято {usage.SeatsUsed}. Подтвердите превышение лимита, чтобы продолжить.");
+            var systemFree = await db.SubscriptionPlanConfigs.AsNoTracking().FirstOrDefaultAsync(p => p.IsSystemFree && p.Line == CompanyKind.Orders);
+            var newPlan = plan is not null
+                ? OrdersPlanResolver.Resolve(new OrdersSubscription { PlanConfig = plan, PlanConfigId = plan.Id, IsActive = true }, systemFree, now)
+                : OrdersPlanResolver.Resolve(null, systemFree, now);
+            var usage = (await usageReader.GetAsync([accountId], CompanyKind.Orders)).GetValueOrDefault(accountId) ?? new AccountUsage(accountId, 0, 0);
+            if (!dto.ConfirmLimitOverflow)
+            {
+                if (newPlan.MaxShops is { } maxShops && usage.CompaniesUsed > maxShops)
+                    return Conflict($"На новом тарифе доступно {maxShops} магазинов, занято {usage.CompaniesUsed}. Подтвердите превышение лимита, чтобы продолжить.");
+                if (newPlan.MaxSeats is { } maxSeats && usage.SeatsUsed > maxSeats)
+                    return Conflict($"На новом тарифе доступно {maxSeats} мест, занято {usage.SeatsUsed}. Подтвердите превышение лимита, чтобы продолжить.");
+            }
         }
 
         Guid? oldPlanId;
         DateTime? oldPaidUntil;
         bool oldIsActive;
         DateTime? newPaidUntil;
-        if (kind == CompanyKind.Stays)
+        if (kind == CompanyKind.Baths)
+        {
+            var bathsSub = await db.BathsSubscriptions.FirstOrDefaultAsync(s => s.BillingAccountId == accountId);
+            if (bathsSub is null)
+            {
+                bathsSub = new BathsSubscription { Id = Guid.NewGuid(), BillingAccountId = accountId, CreatedAtUtc = now };
+                db.BathsSubscriptions.Add(bathsSub);
+            }
+            (oldPlanId, oldPaidUntil, oldIsActive) = (bathsSub.PlanConfigId, bathsSub.PaidUntil, bathsSub.IsActive);
+            bathsSub.PlanConfigId = dto.PlanId;
+            bathsSub.IsActive = dto.IsActive;
+            bathsSub.PaidUntil = ToUtc(dto.PaidUntil);
+            bathsSub.UpdatedAtUtc = now;
+            bathsSub.UpdatedByUserId = changedByUserId;
+            newPaidUntil = bathsSub.PaidUntil;
+        }
+        else if (kind == CompanyKind.Stays)
         {
             var staysSub = await db.StaysSubscriptions.FirstOrDefaultAsync(s => s.BillingAccountId == accountId);
             if (staysSub is null)
@@ -746,6 +769,8 @@ public class AdminBillingController(
             .Where(s => page1.Select(a => a.Id).Contains(s.BillingAccountId)).ToListAsync(ct);
         var staysSubs = await db.StaysSubscriptions.Include(s => s.PlanConfig)
             .Where(s => page1.Select(a => a.Id).Contains(s.BillingAccountId)).ToListAsync(ct);
+        var bathsSubs = await db.BathsSubscriptions.Include(s => s.PlanConfig)
+            .Where(s => page1.Select(a => a.Id).Contains(s.BillingAccountId)).ToListAsync(ct);
         var companyCounts = await db.Companies.Where(c => c.BillingAccountId != null && page1.Select(a => a.Id).Contains(c.BillingAccountId!.Value))
             .GroupBy(c => c.BillingAccountId!.Value).Select(g => new { AccountId = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.AccountId, x => x.Count, ct);
 
@@ -771,10 +796,12 @@ public class AdminBillingController(
             var sub = subs.FirstOrDefault(s => s.BillingAccountId == a.Id);
             var ordersSub = ordersSubs.FirstOrDefault(s => s.BillingAccountId == a.Id);
             var staysSub = staysSubs.FirstOrDefault(s => s.BillingAccountId == a.Id);
+            var bathsSub = bathsSubs.FirstOrDefault(s => s.BillingAccountId == a.Id);
             var currentPlanConfig = requestLine switch
             {
                 CompanyKind.Orders => ordersSub?.PlanConfig,
                 CompanyKind.Stays => staysSub?.PlanConfig,
+                CompanyKind.Baths => bathsSub?.PlanConfig,
                 _ => sub?.PlanConfig
             };
             var estimated = (currentPlanConfig?.PricePerMonth ?? 0m) + itemDtos.Where(i => !i.retired)
