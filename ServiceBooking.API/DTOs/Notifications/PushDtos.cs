@@ -11,7 +11,7 @@ public record PushConfigDto(
     PushSiteUrlsDto? SiteUrls = null);
 
 /// <summary>Cycle 33: <c>siteUrls</c> of <c>GET /api/push/config</c> — <c>PublicSites</c> base addresses without a trailing slash.</summary>
-public record PushSiteUrlsDto(string Services, string Orders, string Stays);
+public record PushSiteUrlsDto(string Services, string Orders, string Stays, string Baths);
 
 /// <summary>One company the caller is staff of, and whether that company currently wants push at all —
 /// <c>StaffPushEnabled=false</c> means the frontend must not even ask for browser permission (US-118).</summary>

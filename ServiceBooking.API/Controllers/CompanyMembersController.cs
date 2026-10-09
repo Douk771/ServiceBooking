@@ -153,13 +153,16 @@ public class CompanyMembersController(
             return BadRequest("В магазин можно добавить только сотрудника.");
 
         // ARCHITECTURE_CYCLE37.md §37.21.3: a «Дома» company takes staff only, with a position; the position belongs to «Дома» alone.
-        if (companyKind == CompanyKind.Stays)
+        // Cycle 42 (§42.3.4): the same rule for «Бани» (positions «Администратор» / «Банщик»), selected by the kind's traits, only the wording differs.
+        var usesPositions = companyKind is { } kindWithPositions && CompanyKindTraits.For(kindWithPositions).UsesStaffPositions;
+        if (usesPositions)
         {
-            if (dto.Role != nameof(UserRole.Master)) return BadRequest("В компанию «Дома» можно добавить только сотрудника.");
-            if (dto.Position is not { } position || !Enum.IsDefined(position)) return BadRequest("Укажите должность: управляющий или горничная.");
+            var (onlyStaffText, positionText) = StaffPositionTexts.For(companyKind!.Value);
+            if (dto.Role != nameof(UserRole.Master)) return BadRequest(onlyStaffText);
+            if (dto.Position is not { } position || !Enum.IsDefined(position)) return BadRequest(positionText);
         }
         else if (dto.Position is not null)
-            return BadRequest("Должность задаётся только сотрудникам компании «Дома».");
+            return BadRequest(StaffPositionTexts.PositionOnlyForText);
 
         // Tariff seat limit (ARCHITECTURE_CYCLE7.md §46.4): SUMMED across every company on the
         // account, not just this one — a customer with 3 branches on an 8-seat plan can put all 8
@@ -198,14 +201,14 @@ public class CompanyMembersController(
         }
 
         // A «Дома» company has no seat tariff (only the technical ceiling Stays:MaxStaffPerCompany, §37.3.2) and no salon seat limit.
-        if (companyKind == CompanyKind.Stays)
+        if (usesPositions)
         {
             var staffCount = await db.CompanyMembers.CountAsync(cm => cm.CompanyId == id && cm.Role == UserRole.Master);
             var ceiling = staysOptions.Value.MaxStaffPerCompany;
             if (staffCount >= ceiling) return Conflict($"В компании не может быть больше {ceiling} сотрудников.");
         }
 
-        var plan = companyKind is CompanyKind.Orders or CompanyKind.Stays
+        var plan = companyKind is { } planKind && !CompanyKindTraits.For(planKind).HasSalonSeatLimit
             ? EffectivePlan.Free with { AccountMaxEmployees = null } // a shop's seats were decided above; the salon limit does not apply to it
             : await subscriptionResolver.GetEffectivePlanAsync(id);
         if (plan.AccountMaxEmployees.HasValue)
@@ -286,7 +289,7 @@ public class CompanyMembersController(
             UserId = user.Id,
             Role = role,
             Bio = dto.Bio,
-            StaffPosition = companyKind == CompanyKind.Stays ? dto.Position : null
+            StaffPosition = usesPositions ? dto.Position : null
         };
 
         db.CompanyMembers.Add(member);
@@ -312,12 +315,12 @@ public class CompanyMembersController(
         if (!await CanManageCompany(id)) return Forbid();
         var kind = await db.Companies.AsNoTracking().Where(c => c.Id == id).Select(c => (CompanyKind?)c.Kind).FirstOrDefaultAsync();
         if (kind is null) return NotFound();
-        if (kind != CompanyKind.Stays) return Conflict("Должность задаётся только сотрудникам компании «Дома».");
+        if (!CompanyKindTraits.For(kind.Value).UsesStaffPositions) return Conflict(StaffPositionTexts.PositionOnlyForText);
 
         var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
         if (member is null) return NotFound();
         if (member.Role == UserRole.CompanyOwner) return BadRequest("Должность владельца не меняется.");
-        if (dto.Position is not { } position || !Enum.IsDefined(position)) return BadRequest("Укажите должность: управляющий или горничная.");
+        if (dto.Position is not { } position || !Enum.IsDefined(position)) return BadRequest(StaffPositionTexts.For(kind.Value).Position);
 
         member.StaffPosition = position;
         await db.SaveChangesAsync();

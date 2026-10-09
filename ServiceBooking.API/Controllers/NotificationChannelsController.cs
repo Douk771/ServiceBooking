@@ -623,7 +623,7 @@ public class NotificationChannelsController(
             return Conflict(company.Kind switch
             {
                 CompanyKind.Orders => "Магазин уже привязан к другому номеру этого мессенджера",
-                CompanyKind.Stays => "Компания уже привязана к другому номеру этого мессенджера",
+                CompanyKind.Stays or CompanyKind.Baths => "Компания уже привязана к другому номеру этого мессенджера",
                 _ => "Салон уже привязан к другому номеру этого мессенджера"
             });
         }

@@ -186,7 +186,8 @@ public class CompanyTransferService(
             return (orders.MaxShops, orders.MaxSeats);
         }
         // ARCHITECTURE_CYCLE37.md §37.3.2: a «Дома» company has no company/seat limit; its limit is the number of PUBLISHED houses (checked in TransferAsync).
-        if (kind == CompanyKind.Stays) return (null, null);
+        // Cycle 42 (§42.3.4): «Бани» take the same path — no company/seat limit; its limit is the number of published resources.
+        if (Slots.SlotVerticals.IsSlotKind(kind)) return (null, null);
         var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId);
         return (plan.AccountMaxCompanies, plan.AccountMaxEmployees);
     }
@@ -265,6 +266,7 @@ public class CompanyTransferService(
 
         var preview = await ComputePreviewAsync(companyId, targetBillingAccountId, newOwnerAddsSeat, newOwner is not null, company.Kind);
 
+        // Houses exist in «Дома» only; the published-resources check of «Бани» on the receiving account needs the slot-line plan resolver (BE-42-P, §42.5) and is added there.
         if (company.Kind == CompanyKind.Stays)
         {
             // The published houses of the moved company plus those already on the receiving account must fit the tariff of the receiving account.
