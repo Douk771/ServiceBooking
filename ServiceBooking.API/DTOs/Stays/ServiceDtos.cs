@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using ServiceBooking.API.Services.Stays;
 using ServiceBooking.Core.Enums;
 
@@ -70,7 +71,10 @@ public record PublicServiceDto(
     Guid Id, string Slug, string Name, string? Description, List<ServicePhotoDto> Photos, int MinHours, int MaxHours, int StepMinutes,
     List<PriceTableRowDto> PriceTable, List<ServiceItemPublicDto> Items, int? BufferMinutes, PublicServiceStandaloneDto Standalone,
     PublicServiceCompanyDto Company, ProviderPublicDto? Provider, bool AcceptingBookings, string? NotAcceptingText, bool Available, string? NotAvailableText,
-    DateOnly Today, string TimeZoneId);
+    DateOnly Today, string TimeZoneId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Capacity = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CityName = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LocalTimeNote = null);
 
 public record AvailabilityDayDto(DateOnly BusinessDate, string Label, bool HasStarts);
 
@@ -93,7 +97,7 @@ public record ServiceQuoteDto(
 
 public record CreateServiceOrderInput(
     DateOnly? BusinessDate, int? StartMinute, int? Hours, List<ItemSelectionInput>? Items, string? GuestName, string? GuestPhone, string? Comment,
-    bool NotifyByMessenger, int ExpectedTotalRub, Guid? IdempotencyKey, string? CaptchaToken);
+    bool NotifyByMessenger, int ExpectedTotalRub, Guid? IdempotencyKey, string? CaptchaToken, int? GuestsCount = null);
 
 public record CreateServiceOrderResponse(string Token, string OrderUrl, PublicServiceOrderDto Order);
 
@@ -112,7 +116,12 @@ public record PublicServiceOrderDto(
     List<HourPriceDto> HourPrices, int ServiceAmountRub, int ItemsAmountRub, int TotalRub, int? PrepayPercent, int PrepayRub, int DueOnSiteRub,
     PaymentInstructionsDto? Payment, DateTime? PaymentConfirmedAtUtc, List<PaymentProofDto> PaymentProofs, ProofRulesDto Proofs, OrderCancellationDto Cancellation,
     string? GuestName, string? GuestPhoneMasked, string? Comment, string? StatusReason, string? OutcomeText, OrderNotificationsDto Notifications,
-    List<string> AvailableActions);
+    List<string> AvailableActions,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? GuestsCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CityName = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LocalTimeNote = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Baths.SessionReminderViewDto? SessionReminder = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BookAgainUrl = null);
 
 // ── services of a stay (the booking page) ──
 public record BookingServiceOptionDto(Guid Id, string Name, string Url, string? CoverThumbUrl, int? PriceFromRub, int MinHours, List<AvailabilityDayDto> Dates,
