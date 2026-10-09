@@ -69,7 +69,7 @@ export function buildAssignInput(params: {
   reasonCode?: SubscriptionChangeReason | null
   reasonDetails?: string
   /** Cycle 24: `Orders` assigns the «Заказы» subscription; omitted for Services so the body stays exactly as before. */
-  line?: 'Services' | 'Orders' | 'Stays'
+  line?: 'Services' | 'Orders' | 'Stays' | 'Baths'
 }): AssignSubscriptionInput {
   return {
     planId: params.planId,
@@ -87,7 +87,8 @@ export function buildAssignInput(params: {
     // §433.1: a reason omitted where it isn't required is simply absent, not an explicit "no reason".
     reasonCode: params.reasonCode ?? undefined,
     reasonDetails: params.reasonDetails?.trim() ? params.reasonDetails.trim() : undefined,
-    ...(params.line === 'Orders' ? { line: 'Orders' as const } : {}),
+    // Contract: `line: "Stays"` / `"Baths"` write that line's subscription (API_CONTRACT_CYCLE37.md §37.21.4, CYCLE42 §42.21).
+    ...(params.line === 'Orders' || params.line === 'Stays' || params.line === 'Baths' ? { line: params.line } : {}),
   }
 }
 

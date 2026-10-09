@@ -70,6 +70,7 @@ interface UseWebPushResult {
   hasOrders: boolean
   /** ARCHITECTURE_CYCLE37.md §37.14.6 — the user is staff of a «Дома» company. */
   hasStays: boolean
+  hasBaths: boolean
   /** `undefined` while the config is loading (role not known yet). */
   isStaff: boolean | undefined
   siteUrls: PushSiteUrls | undefined
@@ -137,6 +138,7 @@ export function useWebPush(options: UseWebPushOptions): UseWebPushResult {
   const hasServices = companies.some((c) => c.kind === 'Services')
   const hasOrders = companies.some((c) => c.kind === 'Orders')
   const hasStays = companies.some((c) => c.kind === 'Stays')
+  const hasBaths = companies.some((c) => c.kind === 'Baths')
   const isStaff = configQuery.data ? companies.length > 0 : undefined
   const siteUrls = configQuery.data?.siteUrls
   // The worker knows ONE sibling (§33.5.2): ezbook ↔ goods as before; dom (cycle 37) names ezbook, the first site of the platform.
@@ -268,6 +270,7 @@ export function useWebPush(options: UseWebPushOptions): UseWebPushResult {
     hasServices,
     hasOrders,
     hasStays,
+    hasBaths,
     isStaff,
     siteUrls,
     devicesError: devicesQuery.isError,

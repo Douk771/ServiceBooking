@@ -17,7 +17,7 @@ type Cycle28 = Cycle28Schemas['schemas']
 
 /** Cycle 24 (API_CONTRACT_CYCLE24.md §485.3) — the account's «Заказы» subscription block and the request line. Additive. */
 export type AdminOrdersSubscription = Cycle24['AdminOrdersSubscriptionDto']
-export type BillingLine = 'Services' | 'Orders' | 'Stays'
+export type BillingLine = 'Services' | 'Orders' | 'Stays' | 'Baths'
 /** Cycle 37 (API_CONTRACT_CYCLE37.md §37.21.4): the account's «Дома» subscription block. */
 export interface AdminStaysSubscription {
   planId?: string | null
@@ -26,6 +26,16 @@ export interface AdminStaysSubscription {
   isActive: boolean
   housesPublished: number
   maxHouses?: number | null
+}
+
+/** Cycle 42 (API_CONTRACT_CYCLE42.md): the account's «Бани» subscription block (as the «Дома» one, `maxResources` instead of `maxHouses`). */
+export interface AdminBathsSubscription {
+  planId?: string | null
+  planName: string
+  paidUntil?: string | null
+  isActive: boolean
+  resourcesPublished: number
+  maxResources?: number | null
 }
 
 export type TrialAccountFilter = Cycle18['TrialAccountFilter']
@@ -39,7 +49,7 @@ export type AdminBillingAccountListItem = Schemas['AdminBillingAccountListItemDt
   // Cycle 28 (API_CONTRACT_CYCLE28.md §594.2) — the list item gets `isShowcase`; optional so an older server still type-checks.
   Partial<Pick<Cycle28['AdminBillingAccountItem'], 'isShowcase'>>
 export type AdminBillingAccount = Omit<Schemas['AdminBillingAccountDto'], 'pendingRequest'> &
-  Cycle18['AdminBillingAccountDtoTrialPatch'] & { pendingRequest?: SubscriptionRequestDto | null; ordersSubscription?: AdminOrdersSubscription | null; staysSubscription?: AdminStaysSubscription | null }
+  Cycle18['AdminBillingAccountDtoTrialPatch'] & { pendingRequest?: SubscriptionRequestDto | null; ordersSubscription?: AdminOrdersSubscription | null; staysSubscription?: AdminStaysSubscription | null; bathsSubscription?: AdminBathsSubscription | null }
 export type AdminSubscribedOption = Schemas['AdminSubscribedOptionDto']
 /** Cycle 20 (US-20-02, API_CONTRACT_CYCLE20.md §433.1) adds `reasonCode`/`reasonDetails` in the
  *  request body — same `AssignOptionInput`/log shapes otherwise. */

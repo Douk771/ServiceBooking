@@ -25,8 +25,11 @@ export type TransportOffer = Cycle9Components['schemas']['TransportOfferDto']
 // ARCHITECTURE_CYCLE33.md §33.9.3 — config/devices moved to the cycle 33 schema (kind, siteUrls, site).
 // ARCHITECTURE_CYCLE37.md §37.3.2, API_CONTRACT_CYCLE37.md §37.21.5 — a third site: `kind`/`site` may be `Stays`, `siteUrls` gets
 // `stays`. The cycle-37 schema has no push routes (they only changed), so the additions are layered over the cycle-33 types.
-type StaysCompanyKind = Cycle37Components['schemas']['CompanyKind']
-export type PushSiteUrls = Cycle33Components['schemas']['PushSiteUrlsDto'] & { stays?: string }
+// Cycle 42 (ARCHITECTURE_CYCLE42.md §42.12.3, API_CONTRACT_CYCLE42.md): a fourth kind/site — `Baths` (bani.ezbook.ru); `siteUrls` gets `baths`.
+// The cycle-42 schema is not generated yet, so the kind is layered over the cycle-37 one.
+export type CompanyKind = Cycle37Components['schemas']['CompanyKind'] | 'Baths'
+type StaysCompanyKind = CompanyKind
+export type PushSiteUrls = Cycle33Components['schemas']['PushSiteUrlsDto'] & { stays?: string; baths?: string }
 export type PushConfigCompany = Omit<Cycle33Components['schemas']['PushConfigCompanyDtoCycle33'], 'kind'> & { kind: StaysCompanyKind }
 export type PushSubscriptionDevice = Omit<Cycle33Components['schemas']['PushSubscriptionDtoCycle33'], 'site'> & { site: StaysCompanyKind }
 export type PushConfig = Omit<Cycle33Components['schemas']['PushConfigDtoCycle33'], 'companies' | 'site' | 'siteUrls'> & {
@@ -49,7 +52,6 @@ export type PhoneVerificationSessionStatus = Cycle14Components['schemas']['Phone
 export type PhoneVerificationRef = Cycle14Components['schemas']['PhoneVerificationRef']
 
 // ── Cycle 23 (API_CONTRACT_CYCLE23.md §408.1): companies now come in two kinds. Read off the generated schema.
-export type CompanyKind = Cycle37Components['schemas']['CompanyKind']
 export type CompanyKindsSummary = Cycle37Components['schemas']['CompanyKindsSummaryDto']
 
 export interface Company {
