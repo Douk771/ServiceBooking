@@ -1,7 +1,7 @@
 import { createSlotApi } from '@/api/slots'
 import type { PushSite } from '@/api/push'
 import type { SlotVertical } from '@/components/slots/SlotVerticalContext'
-import { useBathsCompany } from './hooks/useBathsCompany'
+import { useBathsCompany } from './cabinet/useBathsCompany'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { BATH_FALLBACKS } from './utils/baniTexts'
 
