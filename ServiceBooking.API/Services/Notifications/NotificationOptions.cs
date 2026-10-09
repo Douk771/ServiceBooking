@@ -85,7 +85,14 @@ public sealed class NotificationOptions
     /// <see cref="DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode"/> (an unrecognized value
     /// fails loud, same convention as <see cref="Provider"/>). Default matches the customer's decision
     /// (§52.3.1) — "AccountsOnly" is not a placeholder, it is the value this cycle actually ships with.</summary>
+    /// <remarks>Cycle 40 (ARCHITECTURE_CYCLE40.md §40.11.2): no longer influences the decision to send — <see cref="MessengerConsentRule"/>
+    /// decides; the key stays (and is still validated) so that a rollback to the previous release finds its configuration intact.</remarks>
     public string ProviderDeliveryConsent { get; set; } = "AccountsOnly";
+
+    /// <summary>ARCHITECTURE_CYCLE40.md §40.9 (Р40-Ю3): when the owner unbinds the number of one messenger, move its <c>Pending</c>
+    /// messages to the other messenger if that one is routable. Off by default — the client consented while seeing a label naming a
+    /// specific messenger, so the messages are cancelled instead. Turned on by configuration after the lawyer's answer, no release.</summary>
+    public bool RebindPendingToOtherTransport { get; set; } = false;
 
     public sealed class GreenApiOptions
     {

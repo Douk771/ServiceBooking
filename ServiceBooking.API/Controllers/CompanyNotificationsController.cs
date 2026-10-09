@@ -26,7 +26,8 @@ public class CompanyNotificationsController(
     AppDbContext db,
     PlatformSettings platformSettings,
     LegalDocumentProvider legalProvider,
-    ChannelFundingReader fundingReader) : ControllerBase
+    ChannelFundingReader fundingReader,
+    AccountMessagingReader messagingReader) : ControllerBase
 {
     // ── Settings ─────────────────────────────────────────────────────────────────────────────────
 
@@ -41,13 +42,10 @@ public class CompanyNotificationsController(
         if (company is null) return NotFound();
 
         var settings = await db.CompanyNotificationSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == companyId, ct);
-        // ARCHITECTURE_CYCLE9.md §104.3/§104.5: a company may now hold one assignment PER TRANSPORT, not
-        // one ever — every live assignment is loaded so connectedTransports/priorityChannelHealthy can be
-        // computed across all of them, not just an arbitrary FirstOrDefault.
-        var assignments = await db.ChannelCompanyAssignments.AsNoTracking()
-            .Include(a => a.Channel).Where(a => a.CompanyId == companyId).ToListAsync(ct);
+        // ARCHITECTURE_CYCLE40.md §40.4: the company's channels are those of its billing account (one number serves every company of the account).
+        var messaging = await messagingReader.ForCompanyAsync(companyId, ct: ct);
 
-        return Ok(await BuildSettingsDtoAsync(settings, assignments));
+        return Ok(await BuildSettingsDtoAsync(settings, messaging));
     }
 
     [HttpPut("notification-settings")]
@@ -68,21 +66,9 @@ public class CompanyNotificationsController(
         if (dto.MinLeadMinutes >= dto.ReminderLeadMinutes)
             return BadRequest("Напоминание за 1 час при пороге 2 часа не уйдёт никогда");
 
-        var assignments = await db.ChannelCompanyAssignments
-            .Include(a => a.Channel).Where(a => a.CompanyId == companyId).ToListAsync();
-
-        // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.4): the tariff flag no longer gates the settings (no 402 "Недоступно на вашем тарифе").
-        // ARCHITECTURE_CYCLE9.md §104.3: "канал не оплачен" now asks "does this company have AT LEAST
-        // ONE funded channel", not "is THE (arbitrary) assignment funded" — a company can have a funded
-        // MAX channel and an unfunded WhatsApp one (or vice versa); settings must stay saveable through
-        // whichever channel is actually usable, not gated on which one FirstOrDefault happened to pick.
-        var hasFundedAssignment = false;
-        foreach (var a in assignments)
-        {
-            if (await IsChannelFundedAsync(a.Channel)) { hasFundedAssignment = true; break; }
-        }
-        if (!hasFundedAssignment)
-            return StatusCode(402, "Канал не оплачен");
+        // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.4, §40.4): neither the tariff flag nor "an assigned, paid number" gates the settings any more —
+        // no 402 "Канал не оплачен". The company's channels are those of its billing account.
+        var messaging = await messagingReader.ForCompanyAsync(companyId);
 
         var settings = await db.CompanyNotificationSettings.FirstOrDefaultAsync(s => s.CompanyId == companyId);
         if (settings is null)
@@ -99,15 +85,10 @@ public class CompanyNotificationsController(
         if (dto.DeliveryMode.HasValue) settings.DeliveryMode = dto.DeliveryMode.Value;
         if (dto.PriorityTransport.HasValue)
         {
-            // §114.4/B4: priorityTransport must be ASSIGNED AND FUNDED to be accepted — deliberately the
-            // SAME "funded, ChannelState not checked" definition NotificationScheduler.SelectTargets uses
-            // at queue time (§104.5's own explicit rejection of gating on Connected), NOT the stricter
-            // "funded AND Connected" UsableTransportsAsync computes for the read-only screen fields below.
-            // Gating this WRITE on Connected would regress a paid-but-momentarily-disconnected/reconnecting
-            // company's ability to save ANY setting on this endpoint (e.g. just reminderLeadMinutes) back
-            // to a 400 — the same class of over-eager coupling §104.5 already rejected once (см. Н3).
-            var fundedTransports = await FundedTransportsAsync(assignments);
-            if (!fundedTransports.Contains(dto.PriorityTransport.Value))
+            // §114.4/B4 + §40.5.1: priorityTransport must be a ROUTABLE transport of the account (paid, first number, not suspended,
+            // bound at least once) — the same definition routing uses at queue time. ChannelState is deliberately not required to be
+            // Connected: gating this WRITE on it would reject saving unrelated settings while a number is briefly reconnecting.
+            if (!messaging.For(dto.PriorityTransport.Value).Routable)
                 return BadRequest("Приоритетный канал должен быть среди оплаченных транспортов компании");
             settings.PriorityTransport = dto.PriorityTransport.Value;
         }
@@ -123,7 +104,7 @@ public class CompanyNotificationsController(
         // to events queued AFTER this save, never retroactively to rows already in the queue.
         await db.SaveChangesAsync();
 
-        return Ok(await BuildSettingsDtoAsync(settings, assignments));
+        return Ok(await BuildSettingsDtoAsync(settings, messaging));
     }
 
     // ── Templates ────────────────────────────────────────────────────────────────────────────────
@@ -171,18 +152,7 @@ public class CompanyNotificationsController(
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId);
         if (company is null) return NotFound();
 
-        // ARCHITECTURE_CYCLE9.md §104.3: same "at least one funded assignment" generalization as
-        // UpdateSettings above — a company's templates stay editable through whichever channel is
-        // actually funded, not gated on an arbitrary single assignment.
-        var templateAssignments = await db.ChannelCompanyAssignments
-            .Include(a => a.Channel).Where(a => a.CompanyId == companyId).ToListAsync();
-        var hasFundedAssignmentForTemplate = false;
-        foreach (var a in templateAssignments)
-        {
-            if (await IsChannelFundedAsync(a.Channel)) { hasFundedAssignmentForTemplate = true; break; }
-        }
-        if (!hasFundedAssignmentForTemplate)
-            return StatusCode(402, "Канал не оплачен");
+        // Cycle 40 (§40.3.4): templates stay editable regardless of the payment — the 402 "Канал не оплачен" is gone.
 
         // Empty body ("вернуть текст платформы", API_CONTRACT_CYCLE4.md §29.1) bypasses length/placeholder
         // validation entirely — it's a request to delete the override, not a 1000-character message.
@@ -341,37 +311,25 @@ public class CompanyNotificationsController(
             .Select(n => new NotificationCounterRow(n.CompanyId, n.Status, n.ReadAtUtc))
             .ToListAsync(ct);
 
-        var assignedChannelIds = await db.ChannelCompanyAssignments.AsNoTracking()
-            .Where(a => a.CompanyId == companyId).Select(a => a.ChannelId).ToListAsync(ct);
-        // Cycle 22 (§379, Р2): the latest funding paid-until among the company's assigned channels (the
-        // WhatsApp option's, else the subscription period — ChannelFundingReader), not the dropped column.
-        DateTime? channelPaidUntil = null;
-        if (assignedChannelIds.Count > 0)
-        {
-            var assignedChannels = await db.NotificationChannels.AsNoTracking()
-                .Where(c => assignedChannelIds.Contains(c.Id)).ToListAsync(ct);
-            var funding = await fundingReader.LoadAsync(assignedChannels, ct);
-            channelPaidUntil = assignedChannels
-                .Select(c => funding.GetValueOrDefault(c.Id)?.PaidUntil)
-                .Max();
-        }
-
-        var companyAssignments = await db.ChannelCompanyAssignments.AsNoTracking()
-            .CountAsync(a => assignedChannelIds.Contains(a.ChannelId), ct);
-        var multiCompanyChannel = companyAssignments > 1;
+        // Cycle 40 (§40.4): the channels of the company are those of its billing account; "several companies on the channel" = several
+        // companies on the account. The paid-until date is the latest payment date of the account's transports that have a number.
+        var messaging = await messagingReader.ForCompanyAsync(companyId, ct: ct);
+        var liveTransports = messaging.Transports.Where(t => t.Primary is not null).ToList();
+        DateTime? channelPaidUntil = liveTransports.Select(t => t.Payment.PaidUntil).Max();
 
         IReadOnlyList<NotificationSummaryByCompanyDto>? byCompany = null;
-        if (multiCompanyChannel)
+        var siblingCompanies = messaging.Channels.Count == 0 || messaging.AccountId == Guid.Empty
+            ? []
+            : await db.Companies.AsNoTracking().Where(c => c.BillingAccountId == messaging.AccountId)
+                .Select(c => new { c.Id, c.Name }).ToListAsync(ct);
+        if (siblingCompanies.Count > 1)
         {
-            var siblingCompanyIds = await db.ChannelCompanyAssignments.AsNoTracking()
-                .Where(a => assignedChannelIds.Contains(a.ChannelId)).Select(a => a.CompanyId).ToListAsync(ct);
-
+            var siblingCompanyIds = siblingCompanies.Select(c => c.Id).ToList();
             var siblingRows = await db.OutboundNotifications.AsNoTracking()
                 .Where(n => siblingCompanyIds.Contains(n.CompanyId) && n.CreatedAt >= sinceUtc)
                 .Select(n => new NotificationCounterRow(n.CompanyId, n.Status, n.ReadAtUtc))
                 .ToListAsync(ct);
-            var companyNames = await db.Companies.AsNoTracking()
-                .Where(c => siblingCompanyIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+            var companyNames = siblingCompanies.ToDictionary(c => c.Id, c => c.Name);
 
             byCompany = siblingRows.GroupBy(r => r.CompanyId)
                 .Select(g => Summarize(g.Key, companyNames.GetValueOrDefault(g.Key, ""), g)).ToList();
@@ -408,7 +366,7 @@ public class CompanyNotificationsController(
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private async Task<NotificationSettingsDto> BuildSettingsDtoAsync(
-        CompanyNotificationSettings? settings, IReadOnlyList<ChannelCompanyAssignment> assignments)
+        CompanyNotificationSettings? settings, AccountMessagingState messaging)
     {
         var enabledMask = settings?.EnabledTypeMask ?? CompanyNotificationSettings.DefaultEnabledTypeMask;
         // Cycle 24 (§458): the salon screen speaks ONLY about booking types — the order types share the enum but are not salon settings.
@@ -420,8 +378,7 @@ public class CompanyNotificationsController(
         // ARCHITECTURE_CYCLE9.md §104.5/§114.4: `channel` legacy field describes the PRIORITY transport's
         // own assignment specifically — with more than one transport possibly connected, that is the one
         // channel the rest of this screen's (pre-cycle-9) fields still meaningfully describe.
-        var priorityAssignment = assignments.FirstOrDefault(a => a.Transport == priorityTransport);
-        var channel = priorityAssignment?.Channel;
+        var channel = messaging.For(priorityTransport).Primary;
 
         // §47.3: ChannelDto/SettingsChannelDto's paymentState keeps its FORM but its SOURCE is the
         // account's funding ranking. Cycle 22 (§379, Р2): paidUntil (and the NeedsReconnect state text's
@@ -448,7 +405,7 @@ public class CompanyNotificationsController(
         // "usable" means the SAME thing NotificationRouting.SelectTargets means by it (funded AND
         // Connected), so the settings screen never shows a transport as pickable that routing would then
         // immediately treat as unavailable.
-        var usableTransports = await UsableTransportsAsync(assignments);
+        var usableTransports = UsableTransports(messaging);
         var priorityChannelHealthy = usableTransports.Contains(priorityTransport);
 
         return new NotificationSettingsDto(
@@ -458,46 +415,11 @@ public class CompanyNotificationsController(
             deliveryMode, priorityTransport, usableTransports, priorityChannelHealthy);
     }
 
-    /// <summary>ARCHITECTURE_CYCLE9.md §104.5/§114.4 — the transports the READ-ONLY settings screen shows
-    /// as currently pickable/healthy: assigned, funded, AND <see cref="ChannelState.Connected"/>. This is
-    /// deliberately STRICTER than what queueing itself requires (<see cref="FundedTransportsAsync"/>) —
-    /// it exists to give the owner a live status signal ("this channel needs reconnecting"), not to gate
-    /// what values the PUT endpoint accepts (см. Н3/B4: those are two different questions, and conflating
-    /// them once already caused a spurious 400 on saving unrelated settings while a channel briefly
-    /// disconnected).</summary>
-    private async Task<IReadOnlyList<NotificationTransport>> UsableTransportsAsync(
-        IReadOnlyList<ChannelCompanyAssignment> assignments)
-    {
-        var usable = new List<NotificationTransport>();
-        foreach (var a in assignments)
-        {
-            if (a.Channel.State == ChannelState.Connected && await IsChannelFundedAsync(a.Channel))
-                usable.Add(a.Transport);
-        }
-        return usable;
-    }
-
-    /// <summary>The transports actually accepted as <c>priorityTransport</c> on the PUT endpoint (B4):
-    /// assigned and funded, <see cref="ChannelState"/> deliberately NOT checked — the same "funding only"
-    /// definition <c>NotificationScheduler.SelectTargets</c> uses at queue time (§104.5 explicitly rejected
-    /// gating routing on Connected; see that method's own comment). Keeping this identical to routing's own
-    /// definition means the PUT never rejects a value routing would itself have accepted.</summary>
-    private async Task<IReadOnlyList<NotificationTransport>> FundedTransportsAsync(
-        IReadOnlyList<ChannelCompanyAssignment> assignments)
-    {
-        var funded = new List<NotificationTransport>();
-        foreach (var a in assignments)
-        {
-            if (await IsChannelFundedAsync(a.Channel))
-                funded.Add(a.Transport);
-        }
-        return funded;
-    }
-
-    // ARCHITECTURE_CYCLE7.md §47.1/§47.2: funded/unfunded, ranked across every live channel on the
-    // SAME billing account as `channel` — not a channel-level payment read (ChannelFundingReader).
-    private Task<bool> IsChannelFundedAsync(NotificationChannel? channel) =>
-        fundingReader.IsFundedAsync(channel);
+    /// <summary>ARCHITECTURE_CYCLE9.md §104.5/§114.4 — the transports the READ-ONLY settings screen shows as currently pickable/healthy:
+    /// routable (§40.5.1) AND <see cref="ChannelState.Connected"/>. Deliberately stricter than what queueing requires (a live status signal
+    /// for the owner, not a gate on what the PUT endpoint accepts).</summary>
+    private static IReadOnlyList<NotificationTransport> UsableTransports(AccountMessagingState messaging) =>
+        messaging.Transports.Where(t => t.Routable && t.Primary!.State == ChannelState.Connected).Select(t => t.Transport).ToList();
 
     private static int BuildMask(IReadOnlyList<NotificationType> types)
     {

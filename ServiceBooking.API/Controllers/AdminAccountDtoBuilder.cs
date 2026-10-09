@@ -39,7 +39,7 @@ internal static class AdminAccountDtoBuilder
         var ownerNames = await db.Users.Where(u => ownerIds.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
 
-        var channels = await db.NotificationChannels.Include(c => c.Assignments)
+        var channels = await db.NotificationChannels.AsNoTracking()
             .Where(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced)
             .OrderBy(c => c.CreatedAt).ThenBy(c => c.Id).ToListAsync();
         var messaging = await messagingReader.ForAccountAsync(account.Id) ?? throw new InvalidOperationException("Messaging state of an existing account is missing.");
@@ -133,7 +133,7 @@ internal static class AdminAccountDtoBuilder
                 state = c.State.ToString(),
                 fundingState = messaging.FundingOf(c).ToString(),
                 createdAt = c.CreatedAt,
-                assignedCompanies = c.Assignments.Count,
+                assignedCompanies = companies.Count, // ARCHITECTURE_CYCLE40.md §40.4.2 #12: the number serves every company of the account
             }).ToList(),
             pendingRequest,
             trial = trialDto,

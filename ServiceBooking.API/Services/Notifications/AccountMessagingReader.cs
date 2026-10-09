@@ -43,6 +43,9 @@ public sealed record AccountMessagingState(
     public int PaidTransportCount => (WhatsApp.Paid ? 1 : 0) + (Max.Paid ? 1 : 0);
     public bool AnyRoutable => WhatsApp.Routable || Max.Routable;
 
+    /// <summary>The channel a journal row without a routing target points at: the first number of the account in transport order.</summary>
+    public Guid? RepresentativeChannelId => Transports.Select(t => t.Primary).FirstOrDefault(c => c is not null)?.Id;
+
     /// <summary>Funding rank of one channel (§40.3.2); a channel that is not live (replaced) has none and counts as not paid.</summary>
     public ChannelFundingState FundingOf(NotificationChannel channel)
     {

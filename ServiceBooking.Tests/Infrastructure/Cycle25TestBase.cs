@@ -191,8 +191,7 @@ public abstract class Cycle25TestBase(TestDatabaseFixture fixture) : Cycle24Test
             await db.SaveChangesAsync();
             channelId = channel.Id;
         }
-        var r = await AuthedClient(shop.OwnerToken).PostJsonAsync($"/api/notification-channels/{channelId}/companies", new { companyId = shop.Id, warningAcknowledged = true });
-        r.StatusCode.Should().Be(HttpStatusCode.Created, await r.Content.ReadAsStringAsync());
+        // Cycle 40 (BE-40-2): no assignment step — the number of the owner's account serves the shop.
         return channelId;
     }
 

@@ -38,6 +38,7 @@ public class NotificationChannelsController(
     ChannelFundingReader fundingReader,
     AccountMessagingReader messagingReader,
     NumbersOverviewBuilder overviewBuilder,
+    PendingRebinder pendingRebinder,
     ILogger<NotificationChannelsController> logger) : ControllerBase
 {
     private const string DocumentsUnavailableText = "Правовые документы временно недоступны.";
@@ -603,11 +604,7 @@ public class NotificationChannelsController(
             db.NotificationChannels.Add(newChannel);
 
             // Waiting messages follow the number to the new row of the same transport (§27: only Pending rows move; Expired/Failed/Sent stay).
-            var pending = await db.OutboundNotifications
-                .Where(n => n.ChannelId == id && n.Status == NotificationStatus.Pending)
-                .ToListAsync(ct);
-            foreach (var row in pending)
-                row.ChannelId = newChannel.Id;
+            await pendingRebinder.OnReplaceAsync(channel, newChannel, ct);
 
             channel.ReplacedByChannelId = newChannel.Id;
             var reason = channel.State == ChannelState.Blocked ? ChannelStateReason.ReplacedAfterBan : ChannelStateReason.ReplacedByOwner;
@@ -654,14 +651,8 @@ public class NotificationChannelsController(
     {
         var plan = BeginDecommission(channel, targetState, reason);
         // I10: cancelling Pending rows is part of the DB-first step — one transaction, not two.
-        var pending = await db.OutboundNotifications
-            .Where(n => n.ChannelId == channel.Id && n.Status == NotificationStatus.Pending)
-            .ToListAsync();
-        foreach (var row in pending)
-        {
-            row.Status = NotificationStatus.Cancelled;
-            row.Reason = NotificationReason.BookingOrAssignmentCancelled;
-        }
+        // Cycle 40 (§40.9, Р40-Ю3): the Pending rows are cancelled; moved to the other messenger only when the configuration flag says so.
+        await pendingRebinder.OnUnbindAsync(channel);
         await db.SaveChangesAsync();
         await FinishDecommissionAsync(channel, plan);
     }
