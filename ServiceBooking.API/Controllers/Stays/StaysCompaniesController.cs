@@ -10,6 +10,8 @@ using ServiceBooking.API.Services.Demo;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.PublicSites;
 using ServiceBooking.API.Services.Shops;
+using ServiceBooking.API.Controllers.Slots;
+using ServiceBooking.API.Services.Slots;
 using ServiceBooking.API.Services.Stays;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -26,17 +28,25 @@ namespace ServiceBooking.API.Controllers.Stays;
 [Route("api/stays")]
 [Authorize]
 public class StaysCompaniesController(
-    AppDbContext db, CompanyCreationService companyCreation, StaysAccessResolver access, StaysCompanyService companyService,
-    PublicSiteLinks links, StaysTrialService trial, BillingAccountProvisioner accounts, ShopChannelReader channelReader,
-    IStaysClock clock, ArrivalReminderService reminder, StayActorResolver actors, Microsoft.Extensions.Options.IOptions<StaysOptions> staysOptions) : ControllerBase
+    AppDbContext dbArg, CompanyCreationService companyCreationArg, StaysAccessResolver accessArg, StaysCompanyService companyServiceArg,
+    PublicSiteLinks linksArg, StaysTrialService trial, BillingAccountProvisioner accounts, ShopChannelReader channelReaderArg,
+    IStaysClock clockArg, ArrivalReminderService reminder, StayActorResolver actors, Microsoft.Extensions.Options.IOptions<StaysOptions> staysOptions)
+    : SlotCompanySettingsControllerBase(dbArg, companyCreationArg, accessArg, companyServiceArg, linksArg, channelReaderArg, clockArg)
 {
-    public const string MessengerUnavailableText = "Подключите канал WhatsApp или MAX, чтобы отправлять сообщения гостям";
+    protected override SlotVertical Vertical => SlotVerticals.Stays;
+
+    protected override async Task<ActionResult> ManageResultAsync(Company company, StaysMyRole role, CancellationToken ct) =>
+        Ok(await CompanyService.BuildManageAsync(company, role, ct));
+
+    protected override string NormalizeSlug(string? slug) => StaysSlugPolicy.Normalize(slug);
+
+    protected override Task<StaysConflictDto?> SlugRefusalAsync(string slug, Guid exceptCompanyId) => CompanyCreation.StaysSlugRefusalAsync(slug, exceptCompanyId);
 
     [HttpPost("companies")]
     [RequiresOwnerTerms]
     public async Task<ActionResult<StaysCompanyCreatedDto>> Create(StaysCompanyCreateInput input)
     {
-        var outcome = await companyCreation.CreateAsync(
+        var outcome = await CompanyCreation.CreateAsync(
             CompanyKind.Stays,
             new CompanyCreationRequest(input.Name, input.Slug, input.Description, Address: null, input.Phone, Email: null, CityId: null,
                 TimeZoneId: null, AllowSelfBooking: false, ShowInPublicListing: true, input.OwnerTermsVersion),
@@ -49,14 +59,14 @@ public class StaysCompaniesController(
         if (!string.IsNullOrWhiteSpace(input.TrialTermsVersion))
             trialOutcome = await trial.GrantAsync(outcome.AccountId, UserId, input.TrialTermsVersion, HttpContext.RequestAborted);
 
-        var dto = await companyService.BuildManageAsync(company, StaysMyRole.Owner, HttpContext.RequestAborted);
+        var dto = await CompanyService.BuildManageAsync(company, StaysMyRole.Owner, HttpContext.RequestAborted);
         return StatusCode(StatusCodes.Status201Created, new StaysCompanyCreatedDto(dto, outcome.Token!, trialOutcome));
     }
 
     [HttpGet("companies/my")]
     public async Task<ActionResult<List<StaysCompanyListItemDto>>> GetMine(CancellationToken ct)
     {
-        var rows = await db.CompanyMembers.AsNoTracking().Where(CompanyMembership.IsStaffRole)
+        var rows = await Db.CompanyMembers.AsNoTracking().Where(CompanyMembership.IsStaffRole)
             .Where(cm => cm.UserId == UserId && cm.Company.Kind == CompanyKind.Stays)
             .OrderBy(cm => cm.Company.Name).ThenBy(cm => cm.CompanyId)
             .Select(cm => new { cm.Company, cm.Role, cm.StaffPosition }).ToListAsync(ct);
@@ -64,11 +74,11 @@ public class StaysCompaniesController(
         foreach (var r in rows)
         {
             var role = StaysAccess.RoleOfMember(r.Role == UserRole.CompanyOwner, r.StaffPosition);
-            var gate = await companyService.EvaluateGateAsync(r.Company, await companyService.LoadSettingsAsync(r.Company.Id, ct: ct), ct);
+            var gate = await CompanyService.EvaluateGateAsync(r.Company, await CompanyService.LoadSettingsAsync(r.Company.Id, ct: ct), ct);
             int? awaiting = role == StaysMyRole.Housekeeper ? null
-                : await db.StayBookings.AsNoTracking().CountAsync(b => b.CompanyId == r.Company.Id && b.Status == StayBookingStatus.AwaitingPaymentCheck, ct)
-                  + await db.StayServiceOrders.AsNoTracking().CountAsync(o => o.CompanyId == r.Company.Id && o.Status == StayBookingStatus.AwaitingPaymentCheck, ct);
-            result.Add(new StaysCompanyListItemDto(r.Company.Id, r.Company.Name, r.Company.Slug, r.Company.LogoUrl, links.CompanyPageUrl(r.Company), role, gate.Accepting, awaiting));
+                : await Db.StayBookings.AsNoTracking().CountAsync(b => b.CompanyId == r.Company.Id && b.Status == StayBookingStatus.AwaitingPaymentCheck, ct)
+                  + await Db.StayServiceOrders.AsNoTracking().CountAsync(o => o.CompanyId == r.Company.Id && o.Status == StayBookingStatus.AwaitingPaymentCheck, ct);
+            result.Add(new StaysCompanyListItemDto(r.Company.Id, r.Company.Name, r.Company.Slug, r.Company.LogoUrl, Links.CompanyPageUrl(r.Company), role, gate.Accepting, awaiting));
         }
         return Ok(result);
     }
@@ -81,12 +91,12 @@ public class StaysCompaniesController(
         if (!string.IsNullOrWhiteSpace(slug))
         {
             var normalized = StaysSlugPolicy.Normalize(slug);
-            var refusal = await companyCreation.StaysSlugRefusalAsync(normalized, companyId);
+            var refusal = await CompanyCreation.StaysSlugRefusalAsync(normalized, companyId);
             return Ok(new StaysSlugCheckDto(normalized, refusal is null, refusal));
         }
         if (string.IsNullOrWhiteSpace(name))
             return Ok(new StaysSlugCheckDto(string.Empty, false, new StaysConflictDto("SlugInvalid", ShopTexts.SlugInvalid)));
-        return Ok(new StaysSlugCheckDto(await companyCreation.SuggestStaysSlugAsync(name), true, null));
+        return Ok(new StaysSlugCheckDto(await CompanyCreation.SuggestStaysSlugAsync(name), true, null));
     }
 
     [HttpGet("trial")]
@@ -108,22 +118,22 @@ public class StaysCompaniesController(
     [HttpGet("companies/{companyId:guid}")]
     public async Task<ActionResult<StaysCompanyManageDto>> Get(Guid companyId, CancellationToken ct)
     {
-        var result = await access.ResolveAnyAsync(companyId, User, [StaysPermission.ViewCabinet, StaysPermission.ViewSchedule], asNoTracking: true, ct: ct);
+        var result = await Access.ResolveAnyAsync(companyId, User, [StaysPermission.ViewCabinet, StaysPermission.ViewSchedule], asNoTracking: true, ct: ct, kind: Vertical.Kind);
         if (!result.Ok) return result.Error!;
-        return Ok(await companyService.BuildManageAsync(result.Company!, result.Role, ct));
+        return Ok(await CompanyService.BuildManageAsync(result.Company!, result.Role, ct));
     }
 
     [HttpPut("companies/{companyId:guid}/settings")]
     [RequiresOwnerTerms]
     public async Task<ActionResult<StaysCompanyManageDto>> UpdateSettings(Guid companyId, StaysSettingsDto input, CancellationToken ct)
     {
-        var result = await access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, ct: ct);
+        var result = await Access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, ct: ct, kind: Vertical.Kind);
         if (!result.Ok) return result.Error!;
         var error = StaysSettingsRules.Validate(input, out var checkIn, out var checkOut, out var infoSend);
         if (error is not null) return BadRequest(error);
 
-        var settings = await companyService.LoadSettingsAsync(companyId, track: true, ct);
-        if (db.Entry(settings).State == EntityState.Detached) db.StaysSettings.Add(settings);
+        var settings = await CompanyService.LoadSettingsAsync(companyId, track: true, ct);
+        if (Db.Entry(settings).State == EntityState.Detached) Db.StaysSettings.Add(settings);
         settings.CheckInTime = checkIn;
         settings.CheckOutTime = checkOut;
         settings.MinNights = input.MinNights;
@@ -150,8 +160,8 @@ public class StaysCompaniesController(
         }
         Touch(settings);
         result.Company!.ShowInPublicListing = input.ShowInCatalog;
-        await db.SaveChangesAsync(ct);
-        return Ok(await companyService.BuildManageAsync(result.Company!, result.Role, ct));
+        await Db.SaveChangesAsync(ct);
+        return Ok(await CompanyService.BuildManageAsync(result.Company!, result.Role, ct));
     }
 
     // ── cycle 39: the arrival reminder (API_CONTRACT_CYCLE39.md §39.33) ──
@@ -159,18 +169,18 @@ public class StaysCompaniesController(
     [HttpGet("companies/{companyId:guid}/arrival-reminder")]
     public async Task<ActionResult<ArrivalReminderSettingsDto>> GetArrivalReminder(Guid companyId, CancellationToken ct)
     {
-        var result = await access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, asNoTracking: true, ct: ct);
+        var result = await Access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, asNoTracking: true, ct: ct, kind: Vertical.Kind);
         if (!result.Ok) return result.Error!;
-        return Ok(reminder.ToDto(await companyService.LoadSettingsAsync(companyId, ct: ct)));
+        return Ok(reminder.ToDto(await CompanyService.LoadSettingsAsync(companyId, ct: ct)));
     }
 
     [HttpPut("companies/{companyId:guid}/arrival-reminder")]
     [RequiresOwnerTerms]
     public async Task<ActionResult<ArrivalReminderSettingsDto>> SaveArrivalReminder(Guid companyId, ArrivalReminderInput input, CancellationToken ct)
     {
-        var result = await access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, asNoTracking: true, ct: ct);
+        var result = await Access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, asNoTracking: true, ct: ct, kind: Vertical.Kind);
         if (!result.Ok) return result.Error!;
-        var saved = await reminder.SaveAsync(result.Company!, await companyService.LoadSettingsAsync(companyId, ct: ct), input, await actors.ResolveStaffAsync(User, ct), ct);
+        var saved = await reminder.SaveAsync(result.Company!, await CompanyService.LoadSettingsAsync(companyId, ct: ct), input, await actors.ResolveStaffAsync(User, ct), ct);
         if (saved.BadRequest is not null) return BadRequest(saved.BadRequest);
         if (saved.Conflict is not null) return Conflict(saved.Conflict);
         return Ok(saved.Settings);
@@ -180,7 +190,7 @@ public class StaysCompaniesController(
     [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("stays-board")]
     public async Task<ActionResult<ArrivalReminderPreviewDto>> PreviewArrivalReminder(Guid companyId, ArrivalReminderPreviewInput input, CancellationToken ct)
     {
-        var result = await access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, asNoTracking: true, ct: ct);
+        var result = await Access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, asNoTracking: true, ct: ct, kind: Vertical.Kind);
         if (!result.Ok) return result.Error!;
         if (input.Template is { Length: > 2000 }) return BadRequest("Текст напоминания — не длиннее 700 символов");
         var preview = await reminder.PreviewAsync(result.Company!, input, ct);
@@ -190,155 +200,8 @@ public class StaysCompaniesController(
     [HttpGet("companies/{companyId:guid}/arrival-reminder/history")]
     public async Task<ActionResult<List<ArrivalReminderChangeDto>>> ArrivalReminderHistory(Guid companyId, CancellationToken ct)
     {
-        var result = await access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, asNoTracking: true, ct: ct);
+        var result = await Access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, asNoTracking: true, ct: ct, kind: Vertical.Kind);
         if (!result.Ok) return result.Error!;
         return Ok(await reminder.HistoryAsync(companyId, staysOptions.Value.Services.HistoryRows, ct));
     }
-
-    [HttpPut("companies/{companyId:guid}/payment-details")]
-    [RequiresOwnerTerms]
-    public async Task<ActionResult<StaysCompanyManageDto>> UpdatePaymentDetails(Guid companyId, PaymentDetailsDto input, CancellationToken ct)
-    {
-        var result = await access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, ct: ct);
-        if (!result.Ok) return result.Error!;
-        var error = StaysSettingsRules.ValidatePaymentDetails(input);
-        if (error is not null) return BadRequest(error);
-
-        var settings = await companyService.LoadSettingsAsync(companyId, track: true, ct);
-        if (db.Entry(settings).State == EntityState.Detached) db.StaysSettings.Add(settings);
-        settings.PaymentDetails = StaysSettingsRules.Trim(input.PaymentDetails);
-        settings.PaymentPurpose = StaysSettingsRules.Trim(input.PaymentPurpose);
-        Touch(settings);
-        await db.SaveChangesAsync(ct);
-        return Ok(await companyService.BuildManageAsync(result.Company!, result.Role, ct));
-    }
-
-    /// <summary>ЮР-3: the executor's details. Full replacement.</summary>
-    [HttpPut("companies/{companyId:guid}/provider")]
-    [RequiresOwnerTerms]
-    public async Task<ActionResult<StaysCompanyManageDto>> UpdateProvider(Guid companyId, ProviderInput input, CancellationToken ct)
-    {
-        var result = await access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, ct: ct);
-        if (!result.Ok) return result.Error!;
-        var error = StaysSettingsRules.ValidateProvider(input, out var name, out var inn, out var ogrn, out var address);
-        if (error is not null) return BadRequest(error);
-
-        var settings = await companyService.LoadSettingsAsync(companyId, track: true, ct);
-        if (db.Entry(settings).State == EntityState.Detached) db.StaysSettings.Add(settings);
-        settings.ProviderStatus = input.Status;
-        settings.ProviderName = name;
-        settings.ProviderInn = inn;
-        settings.ProviderOgrn = ogrn;
-        settings.ProviderClaimsAddress = address;
-        Touch(settings);
-        await db.SaveChangesAsync(ct);
-        return Ok(await companyService.BuildManageAsync(result.Company!, result.Role, ct));
-    }
-
-    /// <summary>The old link and printed QR codes stop working: no redirect (SPEC).</summary>
-    [DemoForbidden]
-    [HttpPut("companies/{companyId:guid}/slug")]
-    [RequiresOwnerTerms]
-    public async Task<ActionResult<StaysCompanyManageDto>> ChangeSlug(Guid companyId, SlugInput input, CancellationToken ct)
-    {
-        var result = await access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, ct: ct);
-        if (!result.Ok) return result.Error!;
-        var company = result.Company!;
-
-        var slug = StaysSlugPolicy.Normalize(input.Slug);
-        if (slug != company.Slug)
-        {
-            await using var transaction = await db.Database.BeginTransactionAsync(ct);
-            await AdvisoryLock.AcquireAsync(db, "company-slug");
-            var refusal = await companyCreation.StaysSlugRefusalAsync(slug, exceptCompanyId: company.Id);
-            if (refusal is not null) return Conflict(refusal);
-            company.Slug = slug;
-            await db.SaveChangesAsync(ct);
-            await transaction.CommitAsync(ct);
-        }
-        return Ok(await companyService.BuildManageAsync(company, result.Role, ct));
-    }
-
-    [HttpGet("companies/{companyId:guid}/qr")]
-    public async Task<IActionResult> GetQr(Guid companyId, CancellationToken ct)
-    {
-        var result = await access.ResolveAsync(companyId, User, StaysPermission.ViewCabinet, asNoTracking: true, ct: ct);
-        if (!result.Ok) return result.Error!;
-        return File(ShopQrCode.EncodePng(links.CompanyPageUrl(result.Company!)), "image/png", $"{result.Company!.Slug}-qr.png");
-    }
-
-    [HttpGet("companies/{companyId:guid}/notification-settings")]
-    public async Task<ActionResult<StaysNotificationSettingsDto>> GetNotificationSettings(Guid companyId, CancellationToken ct)
-    {
-        var result = await access.ResolveAsync(companyId, User, StaysPermission.ViewCabinet, asNoTracking: true, ct: ct);
-        if (!result.Ok) return result.Error!;
-        return Ok(await BuildNotificationSettingsAsync(companyId, ct));
-    }
-
-    [HttpPut("companies/{companyId:guid}/notification-settings")]
-    [RequiresOwnerTerms]
-    public async Task<ActionResult<StaysNotificationSettingsDto>> UpdateNotificationSettings(Guid companyId, StaysNotificationSettingsInput input, CancellationToken ct)
-    {
-        var result = await access.ResolveAsync(companyId, User, StaysPermission.ManageCompany, asNoTracking: true, ct: ct);
-        if (!result.Ok) return result.Error!;
-
-        NotificationDeliveryMode? mode = null;
-        NotificationTransport? priority = null;
-        if (!string.IsNullOrWhiteSpace(input.DeliveryMode))
-        {
-            if (!Enum.TryParse<NotificationDeliveryMode>(input.DeliveryMode, true, out var m) || !Enum.IsDefined(m)) return BadRequest("Неизвестный режим доставки");
-            mode = m;
-        }
-        if (!string.IsNullOrWhiteSpace(input.PriorityTransport))
-        {
-            if (!Enum.TryParse<NotificationTransport>(input.PriorityTransport, true, out var t) || !Enum.IsDefined(t)) return BadRequest("Неизвестный канал");
-            priority = t;
-        }
-
-        var channels = await channelReader.LoadAsync(companyId, ct);
-        var funded = channels.Where(c => c.IsFunded).ToList();
-        if (input.GuestMessengerEnabled && funded.Count == 0)
-            return Conflict(new StaysConflictDto("MessengerUnavailable", MessengerUnavailableText));
-        if (priority is { } p && funded.All(c => c.Channel.Transport != p))
-            return BadRequest("Приоритетный канал должен быть среди оплаченных каналов компании");
-
-        var settings = await companyService.LoadSettingsAsync(companyId, track: true, ct);
-        if (db.Entry(settings).State == EntityState.Detached) db.StaysSettings.Add(settings);
-        settings.StaffMaxEnabled = input.StaffMaxEnabled;
-        settings.GuestWebPushEnabled = input.GuestWebPushEnabled;
-        settings.GuestMessengerEnabled = input.GuestMessengerEnabled;
-        Touch(settings);
-
-        var notificationSettings = await db.CompanyNotificationSettings.FirstOrDefaultAsync(s => s.CompanyId == companyId, ct);
-        if (notificationSettings is null)
-        {
-            notificationSettings = new CompanyNotificationSettings { CompanyId = companyId };
-            db.CompanyNotificationSettings.Add(notificationSettings);
-        }
-        notificationSettings.StaffPushEnabled = input.StaffPushEnabled;
-        if (mode is { } dm) notificationSettings.DeliveryMode = dm;
-        if (priority is { } pt) notificationSettings.PriorityTransport = pt;
-        notificationSettings.UpdatedAt = clock.UtcNow;
-        notificationSettings.UpdatedByUserId = UserId;
-        await db.SaveChangesAsync(ct);
-        return Ok(await BuildNotificationSettingsAsync(companyId, ct));
-    }
-
-    private async Task<StaysNotificationSettingsDto> BuildNotificationSettingsAsync(Guid companyId, CancellationToken ct)
-    {
-        var settings = await companyService.LoadSettingsAsync(companyId, ct: ct);
-        var n = await db.CompanyNotificationSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == companyId, ct) ?? new CompanyNotificationSettings { CompanyId = companyId };
-        var available = await channelReader.IsMessengerAvailableAsync(companyId, ct);
-        return new StaysNotificationSettingsDto(
-            n.StaffPushEnabled, settings.StaffMaxEnabled, settings.GuestWebPushEnabled, settings.GuestMessengerEnabled, available,
-            n.DeliveryMode.ToString(), n.PriorityTransport.ToString());
-    }
-
-    private void Touch(StaysSettings s)
-    {
-        s.UpdatedAtUtc = clock.UtcNow;
-        s.UpdatedByUserId = UserId;
-    }
-
-    private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 }

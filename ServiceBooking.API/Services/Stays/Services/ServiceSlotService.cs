@@ -36,21 +36,21 @@ public class ServiceSlotService(AppDbContext db, IOptions<StaysOptions> options,
 
     // ── loading ──
 
-    public async Task<ServiceScope?> FindPublicAsync(Guid serviceId, CancellationToken ct)
+    public async Task<ServiceScope?> FindPublicAsync(CompanyKind kind, Guid serviceId, CancellationToken ct)
     {
         var service = await db.StayServices.AsNoTracking().FirstOrDefaultAsync(s => s.Id == serviceId && s.IsPublished && s.ArchivedAtUtc == null, ct);
-        return service is null ? null : await ScopeAsync(service, ct);
+        return service is null ? null : await ScopeAsync(kind, service, ct);
     }
 
-    public async Task<ServiceScope?> FindOfCompanyAsync(Guid companyId, Guid serviceId, CancellationToken ct)
+    public async Task<ServiceScope?> FindOfCompanyAsync(CompanyKind kind, Guid companyId, Guid serviceId, CancellationToken ct)
     {
         var service = await db.StayServices.AsNoTracking().FirstOrDefaultAsync(s => s.Id == serviceId && s.CompanyId == companyId, ct);
-        return service is null ? null : await ScopeAsync(service, ct);
+        return service is null ? null : await ScopeAsync(kind, service, ct);
     }
 
-    public async Task<ServiceScope?> ScopeAsync(StayService service, CancellationToken ct)
+    public async Task<ServiceScope?> ScopeAsync(CompanyKind kind, StayService service, CancellationToken ct)
     {
-        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == service.CompanyId && c.Kind == CompanyKind.Stays, ct);
+        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == service.CompanyId && c.Kind == kind, ct);
         if (company is null) return null;
         var settings = await db.StaysSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == company.Id, ct) ?? new StaysSettings { CompanyId = company.Id };
         return new ServiceScope(service, company, settings);

@@ -7,6 +7,7 @@ using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Shops;
 using ServiceBooking.API.Services.Subjects;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.API.Services.Slots;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
@@ -43,7 +44,7 @@ public class ServiceOrderCreationService(
         return null;
     }
 
-    public async Task<ServiceOrderCreateResult> CreateAsync(Guid serviceId, CreateServiceOrderInput dto, ClaimsPrincipal user, string? remoteIp, CancellationToken ct)
+    public async Task<ServiceOrderCreateResult> CreateAsync(CompanyKind kind, Guid serviceId, CreateServiceOrderInput dto, ClaimsPrincipal user, string? remoteIp, CancellationToken ct)
     {
         // 1. The form (text fields are nullable in the DTO on purpose: the contract's own Russian sentences answer these).
         var formError = ValidateSelection(dto.BusinessDate, dto.StartMinute, dto.Hours, dto.Items, out var selection);
@@ -57,7 +58,7 @@ public class ServiceOrderCreationService(
         var idempotencyKey = dto.IdempotencyKey.Value;
 
         // 2. The service: none / not published / archived / not a «Дома» company → 404 (indistinguishable); a blocked company → 409.
-        var scope = await slots.FindPublicAsync(serviceId, ct);
+        var scope = await slots.FindPublicAsync(kind, serviceId, ct);
         if (scope is null) return new ServiceOrderCreateResult(new NotFoundResult());
         var (service, company, settings) = scope;
         if (!company.IsActive) return Refuse(ServiceRefusalCode.NotAcceptingBookings, ServiceTexts.NotAcceptingGuest, NotAcceptingReason.CompanyBlocked);
@@ -107,8 +108,8 @@ public class ServiceOrderCreationService(
         if (twin is not null) return new ServiceOrderCreateResult(null, twin, Created: false);
         switch (await throttle.CheckAsync(company.Id, canonicalPhone, now, ct))
         {
-            case StayThrottleVerdict.TooManyHeld: return Throttled(ServiceTexts.TooManyHeldOrders);
-            case StayThrottleVerdict.TooManyPerDay: return Throttled(ServiceTexts.TooManyOrdersPerDay);
+            case StayThrottleVerdict.TooManyHeld: return Throttled(ServiceWording.For(company.Kind).TooManyHeldOrders);
+            case StayThrottleVerdict.TooManyPerDay: return Throttled(ServiceWording.For(company.Kind).TooManyOrdersPerDay);
         }
 
         // 8. The lock of the service: lazy release → the rules (counting what is still active) → the money.
@@ -171,7 +172,7 @@ public class ServiceOrderCreationService(
 
     // ── a manual order (staff, P1) ──
 
-    public async Task<ServiceOrderCreateResult> CreateManualAsync(Guid companyId, ManualServiceOrderInput dto, StayActor actor, CancellationToken ct)
+    public async Task<ServiceOrderCreateResult> CreateManualAsync(CompanyKind kind, Guid companyId, ManualServiceOrderInput dto, StayActor actor, CancellationToken ct)
     {
         if (dto.ServiceId is null) return new ServiceOrderCreateResult(new NotFoundResult());
         var formError = ValidateSelection(dto.BusinessDate, dto.StartMinute, dto.Hours, dto.Items, out var selection);
@@ -190,7 +191,7 @@ public class ServiceOrderCreationService(
             phone = canonical;
         }
 
-        var scope = await slots.FindOfCompanyAsync(companyId, dto.ServiceId.Value, ct);
+        var scope = await slots.FindOfCompanyAsync(kind, companyId, dto.ServiceId.Value, ct);
         if (scope is null || scope.Service.ArchivedAtUtc is not null) return new ServiceOrderCreateResult(new NotFoundResult());
         var (service, company, _) = scope;
         var existing = await db.StayServiceOrders.AsNoTracking().FirstOrDefaultAsync(o => o.CompanyId == companyId && o.IdempotencyKey == dto.IdempotencyKey, ct);

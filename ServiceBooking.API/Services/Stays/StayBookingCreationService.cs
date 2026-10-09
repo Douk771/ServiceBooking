@@ -106,7 +106,7 @@ public class StayBookingCreationService(
         var (house, company, settings) = ctx;
         var stay = ServiceSlotService.StayRangeOf(company.TimeZoneId, input.CheckIn, settings.CheckInTime, input.CheckOut, settings.CheckOutTime);
         var scopes = new List<ServiceScope?>();
-        foreach (var chosen in services) scopes.Add(chosen.ServiceId is { } id ? await slots.FindOfCompanyAsync(company.Id, id, ct) : null);
+        foreach (var chosen in services) scopes.Add(chosen.ServiceId is { } id ? await slots.FindOfCompanyAsync(CompanyKind.Stays, company.Id, id, ct) : null);
         if (forWrite) await sessionWriter.LockServicesAsync(scopes.Where(sc => sc is not null).Select(sc => sc!.Service.Id));
 
         var choices = new List<StayServiceChoice>();
