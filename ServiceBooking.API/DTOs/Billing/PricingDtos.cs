@@ -8,7 +8,16 @@ public record PublicPricingDto(
     IReadOnlyList<PublicPlanDto> Plans,
     IReadOnlyList<PublicOptionDto> Options,
     string Notice,
-    string? LegalNotice);
+    string? LegalNotice,
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.14, API_CONTRACT_CYCLE40.md §40.32): one line per SELLABLE messenger (a closed one gives none) and the note next to them.
+    IReadOnlyList<MessengerAddonDto>? MessengerAddons = null,
+    MessengerAddonsNoteDto? MessengerAddonsNote = null);
+
+/// <summary>"+ MAX 490 ₽/мес" — every field is the server's text; the frontend only draws it.</summary>
+// Transport is a STRING carrying the enum name ("WhatsApp" / "Max") — the same wire form the global string-enum converter gives, but readable by a plain deserializer (the CompanyDto.Kind convention).
+public record MessengerAddonDto(string Transport, string Label, decimal PricePerMonth, string Text, string? Footnote);
+
+public record MessengerAddonsNoteDto(string ConditionsUrl, string ConditionsLabel, string TaxNote);
 
 public record PublicPlanDto(
     Guid Id,

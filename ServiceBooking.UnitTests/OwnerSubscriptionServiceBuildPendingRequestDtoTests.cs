@@ -14,7 +14,7 @@ namespace ServiceBooking.UnitTests;
 /// </summary>
 public class OwnerSubscriptionServiceBuildPendingRequestDtoTests
 {
-    private static readonly OwnerSubscriptionService Sut = new(null!, null!, null!, null!, null!, null!);
+    private static readonly OwnerSubscriptionService Sut = new(null!, null!, null!, null!, null!, null!, null!);
 
     private static SubscriptionOption Option(Guid id, string name, string? capabilityKey, decimal? price = 100m) =>
         new() { Id = id, Code = name, Name = name, CapabilityKey = capabilityKey, PricePerMonth = price };

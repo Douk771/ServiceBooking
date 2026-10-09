@@ -17,7 +17,8 @@ namespace ServiceBooking.API.Services.Billing;
 /// request. Every text is assembled here (§41 п. 8) — the frontend prints strings as-is.</summary>
 public class OwnerSubscriptionService(
     AppDbContext db, SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
-    TrialStateReader trialStateReader, IOptions<OrdersOptions> ordersOptions, AccountMessagingReader messagingReader)
+    TrialStateReader trialStateReader, IOptions<OrdersOptions> ordersOptions, AccountMessagingReader messagingReader,
+    MessengerAddonsProvider messengerAddons)
 {
     public async Task<BillingAccount?> FindAccountForOwnerAsync(string ownerUserId) =>
         await db.BillingAccounts.Include(a => a.RequestedPlan).FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId);
@@ -149,11 +150,13 @@ public class OwnerSubscriptionService(
         // instead of GetAsync (which would reload them and re-resolve the effective plan), removing
         // ~5 avoidable round-trips from the owner's most-visited screen.
         var trial = await trialStateReader.BuildAsync(account, sub, plan);
+        var (addons, addonsNote) = await messengerAddons.BuildAsync(PricingCatalogBuilder.DefaultNotice);
 
         return new OwnerSubscriptionDto(
             "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays, isExpiringSoon,
             usageDto, coveredCompanies, warning, availableOptions, pendingRequest, CanRequestChanges: true,
-            LastRejectedRequest: lastRejectedRequest, Trial: trial);
+            LastRejectedRequest: lastRejectedRequest, Trial: trial,
+            MessengerAddons: addons, MessengerAddonsNote: addonsNote);
     }
 
     /// <summary>"Free" (no subscription of the line), "Expired" (not active / past its date), "Active" — the same three words as the "Записи" line.</summary>
