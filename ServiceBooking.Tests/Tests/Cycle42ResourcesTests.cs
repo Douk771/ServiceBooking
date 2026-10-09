@@ -78,10 +78,14 @@ public class Cycle42ResourcesTests(TestDatabaseFixture fixture) : Cycle42TestBas
         (await PostBathOrderAsync(r.Id, InDays(8), 600, 2, guests: 0)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await PostBathOrderAsync(r.Id, InDays(8), 600, 2, guests: 8)).StatusCode.Should().Be(HttpStatusCode.Created);
 
-        // сброс вместимости: гость не видит выдуманного числа (поле отсутствует, как у услуг «Домов», §42.21)
+        // сброс вместимости у опубликованного ресурса — отказ 409 (BUG-C42-QA-3); у черновика проходит, поле у карточки пропадает (§42.21)
+        var refused = await SetupAsync(r, null);
+        refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await refused.Content.ReadAsStringAsync()).Should().Contain("ServiceNoCapacity");
+        (await AuthedClient(c.Token).PostJsonAsync($"/api/baths/companies/{c.CompanyId}/services/{r.Id}/unpublish", new { })).StatusCode.Should().Be(HttpStatusCode.OK);
         var cleared = await SetupAsync(r, null);
         cleared.StatusCode.Should().Be(HttpStatusCode.OK, await cleared.Content.ReadAsStringAsync());
-        var after = await J(await AnonymousClient().GetAsync($"/api/baths/public/companies/{c.Slug}/services/{r.Slug}"));
+        var after = await J(cleared);
         (!after.TryGetProperty("capacity", out var cap) || cap.ValueKind == JsonValueKind.Null).Should().BeTrue();
     }
 
@@ -485,7 +489,7 @@ public class Cycle42ResourcesTests(TestDatabaseFixture fixture) : Cycle42TestBas
     /// BUG-C42-QA-2 (НЕ ВЫПОЛНЯЕТСЯ): основы «иммунитет», «полезно при», «невозврат» (без «-н») названы в контракте §42.30.2, но реализация
     /// (<c>OwnerTextChecks.Soft</c>) их не ловит — описание сохраняется без предупреждения. Снять Skip после правки регулярных выражений.
     /// </summary>
-    [Theory(Skip = "BUG-C42-QA-2: мягкие основы «иммунитет», «полезно при», «невозврат» не дают предупреждения"), TestCase("CY42-39")]
+    [Theory, TestCase("CY42-39")]
     [InlineData("Укрепляет иммунитет", "HealthClaim")]
     [InlineData("Полезно при простуде", "HealthClaim")]
     [InlineData("Недорого, невозврат средств", "CancellationTermsInText")]
@@ -495,7 +499,7 @@ public class Cycle42ResourcesTests(TestDatabaseFixture fixture) : Cycle42TestBas
     /// BUG-C42-QA-3 (НЕ ВЫПОЛНЯЕТСЯ): сброс вместимости (<c>capacity: null</c>) у УЖЕ ОПУБЛИКОВАННОГО ресурса бани проходит (200), ресурс остаётся опубликованным без вместимости,
     /// гость бронирует без числа гостей — обходится правило публикации ServiceNoCapacity (§42.29). Ожидается 400/409 либо снятие с публикации.
     /// </summary>
-    [Fact(Skip = "BUG-C42-QA-3: вместимость опубликованной бани можно обнулить"), TestCase("CY42-31")]
+    [Fact, TestCase("CY42-31")]
     public async Task Capacity_CannotBeClearedOnAPublishedBathResource()
     {
         var c = await CreateBathAsync();

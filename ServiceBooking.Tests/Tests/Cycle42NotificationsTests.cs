@@ -407,7 +407,7 @@ public class Cycle42NotificationsTests(TestDatabaseFixture fixture) : Cycle42Tes
     /// BUG-C42-QA-4 (НЕ ВЫПОЛНЯЕТСЯ): push персоналу об отмене гостем говорит «Гость отменил сеанс · …», контракт §42.36.3 требует «Гость отменил бронь · {Ресурс}, {время}»
     /// (слово «бронь» во всех строках bani). Снять Skip после правки текста для вида «Бани».
     /// </summary>
-    [Fact(Skip = "BUG-C42-QA-4: staff push об отмене гостем — «сеанс» вместо «бронь»"), TestCase("CY42-94")]
+    [Fact, TestCase("CY42-94")]
     public async Task StaffPush_CancelByGuest_SaysBronNotSeans()
     {
         await using var host = new StaysTestFactory(ConnectionString);

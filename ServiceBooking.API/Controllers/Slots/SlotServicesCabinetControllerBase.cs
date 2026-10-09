@@ -141,6 +141,9 @@ public abstract class SlotServicesCabinetControllerBase(
         if (input.CancellationBoundaryHours < range.Min || input.CancellationBoundaryHours > range.Max)
             return BadRequest($"Срок для полного возврата — от {range.Min} до {range.Max} часов до начала");
 
+        if (input.Capacity is null && service.IsPublished && Vertical.RequiresCapacityToPublish)
+            return Conflict(new StaysServiceConflictDto(nameof(StaysServiceConflictCode.ServiceNoCapacity), "Укажите вместимость — сколько человек может находиться одновременно"));
+
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         // §39.5.2: a change of the rules of a service runs under the lock of the service, the board revision comes last.
         await sessionWriter.LockServiceAsync(serviceId);
