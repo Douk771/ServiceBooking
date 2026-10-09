@@ -4,8 +4,8 @@
 > `cycle/040-simplify-notification-channels` на `4d65578`; в ветку уже влит `origin/develop` = `4741843` (циклы 38, 41, 39 и их
 > закрывающие документы — мердж `ce5a428`). После мерджа в `develop` хеш в отметке ниже заменить на хеш мерджа.
 
-**Актуально по состоянию на коммит: `4d65578` (ветка `cycle/040-simplify-notification-channels`, в `develop` не влита; база — `origin/develop` = `4741843`), дата: 2026-10-09.**
-**Следующий diff отсчитывайте от коммита мерджа цикла 40 в `develop` (до мерджа — от `4d65578`).**
+**Актуально по состоянию на коммит: `0bd2225` (мердж `cycle/040-simplify-notification-channels` в `develop`, 2026-10-09; содержимое проверялось на `9eb50c1`; база — `origin/develop` = `4741843`), дата: 2026-10-09.**
+**Следующий diff отсчитывайте от коммита мерджа цикла 40 в `develop`: `0bd2225`.**
 
 **Обновление на `4d65578`** (✔ `git log origin/develop..HEAD`: 56 коммитов; `git diff --stat origin/develop...HEAD`: 253 файла,
 +35 071/−4 320, из них ~17 600 строк генератов и эталонов (`Cycle40ChannelOptions.Designer.cs` — 6 279, `contracts/cycle40/openapi.yaml` +
