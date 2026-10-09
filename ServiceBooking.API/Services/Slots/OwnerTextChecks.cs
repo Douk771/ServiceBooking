@@ -31,10 +31,10 @@ public static class OwnerTextChecks
     private static readonly (string Code, Regex Pattern)[] Soft =
     {
         ("CancellationTermsInText", new(@"штраф|неустойк|неявк|не\s+возвращ|невозврат(?!н)|условия\s+отмены|отмен\w*\s+(?:за|менее|позже)", Opts)),
-        ("MandatoryExtraCharge", new(@"(?<!\p{L})доплат|(?<!\p{L})сверх|обязательн\w*\s+(?:платеж|оплат|взнос)|оплат\w*\s+на\s+месте", Opts)),
-        ("HealthClaim", new(@"лечебн|лечени|лечит|оздоровит|целебн|исцел|детокс|противопоказани|иммунитет|полезно\s+при", Opts)),
+        ("MandatoryExtraCharge", new(@"(?<!\p{L})доплат|(?<!\p{L})сверх(?!у)|за\s+человека|за\s+каждого|обязательн|оплат\w*\s+на\s+месте", Opts)),
+        ("HealthClaim", new(@"лечебн|лечени|лечит|оздоров|целебн|исцел|детокс|противопоказаний\s+нет|иммунитет|полезно\s+при", Opts)),
         ("Passport", new(@"паспорт", Opts)),
-        ("CardNumber", new(@"(?<!\d)(?:\d{4}[\s-]?){3}\d{4}(?!\d)", Opts)),
+        ("CardNumber", new(@"(?<!\d)\d(?:[\s-]?\d){12,18}(?!\d)", Opts)),
         ("PassportNumber", new(@"(?<!\d)\d{4}\s\d{6}(?!\d)|серия\s*\d{4}\s*номер\s*\d{6}", Opts)),
     };
 

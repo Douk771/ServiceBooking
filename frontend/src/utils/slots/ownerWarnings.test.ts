@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest'
+import vectors from '../../../../contracts/cycle42/bani-vectors.json'
 import { OWNER_WARNING_TEXT, ownerWarningTexts, restrictedItemPrompt } from './ownerWarnings'
 
 describe('ownerWarningTexts', () => {
+  it('prints the contract warning texts verbatim (bani-vectors ownerText.warningTexts)', () => {
+    expect(OWNER_WARNING_TEXT).toEqual(vectors.ownerText.warningTexts)
+  })
+
   it('has a text for every code and shows them in the server order, without repeats', () => {
     expect(ownerWarningTexts(['Passport', 'CardNumber', 'Passport'])).toEqual([OWNER_WARNING_TEXT.Passport, OWNER_WARNING_TEXT.CardNumber])
     expect(Object.values(OWNER_WARNING_TEXT).every((t) => t.length > 20)).toBe(true)
