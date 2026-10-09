@@ -156,7 +156,7 @@ varchar(64) NULL`. Индекс `(ServiceId, ConfirmedAtUtc)`. Пишет тол
 
 - Четыре тарифа `Line = 3` (`StaysPlans`-подобный статический класс `BathsPlans` в `Core/Entities/BathsSubscription.cs`):
   `0c42ba70-6a3d-4a5e-9b1f-2d4c7e8a9b01` «Одна баня» 200 ₽, `MaxResources = 1`; `…9b02` «До 3 бань» 500 ₽, 3; `…9b03` «Без
-  ограничения» 1000 ₽, NULL; `…9b04` «Пробный период «Бани»» 0 ₽, NULL, `IsSystemTrial = true`. У всех `IsPublic = false`,
+  ограничения» 1000 ₽, NULL; `…9b04` «Пробный период «Бани»» 0 ₽, NULL, `IsSystemTrial = false` (индекс `IX_SubscriptionPlanConfigs_IsSystemTrial` уникален по таблице и занят триалом «Записи»; триал «Бань» ищется по `BathsPlans.TrialSeedId`, как триал «Дома»). У всех `IsPublic = false`,
   `IsActive = true`, `AllowNotificationChannel = true`. Цены — начальные, по образцу «Домов» (§42.17 п. 1).
 - `PlanOptionRules` опции `notifications.whatsapp` для всех четырёх (включая триал — Q-L42-4) с той же доступностью, что у
   платных «Домов».
