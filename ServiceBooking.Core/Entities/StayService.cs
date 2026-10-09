@@ -240,7 +240,9 @@ public class StayServiceItemConfirmation
 {
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
-    public Guid ServiceId { get; set; }
+    /// <summary>NULL — the resource was deleted; the journal lives while the company exists (§42.2.2), the name is kept in <see cref="ServiceNameSnapshot"/>.</summary>
+    public Guid? ServiceId { get; set; }
+    public string ServiceNameSnapshot { get; set; } = string.Empty;
     /// <summary>NULL — the position was deleted.</summary>
     public Guid? ItemId { get; set; }
     public string ItemNameSnapshot { get; set; } = string.Empty;
