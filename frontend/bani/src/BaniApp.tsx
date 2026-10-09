@@ -23,6 +23,15 @@ import { ProfilePage } from './pages/ProfilePage'
 import { ResourcePage } from './pages/ResourcePage'
 import { OrderPage } from './pages/OrderPage'
 import { MyBookingsPage } from './pages/MyBookingsPage'
+import { CabinetSlotScope } from './cabinet/CabinetSlotScope'
+import { CompanyLayout, CompanyIndexRedirect } from './pages/cabinet/CompanyLayout'
+import { DayPage } from './pages/cabinet/DayPage'
+import { OrdersPage } from './pages/cabinet/OrdersPage'
+import { SessionPage } from './pages/cabinet/SessionPage'
+import { ResourcesPage } from './pages/cabinet/ResourcesPage'
+import { ResourceCreatePage } from './pages/cabinet/ResourceCreatePage'
+import { ResourceEditPage } from './pages/cabinet/ResourceEditPage'
+import { SchedulePage } from './pages/cabinet/SchedulePage'
 
 /**
  * Routes reachable while a "Material" change to a GLOBAL-gate document is pending acceptance (same reasoning as dom's list):
@@ -85,18 +94,22 @@ export function BaniApp() {
                   <Route path="/cabinet" element={<PendingPage title="Кабинет" />} />
                   <Route path="/cabinet/new" element={<PendingPage title="Новая компания" />} />
                   <Route path="/cabinet/subscription" element={<PendingPage title="Подписка" />} />
-                  <Route path="/cabinet/:companyId" element={<PendingPage title="Кабинет" />} />
-                  <Route path="/cabinet/:companyId/service-day/:date" element={<PendingPage title="День" />} />
-                  <Route path="/cabinet/:companyId/orders" element={<PendingPage title="Брони" />} />
-                  <Route path="/cabinet/:companyId/service-sessions/:sessionId" element={<PendingPage title="Сеанс" />} />
-                  <Route path="/cabinet/:companyId/resources" element={<PendingPage title="Ресурсы" />} />
-                  <Route path="/cabinet/:companyId/resources/new" element={<PendingPage title="Новый ресурс" />} />
-                  <Route path="/cabinet/:companyId/resources/:serviceId" element={<PendingPage title="Ресурс" />} />
-                  <Route path="/cabinet/:companyId/schedule" element={<PendingPage title="Расписание" />} />
-                  <Route path="/cabinet/:companyId/settings" element={<PendingPage title="Настройки" />} />
-                  <Route path="/cabinet/:companyId/staff" element={<PendingPage title="Персонал" />} />
-                  <Route path="/cabinet/:companyId/notifications" element={<PendingPage title="Уведомления" />} />
-                  <Route path="/cabinet/:companyId/link" element={<PendingPage title="Ссылка" />} />
+                  <Route element={<CompanyLayout />}>
+                    <Route path="/cabinet/:companyId" element={<CompanyIndexRedirect />} />
+                    <Route element={<CabinetSlotScope />}>
+                      <Route path="/cabinet/:companyId/service-day/:date" element={<DayPage />} />
+                      <Route path="/cabinet/:companyId/orders" element={<OrdersPage />} />
+                      <Route path="/cabinet/:companyId/service-sessions/:sessionId" element={<SessionPage />} />
+                      <Route path="/cabinet/:companyId/resources" element={<ResourcesPage />} />
+                      <Route path="/cabinet/:companyId/resources/new" element={<ResourceCreatePage />} />
+                      <Route path="/cabinet/:companyId/resources/:serviceId" element={<ResourceEditPage />} />
+                      <Route path="/cabinet/:companyId/schedule" element={<SchedulePage />} />
+                    </Route>
+                    <Route path="/cabinet/:companyId/settings" element={<PendingPage title="Настройки" />} />
+                    <Route path="/cabinet/:companyId/staff" element={<PendingPage title="Персонал" />} />
+                    <Route path="/cabinet/:companyId/notifications" element={<PendingPage title="Уведомления" />} />
+                    <Route path="/cabinet/:companyId/link" element={<PendingPage title="Ссылка" />} />
+                  </Route>
                 </Route>
 
                 <Route path="/data-request" element={<SubjectRequestPage />} />
