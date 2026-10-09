@@ -12,7 +12,7 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// </summary>
 public sealed class OpenApiContract
 {
-    private static readonly HashSet<string> Annotations = ["description", "example", "default", "title", "readOnly", "writeOnly"];
+    private static readonly HashSet<string> Annotations = ["description", "example", "x-examples", "default", "title", "readOnly", "writeOnly"]; // x-examples: примеры для prism-мока (cycle40), на проверку не влияют
 
     private static readonly HashSet<string> Supported =
     [

@@ -186,6 +186,31 @@ public class Cycle40ChannelsTests(TestDatabaseFixture fixture) : NotificationTes
         (await admin.GetAsync($"/api/admin/notification-channels/{Guid.NewGuid()}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Fact, TestCase("CY40-CTR-01")]
+    public async Task Responses_MatchTheCycle40Contract()
+    {
+        var contract = OpenApiContract.Load("cycle40");
+        var (owner, channelId) = await OwnerWithRequestedChannelAsync();
+        var admin = AuthedClient((await LoginAsSuperAdminAsync()).Token);
+        var errors = new List<string>();
+        async Task Check(string method, string path, HttpResponseMessage response, int status)
+        {
+            ((int)response.StatusCode).Should().Be(status, await response.Content.ReadAsStringAsync());
+            using var doc = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            errors.AddRange(contract.Collect(method, path, status, doc.RootElement.Clone()).Select(e => $"{method} {path} {status}: {e}"));
+        }
+
+        await Check("GET", "/api/notification-channels/overview", await AuthedClient(owner.Token).GetAsync("/api/notification-channels/overview"), 200);
+        await Check("GET", "/api/admin/notification-channels", await admin.GetAsync("/api/admin/notification-channels"), 200);
+        await Check("GET", "/api/admin/notification-channels/summary", await admin.GetAsync("/api/admin/notification-channels/summary"), 200);
+        await Check("GET", "/api/admin/notification-channels/{id}", await admin.GetAsync($"/api/admin/notification-channels/{channelId}"), 200);
+        await Check("POST", "/api/admin/notification-channels/{id}/confirm-payment",
+            await admin.PostAsJsonAsync($"/api/admin/notification-channels/{channelId}/confirm-payment", new { months = 1, comment = "Счёт 17" }), 200);
+        await Check("GET", "/api/admin/platform-settings", await admin.GetAsync("/api/admin/platform-settings"), 200);
+
+        errors.Should().BeEmpty("the answers must conform to contracts/cycle40/openapi.yaml");
+    }
+
     [Fact, TestCase("CY40-ADM-05")]
     public async Task CustomerMessagingSwitch_Off_HidesTheOfferAndSkipsTheMessages()
     {
