@@ -222,6 +222,22 @@ public class SubscriptionResolver(AppDbContext db)
             staysRules = staysPlanIds.Count == 0 ? [] : await db.PlanOptionRules.AsNoTracking().Where(r => staysPlanIds.Contains(r.PlanConfigId)).ToListAsync();
         }
 
+        // ARCHITECTURE_CYCLE42.md §42.5.6: and the fourth — an account with a «Бани» company whose «Бани» tariff in force allows the option. Accounts without
+        // «Бани» companies are untouched (the dictionaries stay empty and the list below carries a line that never counts).
+        var accountsWithBaths = (await db.Companies.AsNoTracking()
+                .Where(c => c.Kind == CompanyKind.Baths && c.BillingAccountId != null && ids.Contains(c.BillingAccountId!.Value))
+                .Select(c => c.BillingAccountId!.Value).Distinct().ToListAsync()).ToHashSet();
+        var bathsPlans = new Dictionary<Guid, Stays.StaysPlan>();
+        var bathsRules = new List<PlanOptionRule>();
+        if (accountsWithBaths.Count > 0)
+        {
+            var bathsSubs = await db.BathsSubscriptions.AsNoTracking().Include(s => s.PlanConfig).Where(s => accountsWithBaths.Contains(s.BillingAccountId)).ToListAsync();
+            foreach (var accountId in accountsWithBaths)
+                bathsPlans[accountId] = Stays.StaysPlanResolver.ResolveBaths(bathsSubs.FirstOrDefault(s => s.BillingAccountId == accountId), now);
+            var bathsPlanIds = bathsPlans.Values.Where(p => p.PlanId.HasValue).Select(p => p.PlanId!.Value).Distinct().ToList();
+            bathsRules = bathsPlanIds.Count == 0 ? [] : await db.PlanOptionRules.AsNoTracking().Where(r => bathsPlanIds.Contains(r.PlanConfigId)).ToListAsync();
+        }
+
         var result = new Dictionary<Guid, EffectivePlan>();
         foreach (var id in ids)
         {
@@ -245,8 +261,17 @@ public class SubscriptionResolver(AppDbContext db)
                 var staysAvailability = staysPlan?.PlanId is { } staysPlanId
                     ? staysRules.FirstOrDefault(r => r.PlanConfigId == staysPlanId && r.OptionId == o.OptionId)?.Availability
                     : null;
-                return PaidNumbers(o.Quantity, o.PaidUntilUtc, subUsable, availability, hasShops, ordersPlan?.Usable ?? false, ordersAvailability, now,
-                    hasStays, staysPlan?.HasActivePlan ?? false, staysAvailability);
+                var hasBaths = accountsWithBaths.Contains(id);
+                var bathsPlan = hasBaths ? bathsPlans.GetValueOrDefault(id) : null;
+                var bathsAvailability = bathsPlan?.PlanId is { } bathsPlanId
+                    ? bathsRules.FirstOrDefault(r => r.PlanConfigId == bathsPlanId && r.OptionId == o.OptionId)?.Availability
+                    : null;
+                return PaidNumbers(o.Quantity, o.PaidUntilUtc, subUsable, availability, now,
+                [
+                    new LineChannelGrant(CompanyKind.Orders, hasShops, ordersPlan?.Usable ?? false, ordersAvailability),
+                    new LineChannelGrant(CompanyKind.Stays, hasStays, staysPlan?.HasActivePlan ?? false, staysAvailability),
+                    new LineChannelGrant(CompanyKind.Baths, hasBaths, bathsPlan?.HasActivePlan ?? false, bathsAvailability),
+                ]);
             }
 
             var whatsapp = activeOptions.FirstOrDefault(o => o.BillingAccountId == id && o.Option.Code == WhatsAppOptionCode);
@@ -266,9 +291,21 @@ public class SubscriptionResolver(AppDbContext db)
         int quantity, DateTime? optionPaidUntilUtc, bool servicesUsable, OptionAvailability? servicesRule,
         bool accountHasShops, bool ordersUsable, OptionAvailability? ordersRule, DateTime nowUtc,
         bool accountHasStays = false, bool staysUsable = false, OptionAvailability? staysRule = null) =>
+        PaidNumbers(quantity, optionPaidUntilUtc, servicesUsable, servicesRule, nowUtc,
+        [
+            new LineChannelGrant(CompanyKind.Orders, accountHasShops, ordersUsable, ordersRule),
+            new LineChannelGrant(CompanyKind.Stays, accountHasStays, staysUsable, staysRule),
+        ]);
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE42.md §42.5.6 — the same rule over a LIST of additional lines ("Заказы", "Дома", «Бани»): the option row must be paid and either the
+    /// "Записи" plan allows it, or the account has companies of some additional line and that line's plan in force allows it. Pure.
+    /// </summary>
+    public static int PaidNumbers(
+        int quantity, DateTime? optionPaidUntilUtc, bool servicesUsable, OptionAvailability? servicesRule, DateTime nowUtc,
+        IReadOnlyList<LineChannelGrant> additionalLines) =>
         IsOptionCurrentlyPaid(servicesUsable, optionPaidUntilUtc, servicesRule, nowUtc) ||
-        (accountHasShops && IsOptionCurrentlyPaid(ordersUsable, optionPaidUntilUtc, ordersRule, nowUtc)) ||
-        (accountHasStays && IsOptionCurrentlyPaid(staysUsable, optionPaidUntilUtc, staysRule, nowUtc))
+        additionalLines.Any(l => l.HasCompanies && IsOptionCurrentlyPaid(l.PlanUsable, optionPaidUntilUtc, l.Availability, nowUtc))
             ? quantity
             : 0;
 
@@ -294,3 +331,6 @@ public class SubscriptionResolver(AppDbContext db)
         return currentPlanAvailability is OptionAvailability.Extra or OptionAvailability.Included;
     }
 }
+
+/// <summary>One additional tariff line (not "Записи") as the channel option sees it: does the account have companies of the line, is the line's plan in force, and what does that plan say about the option.</summary>
+public readonly record struct LineChannelGrant(CompanyKind Line, bool HasCompanies, bool PlanUsable, OptionAvailability? Availability);

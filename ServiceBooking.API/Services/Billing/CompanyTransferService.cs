@@ -266,22 +266,29 @@ public class CompanyTransferService(
 
         var preview = await ComputePreviewAsync(companyId, targetBillingAccountId, newOwnerAddsSeat, newOwner is not null, company.Kind);
 
-        // Houses exist in «Дома» only; the published-resources check of «Бани» on the receiving account needs the slot-line plan resolver (BE-42-P, §42.5) and is added there.
-        if (company.Kind == CompanyKind.Stays)
+        // ARCHITECTURE_CYCLE42.md §42.5: the unit of a slot line's tariff is the published house («Дома») or resource («Бани»). The published units of the moved company
+        // plus those already on the receiving account must fit the tariff of the receiving account's SAME line.
+        if (Slots.SlotVerticals.Find(company.Kind) is { } vertical)
         {
-            // The published houses of the moved company plus those already on the receiving account must fit the tariff of the receiving account.
-            var movingHouses = await db.Houses.CountAsync(h => h.CompanyId == companyId && h.IsPublished && h.ArchivedAtUtc == null);
-            var plan = await staysPlans.GetForAccountAsync(targetBillingAccountId);
-            if (movingHouses > 0 && plan.MaxHouses is { } maxHouses)
+            var isBaths = vertical.Kind == CompanyKind.Baths;
+            var moving = isBaths
+                ? await db.StayServices.CountAsync(sv => sv.CompanyId == companyId && sv.IsPublished && sv.ArchivedAtUtc == null)
+                : await db.Houses.CountAsync(h => h.CompanyId == companyId && h.IsPublished && h.ArchivedAtUtc == null);
+            var plan = await staysPlans.GetForAccountAsync(vertical, targetBillingAccountId);
+            if (moving > 0 && plan.MaxUnits is { } maxUnits)
             {
-                var onTarget = await staysPlans.CountPublishedHousesAsync(targetBillingAccountId);
-                if (onTarget + movingHouses > maxHouses)
-                    return TransferResult.Fail(TransferFailureKind.CompanyLimitExceeded,
-                        $"На принимающем аккаунте тариф «{plan.PlanName}» позволяет опубликовать {maxHouses} {Stays.StaysTexts.Plural(maxHouses, "дом", "дома", "домов")}, " +
-                        $"а после переноса их будет {onTarget + movingHouses}. Снимите дома с публикации или смените тариф.");
+                var onTarget = await staysPlans.CountPublishedUnitsAsync(vertical, targetBillingAccountId);
+                if (onTarget + moving > maxUnits)
+                    return TransferResult.Fail(TransferFailureKind.CompanyLimitExceeded, isBaths
+                        ? $"На принимающем аккаунте тариф «{plan.PlanName}» позволяет опубликовать {maxUnits} {Stays.StaysTexts.Plural(maxUnits, "ресурс", "ресурса", "ресурсов")}, " +
+                          $"а после переноса их будет {onTarget + moving}. Снимите ресурсы с публикации или смените тариф."
+                        : $"На принимающем аккаунте тариф «{plan.PlanName}» позволяет опубликовать {maxUnits} {Stays.StaysTexts.Plural(maxUnits, "дом", "дома", "домов")}, " +
+                          $"а после переноса их будет {onTarget + moving}. Снимите дома с публикации или смените тариф.");
             }
-            if (movingHouses > 0 && !plan.HasActivePlan)
-                return TransferResult.Fail(TransferFailureKind.CompanyLimitExceeded, "На принимающем аккаунте не выбран тариф «Дома» — выберите тариф, чтобы принять опубликованные дома.");
+            if (moving > 0 && !plan.HasActivePlan)
+                return TransferResult.Fail(TransferFailureKind.CompanyLimitExceeded, isBaths
+                    ? "На принимающем аккаунте не выбран тариф «Бани» — выберите тариф, чтобы принять опубликованные ресурсы."
+                    : "На принимающем аккаунте не выбран тариф «Дома» — выберите тариф, чтобы принять опубликованные дома.");
         }
 
         if (preview.CompanyLimitExceeded)

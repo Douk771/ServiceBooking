@@ -139,6 +139,8 @@ internal static class AdminAccountDtoBuilder
             // ARCHITECTURE_CYCLE24.md §459.5 — the subscription of the "Заказы" line next to the "Записи" one above.
             ordersSubscription = await BuildOrdersSubscriptionAsync(db, usageReader, account, now),
             staysSubscription = await BuildStaysSubscriptionAsync(db, account, now),
+            // ARCHITECTURE_CYCLE42.md §42.5.5 — the «Бани» block next to the «Дома» one: same fields, resources instead of houses.
+            bathsSubscription = await BuildBathsSubscriptionAsync(db, account, now),
         };
     }
 
@@ -156,6 +158,23 @@ internal static class AdminAccountDtoBuilder
             isActive = plan.HasActivePlan,
             housesPublished = published,
             maxHouses = sub?.PlanConfig?.MaxHouses,
+        };
+    }
+
+    /// <summary>ARCHITECTURE_CYCLE42.md §42.5.5 — the «Бани» block of the account card: plan, paid-until, active flag, published resources and the limit.</summary>
+    private static async Task<object> BuildBathsSubscriptionAsync(AppDbContext db, BillingAccount account, DateTime now)
+    {
+        var sub = await db.BathsSubscriptions.AsNoTracking().Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == account.Id);
+        var plan = Services.Stays.StaysPlanResolver.ResolveBaths(sub, now);
+        var published = await new Services.Stays.StaysPlanResolver(db).CountPublishedResourcesAsync(account.Id);
+        return new
+        {
+            planId = sub?.PlanConfigId,
+            planName = sub?.PlanConfig?.Name,
+            paidUntil = sub?.PaidUntil,
+            isActive = plan.HasActivePlan,
+            resourcesPublished = published,
+            maxResources = sub?.PlanConfig?.MaxResources,
         };
     }
 
