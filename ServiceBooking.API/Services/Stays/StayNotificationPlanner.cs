@@ -1,3 +1,4 @@
+using ServiceBooking.API.Services.Slots;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services.Orders.Notifications;
 using Microsoft.Extensions.Options;
@@ -45,7 +46,7 @@ public class StayNotificationPlanner(
     {
         var holdLocal = order?.HoldExpiresAtUtc is { } h ? StayTime.LocalDateTime(order.TimeZoneIdSnapshot, h) : (DateTime?)null;
         return new ServiceTextFacts(company.Name, session.ServiceNameSnapshot, houseName, session.BusinessDate, session.StartMinute, session.Hours, company.Phone, reason,
-            order?.PrepayRub ?? 0, paid, order?.PaymentDetailsSnapshot, order?.PaymentPurposeSnapshot, holdLocal, company.Address);
+            order?.PrepayRub ?? 0, paid, order?.PaymentDetailsSnapshot, order?.PaymentPurposeSnapshot, holdLocal, company.Address, company.City?.Name);
     }
 
     private async Task DeliverSessionAsync(StayBooking booking, Guid sessionId, StayBookingEvent ev, IReadOnlyList<PlannedNotification> entries, CancellationToken ct)
@@ -74,7 +75,7 @@ public class StayNotificationPlanner(
 
     private async Task DeliverOrderAsync(StayServiceOrder order, string marker, IReadOnlyList<PlannedNotification> entries, CancellationToken ct, bool paid = false)
     {
-        var company = await db.Companies.AsNoTracking().FirstAsync(c => c.Id == order.CompanyId, ct);
+        var company = await db.Companies.AsNoTracking().Include(c => c.City).FirstAsync(c => c.Id == order.CompanyId, ct);
         if (ShowcaseOutboundGuard.IsSuppressed(company, demo.Value.Enabled)) return;
         var session = db.StayServiceSessions.Local.FirstOrDefault(x => x.StayServiceOrderId == order.Id)
             ?? await db.StayServiceSessions.AsNoTracking().FirstOrDefaultAsync(x => x.StayServiceOrderId == order.Id, ct);
@@ -90,6 +91,7 @@ public class StayNotificationPlanner(
         string marker, IReadOnlyList<PlannedNotification> entries, Guid sessionId, ServiceTextFacts facts, string pageUrl, string guestRelativeUrl, Guid subjectId, bool forOrder,
         CancellationToken ct)
     {
+        var wording = ServiceWording.For(company.Kind);
         var notification = await db.CompanyNotificationSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == company.Id, ct);
         var staffPushOn = notification?.StaffPushEnabled ?? new CompanyNotificationSettings().StaffPushEnabled;
         var maxOn = settings.StaffMaxEnabled && maxAvailability.Enabled;
@@ -100,14 +102,14 @@ public class StayNotificationPlanner(
             if (entry.Audience == StayAudience.Staff)
             {
                 var url = links.StaysCabinetServiceSessionUrl(company.Id, sessionId);
-                if (staffPushOn) await staffPush.QueueAsync(subject, ParseId(marker), type, ServiceNotificationTexts.StaffPush(type, facts, sessionId, url), ct);
-                if (maxOn) await staffMax.QueueAsync(subject, ParseId(marker), type, ServiceNotificationTexts.StaffMax(type, facts, sessionId, url), ct);
+                if (staffPushOn) await staffPush.QueueAsync(subject, ParseId(marker), type, ServiceNotificationTexts.StaffPush(type, facts, sessionId, url, wording), ct);
+                if (maxOn) await staffMax.QueueAsync(subject, ParseId(marker), type, ServiceNotificationTexts.StaffMax(type, facts, sessionId, url, wording), ct);
                 continue;
             }
             if (settings.GuestWebPushEnabled && platformPush && type is not (NotificationType.ServiceGuestOrderCreated or NotificationType.StayGuestCreated))
-                await guestPush.QueueAsync(subject, marker, type, ServiceNotificationTexts.GuestPush(type, subjectId, guestRelativeUrl, forOrder), ct);
+                await guestPush.QueueAsync(subject, marker, type, ServiceNotificationTexts.GuestPush(type, subjectId, guestRelativeUrl, forOrder, wording), ct);
             if (notifyByMessenger && settings.GuestMessengerEnabled)
-                await messenger.QueueAsync(subject, phone, name, userId, erased, company, marker, type, unsub => ServiceNotificationTexts.Messenger(type, facts, pageUrl, unsub), ct);
+                await messenger.QueueAsync(subject, phone, name, userId, erased, company, marker, type, unsub => ServiceNotificationTexts.Messenger(type, facts, pageUrl, unsub, wording), ct);
         }
     }
 
