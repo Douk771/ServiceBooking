@@ -4700,6 +4700,54 @@ JSON** с `code` и готовым `message`; 401/403/404 — пустое те�
 шахматка (`services`, `serviceCells`), график (`sessions` в дне), настройки (`acceptServiceOrdersWithoutStay`), `GET /api/profile/export` (`stayServiceOrders`, `sessions`, `arrivalReminderText`),
 `GET /api/profile/delete-account/preview` (`stayServiceOrders`), `GET /api/admin/retention/policy` (+4 срока), `GET /api/staff-max` (`eligible` и для персонала «Домов»).
 
+## 4.23. «Бани» — бронирование бань, саун, чанов и фурако (цикл 42, bani.ezbook.ru; НЕ ВЫПУЩЕНО — доступно с ветки `cycle/042-bani`, на боевом адресе появится с релизом цикла 42)
+
+Документ отражает **фактическую реализацию**; контракт до кода — `API_CONTRACT_CYCLE42.md` (§42.20–§42.39), форма — `contracts/cycle42/openapi.yaml` (+ `openapi.json`, `bani-routes.json`, `bani-vectors.json`).
+Слотовый движок цикла 39 без копий: контроллеры `/api/baths/*` — наследники общих баз `Controllers/Slots/*Base`. Новых маршрутов **68**, все под `/api/baths/*` (эталон `Cycle22RouteTable.golden.txt`: добавлены 68 строк,
+ни одна существующая не изменена). Время суток ресурса — минуты от 00:00 даты бизнес-дня (как в §4.22). Компания «Бани» — `Company.Kind = Baths`; маршруты `/api/baths/*` видят только такие компании
+(чужие — 404 без оракула), маршруты `/api/stays/*` по-прежнему видят только компании «Дома». Тела осознанных 400/402/429 — голая строка; 401/403/404 — пустое тело; все 409 `/api/baths/*` — JSON `{code, message}`.
+
+### Правила, которые закреплены кодом
+
+* **Вместимость.** У ресурса «Бань» есть `capacity` (число гостей); `guestsCount` обязателен при брони гостем (1…`capacity`), персоналу необязателен. У услуг «Домов» `capacity` = `null`, `guestsCount` игнорируется.
+* **Бани принимают брони без проживания:** настройки компании создаются с `AcceptServiceOrdersWithoutStay = true`, напоминание о брони — `ServiceReminderHours = 3` (настраивается в `settings`). `availableForHouseBookings` у ресурса бани всегда `false`.
+* **Гейт приёма броней** (`StaysBookingGate` по виду): нет тарифа — `NoPlan`; пробный период однократно на аккаунт и номер в линейке `Baths` (`GET|POST /api/baths/trial`, условия `BathsTrialTerms`);
+  публикация сверх `MaxResources` тарифа — 402. Линейка «Бани» в публичный `/api/pricing` не попадает.
+* **Адреса:** слаг компании и ресурса проверяет `BathsSlugPolicy` по `bani-routes.json` (резерв слов); публичный адрес ресурса — `https://bani.ezbook.ru/<companySlug>/<resourceSlug>`.
+* **Тексты владельца** (`OwnerTextChecks`) в описании ресурса и позициях: отказ 400 на «задаток/невозвратный/депозит»; мягкие предупреждения (`contentWarnings` у ресурса, `warnings` у позиции) — не отказ. Фильтр позиций (`RestrictedItemFilter`) отсекает запрещённые товары.
+* **Напоминание гостю** (`SessionReminderPolicy`): третий проход задачи `stays-scheduled-messages`, `NotificationType` 41, событие `SessionReminderSent`; в DTO брони — `sessionReminder`. Push гостю подписан «EZBOOK Бани», время — «местное» (`localTimeNote`).
+* **Расписание банщика** (`GET …/schedule`, право `ViewSchedule`) — закрытая форма: `{today, days[{date, label, sessions[…]}]}`, без телефонов, сумм, реквизитов и комментариев; удержанные и отменённые брони не показываются.
+* **Персонал:** роль `Master` с должностью `Manager` («Администратор») или `Housekeeper` («Банщик»); потолок — `Stays:MaxStaffPerCompany`.
+
+### Публичные маршруты (политики `stays-public`, `stay-service-create`, `stay-public`, `stay-proof`, `stay-push`)
+
+| Метод и путь | Назначение |
+|---|---|
+| `GET /api/baths/catalog?cityId&date&page&pageSize` | каталог ресурсов (карточка — ресурс); только опубликованные ресурсы компаний, принимающих брони; `date` — только ресурсы со свободным стартом |
+| `GET /api/baths/catalog/cities` | города со счётчиком ресурсов |
+| `GET /api/baths/public/companies/{slug}` | страница комплекса; чужой вид, заблокированная компания — 404 |
+| `GET …/public/companies/{slug}/services/{serviceSlug}` | страница ресурса (`capacity`, `cityName`, `localTimeNote`) |
+| `GET …/public/services/{serviceId}/availability?from&days`, `…/starts?date` | даты со свободными стартами; старты и допустимые часы |
+| `POST …/public/services/{serviceId}/quote` | расчёт, всегда 200, `problems[]` |
+| `POST …/public/services/{serviceId}/orders` | бронь: 201 / 200 (повтор того же ключа) / 409 (`SlotTaken`, `PriceChanged`, `NotAcceptingBookings` …) / 429; тело + `guestsCount` |
+| `GET /api/baths/service-orders/public/{token}` (+ `payment-proofs` POST/GET, `cancel`, `push-subscription`, `…/remove`) | страница брони (`bookAgainUrl`, `sessionReminder`) |
+| `GET /api/baths/service-orders/my` | «Мои брони» (авторизованный гость; `SUBJECT-PHONE-GATE`) |
+
+### Кабинет (`/api/baths/…`, права `StaysPermission`; не участник — 404, нет права — 403)
+
+* Компания: `POST /api/baths/companies` (создание с городом и, при желании, пробным периодом), `companies/my`, `slug-check`, `trial` GET/POST, `companies/{companyId}` (карточка с чек-листом), `settings`, `payment-details`, `provider`,
+  `slug`, `qr`, `notification-settings` GET/PUT, `schedule`, `revision`.
+* Ресурсы: `…/services` (список, создание, `order`, карточка, удаление, `setup` с `capacity`, `content`, `publish|unpublish|archive`, `photos` ×3, `price-rules` ×4 (DELETE отдаёт 200 с таблицей цен), `items` ×5, `weekly-schedule`, `date-overrides`).
+* Брони: `service-day`, `services/{serviceId}/starts|availability`, `service-sessions` (список, ручная бронь с `guestsCount`, карточка, `quote`, `confirm-payment`, `reject-payment`, `cancel`, файл подтверждения).
+
+### Изменения существующих маршрутов
+
+`ServiceManageDto` «Домов» дополнен `capacity` и `contentWarnings`, `ServiceItemDto` — `warnings`; `ServiceSetupInput` принимает `capacity`; публичные DTO услуг — `capacity`, `cityName`, `localTimeNote`;
+`CreateServiceOrderInput` — `guestsCount`; `GET /api/companies/kinds-summary` и `GET /api/billing/subscription` знают линейку `Baths`; `GET /api/profile/export` — `guestsCount`, `site`; админка тарифов — `MaxResources`.
+
+Фактические отличия от `contracts/cycle42/openapi.yaml`: `BathsConflictDto` на деле содержит ещё `conflictingPeriod` и `conflicts` (всегда `null` у `slug-check`) — долг C42-1 в `CURRENT_STATE.md`;
+`push-subscription` при выключенном web-push отвечает 409 строкой.
+
 ## 6. Справочник кодов ответа
 
 | Код | Когда встречается |
