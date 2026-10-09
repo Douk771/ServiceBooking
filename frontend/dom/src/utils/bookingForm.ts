@@ -1,6 +1,6 @@
 import type { CreateStayBookingInput, PublicHouseDto, StayQuoteInput } from '../types'
 import { checkGuests } from './stayMoney'
-import { isRussianPhone } from '@/utils/phone'
+import type { GuestFields, GuestFieldErrors } from '@/utils/slots/guestFields'
 
 /** The booking form of the house page: guest counts, local checks (the server re-checks all of them), request bodies. */
 
@@ -14,8 +14,6 @@ export interface GuestCounts {
 export const MAX_ADULTS = 30
 export const MAX_CHILDREN = 30
 export const MAX_DOGS = 20
-export const COMMENT_MAX = 500
-export const NAME_MAX = 100
 
 type HouseLimits = Pick<PublicHouseDto, 'capacity' | 'extraBeds' | 'dogsForbidden' | 'hasCot'>
 
@@ -50,34 +48,6 @@ export function guestCountsProblem(house: HouseLimits, counts: GuestCounts): str
 
 export function toQuoteInput(checkIn: string, checkOut: string, counts: GuestCounts): StayQuoteInput {
   return { checkIn, checkOut, adults: counts.adults, children: counts.children, dogs: counts.dogs, needCot: counts.needCot }
-}
-
-export interface GuestFields {
-  name: string
-  /** Canonical digits of the phone (anonymous guests only). */
-  phone: string
-  arrivalTime: string
-  comment: string
-  notifyByMessenger: boolean
-}
-
-export interface GuestFieldErrors {
-  name?: string
-  phone?: string
-  comment?: string
-  captcha?: string
-}
-
-/** Local checks before the request — same texts as the server's 400 (API_CONTRACT_CYCLE37.md §37.36). */
-export function validateGuestFields(f: GuestFields, opts: { anonymous: boolean; captchaRequired: boolean; captchaToken: string }): GuestFieldErrors {
-  const e: GuestFieldErrors = {}
-  const name = f.name.trim()
-  if (!name) e.name = 'Укажите имя'
-  else if (name.length > NAME_MAX) e.name = 'Имя — не длиннее 100 символов'
-  if (opts.anonymous && !isRussianPhone(f.phone)) e.phone = 'Введите номер телефона в формате +7 (900) 000-00-00'
-  if (f.comment.length > COMMENT_MAX) e.comment = 'Комментарий — не длиннее 500 символов'
-  if (opts.anonymous && opts.captchaRequired && !opts.captchaToken) e.captcha = 'Подтвердите, что вы не робот'
-  return e
 }
 
 export function toCreateInput(args: {
@@ -124,3 +94,6 @@ export function fieldOfBookingError(text: string): keyof GuestFieldErrors | 'arr
   if (/^(Взрослых|Детей|Собак) — /.test(text)) return 'guests'
   return null
 }
+
+export { COMMENT_MAX, NAME_MAX, validateGuestFields } from '@/utils/slots/guestFields'
+export type { GuestFields, GuestFieldErrors } from '@/utils/slots/guestFields'
