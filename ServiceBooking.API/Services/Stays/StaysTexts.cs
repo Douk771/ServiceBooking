@@ -38,6 +38,13 @@ public static class StaysTexts
         return b == 1 ? one : b is >= 2 and <= 4 ? few : many;
     }
 
+    /// <summary>The 409 of the admin's tariff assignment when the new limit is below what is published: the unit declined by the number («1 ресурс», «2 ресурса», «5 ресурсов»).</summary>
+    public static string PlanLimitOverflow(GateUnit unit, int limit, int published)
+    {
+        var word = unit == GateUnit.House ? Plural(limit, "дом", "дома", "домов") : Plural(limit, "ресурс", "ресурса", "ресурсов");
+        return $"На новом тарифе доступно {limit} {word}, опубликовано {published}. Подтвердите превышение лимита, чтобы продолжить.";
+    }
+
     public static string Rub(int amount) => amount.ToString("N0", CultureInfo.GetCultureInfo("ru-RU")).Replace(' ', ' ').Replace(' ', ' ') + " ₽";
 
     public static string NightsText(int n) => $"{n} {Plural(n, "ночь", "ночи", "ночей")}";

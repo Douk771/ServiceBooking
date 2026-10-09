@@ -33,6 +33,7 @@ public class BathsWordingGuardTests
             NotificationType.StaffServiceOrderCreated, NotificationType.StaffServiceOrderPaymentProofUploaded, NotificationType.StaffServiceSessionCancelledByGuest,
             NotificationType.ServiceGuestOrderCreated, NotificationType.ServiceGuestHoldExpiring, NotificationType.ServiceGuestHoldExpired, NotificationType.ServiceGuestConfirmed,
             NotificationType.ServiceGuestPaymentRejected, NotificationType.ServiceGuestCancelledByOwner, NotificationType.ServiceGuestPaymentRejected,
+            NotificationType.ServiceGuestSessionReminder,
         };
         foreach (var type in types)
         {
@@ -46,6 +47,7 @@ public class BathsWordingGuardTests
             t.Add(guest.Title);
             t.Add(guest.Body);
         }
+        t.Add(ServiceNotificationTexts.BathsSessionReminderPageText("Баня у реки", "Баня №1", new DateOnly(2026, 11, 20), 20 * 60, 3, "Барнаул"));
         return t;
     }
 
