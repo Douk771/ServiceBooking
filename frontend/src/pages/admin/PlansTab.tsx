@@ -26,6 +26,8 @@ import {
   ordersPlanPayload,
   staysPlanPayload,
   staysPlanLimitError,
+  bathsPlanPayload,
+  bathsPlanLimitError,
   ordersPlanLimitsError,
   type PlanForm,
 } from './planForm'
@@ -129,6 +131,7 @@ export function PlansTab() {
     options: optionRulesToPayload(form.optionRules),
     ...ordersPlanPayload(form, !!editingPlan),
     ...staysPlanPayload(form, !!editingPlan),
+    ...bathsPlanPayload(form, !!editingPlan),
   })
 
   const createMut = useMutation({
@@ -179,6 +182,7 @@ export function PlansTab() {
         highlights: plan.highlights ?? [],
         options: plan.options ?? [],
         ...(plan.line === 'Stays' ? { maxHouses: plan.maxHouses ?? null } : {}),
+        ...(plan.line === 'Baths' ? { maxResources: plan.maxResources ?? null } : {}),
         ...(plan.line === 'Orders' ? { maxProductsPerShop: plan.maxProductsPerShop ?? null, maxOrdersPerMonth: plan.maxOrdersPerMonth ?? null, allowOrders: plan.allowOrders ?? true } : {}),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-plans'] }),
@@ -251,6 +255,7 @@ export function PlansTab() {
       maxOrdersPerMonth: plan.maxOrdersPerMonth != null ? String(plan.maxOrdersPerMonth) : '',
       allowOrders: plan.allowOrders ?? true,
       maxHouses: plan.maxHouses != null ? String(plan.maxHouses) : '',
+      maxResources: plan.maxResources != null ? String(plan.maxResources) : '',
     })
     setEditingPlan(plan)
     setShowCreate(true)
@@ -313,7 +318,8 @@ export function PlansTab() {
   const inactive = inLine?.filter((p) => !p.isActive) ?? []
   const isOrdersForm = form.line === 'Orders'
   const isStaysForm = form.line === 'Stays'
-  const isSalonForm = !isOrdersForm && !isStaysForm
+  const isBathsForm = form.line === 'Baths'
+  const isSalonForm = !isOrdersForm && !isStaysForm && !isBathsForm
 
   const renderOptionRow = (option: AdminOptionDto) => {
     const rule = form.optionRules[option.id] ?? {
@@ -361,7 +367,7 @@ export function PlansTab() {
         <div className="flex items-center gap-3 flex-wrap">
           <p className="text-sm text-muted">Тарифные планы подписки</p>
           <div role="tablist" aria-label="Линейка тарифов" className="inline-flex rounded-full bg-cream-deep p-1">
-            {([['Services', 'Записи'], ['Orders', 'Заказы'], ['Stays', 'Дома']] as const).map(([value, label]) => (
+            {([['Services', 'Записи'], ['Orders', 'Заказы'], ['Stays', 'Дома'], ['Baths', 'Бани']] as const).map(([value, label]) => (
               <button
                 key={value}
                 type="button"
@@ -419,6 +425,11 @@ export function PlansTab() {
                         {plan.line === 'Stays' && (
                           <span className="text-xs text-muted" data-testid="stays-plan-limits">
                             Домов: {plan.maxHouses != null ? `до ${plan.maxHouses}` : '∞'}
+                          </span>
+                        )}
+                        {plan.line === 'Baths' && (
+                          <span className="text-xs text-muted" data-testid="baths-plan-limits">
+                            Ресурсов: {plan.maxResources != null ? `до ${plan.maxResources}` : '∞'}
                           </span>
                         )}
                         {plan.line === 'Orders' && (
@@ -588,6 +599,7 @@ export function PlansTab() {
                 <option value="Services">Записи (салоны)</option>
                 <option value="Orders">Заказы (магазины)</option>
                 <option value="Stays">Дома</option>
+                <option value="Baths">Бани</option>
               </select>
               {editingPlan && <p className="text-[11px] text-muted">Линейку тарифа менять нельзя.</p>}
             </div>
@@ -683,6 +695,20 @@ export function PlansTab() {
                   placeholder="∞"
                 />
                 <p className="text-[11px] text-muted mt-1">Сколько домов компания может держать опубликованными.</p>
+              </div>
+            )}
+
+            {isBathsForm && (
+              <div data-testid="baths-plan-fields">
+                <Input
+                  label="Макс. ресурсов (∞)"
+                  type="number"
+                  min={1}
+                  value={form.maxResources}
+                  onChange={(e) => setForm((f) => ({ ...f, maxResources: e.target.value }))}
+                  placeholder="∞"
+                />
+                <p className="text-[11px] text-muted mt-1">Сколько ресурсов (бань) аккаунт может держать опубликованными.</p>
               </div>
             )}
 
@@ -883,7 +909,7 @@ export function PlansTab() {
                 className="flex-1"
                 loading={editingPlan ? updateMut.isPending : createMut.isPending}
                 onClick={() => {
-                  const err = ordersPlanLimitsError(form) ?? staysPlanLimitError(form)
+                  const err = ordersPlanLimitsError(form) ?? staysPlanLimitError(form) ?? bathsPlanLimitError(form)
                   setLimitsError(err ?? '')
                   if (err) return
                   if (editingPlan) updateMut.mutate()
