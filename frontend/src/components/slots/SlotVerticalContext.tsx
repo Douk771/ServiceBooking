@@ -30,6 +30,8 @@ export interface SlotLegalKeys {
   photoPeopleNotice: string | null
   /** Under the capacity field of the cabinet; null when the vertical has no capacity. */
   capacityOwnerNotice: string | null
+  /** Above the list of positions of a service (bani: `BathPositionsOwnerNotice`); absent when the vertical has none. */
+  positionsOwnerNotice?: string | null
 }
 
 export interface SlotCabinetCompany {
@@ -65,6 +67,8 @@ export interface SlotWords {
   servicesEmptyText: string
   /** Label of the link from a session to the stay booking. */
   stayBookingLabel: string
+  /** A hint on the page that creates a service (bani: one bath is one resource in one company, R42-1); absent when none. */
+  serviceCreateHint?: string
 }
 
 export interface SlotFeatures {

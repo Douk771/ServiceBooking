@@ -10,7 +10,7 @@ import { getStayErrorMessage } from '@/utils/slots/slotError'
 
 /** `/cabinet/:companyId/services/new` (`ManageServices`) — only the name; the service starts unpublished with an address from its name. */
 export function CabinetServiceCreateView() {
-  const { api, paths, NotFound } = useSlotVertical()
+  const { api, paths, words, NotFound } = useSlotVertical()
   const staysServicesApi = api.cabinet
   const { company } = useCabinetCompany()
   const navigate = useNavigate()
@@ -45,6 +45,7 @@ export function CabinetServiceCreateView() {
         }}
       >
         <Input label="Название услуги *" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
+        {words.serviceCreateHint && <p className="rounded-xl bg-cream-deep px-3 py-2.5 text-xs leading-relaxed text-ink-soft">{words.serviceCreateHint}</p>}
         {error && <InlineError>{error}</InlineError>}
         <div className="flex gap-3">
           <Button type="button" variant="secondary" className="min-h-[44px] flex-1" onClick={() => navigate(paths.cabinetServices(company.id))}>

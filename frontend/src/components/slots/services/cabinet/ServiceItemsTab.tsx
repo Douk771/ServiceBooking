@@ -10,6 +10,7 @@ import { getStayErrorMessage, readConflict } from '@/utils/slots/slotError'
 import { moveId } from '@/utils/slots/serviceForms'
 import { ConfirmDialog } from '@/components/slots/services/ConfirmDialog'
 import { ContentWarnings } from '@/components/slots/ui/ContentWarnings'
+import { SlotNotice } from '@/components/slots/ui/SlotNotice'
 import { SectionCard, SwitchRow } from '@/components/slots/ui/formParts'
 import { ErrorState, Skeleton } from '@/components/slots/ui/StatePanels'
 import { useServiceTab } from '@/components/slots/services/cabinet/serviceContext'
@@ -26,7 +27,8 @@ const EMPTY: Draft = { id: null, name: '', priceRub: '0', maxPerSession: '1', is
 
 /** «Позиции»: веники, чай, простыни — what a guest can add to a session. At the guest they start at 0 (nothing is added for them). */
 export function ServiceItemsTab() {
-  const staysServicesApi = useSlotVertical().api.cabinet
+  const { api, legal } = useSlotVertical()
+  const staysServicesApi = api.cabinet
   const { companyId, service, canManage } = useServiceTab()
   const qc = useQueryClient()
   const key = ['stays-service-items', companyId, service.id]
@@ -85,6 +87,7 @@ export function ServiceItemsTab() {
 
   return (
     <SectionCard title="Позиции" description="Дополнения к сеансу. Гость выбирает их сам: по умолчанию ничего не добавлено, бесплатные позиции — тоже.">
+      {legal.keys.positionsOwnerNotice && <SlotNotice textKey={legal.keys.positionsOwnerNotice} />}
       {items.length === 0 ? (
         <p className="text-sm text-ink-soft">Позиций пока нет. Услугу можно публиковать и без них.</p>
       ) : (
