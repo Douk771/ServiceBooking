@@ -75,7 +75,12 @@ public class StaysPlanResolver(AppDbContext db)
 
     /// <summary>The unit of the vertical's tariff limit: houses for "Дома", resources for «Бани».</summary>
     public Task<int> CountPublishedUnitsAsync(SlotVertical vertical, Guid accountId, CancellationToken ct = default) =>
-        vertical.Kind == CompanyKind.Baths ? CountPublishedResourcesAsync(accountId, ct) : CountPublishedHousesAsync(accountId, ct);
+        vertical.Unit switch
+        {
+            GateUnit.House => CountPublishedHousesAsync(accountId, ct),
+            GateUnit.Resource => CountPublishedResourcesAsync(accountId, ct),
+            _ => throw new System.Diagnostics.UnreachableException()
+        };
 
     public Task<int> CountPublishedUnitsForCompanyAsync(Company company, CancellationToken ct = default) =>
         company.BillingAccountId is { } id ? CountPublishedUnitsAsync(SlotVerticals.Find(company.Kind) ?? SlotVerticals.Stays, id, ct) : Task.FromResult(0);

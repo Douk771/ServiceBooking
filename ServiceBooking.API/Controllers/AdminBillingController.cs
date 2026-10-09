@@ -533,11 +533,14 @@ public class AdminBillingController(
         if (vertical is not null)
         {
             var unitsPublished = await new Services.Stays.StaysPlanResolver(db).CountPublishedUnitsAsync(vertical, accountId);
-            var maxUnits = vertical.Kind == CompanyKind.Baths ? plan?.MaxResources : plan?.MaxHouses;
+            var (maxUnits, unitWord) = vertical.Unit switch
+            {
+                Services.Stays.GateUnit.House => (plan?.MaxHouses, "домов"),
+                Services.Stays.GateUnit.Resource => (plan?.MaxResources, "ресурсов"),
+                _ => throw new System.Diagnostics.UnreachableException()
+            };
             if (!dto.ConfirmLimitOverflow && maxUnits is { } limit && unitsPublished > limit)
-                return Conflict(vertical.Kind == CompanyKind.Baths
-                    ? $"На новом тарифе доступно {limit} ресурсов, опубликовано {unitsPublished}. Подтвердите превышение лимита, чтобы продолжить."
-                    : $"На новом тарифе доступно {limit} домов, опубликовано {unitsPublished}. Подтвердите превышение лимита, чтобы продолжить.");
+                return Conflict($"На новом тарифе доступно {limit} {unitWord}, опубликовано {unitsPublished}. Подтвердите превышение лимита, чтобы продолжить.");
         }
         else if (kind == CompanyKind.Orders)
         {

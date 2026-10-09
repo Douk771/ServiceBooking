@@ -45,7 +45,12 @@ public class StaysTrialService(
     AppDbContext db, StaysPlanResolver plans, IOptions<TrialOptions> trialOptions, IOptions<StaysOptions> options,
     IPhoneVerificationMethodRegistry phoneRegistry, IStaysClock clock, IOptions<BathsOptions> bathsOptions)
 {
-    private int TrialDays(SlotVertical v) => v.Kind == CompanyKind.Baths ? bathsOptions.Value.TrialDays : options.Value.TrialDays;
+    private int TrialDays(SlotVertical v) => v.Kind switch
+    {
+        CompanyKind.Stays => options.Value.TrialDays,
+        CompanyKind.Baths => bathsOptions.Value.TrialDays,
+        _ => throw new ArgumentOutOfRangeException(nameof(v), v.Kind, "Not a slot vertical.")
+    };
 
     private bool PhoneVerificationEnabled => phoneRegistry.Get(PhoneVerificationMethod.MaxBot).Enabled;
 
