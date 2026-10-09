@@ -74,7 +74,12 @@ export type PaymentDetailsDto = S['PaymentDetailsDto']
 export type StaysCompanyManageDto = S['StaysCompanyManageDto']
 export type StaysPlanSummaryDto = S['StaysPlanSummaryDto']
 export type ChecklistItemDto = S['ChecklistItemDto']
-export type StaysNotificationSettingsDto = S['StaysNotificationSettingsDto']
+// Cycle 40 (API_CONTRACT_CYCLE40.md §40.29): messagingActive / deliveryChoiceVisible / priorityWarning are appended by the server (the cycle37 schema is frozen).
+export type StaysNotificationSettingsDto = S['StaysNotificationSettingsDto'] & {
+  messagingActive?: boolean
+  deliveryChoiceVisible?: boolean
+  priorityWarning?: string | null
+}
 export type StaysNotificationSettingsInput = S['StaysNotificationSettingsInput']
 export type HouseListItemDto = S['HouseListItemDto']
 export type HouseSetupInput = S['HouseSetupInput']

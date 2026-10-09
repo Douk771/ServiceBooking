@@ -9,11 +9,8 @@ import type { ShopManageDto, ShopNotificationSettingsDto } from '../../types'
 const get = vi.fn()
 const put = vi.fn()
 vi.mock('../../api/shopNotifications', () => ({ shopNotificationsApi: { get: (...a: unknown[]) => get(...a), put: (...a: unknown[]) => put(...a) } }))
-vi.mock('@/api/notificationChannels', () => ({
-  notificationChannelsApi: { list: () => Promise.resolve([]), offer: () => Promise.resolve({ pricePerMonth: 500, allowedByPlan: true, transports: [], riskVersion: 'v1', riskText: '' }) },
-}))
-vi.mock('@/components/notifications/LegacyChannelCard', () => ({ ChannelCard: () => null }))
-vi.mock('@/components/notifications/ChannelRequestModal', () => ({ ChannelRequestModal: () => <div role="dialog">Подключить канал уведомлений</div> }))
+// The numbers block (cycle 40) has its own API and its own tests; here it is a landmark of the shared block.
+vi.mock('@/components/notifications/NumbersBlock', () => ({ NumbersBlock: () => <section data-testid="numbers-block">Номера</section> }))
 
 const settings = (over: Partial<ShopNotificationSettingsDto> = {}): ShopNotificationSettingsDto => ({
   staffPushEnabled: true, customerWebPushEnabled: true, customerMessengerEnabled: false, deliveryMode: 'PriorityChannel', priorityTransport: 'Max',
@@ -62,11 +59,30 @@ describe('ShopNotificationsPage', () => {
     expect(await screen.findByText('Сохранено')).toBeInTheDocument()
   })
 
-  it('offers delivery mode only once messages are available and switched on', async () => {
-    get.mockResolvedValue(settings({ messengerAvailable: true, messengerUnavailableText: null, customerMessengerEnabled: true, channels: [{ channelId: 'c1', transport: 'Max', phoneMasked: '+7 (9**) ***-**-67', stateText: 'Подключён', isConnected: true, funded: true, fundingText: 'Оплачен до 31.10.2026' }] }))
+  const connectedMax = { channelId: 'c1', transport: 'Max' as const, phoneMasked: '+7 (9**) ***-**-67', stateText: 'Подключён', isConnected: true, funded: true, fundingText: 'Оплачен до 31.10.2026' }
+  const connectedWhatsApp = { ...connectedMax, channelId: 'c2', transport: 'WhatsApp' as const }
+
+  it('has no delivery mode while the server says the choice is not worth showing (one working messenger)', async () => {
+    get.mockResolvedValue(settings({ messengerAvailable: true, messengerUnavailableText: null, customerMessengerEnabled: true, deliveryChoiceVisible: false, channels: [connectedMax] }))
+    renderPage()
+    await screen.findByRole('switch', { name: /Сообщения в MAX\/WhatsApp/ })
+    expect(screen.queryByRole('radiogroup', { name: 'Режим доставки' })).not.toBeInTheDocument()
+  })
+
+  it('offers delivery mode when the server says so (two working messengers) and warns about a broken priority', async () => {
+    get.mockResolvedValue(settings({
+      messengerAvailable: true, messengerUnavailableText: null, customerMessengerEnabled: true, deliveryChoiceVisible: true, priorityTransport: 'WhatsApp',
+      priorityWarning: 'Приоритетный номер не работает: выберите другой или „во все“', channels: [connectedMax, { ...connectedWhatsApp, isConnected: false }],
+    }))
     renderPage()
     expect(await screen.findByRole('radiogroup', { name: 'Режим доставки' })).toBeInTheDocument()
-    expect(screen.getByTestId('shop-channel')).toHaveTextContent('Оплачен до 31.10.2026')
+    expect(screen.getByTestId('priority-warning')).toHaveTextContent('Приоритетный номер не работает')
+    expect(screen.getByRole('radio', { name: /WhatsApp \(не работает\)/ })).toBeInTheDocument()
+  })
+
+  it('shows the shared numbers block instead of the old channel cards', async () => {
+    renderPage()
+    expect(await screen.findByTestId('numbers-block')).toBeInTheDocument()
   })
 
   it('shows the server 409 text when messages were refused', async () => {
@@ -77,13 +93,6 @@ describe('ShopNotificationsPage', () => {
     await user.click(await screen.findByRole('switch', { name: /Сообщения в MAX\/WhatsApp/ }))
     await user.click(screen.getByRole('button', { name: 'Сохранить' }))
     expect(await screen.findByText('Сначала подключите и оплатите номер для сообщений покупателям')).toBeInTheDocument()
-  })
-
-  it('opens the shared channel request dialog from «Подключить номер»', async () => {
-    const user = userEvent.setup()
-    renderPage()
-    await user.click(await screen.findByRole('button', { name: 'Подключить номер' }))
-    expect(screen.getByRole('dialog')).toHaveTextContent('Подключить канал уведомлений')
   })
 
   it('has an error state with a retry when the settings cannot be loaded', async () => {
