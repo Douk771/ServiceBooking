@@ -413,6 +413,11 @@ export interface PlatformSettings {
   trialDurationDays: number | null
   trialMailingWindowDays: number | null
   trialWarningThresholdsDays: number[] | null
+  /** Cycle 40 (API_CONTRACT_CYCLE40.md §40.35): the availability switches of the two messenger options and the stop-cock of customer messaging.
+   *  GET: always a value. PUT: absent/null = do not change. */
+  customerMessagingEnabled?: boolean | null
+  whatsAppOptionOpen?: boolean | null
+  maxOptionOpen?: boolean | null
 }
 
 // Body of PUT /api/admin/platform-settings → 409 (API_CONTRACT_CYCLE11.md §114.2).
