@@ -25,6 +25,7 @@ public static class ServiceNotificationTexts
             NotificationType.StaffServiceOrderCreated when baths => $"Новая бронь · {f.ServiceName}, {time}",
             NotificationType.StaffServiceOrderCreated => $"Новый заказ услуги · {f.ServiceName}, {time}",
             NotificationType.StaffServiceOrderPaymentProofUploaded => $"Приложено подтверждение оплаты · {f.ServiceName}, {time}",
+            _ when baths => $"Гость отменил бронь · {f.ServiceName}, {time}",
             _ => $"Гость отменил сеанс · {f.ServiceName}, {time}",
         };
         return new PushPayload(f.CompanyName, body, $"ss-{sessionId}", cabinetUrl);
