@@ -277,3 +277,42 @@ describe('BillingPage — line Stays (cycle 37)', () => {
     expect(submitRequest).toHaveBeenCalledWith({ line: 'Stays', planId: 'ps1', options: [] })
   })
 })
+
+// Cycle 42 (ARCHITECTURE_CYCLE42.md §42.12.3, API_CONTRACT_CYCLE42.md §42.21) — bani mounts the same screen with line="Baths".
+describe('BillingPage — line Baths (cycle 42)', () => {
+  const bathsSub = (baths: Record<string, unknown> | null) =>
+    makeSubscription({
+      plan: { id: 'p1', name: 'Бани · Старт', pricePerMonth: 990 },
+      usage: { companiesText: '1 компания', employeesText: '2 сотрудника', numbersText: '0 номеров' },
+      ...({
+        line: 'Baths',
+        baths,
+        availablePlans: [{ planId: 'pb1', name: 'Бани · Старт', pricePerMonth: 990, description: null, highlights: null, limitsText: 'до 3 ресурсов', maxResources: 3 }],
+      } as object),
+    } as Partial<OwnerSubscriptionDto>)
+
+  it('asks for the Baths line, prints the resources counter and the warning', async () => {
+    getSubscription.mockResolvedValueOnce(
+      bathsSub({ resourcesPublished: 4, maxResources: 3, isTrial: false, warningLevel: 'OverLimit', text: 'Опубликовано 4 ресурса при лимите 3' }),
+    )
+    renderWithProviders(<BillingPage line="Baths" />)
+    expect(await screen.findByTestId('baths-plan-banner')).toHaveTextContent('Опубликовано 4 ресурса при лимите 3')
+    expect(getSubscription).toHaveBeenCalledWith('Baths')
+    expect(screen.getByTestId('baths-usage')).toHaveTextContent('Опубликовано ресурсов: 4 из 3')
+    expect(screen.getByText('Тариф действует на все ваши бани сразу; он ограничивает число опубликованных ресурсов.')).toBeInTheDocument()
+    expect(document.title).toBe('Ваша подписка — EZBOOK Бани')
+  })
+
+  it('requests a plan of the Baths line', async () => {
+    getSubscription.mockResolvedValue(bathsSub({ resourcesPublished: 0, maxResources: null, isTrial: true, warningLevel: 'None', text: null }))
+    submitRequest.mockResolvedValue({ line: 'Baths' })
+    const user = userEvent.setup()
+    renderWithProviders(<BillingPage line="Baths" />)
+    const plans = await screen.findByTestId('available-plans')
+    expect(screen.getByText('Тарифы «Бань»')).toBeInTheDocument()
+    expect(screen.getByTestId('baths-usage')).toHaveTextContent('пробный период')
+    expect(screen.queryByTestId('baths-plan-banner')).toBeNull()
+    await user.click(within(plans).getByRole('button', { name: 'Запросить тариф «Бани · Старт»' }))
+    expect(submitRequest).toHaveBeenCalledWith({ line: 'Baths', planId: 'pb1', options: [] })
+  })
+})

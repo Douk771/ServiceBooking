@@ -32,6 +32,8 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
   // (ARCHITECTURE_CYCLE37.md §37.10.4). Without the prop nothing below differs from before: same query key, same request, same blocks.
   const isOrders = line === 'Orders'
   const isStays = line === 'Stays'
+  // Cycle 42: bani mounts the same screen with line="Baths" (ARCHITECTURE_CYCLE42.md §42.12.3).
+  const isBaths = line === 'Baths'
   const isLine = line !== 'Services'
   const queryKey = isLine ? ['owner-subscription', line] : ['owner-subscription']
   const [requestError, setRequestError] = useState('')
@@ -45,12 +47,12 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
   })
 
   useEffect(() => {
-    document.title = isStays ? 'Ваша подписка — ezbook · Дома' : isOrders ? 'Ваша подписка — ezbook · Заказы' : 'Ваша подписка — ServiceBooking'
-  }, [isOrders, isStays])
+    document.title = isBaths ? 'Ваша подписка — EZBOOK Бани' : isStays ? 'Ваша подписка — ezbook · Дома' : isOrders ? 'Ваша подписка — ezbook · Заказы' : 'Ваша подписка — ServiceBooking'
+  }, [isOrders, isStays, isBaths])
 
   // Cycle 24 (L14): a plan of the «Заказы» line (cycle 37: «Дома») is requested straight from `availablePlans`.
   const planRequestMut = useMutation({
-    mutationFn: (planId: string) => billingApi.submitRequest({ line: isStays ? 'Stays' : 'Orders', planId, options: [] }),
+    mutationFn: (planId: string) => billingApi.submitRequest({ line: isBaths ? 'Baths' : isStays ? 'Stays' : 'Orders', planId, options: [] }),
     onSuccess: () => {
       setRequestError('')
       qc.invalidateQueries({ queryKey: ['owner-subscription'] })
@@ -194,7 +196,7 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
     <div className="max-w-[860px] mx-auto px-8 pt-16 pb-24">
       <header className="mb-10">
         <h1 className="font-serif text-[36px] font-medium text-ink mb-2">Ваша подписка</h1>
-        <p className="text-sm text-ink-soft">{isStays ? 'Тариф действует на все ваши дома сразу; он ограничивает число опубликованных домов.' : isOrders ? 'Тариф действует на все ваши магазины сразу; опции — общие для аккаунта.' : 'Тариф и опции действуют на все ваши компании сразу.'}</p>
+        <p className="text-sm text-ink-soft">{isBaths ? 'Тариф действует на все ваши бани сразу; он ограничивает число опубликованных ресурсов.' : isStays ? 'Тариф действует на все ваши дома сразу; он ограничивает число опубликованных домов.' : isOrders ? 'Тариф действует на все ваши магазины сразу; опции — общие для аккаунта.' : 'Тариф и опции действуют на все ваши компании сразу.'}</p>
       </header>
 
       {/* Cycle 18 — трial plan (API_CONTRACT_CYCLE18.md §371). `trial` is null only when it has
@@ -265,6 +267,15 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
         </Card>
       )}
 
+      {isBaths && data.baths && data.baths.warningLevel !== 'None' && data.baths.text && (
+        <Card
+          className={`p-5 mb-6 border ${data.baths.warningLevel === 'TrialEnding3d' || data.baths.warningLevel === 'TrialEnding1d' ? 'border-warning bg-warning-bg' : 'border-danger bg-danger-bg'}`}
+          data-testid="baths-plan-banner"
+        >
+          <p className="text-sm font-semibold text-ink">{data.baths.text}</p>
+        </Card>
+      )}
+
       <Card className="p-[26px] mb-6">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
           <h2 className="text-[15.5px] font-semibold text-ink">{data.plan.name}</h2>
@@ -304,6 +315,15 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
               </dt>
             </div>
           )}
+          {isBaths && data.baths && (
+            <div className="flex justify-between" data-testid="baths-usage">
+              <dt>
+                Опубликовано ресурсов: {data.baths.resourcesPublished}
+                {data.baths.maxResources != null ? ` из ${data.baths.maxResources}` : ''}
+                {data.baths.isTrial ? ' · пробный период' : ''}
+              </dt>
+            </div>
+          )}
         </dl>
       </Card>
 
@@ -333,7 +353,7 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
 
       {isLine && data.availablePlans && data.availablePlans.length > 0 && (
         <Card className="p-[26px] mb-6" data-testid="available-plans">
-          <h2 className="text-[15.5px] font-semibold text-ink mb-4">{isStays ? 'Тарифы «Домов»' : 'Тарифы «Заказов»'}</h2>
+          <h2 className="text-[15.5px] font-semibold text-ink mb-4">{isBaths ? 'Тарифы «Бань»' : isStays ? 'Тарифы «Домов»' : 'Тарифы «Заказов»'}</h2>
           <ul className="grid gap-4">
             {data.availablePlans.map((p) => (
               <li key={p.planId} className="flex items-start justify-between gap-4 flex-wrap">
