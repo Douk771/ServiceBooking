@@ -44,6 +44,9 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
         // ARCHITECTURE_CYCLE37.md §37.21.4: the house limit belongs to the «Дома» line only.
         if (dto.MaxHouses is not null && (dto.Line ?? CompanyKind.Services) != CompanyKind.Stays)
             return BadRequest(MaxHousesLineText);
+        // ARCHITECTURE_CYCLE42.md §42.5.1: the resource limit belongs to the «Бани» line only.
+        if (dto.MaxResources is not null && (dto.Line ?? CompanyKind.Services) != CompanyKind.Baths)
+            return BadRequest(MaxResourcesLineText);
 
         var systemFreeError = await ValidateSystemFreeAsync(false, dto.PricePerMonth, existingPlanId: null, dto.Line ?? CompanyKind.Services);
         if (systemFreeError is not null) return systemFreeError;
@@ -53,6 +56,7 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
             Line = dto.Line ?? CompanyKind.Services,
             MaxProductsPerShop = dto.MaxProductsPerShop,
             MaxHouses = dto.MaxHouses,
+            MaxResources = dto.MaxResources,
             MaxOrdersPerMonth = dto.MaxOrdersPerMonth,
             AllowOrders = dto.AllowOrders ?? true,
             Id = Guid.NewGuid(),
@@ -105,12 +109,14 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
             return Conflict("Линейку тарифа менять нельзя");
 
         if (dto.MaxHouses is not null && plan.Line != CompanyKind.Stays) return BadRequest(MaxHousesLineText);
+        if (dto.MaxResources is not null && plan.Line != CompanyKind.Baths) return BadRequest(MaxResourcesLineText);
 
         var systemFreeError = await ValidateSystemFreeAsync(plan.IsSystemFree, dto.PricePerMonth, existingPlanId: id, plan.Line);
         if (systemFreeError is not null) return systemFreeError;
 
         plan.MaxProductsPerShop = dto.MaxProductsPerShop;
         plan.MaxHouses = dto.MaxHouses;
+        plan.MaxResources = dto.MaxResources;
         plan.MaxOrdersPerMonth = dto.MaxOrdersPerMonth;
         if (dto.AllowOrders.HasValue) plan.AllowOrders = dto.AllowOrders.Value;
         plan.Name = dto.Name;
@@ -155,7 +161,7 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
         // EffectivePlan.Free fallback instead of the configured system row.
         if (plan.IsActive && !dto.IsActive)
         {
-            if (plan.Id == StaysPlans.TrialSeedId) return Conflict(StaysTrialPlanText);
+            if (SlotTrialPlanText(plan.Id) is { } slotTrialText) return Conflict(slotTrialText);
             if (plan.IsSystemFree)
                 return Conflict("The system free plan cannot be deactivated.");
 
@@ -296,7 +302,7 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
         // future free-tier account onto the hardcoded EffectivePlan.Free fallback instead of this row.
         if (plan.IsSystemFree)
             return Conflict("The system free plan cannot be deleted.");
-        if (plan.Id == StaysPlans.TrialSeedId) return Conflict(StaysTrialPlanText);
+        if (SlotTrialPlanText(plan.Id) is { } slotTrialText) return Conflict(slotTrialText);
 
         // Cycle 18 (API_CONTRACT_CYCLE18.md §366) — same reasoning as the system-free guard above: the
         // trial plan is the one row TrialActivationService looks up by IsSystemTrial, and removing it
@@ -353,6 +359,13 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
             .Select(g => new { PlanConfigId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.PlanConfigId, x => x.Count);
         foreach (var (planId, count) in stays) services[planId] = services.GetValueOrDefault(planId) + count;
+        // ARCHITECTURE_CYCLE42.md §42.5.5: the subscribers of a «Бани» plan live in BathsSubscriptions.
+        var baths = await db.BathsSubscriptions
+            .Where(s => s.IsActive && s.PlanConfigId.HasValue && ids.Contains(s.PlanConfigId.Value))
+            .GroupBy(s => s.PlanConfigId!.Value)
+            .Select(g => new { PlanConfigId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.PlanConfigId, x => x.Count);
+        foreach (var (planId, count) in baths) services[planId] = services.GetValueOrDefault(planId) + count;
         return services;
     }
 
@@ -360,7 +373,8 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
     private async Task<int> ActiveSubscribersAsync(Guid planId) =>
         await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == planId && s.IsActive) +
         await db.OrdersSubscriptions.CountAsync(s => s.PlanConfigId == planId && s.IsActive) +
-        await db.StaysSubscriptions.CountAsync(s => s.PlanConfigId == planId && s.IsActive);
+        await db.StaysSubscriptions.CountAsync(s => s.PlanConfigId == planId && s.IsActive) +
+        await db.BathsSubscriptions.CountAsync(s => s.PlanConfigId == planId && s.IsActive);
 
     // contracts/cycle7/openapi.yaml AdminPlanDto: projects the entity onto the contract shape rather than
     // returning it directly — the entity also carries AllowNotificationChannel and CreatedAt (neither
@@ -384,7 +398,7 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
             IsSystemTrial: plan.IsSystemTrial,
             OptionCoverage: new AdminPlanOptionCoverageDto(configured, total, $"В тариф включено {configured} из {total} опций каталога"),
             Line: plan.Line, MaxProductsPerShop: plan.MaxProductsPerShop, MaxOrdersPerMonth: plan.MaxOrdersPerMonth, AllowOrders: plan.AllowOrders,
-            MaxHouses: plan.MaxHouses);
+            MaxHouses: plan.MaxHouses, MaxResources: plan.MaxResources);
     }
 
     // N25 — shares its cap with PricingCatalogBuilder.MaxHighlights so the admin editor and the public
@@ -413,6 +427,12 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
 
     public const string MaxHousesLineText = "Макс. домов задаётся только для линейки «Дома».";
     public const string StaysTrialPlanText = "Пробный тариф линейки «Дома» нельзя удалить или выключить.";
+    public const string MaxResourcesLineText = "Лимит ресурсов задаётся только тарифам линейки «Бани»";
+    public const string BathsTrialPlanText = "Пробный тариф линейки «Бани» нельзя удалить или выключить.";
+
+    /// <summary>The refusal for the system trial plan of a slot line (it is found by its seed id, not by IsSystemTrial), or null for any other plan.</summary>
+    private static string? SlotTrialPlanText(Guid planId) =>
+        planId == StaysPlans.TrialSeedId ? StaysTrialPlanText : planId == BathsPlans.TrialSeedId ? BathsTrialPlanText : null;
 
     internal static IActionResult? ValidatePlanInput(AdminPlanInput dto)
     {
@@ -432,6 +452,8 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
             return new BadRequestObjectResult("Макс. товаров в магазине — не меньше 1 (пусто — без ограничения).");
         if (dto.MaxHouses is < 1)
             return new BadRequestObjectResult("Макс. домов — не меньше 1 (пусто — без ограничения).");
+        if (dto.MaxResources is < 1)
+            return new BadRequestObjectResult("Макс. ресурсов — не меньше 1 (пусто — без ограничения).");
         if (dto.MaxOrdersPerMonth is < 1)
             return new BadRequestObjectResult("Заказов в месяц — не меньше 1 (пусто — без ограничения).");
         var highlightsError = Services.Billing.PricingCatalogBuilder.ValidateHighlights(dto.Highlights);
@@ -537,7 +559,9 @@ public record AdminPlanDto(
     List<AdminPlanOptionRuleDto> Options, int SubscribedAccounts,
     bool IsSystemTrial = false, AdminPlanOptionCoverageDto? OptionCoverage = null,
     // Cycle 24 (API_CONTRACT_CYCLE24.md §485.3).
-    CompanyKind Line = CompanyKind.Services, int? MaxProductsPerShop = null, int? MaxOrdersPerMonth = null, bool AllowOrders = true, int? MaxHouses = null);
+    CompanyKind Line = CompanyKind.Services, int? MaxProductsPerShop = null, int? MaxOrdersPerMonth = null, bool AllowOrders = true, int? MaxHouses = null,
+    // Cycle 42 (API_CONTRACT_CYCLE42.md): published resources per account, «Бани» line only.
+    int? MaxResources = null);
 
 // Cycle 18 (API_CONTRACT_CYCLE18.md §366) — "отсутствие строки PlanOptionRule = Unavailable" is
 // fail-closed behaviour, not a defect, but a superadmin must be able to SEE it on the plan's own card.

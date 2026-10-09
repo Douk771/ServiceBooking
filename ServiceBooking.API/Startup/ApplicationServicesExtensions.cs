@@ -80,6 +80,8 @@ internal static class ApplicationServicesExtensions
     // Cycle 37 (ARCHITECTURE_CYCLE37.md §37.16): "Дома".
     builder.Services.Configure<ServiceBooking.API.Services.Stays.StaysOptions>(
         builder.Configuration.GetSection(ServiceBooking.API.Services.Stays.StaysOptions.SectionName));
+    builder.Services.Configure<ServiceBooking.API.Services.Baths.BathsOptions>(
+        builder.Configuration.GetSection(ServiceBooking.API.Services.Baths.BathsOptions.SectionName));
     builder.Services.AddSingleton<ServiceBooking.API.Services.Stays.IStaysClock, ServiceBooking.API.Services.Stays.SystemStaysClock>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysAccessResolver>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysPlanResolver>();

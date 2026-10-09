@@ -15,7 +15,7 @@ namespace ServiceBooking.API.Services.Billing;
 /// request. Every text is assembled here (§41 п. 8) — the frontend prints strings as-is.</summary>
 public class OwnerSubscriptionService(
     AppDbContext db, SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
-    TrialStateReader trialStateReader, IOptions<OrdersOptions> ordersOptions)
+    TrialStateReader trialStateReader, IOptions<OrdersOptions> ordersOptions, Stays.StaysPlanResolver slotPlans)
 {
     public async Task<BillingAccount?> FindAccountForOwnerAsync(string ownerUserId) =>
         await db.BillingAccounts.Include(a => a.RequestedPlan).FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId);
@@ -37,7 +37,8 @@ public class OwnerSubscriptionService(
         {
             CompanyKind.Services => BuildAsync(account),
             CompanyKind.Orders => BuildOrdersAsync(account),
-            CompanyKind.Stays => BuildStaysAsync(account),
+            CompanyKind.Stays => BuildSlotLineAsync(account, Slots.SlotVerticals.Stays),
+            CompanyKind.Baths => BuildSlotLineAsync(account, Slots.SlotVerticals.Baths),
             _ => throw new System.Diagnostics.UnreachableException()
         };
 
@@ -255,23 +256,26 @@ public class OwnerSubscriptionService(
     }
 
     /// <summary>
-    /// ARCHITECTURE_CYCLE37.md §37.10.4 — the «Дома» line: built from <see cref="StaysSubscription"/>. There is NO free tier: no row means "NoPlan".
-    /// <c>availablePlans</c> are the active tariffs of the line except the trial; the unit of the limit is the PUBLISHED house of the whole account.
+    /// ARCHITECTURE_CYCLE37.md §37.10.4, ARCHITECTURE_CYCLE42.md §42.5.5 — a slot line ("Дома" or «Бани»): built from <see cref="StaysSubscription"/> or
+    /// <see cref="BathsSubscription"/>. There is NO free tier: no row means "NoPlan". <c>availablePlans</c> are the active tariffs of the line except the
+    /// trial; the unit of the limit is the PUBLISHED house (resource) of the whole account.
     /// </summary>
-    private async Task<OwnerSubscriptionDto> BuildStaysAsync(BillingAccount account)
+    private async Task<OwnerSubscriptionDto> BuildSlotLineAsync(BillingAccount account, Slots.SlotVertical vertical)
     {
         var now = DateTime.UtcNow;
-        var sub = await db.StaysSubscriptions.AsNoTracking().Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == account.Id);
-        var plan = Stays.StaysPlanResolver.Resolve(sub, now);
-        var published = await db.Houses.AsNoTracking().CountAsync(h => h.IsPublished && h.ArchivedAtUtc == null && h.Company.BillingAccountId == account.Id && h.Company.Kind == CompanyKind.Stays);
-        var (level, text) = Stays.StaysPlanResolver.Warning(plan, published, now);
+        var kind = vertical.Kind;
+        var isBaths = kind == CompanyKind.Baths;
+        var plan = await slotPlans.GetForAccountAsync(vertical, account.Id, now);
+        var planConfig = plan.PlanId is { } configId ? await db.SubscriptionPlanConfigs.AsNoTracking().FirstOrDefaultAsync(p => p.Id == configId) : null;
+        var published = await slotPlans.CountPublishedUnitsAsync(vertical, account.Id);
+        var (level, text) = Stays.StaysPlanResolver.Warning(plan, published, now, vertical.Unit);
 
         var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
             .Where(o => o.BillingAccountId == account.Id && (o.EndsAtUtc == null || o.EndsAtUtc > now)).ToListAsync();
         var planRules = plan.PlanId is { } rulesPlanId ? await db.PlanOptionRules.Where(r => r.PlanConfigId == rulesPlanId).ToListAsync() : [];
         var optionDtos = subscribedOptions.Select(o => ToSubscribedOptionDto(o, planRules)).ToList();
 
-        var companies = await db.Companies.AsNoTracking().Where(c => c.BillingAccountId == account.Id && c.Kind == CompanyKind.Stays).ToListAsync();
+        var companies = await db.Companies.AsNoTracking().Where(c => c.BillingAccountId == account.Id && c.Kind == kind).ToListAsync();
         var companyIds = companies.Select(c => c.Id).ToList();
         var seatsByCompany = await usageReader.GetCompanySeatsAsync(companyIds);
         var assignedIds = (await db.ChannelCompanyAssignments.Where(a => companyIds.Contains(a.CompanyId)).Select(a => a.CompanyId).ToListAsync()).ToHashSet();
@@ -283,38 +287,47 @@ public class OwnerSubscriptionService(
             servicesPlan.PaidNotificationNumbers, numbersRegistered, BuildNumbersText(servicesPlan.PaidNotificationNumbers, numbersRegistered));
 
         var status = !plan.WasEverSubscribed ? "NoPlan" : plan.HasActivePlan ? "Active" : "Expired";
-        var statusText = status == "NoPlan" ? "Тариф не выбран" : StatusTextFor(status, sub?.PaidUntil);
-        var planConfig = sub?.PlanConfig;
+        var statusText = status == "NoPlan" ? "Тариф не выбран" : StatusTextFor(status, plan.PaidUntilUtc);
         var planDto = new SubscribedPlanDto(plan.PlanId, plan.PlanName ?? "Тариф не выбран", planConfig?.Description, planConfig?.PricePerMonth ?? 0m,
             plan.AllowNotificationChannel ? ["Сообщения гостям в MAX и WhatsApp"] : []);
         var totalMonthlyPrice = BillingCalculator.TotalMonthlyPrice(planDto.PricePerMonth, optionDtos.Select(o => o.PricePerMonth));
-        var expiresInDays = BillingCalculator.ExpiresInDays(sub?.PaidUntil, now);
+        var expiresInDays = BillingCalculator.ExpiresInDays(plan.PaidUntilUtc, now);
 
         SubscriptionWarningDto? warning = level == "None" ? null : new SubscriptionWarningDto(level, text ?? string.Empty, []);
         var allOptions = await db.SubscriptionOptions.WhereNotRetired().Where(o => o.IsActive && o.PricePerMonth != null).ToListAsync();
         var availableOptions = allOptions.Select(o => ToAvailableOptionDto(o, planRules)).ToList();
-        var pendingRequest = account.RequestedLine == CompanyKind.Stays
-            ? BuildPendingRequestDto(account, await db.SubscriptionOptions.ToListAsync(), planDto.PricePerMonth, false, sub?.PlanConfigId) : null;
+        var pendingRequest = account.RequestedLine == kind
+            ? BuildPendingRequestDto(account, await db.SubscriptionOptions.ToListAsync(), planDto.PricePerMonth, false, plan.PlanId) : null;
         var lastRejected = account.LastRejectionReason is not null && account.LastRejectedAtUtc.HasValue
             ? new RejectedRequestDto(account.LastRejectionReason, account.LastRejectedAtUtc.Value) : null;
 
-        var availablePlans = (await db.SubscriptionPlanConfigs.AsNoTracking().Where(p => p.Line == CompanyKind.Stays && p.IsActive && p.Id != StaysPlans.TrialSeedId)
+        var availablePlans = (await db.SubscriptionPlanConfigs.AsNoTracking().Where(p => p.Line == kind && p.IsActive && p.Id != vertical.TrialPlanId)
                 .OrderBy(p => p.PricePerMonth).ThenBy(p => p.SortOrder).ToListAsync())
             .Select(p => new AvailablePlanDto(
                 p.Id, p.Name, p.PricePerMonth, p.Description,
                 string.IsNullOrWhiteSpace(p.Highlights) ? [] : p.Highlights.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(PricingCatalogBuilder.MaxHighlights).ToList(),
-                p.MaxHouses is { } m ? $"до {m} {Stays.StaysTexts.Plural(m, "дома", "домов", "домов")}" : "дома без ограничения",
-                p.MaxHouses))
+                LimitsTextOf(isBaths, isBaths ? p.MaxResources : p.MaxHouses),
+                isBaths ? null : p.MaxHouses, isBaths ? p.MaxResources : null))
             .ToList();
 
         return new OwnerSubscriptionDto(
-            "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays,
+            "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, plan.PaidUntilUtc, expiresInDays,
             plan.IsTrial && level is "TrialEnding3d" or "TrialEnding1d", usageDto,
             companies.Select(c => new CoveredCompanyDto(c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), assignedIds.Contains(c.Id))).ToList(),
             warning, availableOptions, pendingRequest, CanRequestChanges: true, LastRejectedRequest: lastRejected, Trial: null,
-            Line: nameof(CompanyKind.Stays), Orders: null, AvailablePlans: availablePlans,
-            Stays: new StaysSubscriptionBlockDto(published, plan.MaxHouses, plan.IsTrial, plan.IsTrial ? plan.PaidUntilUtc : null, level, text));
+            Line: kind.ToString(), Orders: null, AvailablePlans: availablePlans,
+            Stays: isBaths ? null : new StaysSubscriptionBlockDto(published, plan.MaxHouses, plan.IsTrial, plan.IsTrial ? plan.PaidUntilUtc : null, level, text),
+            Baths: isBaths ? new BathsSubscriptionBlockDto(published, plan.MaxResources, plan.IsTrial, plan.IsTrial ? plan.PaidUntilUtc : null, level, text) : null);
     }
+
+    /// <summary>"до N дома/ресурсов" for a limited plan of a slot line, the "no limit" phrase otherwise. "Дома" keeps its cycle-37 words byte for byte.</summary>
+    private static string LimitsTextOf(bool isBaths, int? limit) => (isBaths, limit) switch
+    {
+        (false, { } m) => $"до {m} {Stays.StaysTexts.Plural(m, "дома", "домов", "домов")}",
+        (false, null) => "дома без ограничения",
+        (true, { } m) => $"до {m} {Stays.StaysTexts.Plural(m, "ресурса", "ресурсов", "ресурсов")}",
+        (true, null) => "ресурсы без ограничения",
+    };
 
     private static List<string> OrdersPlanIncludes(OrdersPlan plan)
     {

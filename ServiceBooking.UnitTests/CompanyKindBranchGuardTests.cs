@@ -36,12 +36,10 @@ public class CompanyKindBranchGuardTests
     ];
 
     /// <summary>
-    /// Known ternary still to be rewritten by the billing task (BE-42-P, ARCHITECTURE_CYCLE42.md §42.3.4: AdminBillingController 532…586). One exact line, not a whole file:
-    /// delete this entry together with the rewrite.
+    /// Known ternaries still to be rewritten (one exact line each, not a whole file): delete the entry together with the rewrite. Empty since BE-42-2 rewrote AdminBillingController.
     /// </summary>
     private static readonly (string File, string Fragment)[] PendingLines =
     [
-        ("AdminBillingController.cs", "kind == CompanyKind.Stays ? OrdersPlan.FallbackFree"),
     ];
 
     [Fact]
