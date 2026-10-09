@@ -128,7 +128,7 @@ public class StayBookingsPublicController(
         if (!StaysCatalogService.TryDate(date, out var d)) return BadRequest(string.IsNullOrWhiteSpace(date) ? "Выберите дату" : "Неверный формат даты");
         var booking = await FindAsync(token, ct);
         if (booking is null) return NotFound();
-        var scope = await slots.FindOfCompanyAsync(booking.CompanyId, serviceId, ct);
+        var scope = await slots.FindOfCompanyAsync(CompanyKind.Stays, booking.CompanyId, serviceId, ct);
         if (scope is null || !scope.Service.IsPublished || scope.Service.ArchivedAtUtc is not null || !scope.Service.AvailableForHouseBookings) return NotFound();
         return Ok(await slots.StartsAsync(scope, d, staff: false, ServiceSlotService.StayRangeOf(booking), ct));
     }
@@ -141,7 +141,7 @@ public class StayBookingsPublicController(
         if (formError is not null) return BadRequest(formError);
         var booking = await FindAsync(token, ct);
         if (booking is null) return NotFound();
-        var scope = await slots.FindOfCompanyAsync(booking.CompanyId, serviceId, ct);
+        var scope = await slots.FindOfCompanyAsync(CompanyKind.Stays, booking.CompanyId, serviceId, ct);
         if (scope is null || !scope.Service.IsPublished || scope.Service.ArchivedAtUtc is not null || !scope.Service.AvailableForHouseBookings) return NotFound();
         var gate = await companyService.EvaluateGateAsync(scope.Company, scope.Settings, 0, ct);
         var evaluation = await slots.EvaluateAsync(scope, selection, staff: false, ServiceSlotService.StayRangeOf(booking), includeExpiredHolds: false, extraOccupied: null, prepayPercent: null, ct);
