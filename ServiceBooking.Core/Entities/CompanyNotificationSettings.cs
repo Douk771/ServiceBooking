@@ -34,8 +34,8 @@ public class CompanyNotificationSettings
     public string? UpdatedByUserId { get; set; }
 
     // ARCHITECTURE_CYCLE9.md §105.4/§105.7 (US-117, Q4). Deliberately its OWN column, not a bit in
-    // EnabledTypeMask: PUT /api/companies/{id}/notification-settings answers 402 to every owner today
-    // (AllowNotificationChannel = false on every tariff), so a free, tariff-free feature (SPEC П6) would
+    // EnabledTypeMask: PUT /api/companies/{id}/notification-settings used to answer 402 to every owner
+    // (the tariff flag was off on every tariff; cycle 40 dropped the flag), so a free, tariff-free feature (SPEC П6) would
     // be unreachable if it lived in that same gated request/response shape. Default true — including
     // companies created before this cycle and companies with no CompanyNotificationSettings row at all
     // (this entity's own "no row = every default" convention, §104.4) — so no backfill is needed.

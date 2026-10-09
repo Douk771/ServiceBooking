@@ -31,7 +31,7 @@ public sealed class BookingCreationService(
     AppDbContext db, CaptchaService captchaService,
     SubscriptionResolver subscriptionResolver, LegalDocumentProvider legalProvider,
     NotificationScheduler notificationScheduler, StaffPushScheduler staffPushScheduler,
-    BookingEventLog eventLog, BookingActorResolver actorResolver,
+    BookingEventLog eventLog, BookingActorResolver actorResolver, ConsentLedger consentLedger,
     ILogger<BookingsController> logger)
 {
     private static BookingCreationResult Fail(ActionResult error) => new(error);
@@ -203,6 +203,19 @@ public sealed class BookingCreationService(
         // on the legal text provider being up" rule as the consent snapshot.
         var bookingNoticeVersion = legalProvider.Current?.GetText(LegalTextKey.BookingNotice)?.Version;
 
+        // ARCHITECTURE_CYCLE40.md §40.11.1 (Р40-Ю2): the messenger mark. A staff member's `true` means "the client agreed" (stored with who ticked it);
+        // a staff `false`/null is no mark. The version is the legal text the person saw (or `fallback:<sha256 of the key>` until legal supplies one).
+        var consentOrigin = isStaffManualBooking ? MessengerConsentOrigin.Staff : isAuthenticated ? MessengerConsentOrigin.Customer : MessengerConsentOrigin.Guest;
+        var storedConsent = MessengerConsentRule.Store(consentOrigin, dto.NotifyByMessenger);
+        string? messengerConsentVersion = null;
+        DateTime? messengerConsentAtUtc = null;
+        if (storedConsent.NotifyByMessenger == true)
+        {
+            var consentKey = storedConsent.ConsentByStaff ? LegalTextKey.StaffBookingMessengerConsentHint : LegalTextKey.BookingMessengerConsent;
+            messengerConsentVersion = legalProvider.Current?.GetText(consentKey)?.Version ?? MessengerConsentVersions.Fallback(consentKey);
+            messengerConsentAtUtc = DateTime.UtcNow;
+        }
+
         // US-78 п. 1: applies only to the self-booking paths (client, guest, /embed — all the same
         // endpoint) — a staff manual booking is the staff member's own tool, recording who's actually in
         // front of them; there is no "someone else" to confirm authority over.
@@ -248,6 +261,10 @@ public sealed class BookingCreationService(
             BookedForOther = !isStaffManualBooking && dto.BookedForOther,
             GuardianConfirmedAtUtc = guardianConfirmedAtUtc,
             GuardianConfirmationVersion = guardianConfirmationVersion,
+            NotifyByMessenger = storedConsent.NotifyByMessenger,
+            MessengerConsentVersion = messengerConsentVersion,
+            MessengerConsentAtUtc = messengerConsentAtUtc,
+            MessengerConsentByUserId = storedConsent.ConsentByStaff ? userId : null,
             Status = BookingStatus.Confirmed,
             PaymentStatus = requiresPrepayment ? PaymentStatus.Pending : PaymentStatus.NotRequired,
             Price = totalPrice,
@@ -317,6 +334,7 @@ public sealed class BookingCreationService(
         db.Bookings.Add(booking);
         db.BookingServices.AddRange(bookingServices);
 
+
         // ARCHITECTURE_CYCLE10.md §105: one of six BookingEventLog.Append call sites, inside this same
         // transaction and BEFORE SaveChangesAsync — deliberately not wrapped in try/catch (unlike the
         // notification scheduler below): a failure to record the journal row must fail the booking too.
@@ -331,9 +349,8 @@ public sealed class BookingCreationService(
         // the notification), so it's caught and logged, never rethrown.
         try
         {
-            // §375 F17: the plan resolved above is handed over — the scheduler doesn't resolve it again.
             await notificationScheduler.OnBookingCreatedAsync(
-                booking, orderedServices.Select(s => s.Name).ToList(), requestAborted, effectivePlan);
+                booking, orderedServices.Select(s => s.Name).ToList(), requestAborted);
         }
         catch (Exception ex)
         {
@@ -357,6 +374,20 @@ public sealed class BookingCreationService(
 
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
+
+        // Т40-L-07 (§40.11.3): a signed-in customer's `true` mark IS the provider-delivery consent — written right after the booking commits (ConsentLedger.GrantAsync owns its own transaction and cannot nest in the booking's one; a failed grant never undoes the booking) (a guest's
+        // mark is proved by the record itself and is not entered in the journal). Only when there is no current grant already.
+        try
+        {
+            // Only when the recipient is the account itself: a booking made for ANOTHER person (or under another phone) is a tick about THEIR phone, which the account cannot give.
+            if (consentOrigin == MessengerConsentOrigin.Customer && dto.NotifyByMessenger == true && !booking.BookedForOther && string.IsNullOrEmpty(booking.GuestPhone))
+                await MessengerOptInLedger.GrantForCustomerAsync(
+                    consentLedger, legalProvider, userId!, ConsentSource.MessengerOptInBooking, remoteIp, requestAborted);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to record the provider-delivery consent for booking {BookingId}", booking.Id);
+        }
 
         var master = await db.Users.FindAsync(dto.MasterId);
         booking.Company = company;

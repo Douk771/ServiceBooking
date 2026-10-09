@@ -22,7 +22,8 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/storefront/{slug}")]
 public class StorefrontController(
     AppDbContext db, StockLedger stockLedger, PublicSiteLinks links, OrderCreationService orderCreation, ShopGateLoader gates,
-    DailyMenuService menus, ShopChannelReader shopChannels, CustomerOrderNotificationsBuilder notificationsBuilder) : ControllerBase
+    DailyMenuService menus, CustomerOrderNotificationsBuilder notificationsBuilder,
+    ServiceBooking.API.Services.Notifications.CustomerMessagingOfferService messagingOffer) : ControllerBase
 {
     /// <summary>
     /// The storefront in a handful of indexed reads (§393.3): the shop with its city; the settings, special days, tariff and month counter through
@@ -55,7 +56,8 @@ public class StorefrontController(
         }
 
         var webPushOffered = settings.CustomerWebPushEnabled && notificationsBuilder.PlatformPushEnabled;
-        var messengerOffered = settings.CustomerMessengerEnabled && await shopChannels.IsMessengerAvailableAsync(shop.Id, ct);
+        var messengerOffer = await messagingOffer.ForCompanyAsync(shop, ct: ct);
+        var messengerOffered = messengerOffer.Offered;
         var pickupSettings = ShopOrderingGate.PickupSettingsOf(settings);
 
         var photos = shop.IsActive ? await CompanyPhotoQueries.OrderedAsync(db, shop.Id, ct) : [];
@@ -67,7 +69,7 @@ public class StorefrontController(
             gate.Code, pickupDate, dateNotice, ShopScheduleMapper.ToDto(gate.OpenState),
             new StorefrontWorkingHoursDto(PickupSchedule.SummaryLines(context.Schedule.Weekly)
                 .Select(l => new WorkingHoursSummaryLineDto(l.DayLabel, l.Text)).ToList()),
-            ShopScheduleMapper.ToPickupOptions(gate, pickupSettings), new StorefrontCustomerNotificationsDto(webPushOffered, messengerOffered),
+            ShopScheduleMapper.ToPickupOptions(gate, pickupSettings), new StorefrontCustomerNotificationsDto(webPushOffered, messengerOffered, messengerOffer.Transports, messengerOffer.CheckboxLabel),
             string.IsNullOrWhiteSpace(shop.Email) ? null : shop.Email, photos);
 
         // A blocked shop: the page exists but is empty ("Магазин недоступен").

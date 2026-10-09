@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -25,12 +26,57 @@ public class AdminBillingController(
     AppDbContext db,
     SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
     OwnerSubscriptionService ownerSubscriptionService,
+    AccountMessagingReader messagingReader, PlatformSettings platformSettings,
     ILogger<AdminBillingController> logger) : ControllerBase
 {
     // B5: PostgreSQL "timestamp with time zone" columns require Kind == Utc; DateOnly.ToDateTime always
     // yields Kind == Unspecified, which Npgsql rejects at runtime (500) rather than silently coercing.
     private static DateTime? ToUtc(DateOnly? date) =>
         date is null ? null : DateTime.SpecifyKind(date.Value.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc);
+
+    /// <summary>The stored paid-until instant when the admin re-submitted the same calendar day (the row is unchanged — no
+    /// rewrite of its time of day, no journal row); otherwise the end of the submitted day.</summary>
+    private static DateTime? KeepStoredDateIfSameDay(DateTime? stored, DateOnly? submitted) =>
+        stored is { } value && submitted is { } day && DateOnly.FromDateTime(value) == day ? stored : ToUtc(submitted);
+
+    /// <summary>An untouched trial line of a channel option: the row was granted by the trial, still has no paid-until date of its
+    /// own, is not ending, and the submitted quantity is the stored one. The admin screen sends such a row back as it was read, so
+    /// it must neither be refused for the missing date nor be turned into a bought row without a date.</summary>
+    public static bool IsUnchangedChannelOptionLine(AccountSubscriptionOption? row, AssignOptionInput line) =>
+        row is { EndsAtUtc: null } && line.PaidUntil is null && row.Quantity == line.Quantity;
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE40.md §40.13 (API_CONTRACT_CYCLE40.md §40.31.6) — the lines of the two channel options (<c>notifications.whatsapp</c>,
+    /// <c>notifications.max</c>) in an assignment: the paid-until date is mandatory (400); the tariff's option rule is not consulted; and
+    /// CREATING such a row or EXTENDING its date while the option is closed by the platform switch (§40.7.1) is a 409 — an unchanged row
+    /// of a closed option passes (what was bought keeps working). Returns the refusal, or <see langword="null"/>.
+    /// </summary>
+    private async Task<IActionResult?> CheckChannelOptionLinesAsync(
+        Guid accountId, IReadOnlyList<AssignOptionInput> optionLines, IReadOnlyList<SubscriptionOption> options)
+    {
+        var channelLines = optionLines.Where(l => ChannelOptionLog.IsChannelOption(options.First(o => o.Id == l.OptionId).Code)).ToList();
+        if (channelLines.Count == 0) return null;
+
+        var lineOptionIds = channelLines.Select(l => l.OptionId).ToList();
+        var existing = await db.AccountSubscriptionOptions.AsNoTracking()
+            .Where(o => o.BillingAccountId == accountId && lineOptionIds.Contains(o.OptionId)).ToListAsync();
+
+        if (channelLines.Any(l => l.PaidUntil is null && !IsUnchangedChannelOptionLine(existing.FirstOrDefault(o => o.OptionId == l.OptionId), l)))
+            return BadRequest("Для опций WhatsApp и MAX укажите дату окончания оплаты");
+
+        foreach (var line in channelLines)
+        {
+            if (IsUnchangedChannelOptionLine(existing.FirstOrDefault(o => o.OptionId == line.OptionId), line)) continue;
+            var transport = AccountMessagingReader.TransportOf(options.First(o => o.Id == line.OptionId).Code)!.Value;
+            var row = existing.FirstOrDefault(o => o.OptionId == line.OptionId);
+            var verdict = ChannelOptionAssignmentRules.Evaluate(
+                line.PaidUntil, await platformSettings.IsOptionOpenAsync(transport),
+                row is null ? null : new ExistingChannelOptionRow(row.PaidUntilUtc, row.EndsAtUtc));
+            if (verdict == ChannelOptionLineVerdict.ClosedForConnection)
+                return Conflict(MessengerTexts.OptionClosedForAdmin(transport));
+        }
+        return null;
+    }
 
     // ── Billing accounts (US-67) ──────────────────────────────────────────────────
 
@@ -137,6 +183,7 @@ public class AdminBillingController(
         var accountIds = page1.Select(x => x.a.Id).ToList();
         var plans = await subscriptionResolver.GetEffectivePlansForAccountsAsync(accountIds);
         var usages = await usageReader.GetAsync(accountIds);
+        var messagingByAccount = await messagingReader.LoadAsync(accountIds, now, ct);
 
         // N4 — the same two figures the account's own card already gets right (BuildAccountCardAsync):
         // numbersRegistered from an actual COUNT, and totalMonthlyPrice including every subscribed
@@ -195,7 +242,7 @@ public class AdminBillingController(
                 companiesLimit = plan.AccountMaxCompanies,
                 employeesUsed = usage.SeatsUsed,
                 employeesLimit = plan.AccountMaxEmployees,
-                numbersPaid = plan.PaidNotificationNumbers,
+                numbersPaid = messagingByAccount.GetValueOrDefault(a.Id)?.PaidTransportCount ?? 0, // §40.3.4: paid transports (0…2)
                 numbersRegistered = registeredCounts.GetValueOrDefault(a.Id, 0),
                 hasPendingRequest = a.RequestedAtUtc is not null,
                 trialState = x.trialState,
@@ -221,7 +268,7 @@ public class AdminBillingController(
     // Cycle 22 P5 (§385): shared with the other half of the former AdminBillingController — the body lives
     // in AdminAccountDtoBuilder, unchanged.
     private Task<object> BuildAdminAccountDtoAsync(BillingAccount account) =>
-        AdminAccountDtoBuilder.BuildAsync(db, subscriptionResolver, usageReader, ownerSubscriptionService, account);
+        AdminAccountDtoBuilder.BuildAsync(db, subscriptionResolver, usageReader, ownerSubscriptionService, messagingReader, account);
 
     [HttpPut("billing-accounts/{accountId:guid}/subscription")]
     public async Task<IActionResult> AssignSubscription(Guid accountId, [FromBody] AssignSubscriptionInput dto)
@@ -309,10 +356,14 @@ public class AdminBillingController(
         var planRules = plan is not null ? await db.PlanOptionRules.Where(r => r.PlanConfigId == plan.Id).ToListAsync() : [];
         foreach (var line in optionLines)
         {
+            // ARCHITECTURE_CYCLE40.md §40.13: the two channel options are not governed by the tariff's option rule (it is not read any more).
+            if (ChannelOptionLog.IsChannelOption(options.First(o => o.Id == line.OptionId).Code)) continue;
             var rule = planRules.FirstOrDefault(r => r.OptionId == line.OptionId);
             if (plan is not null && (rule is null || rule.Availability == OptionAvailability.Unavailable))
                 return Conflict($"Опция недоступна на выбранном тарифе.");
         }
+        if (await CheckChannelOptionLinesAsync(accountId, optionLines, options) is { } channelOptionRefusal)
+            return channelOptionRefusal;
 
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"billing-account:{accountId}");
@@ -368,11 +419,13 @@ public class AdminBillingController(
         // ARCHITECTURE_CYCLE19.md §383.2/§386.1 — retired limit option rows are excluded here so this
         // endpoint never creates, updates or closes them, even via the "options not in the request end"
         // loop below.
-        var existingOptions = await db.AccountSubscriptionOptions.WhereNotRetired()
+        var existingOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
             .Where(o => o.BillingAccountId == accountId).ToListAsync();
         foreach (var line in optionLines)
         {
             var row = existingOptions.FirstOrDefault(o => o.OptionId == line.OptionId);
+            var optionCode = options.First(o => o.Id == line.OptionId).Code;
+            if (ChannelOptionLog.IsChannelOption(optionCode) && IsUnchangedChannelOptionLine(row, line)) continue;
             if (row is null)
             {
                 db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
@@ -385,12 +438,15 @@ public class AdminBillingController(
                     ActivatedAtUtc = now,
                     ActivatedByUserId = changedByUserId,
                 });
+                ChannelOptionLog.Write(db, accountId, optionCode, ChannelOptionChangeSource.AdminBillingAccount,
+                    null, ToUtc(line.PaidUntil), null, null, changedByUserId, now, comment: dto.Comment);
             }
             else
             {
+                var (oldOptionPaidUntil, oldOptionEndsAt) = (row.PaidUntilUtc, row.EndsAtUtc);
                 row.EndsAtUtc = null;
                 row.Quantity = line.Quantity;
-                row.PaidUntilUtc = ToUtc(line.PaidUntil);
+                row.PaidUntilUtc = KeepStoredDateIfSameDay(row.PaidUntilUtc, line.PaidUntil);
                 row.ActivatedAtUtc = now;
                 row.ActivatedByUserId = changedByUserId;
                 row.RequestedQuantity = null;
@@ -403,6 +459,9 @@ public class AdminBillingController(
                 // would mistake this PAID row for its own leftover and silently overwrite its
                 // Quantity/PaidUntilUtc back down.
                 row.GrantedByTrial = false;
+                if (oldOptionPaidUntil != row.PaidUntilUtc || oldOptionEndsAt != row.EndsAtUtc)
+                    ChannelOptionLog.Write(db, accountId, optionCode, ChannelOptionChangeSource.AdminBillingAccount,
+                        oldOptionPaidUntil, row.PaidUntilUtc, oldOptionEndsAt, row.EndsAtUtc, changedByUserId, now, comment: dto.Comment);
             }
         }
         // Options present before but omitted now (or decreased — decreases are not modeled per-unit,
@@ -410,8 +469,12 @@ public class AdminBillingController(
         // and is treated the same as the option staying at its previous quantity until removed outright,
         // see the cycle-07 backend report) end at the close of the current paid period rather than
         // disappearing immediately (contract: "действует до конца оплаченного периода").
-        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null))
+        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null && !ChannelOptionLog.IsChannelOption(r.Option.Code))) // the messenger options live their own life (confirm-payment, trial); a form that does not list them leaves them alone
+        {
             row.EndsAtUtc = sub.PaidUntil ?? now;
+            ChannelOptionLog.Write(db, accountId, row.Option.Code, ChannelOptionChangeSource.AdminOptionEnded,
+                row.PaidUntilUtc, row.PaidUntilUtc, null, row.EndsAtUtc, changedByUserId, now, comment: dto.Comment);
+        }
 
         if (dto.RequestId.HasValue)
         {
@@ -518,10 +581,14 @@ public class AdminBillingController(
         var planRules = plan is not null ? await db.PlanOptionRules.Where(r => r.PlanConfigId == plan.Id).ToListAsync() : [];
         foreach (var line in optionLines)
         {
+            // ARCHITECTURE_CYCLE40.md §40.13: the two channel options are not governed by the tariff's option rule (it is not read any more).
+            if (ChannelOptionLog.IsChannelOption(options.First(o => o.Id == line.OptionId).Code)) continue;
             var rule = planRules.FirstOrDefault(r => r.OptionId == line.OptionId);
             if (plan is not null && (rule is null || rule.Availability == OptionAvailability.Unavailable))
-                return Conflict("Опция недоступна на выбранном тарифе.");
+                return Conflict($"Опция недоступна на выбранном тарифе.");
         }
+        if (await CheckChannelOptionLinesAsync(accountId, optionLines, options) is { } channelOptionRefusal)
+            return channelOptionRefusal;
 
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"billing-account:{accountId}");
@@ -587,31 +654,45 @@ public class AdminBillingController(
         var oldOptionsSummary = await BuildOptionsSummaryAsync(accountId);
 
         // The account's options: the request is the FULL set (as in the "Записи" assignment); the ones left out end with the paid period.
-        var existingOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Where(o => o.BillingAccountId == accountId).ToListAsync();
+        var existingOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option).Where(o => o.BillingAccountId == accountId).ToListAsync();
         foreach (var line in optionLines)
         {
             var row = existingOptions.FirstOrDefault(o => o.OptionId == line.OptionId);
+            var optionCode = options.First(o => o.Id == line.OptionId).Code;
+            if (ChannelOptionLog.IsChannelOption(optionCode) && IsUnchangedChannelOptionLine(row, line)) continue;
             if (row is null)
+            {
                 db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
                 {
                     Id = Guid.NewGuid(), BillingAccountId = accountId, OptionId = line.OptionId, Quantity = line.Quantity,
                     PaidUntilUtc = ToUtc(line.PaidUntil), ActivatedAtUtc = now, ActivatedByUserId = changedByUserId,
                 });
+                ChannelOptionLog.Write(db, accountId, optionCode, ChannelOptionChangeSource.AdminBillingAccount,
+                    null, ToUtc(line.PaidUntil), null, null, changedByUserId, now, comment: dto.Comment);
+            }
             else
             {
+                var (oldOptionPaidUntil, oldOptionEndsAt) = (row.PaidUntilUtc, row.EndsAtUtc);
                 row.EndsAtUtc = null;
                 row.Quantity = line.Quantity;
-                row.PaidUntilUtc = ToUtc(line.PaidUntil);
+                row.PaidUntilUtc = KeepStoredDateIfSameDay(row.PaidUntilUtc, line.PaidUntil);
                 row.ActivatedAtUtc = now;
                 row.ActivatedByUserId = changedByUserId;
                 row.RequestedQuantity = null;
                 row.RequestedAtUtc = null;
                 row.RequestedByUserId = null;
                 row.GrantedByTrial = false;
+                if (oldOptionPaidUntil != row.PaidUntilUtc || oldOptionEndsAt != row.EndsAtUtc)
+                    ChannelOptionLog.Write(db, accountId, optionCode, ChannelOptionChangeSource.AdminBillingAccount,
+                        oldOptionPaidUntil, row.PaidUntilUtc, oldOptionEndsAt, row.EndsAtUtc, changedByUserId, now, comment: dto.Comment);
             }
         }
-        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null))
+        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null && !ChannelOptionLog.IsChannelOption(r.Option.Code))) // the messenger options live their own life (confirm-payment, trial); a form that does not list them leaves them alone
+        {
             row.EndsAtUtc = newPaidUntil ?? now;
+            ChannelOptionLog.Write(db, accountId, row.Option.Code, ChannelOptionChangeSource.AdminOptionEnded,
+                row.PaidUntilUtc, row.PaidUntilUtc, null, row.EndsAtUtc, changedByUserId, now, comment: dto.Comment);
+        }
 
         if (dto.RequestId.HasValue)
         {

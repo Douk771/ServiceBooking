@@ -2,8 +2,8 @@ namespace ServiceBooking.API.Services.Notifications;
 
 /// <summary>
 /// The single place <see cref="Core.Entities.NotificationChannel.IdleSinceUtc"/> is computed
-/// (ARCHITECTURE_CYCLE4.md §30.3). Four events can end a channel's idle period (company unblocked,
-/// company reactivated, a company assigned to the channel, the channel's period paid) and none of them
+/// (ARCHITECTURE_CYCLE4.md §30.3, with cycle 40's "demand" of the account instead of assignments). Events that can end a channel's idle period (company unblocked,
+/// company reactivated, customer messaging switched on, the channel's period paid) and none of them
 /// touch this field directly — they change only their own data, and <see cref="ServiceBooking.API.Services.Scheduling.Tasks.ChannelHealthTask"/> is
 /// the only caller of <see cref="Recompute"/>, once per pass, from a single batched query over all
 /// channels. That is the whole reason this exists as a separate pure function rather than four separate
@@ -14,16 +14,16 @@ public static class ChannelIdleCalculator
 {
     /// <summary>
     /// Recomputes <c>IdleSinceUtc</c> for one channel from the two things §30.3 reduces "is this channel
-    /// idle" to — whether it has at least one active (not blocked/deactivated) assigned company, and
-    /// whether its paid period is currently live. Cycle 22 (ARCHITECTURE_CYCLE22.md §379, Р2): "paid
+    /// idle" to — whether the account has demand (cycle 40, §40.4.4: an active, non-showcase company with customer
+    /// messaging switched on — <see cref="Funding.MessagingDemand"/>), and whether its paid period is currently live. Cycle 22 (ARCHITECTURE_CYCLE22.md §379, Р2): "paid
     /// period live" is the channel's FUNDING (<see cref="ChannelFundingReader"/>: the account's WhatsApp
     /// option, which already counts only while its own or the subscription's period runs), no longer the
     /// channel's dropped PaidUntilUtc column.
     /// </summary>
     /// <param name="existingIdleSinceUtc">The channel's current <c>IdleSinceUtc</c> value.</param>
-    /// <param name="activeCompanyCount">Count of companies assigned to the channel with
-    /// <c>Company.IsActive == true</c> — both "blocked by superadmin" and "deactivated by owner" are the
-    /// same field (§30.3), so this single count captures both causes.</param>
+    /// <param name="hasDemand">Whether the channel's billing account has at least one active, non-showcase company that wants
+    /// messages to customers (§40.4.4) — "blocked by superadmin" and "deactivated by owner" are the same field (§30.3).
+    /// The platform's messaging switch does not start idling.</param>
     /// <param name="isFunded">Whether the channel is funded right now
     /// (<see cref="Billing.ChannelFundingState.Funded"/>).</param>
     /// <param name="isSuspendedByAdmin">Whether the channel itself was suspended by a superadmin.</param>
@@ -34,15 +34,13 @@ public static class ChannelIdleCalculator
     /// started — a date is set ONCE and never "restarted" while it stays unset.</returns>
     public static DateTime? Recompute(
         DateTime? existingIdleSinceUtc,
-        int activeCompanyCount,
+        bool hasDemand,
         bool isFunded,
         bool isSuspendedByAdmin,
         DateTime nowUtc)
     {
         var periodIsLive = isFunded && !isSuspendedByAdmin;
-        var hasActiveCompany = activeCompanyCount > 0;
-
-        if (hasActiveCompany && periodIsLive) return null;
+        if (hasDemand && periodIsLive) return null;
 
         return existingIdleSinceUtc ?? nowUtc;
     }

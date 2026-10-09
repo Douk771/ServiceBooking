@@ -263,10 +263,10 @@ public class NotificationMaxTransportTests(TestDatabaseFixture fixture) : ApiTes
         await NotificationTestBase.EnsureWhatsAppPlanRuleAsync(db, plan.Id);
         await db.SaveChangesAsync();
 
-        // ARCHITECTURE_CYCLE9.md §104.4: ONE option funds numbers regardless of transport
-        // (ChannelFunding.Rank ranks ALL live channels of the account, transport-blind) — paidNumbers=2
-        // is what lets a WhatsApp channel AND a MAX channel both be Funded on the same account.
-        await NotificationTestBase.EnsureWhatsAppPaidAsync(db, account.Id, paidNumbers);
+        // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3): payment is PER TRANSPORT — the cycle-9 convention "one WhatsApp option with quantity 2 funds
+        // a WhatsApp AND a MAX number" is gone. paidNumbers >= 2 now means "both transports are paid": WhatsApp by its row, MAX by its own.
+        await NotificationTestBase.EnsureWhatsAppPaidAsync(db, account.Id);
+        if (paidNumbers >= 2) await NotificationTestBase.EnsureMaxPaidAsync(db, account.Id);
     }
 
     private async Task<NotificationChannel> SeedConnectedAssignedChannelAsync(

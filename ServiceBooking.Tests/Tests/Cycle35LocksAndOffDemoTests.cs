@@ -160,8 +160,7 @@ public class Cycle35OffDemoTests(TestDatabaseFixture fixture) : Cycle24TestBase(
             await db.SaveChangesAsync();
         });
         var assign = await DbAsync(db => db.NotificationChannels.Where(c => c.OwnerUserId == shop.Owner.UserId).Select(c => c.Id).FirstAsync());
-        var r = await AuthedClient(shop.OwnerToken).PostJsonAsync($"/api/notification-channels/{assign}/companies", new { companyId = shop.Id, warningAcknowledged = true });
-        r.StatusCode.Should().Be(HttpStatusCode.Created, await r.Content.ReadAsStringAsync());
+        // Cycle 40 (BE-40-2): no assignment step — the number of the owner's account serves the shop.
         (await AuthedClient(shop.OwnerToken).PutJsonAsync($"/api/shops/{shop.Id}/notification-settings",
             new ShopNotificationSettingsInput(true, true, true, null, null))).StatusCode.Should().Be(HttpStatusCode.OK);
     }

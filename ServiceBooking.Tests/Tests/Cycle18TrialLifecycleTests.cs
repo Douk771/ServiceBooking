@@ -538,6 +538,16 @@ public abstract class Cycle18LifecycleTestBase(TestDatabaseFixture fixture) : Ap
     // ── Shared WhatsApp-option helpers (Дыра1/Дыра2 recheck) — used by both Cycle18TrialLifecycleTaskTests
     // (option-lifecycle scenarios) and Cycle18TrialMailingDeliveryTests (real-delivery scenarios) below.
 
+    protected static async Task OpenWhatsAppOptionAsync(AppDbContext db, PlatformSettings platformSettings)
+    {
+        var key = PlatformSettings.OptionWhatsAppOpenKey;
+        var row = await db.PlatformSettings.FirstOrDefaultAsync(s => s.Key == key);
+        if (row is null) db.PlatformSettings.Add(new PlatformSetting { Key = key, Value = "true", UpdatedAt = DateTime.UtcNow, UpdatedByUserId = "test" });
+        else row.Value = "true";
+        await db.SaveChangesAsync();
+        platformSettings.InvalidateCache(key);
+    }
+
     protected static async Task<Guid> GetOrCreateWhatsAppOptionIdAsync(AppDbContext db)
     {
         var existingId = await db.SubscriptionOptions
@@ -560,12 +570,19 @@ public abstract class Cycle18LifecycleTestBase(TestDatabaseFixture fixture) : Ap
     /// Availability: OptionAvailability.Included }`). Not part of <c>CreateTrialPlanAsync</c> itself
     /// (used by every test in this file, including ones that don't care about option materialization at
     /// all) — added explicitly only where this matters, on the same shared plan row every test in a
-    /// given class' database already reuses.</summary>
+    /// given class' database already reuses.
+    /// Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.5, Р40-Ю1): the trial no longer reads the plan's rule — it grants only OPEN options, and WhatsApp is
+    /// CLOSED by default. The scenarios of this file are about a trial that carries the WhatsApp option, so this helper now also opens it (platform
+    /// setting <c>notifications.option.whatsapp.open</c> = true, cache invalidated); the rule is kept so the fixture still describes a plan "with mailings".</summary>
     protected async Task EnsureWhatsAppIncludedOnTrialPlanAsync(Guid trialPlanId)
     {
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await OpenWhatsAppOptionAsync(db, scope.ServiceProvider.GetRequiredService<PlatformSettings>());
         var optionId = await GetOrCreateWhatsAppOptionIdAsync(db);
+        // Cycle 40 (review): the price is the go-live lever of an option — a trial grants only an option that has one.
+        var whatsApp = await db.SubscriptionOptions.FirstAsync(o => o.Id == optionId);
+        whatsApp.PricePerMonth ??= 490;
         var rule = await db.PlanOptionRules.FirstOrDefaultAsync(r => r.PlanConfigId == trialPlanId && r.OptionId == optionId);
         if (rule is null)
         {
@@ -1684,6 +1701,9 @@ public class Cycle18TrialMailingDeliveryTests(TestDatabaseFixture fixture) : Cyc
 
         var clientUser = await RegisterAsync();
         await GrantProviderDeliveryConsentAsync(clientUser.Token);
+        // Cycle 40 (§40.11.2): a booking made under a phone (guest path) reaches an account's consent only through a CONFIRMED phone — without the
+        // mark a guest is no recipient (NoProviderDeliveryConsent), which is the intended rule.
+        await MarkPhoneVerifiedAsync(clientUser.Phone, clientUser.UserId);
         var booking = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
             new ServiceBooking.API.DTOs.Bookings.CreateBookingDto(
                 company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, "Walk-in", clientUser.Phone, null, null));
@@ -1693,7 +1713,7 @@ public class Cycle18TrialMailingDeliveryTests(TestDatabaseFixture fixture) : Cyc
         var queued = await DbAsync(db => db.OutboundNotifications
             .FirstAsync(n => n.BookingId == bookingId && n.Type == NotificationType.BookingConfirmed));
         queued.Status.Should().Be(NotificationStatus.Pending,
-            "the row must actually be QUEUED, not Skipped/NotOnPaidPlan — that IS the bug this test targets");
+            "the row must actually be QUEUED, not Skipped/NotOnPaidPlan — that IS the bug this test targets (reason: " + queued.Reason + ")");
 
         var canonicalClientPhone = clientUser.Phone.TrimStart('+').Replace(" ", "");
         await using var dispatchFactory = new TrialDispatchFactory(ConnectionString);
@@ -1729,11 +1749,12 @@ public class Cycle18TrialMailingDeliveryTests(TestDatabaseFixture fixture) : Cyc
         // Simulate the mailing window having already closed (§336.3) — the option row's own PaidUntilUtc
         // (kept in sync with the window's own end date by TrialMailingWindowStarter, already covered end
         // to end by Part 1) is backdated directly, the same end state a real elapsed window leaves behind.
-        var optionId = await DbAsync(db => GetOrCreateWhatsAppOptionIdAsync(db));
+        // Cycle 40: the trial grants EVERY open channel option (WhatsApp, MAX), and the window start dates all of them with the same end —
+        // so the end state of an elapsed window is every trial option row backdated, not just the WhatsApp one.
         await RunInDbAsync(async db =>
         {
-            var option = await db.AccountSubscriptionOptions.FirstAsync(o => o.BillingAccountId == accountId && o.OptionId == optionId);
-            option.PaidUntilUtc = DateTime.UtcNow.AddDays(-1);
+            foreach (var option in await db.AccountSubscriptionOptions.Where(o => o.BillingAccountId == accountId).ToListAsync())
+                option.PaidUntilUtc = DateTime.UtcNow.AddDays(-1);
         });
 
         var master = await AddMasterAsync(owner.Token, company.Id);
@@ -1743,6 +1764,9 @@ public class Cycle18TrialMailingDeliveryTests(TestDatabaseFixture fixture) : Cyc
 
         var clientUser = await RegisterAsync();
         await GrantProviderDeliveryConsentAsync(clientUser.Token);
+        // Cycle 40 (§40.11.2): a booking made under a phone (guest path) reaches an account's consent only through a CONFIRMED phone — without the
+        // mark a guest is no recipient (NoProviderDeliveryConsent), which is the intended rule.
+        await MarkPhoneVerifiedAsync(clientUser.Phone, clientUser.UserId);
         var booking = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
             new ServiceBooking.API.DTOs.Bookings.CreateBookingDto(
                 company.Id, service.Id, master.UserId, date, new TimeOnly(11, 0), null, "Walk-in", clientUser.Phone, null, null));
@@ -1882,6 +1906,9 @@ public class Cycle18TrialMailingDeliveryTests(TestDatabaseFixture fixture) : Cyc
 
         var clientUser = await RegisterAsync();
         await GrantProviderDeliveryConsentAsync(clientUser.Token);
+        // Cycle 40 (§40.11.2): a booking made under a phone (guest path) reaches an account's consent only through a CONFIRMED phone — without the
+        // mark a guest is no recipient (NoProviderDeliveryConsent), which is the intended rule.
+        await MarkPhoneVerifiedAsync(clientUser.Phone, clientUser.UserId);
         var booking = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
             new ServiceBooking.API.DTOs.Bookings.CreateBookingDto(
                 company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, "Walk-in", clientUser.Phone, null, null));

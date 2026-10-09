@@ -476,7 +476,10 @@ public record ExportMembershipDto(string Company, string Role, DateTime JoinedAt
 
 public record ExportBookingDto(
     Guid Id, DateOnly Date, TimeOnly StartTime, TimeOnly EndTime, string Company, string Service, string Master,
-    string Status, string PaymentStatus, decimal Price, string? CancellationReason);
+    string Status, string PaymentStatus, decimal Price, string? CancellationReason,
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.11.6, API_CONTRACT_CYCLE40.md §40.35): the messenger consent this booking carries — the person's own data (152-ФЗ ст. 14).
+    // The staff member's name is never given out.
+    bool? NotifyByMessenger = null, string? MessengerConsentVersion = null, DateTime? MessengerConsentAtUtc = null, bool MessengerConsentByStaff = false);
 
 public record ExportReviewDto(string Company, int Rating, string? Comment, DateTime CreatedAt);
 public record ExportNoteMetaDto(string Company, DateTime CreatedAt, int PhotoCount);

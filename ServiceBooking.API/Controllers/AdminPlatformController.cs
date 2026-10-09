@@ -73,7 +73,10 @@ public class AdminPlatformController(
         var trialWarningThresholdsDays = (await platformSettings.GetTrialWarningThresholdsDaysAsync(ct)).ToList();
         return Ok(new AdminPlatformSettingsDto(
             price, idleDays, pricingPublicEnabled, blockedReason,
-            trialDurationDays, trialMailingWindowDays, trialWarningThresholdsDays));
+            trialDurationDays, trialMailingWindowDays, trialWarningThresholdsDays,
+            await platformSettings.IsCustomerMessagingEnabledAsync(ct),
+            await platformSettings.IsOptionOpenAsync(Core.Enums.NotificationTransport.WhatsApp, ct),
+            await platformSettings.IsOptionOpenAsync(Core.Enums.NotificationTransport.Max, ct)));
     }
 
     [HttpPut("platform-settings")]
@@ -144,7 +147,8 @@ public class AdminPlatformController(
         // itself is deferred until after SaveChangesAsync below — invalidating first opens a window where
         // a concurrent reader repopulates the cache from the not-yet-committed old row and pins the stale
         // value for the cache's full TTL even though the write already succeeded.
-        var priceChanged = oldPrice != dto.ChannelPricePerMonth;
+        // Cycle 40 (§40.13): the field is accepted and IGNORED — a number is priced by the price of its option, not by this retired setting.
+        var priceChanged = false;
         if (priceChanged)
         {
             await PlatformSettingsWriter.WriteAsync(
@@ -210,7 +214,29 @@ public class AdminPlatformController(
                     oldThresholdsRaw, newThresholdsRaw, userId);
         }
 
+        // Cycle 40 (§40.12, §40.13): the three switches. Only a present value is written, and only when it really changes (the journal records who and what).
+        var messagingKeysChanged = new List<string>();
+        async Task WriteSwitchAsync(string key, bool? requested, bool current)
+        {
+            if (requested is not { } value || value == current) return;
+            await PlatformSettingsWriter.WriteAsync(db, key, current ? "true" : "false", value ? "true" : "false", userId);
+            messagingKeysChanged.Add(key);
+        }
+        await WriteSwitchAsync(Services.Notifications.PlatformSettings.CustomerMessagingEnabledKey, dto.CustomerMessagingEnabled,
+            await platformSettings.IsCustomerMessagingEnabledAsync());
+        await WriteSwitchAsync(Services.Notifications.PlatformSettings.OptionOpenKey(Core.Enums.NotificationTransport.WhatsApp), dto.WhatsAppOptionOpen,
+            await platformSettings.IsOptionOpenAsync(Core.Enums.NotificationTransport.WhatsApp));
+        await WriteSwitchAsync(Services.Notifications.PlatformSettings.OptionOpenKey(Core.Enums.NotificationTransport.Max), dto.MaxOptionOpen,
+            await platformSettings.IsOptionOpenAsync(Core.Enums.NotificationTransport.Max));
+
         await db.SaveChangesAsync();
+
+        foreach (var key in messagingKeysChanged)
+        {
+            platformSettings.InvalidateCache(key);
+            logger.LogWarning("Platform messaging switch {Key} changed by {UserId}", key, userId);
+        }
+        if (messagingKeysChanged.Count > 0) pricingCatalogCache.Invalidate(); // the price lines of the messengers follow the availability switches
 
         if (priceChanged) platformSettings.InvalidateCache(PlatformSettingsWriter.PriceKey);
         if (idleDaysChanged) platformSettings.InvalidateCache(PlatformSettingsWriter.IdleDaysKey);
@@ -232,7 +258,10 @@ public class AdminPlatformController(
         var freshTrialThresholds = (await platformSettings.GetTrialWarningThresholdsDaysAsync()).ToList();
         return Ok(new AdminPlatformSettingsDto(
             freshPrice, freshIdleDays, dto.PricingPublicEnabled, freshBlockedReason,
-            freshTrialDuration, freshTrialWindow, freshTrialThresholds));
+            freshTrialDuration, freshTrialWindow, freshTrialThresholds,
+            await platformSettings.IsCustomerMessagingEnabledAsync(),
+            await platformSettings.IsOptionOpenAsync(Core.Enums.NotificationTransport.WhatsApp),
+            await platformSettings.IsOptionOpenAsync(Core.Enums.NotificationTransport.Max)));
     }
 
     // ── Retention policy (T5-B8/B9, ARCHITECTURE_CYCLE5.md §49.5) ────────────────
@@ -343,7 +372,10 @@ public record GuestDataGateEventDto(
 // null/absent = "не менять" (§367), same convention as AdminPlanInput.IsPublic/SortOrder above.
 public record AdminPlatformSettingsDto(
     decimal? ChannelPricePerMonth, int ChannelIdleDays, bool PricingPublicEnabled, string? PricingPublicBlockedReason = null,
-    int? TrialDurationDays = null, int? TrialMailingWindowDays = null, List<int>? TrialWarningThresholdsDays = null);
+    int? TrialDurationDays = null, int? TrialMailingWindowDays = null, List<int>? TrialWarningThresholdsDays = null,
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.12, §40.13; API_CONTRACT_CYCLE40.md §40.35) — the stop-cock of customer messaging and the two availability
+    // switches of the messenger options. GET: always a value (an absent key = the default: messaging ON, WhatsApp closed, MAX open). PUT: null = do not change.
+    bool? CustomerMessagingEnabled = null, bool? WhatsAppOptionOpen = null, bool? MaxOptionOpen = null);
 
 // ARCHITECTURE_CYCLE11.md §114.2 — 409 body for PUT /api/admin/platform-settings when
 // pricingPublicEnabled: true is rejected because the channel offer isn't published.

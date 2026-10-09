@@ -13,12 +13,14 @@ import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { formatPhone, isRussianPhone } from '@/utils/phone'
 import { storefrontApi } from '../../api/storefront'
-import { orderLegalTextsApi } from '../../api/legalNotice'
+import { shopsApi } from '../../api/shops'
+import { MessengerOptIn } from '@/components/notifications/MessengerOptIn'
+import { useMessengerOptInDefault } from '@/hooks/useMessengerOptInDefault'
 import { CheckoutLegalNotice } from './CheckoutLegalNotice'
 import { InlineError } from '../StatePanels'
 import { useCart } from '../../hooks/useCart'
 import { decrementQuantity, incrementQuantity, priceChanges, quantityRule } from '../../utils/cart'
-import { checkoutGate, loginUrlForCheckout, messengerConsentFallback, validateCheckout } from '../../utils/checkout'
+import { checkoutGate, loginUrlForCheckout, storefrontMessengerOffer, validateCheckout } from '../../utils/checkout'
 import { toPickupInput } from '../../utils/pickup'
 import type { PickupControl } from '../../hooks/usePickupChoice'
 import { newIdempotencyKey, orderPath } from '../../utils/idempotency'
@@ -75,7 +77,6 @@ export function CartPanel({ slug, shop, products, cart, pickup, onPickupNotice, 
   const [name, setName] = useState(() => (user ? `${user.firstName} ${user.lastName}`.trim().slice(0, 100) : ''))
   const [phone, setPhone] = useState('')
   const [comment, setComment] = useState('')
-  const [notifyByMessenger, setNotifyByMessenger] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaNonce, setCaptchaNonce] = useState(0)
   const [formError, setFormError] = useState('')
@@ -98,7 +99,11 @@ export function CartPanel({ slug, shop, products, cart, pickup, onPickupNotice, 
     verificationEnabled: verifyConfig.data?.enabled,
   })
   const guest = !signedIn
-  const messengerOffered = shop.customerNotifications.messengerOffered
+  // Cycle 40: сервер решает, предлагать ли галочку и с какой подписью; умолчание — из профиля вошедшего (§40.11.4).
+  const messengerOffer = storefrontMessengerOffer(shop)
+  const optIn = useMessengerOptInDefault(signedIn)
+  const kinds = useQuery({ queryKey: ['kinds-summary'], queryFn: shopsApi.kindsSummary, enabled: signedIn && optIn.optedOut, retry: false })
+  const ezbookProfileHref = kinds.data?.services.siteUrl ? `${kinds.data.services.siteUrl}/profile` : null
 
   const create = useMutation({
     mutationFn: () =>
@@ -110,7 +115,7 @@ export function CartPanel({ slug, shop, products, cart, pickup, onPickupNotice, 
         comment: comment.trim() || undefined,
         captchaToken: guest ? captchaToken || undefined : undefined,
         pickup: pickupInput,
-        notifyByMessenger: messengerOffered && notifyByMessenger,
+        notifyByMessenger: optIn.payload(messengerOffer.offered) ?? false,
       }),
     onSuccess: (res) => {
       cart.clear()
@@ -431,7 +436,7 @@ export function CartPanel({ slug, shop, products, cart, pickup, onPickupNotice, 
                       <p className="text-[11px] text-muted text-right">{comment.length}/500</p>
                     </div>
 
-                    {messengerOffered && <MessengerConsent checked={notifyByMessenger} onChange={setNotifyByMessenger} phone={guest ? phone : (user?.phone ?? '')} />}
+                    <MessengerOptIn kind="order" offer={messengerOffer} state={optIn} companyName={shop.name} profileHref={ezbookProfileHref} />
 
                     {guest && smartCaptchaEnabled && (
                       <div>
@@ -502,27 +507,4 @@ function pickupSummary(choice: PickupControl['choice'], asapText: string | null 
   if (!choice) return 'Время не выбрано'
   if (choice.kind === 'Asap') return asapText ? `Как можно скорее (${asapText})` : 'Как можно скорее'
   return [choice.dateLabel ?? choice.date, choice.slotLabel].filter(Boolean).join(', ')
-}
-
-/**
- * The messenger checkbox [legal L9]: OFF by default; the label is the lawyer's `OrderMessengerConsent` when it exists and the
- * SPEC line with a MASKED number otherwise (404 is a normal state, §478.3).
- */
-function MessengerConsent({ checked, onChange, phone }: { checked: boolean; onChange: (v: boolean) => void; phone: string }) {
-  const { data } = useQuery({
-    queryKey: ['legal-text', 'OrderMessengerConsent'],
-    queryFn: orderLegalTextsApi.messengerConsent,
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-  })
-  return (
-    <label className="flex items-start gap-3 rounded-xl border border-line bg-white px-4 py-3 text-sm text-ink cursor-pointer min-h-[44px]">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 h-5 w-5 accent-[#2B2420]" />
-      {data?.contentHtml ? (
-        <span className="legal-content [&_a]:text-gold [&_p]:mb-0" dangerouslySetInnerHTML={{ __html: data.contentHtml }} />
-      ) : (
-        <span>{messengerConsentFallback(phone)}</span>
-      )}
-    </label>
-  )
 }

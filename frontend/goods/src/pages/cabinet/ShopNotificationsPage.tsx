@@ -2,13 +2,8 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/Button'
-import { Card } from '@/components/ui/Card'
-import { ChannelRequestModal } from '@/components/notifications/ChannelRequestModal'
-import { ChannelCard } from '@/pages/owner/NotificationsSection'
-import { notificationChannelsApi } from '@/api/notificationChannels'
+import { NumbersBlock } from '@/components/notifications/NumbersBlock'
 import { TRANSPORT_LABELS } from '@/utils/notificationTransport'
-import { formatRub } from '@/utils/money'
-import type { Company } from '@/types'
 import { shopNotificationsApi } from '../../api/shopNotifications'
 import { useShopContext } from '../../hooks/useShop'
 import { RadioChips } from '../../components/pickup/RadioChips'
@@ -39,8 +34,8 @@ function Toggle({ label, hint, checked, disabled, onChange }: { label: string; h
 
 /**
  * `/cabinet/:shopId/notifications` (owner) — what the shop sends: staff push, the buyer's browser push and messages in
- * MAX/WhatsApp (US-24-15…20). Whether messages are possible (`messengerAvailable`) and why not is the server's; numbers are
- * connected with the SAME components as on ezbook (request, risk, QR, assignment) through `api/notification-channels`.
+ * MAX/WhatsApp (US-24-15…20). Whether messages are possible (`messengerAvailable`) and why not is the server's; the numbers are the account's, in the
+ * SAME «Номера» block as on ezbook (cycle 40: payment request → terms → QR; no assignment of companies).
  */
 export function ShopNotificationsPage() {
   const { shop } = useShopContext()
@@ -49,7 +44,6 @@ export function ShopNotificationsPage() {
   const q = useQuery({ queryKey: key, queryFn: () => shopNotificationsApi.get(shop.id) })
   const [draft, setDraft] = useState<ShopNotificationSettingsDto | null>(null)
   const [saved, setSaved] = useState(false)
-  const [showRequest, setShowRequest] = useState(false)
 
   useEffect(() => {
     if (q.data) setDraft(q.data)
@@ -73,9 +67,6 @@ export function ShopNotificationsPage() {
     onError: () => void qc.invalidateQueries({ queryKey: key }),
   })
 
-  const channels = useQuery({ queryKey: ['notification-channels'], queryFn: notificationChannelsApi.list })
-  const offer = useQuery({ queryKey: ['notification-channel-offer'], queryFn: notificationChannelsApi.offer })
-
   if (q.isLoading || !draft) {
     if (q.isError) return <main className="max-w-[860px] mx-auto px-4 sm:px-8 pt-8"><ErrorState message={getGoodsErrorMessage(q.error, 'Не удалось загрузить настройки уведомлений.')} onRetry={() => void q.refetch()} /></main>
     return <main className="max-w-[860px] mx-auto px-4 sm:px-8 pt-8"><LoadingList rows={3} rowClass="h-32" /></main>
@@ -87,15 +78,12 @@ export function ShopNotificationsPage() {
     save.reset()
   }
   const serverDraftDiffers = JSON.stringify(draft) !== JSON.stringify(q.data)
-  // The shop as a «company» for the shared assignment dialog (it only reads id and name).
-  const shopAsCompany = [{ id: shop.id, name: shop.name }] as unknown as Company[]
-  const ownChannels = channels.data ?? []
-  const assignedElsewhere = (channelId: string, transport: string) => {
-    const ids = new Set<string>()
-    for (const ch of ownChannels) if (ch.id !== channelId && ch.transport === transport) ch.companies.forEach((c) => ids.add(c.companyId))
-    return ids
-  }
-  const paidTransports = draft.channels.filter((c) => c.funded).map((c) => c.transport)
+  // The messengers the customer can really be written through: bound and paid numbers (the server decides whether the choice is worth showing).
+  const workingTransports = [...new Set(draft.channels.filter((c) => c.funded && c.isConnected).map((c) => c.transport))]
+  const priorityOptions: NotificationTransport[] = [
+    ...workingTransports,
+    ...(workingTransports.includes(draft.priorityTransport) ? [] : [draft.priorityTransport]),
+  ]
 
   return (
     <main className="max-w-[860px] mx-auto px-4 sm:px-8 pt-8 pb-12 flex flex-col gap-6">
@@ -146,8 +134,13 @@ export function ShopNotificationsPage() {
           </p>
         )}
 
-        {draft.messengerAvailable && draft.customerMessengerEnabled && (
+        {draft.messengerAvailable && draft.customerMessengerEnabled && draft.deliveryChoiceVisible && (
           <div className="mt-3 flex flex-col gap-3">
+            {draft.priorityWarning && (
+              <p className="text-sm text-warning bg-warning-bg rounded-xl px-4 py-2.5" data-testid="priority-warning">
+                {draft.priorityWarning}
+              </p>
+            )}
             <div>
               <p className="text-[13px] font-medium text-[#4A4038] mb-2">Куда отправлять</p>
               <RadioChips<NotificationDeliveryMode>
@@ -160,14 +153,17 @@ export function ShopNotificationsPage() {
                 ]}
               />
             </div>
-            {draft.deliveryMode === 'PriorityChannel' && paidTransports.length > 1 && (
+            {draft.deliveryMode === 'PriorityChannel' && (
               <div>
                 <p className="text-[13px] font-medium text-[#4A4038] mb-2">Приоритетный мессенджер</p>
                 <RadioChips<NotificationTransport>
                   label="Приоритетный мессенджер"
                   value={draft.priorityTransport}
                   onChange={(v) => set({ priorityTransport: v })}
-                  options={[...new Set(paidTransports)].map((t) => ({ value: t, label: TRANSPORT_LABELS[t] ?? t }))}
+                  options={priorityOptions.map((t) => ({
+                    value: t,
+                    label: `${TRANSPORT_LABELS[t] ?? t}${workingTransports.includes(t) ? '' : ' (не работает)'}`,
+                  }))}
                 />
               </div>
             )}
@@ -191,40 +187,7 @@ export function ShopNotificationsPage() {
         </div>
       </section>
 
-      <section aria-labelledby="ntf-channels" className="flex flex-col gap-3">
-        <h2 id="ntf-channels" className="font-serif text-xl text-ink">
-          Номера для сообщений
-        </h2>
-        {draft.channels.length > 0 && (
-          <ul className="flex flex-col gap-1 text-sm text-ink-soft" aria-label="Номера этого магазина">
-            {draft.channels.map((c) => (
-              <li key={c.channelId} data-testid="shop-channel">
-                <span className="font-medium text-ink">{c.phoneMasked ?? 'Номер не привязан'}</span> · {TRANSPORT_LABELS[c.transport] ?? c.transport} · {c.stateText} · {c.fundingText}
-              </li>
-            ))}
-          </ul>
-        )}
-        {channels.isLoading ? (
-          <LoadingList rows={1} rowClass="h-28" />
-        ) : channels.isError ? (
-          <ErrorState message={getGoodsErrorMessage(channels.error, 'Не удалось загрузить номера.')} onRetry={() => void channels.refetch()} />
-        ) : (
-          ownChannels.map((ch) => (
-            <ChannelCard key={ch.id} channel={ch} myCompanies={shopAsCompany} assignedElsewhereIds={assignedElsewhere(ch.id, ch.transport)} riskVersion={offer.data?.riskVersion} />
-          ))
-        )}
-        {offer.data && offer.data.pricePerMonth != null && offer.data.allowedByPlan ? (
-          <Card className="p-5 flex items-center justify-between gap-4 flex-wrap">
-            <p className="text-sm text-ink-soft">
-              Сообщения уходят покупателям с вашего номера. {formatRub(offer.data.pricePerMonth)} / мес за номер; оплату включает администратор по заявке в разделе «Подписка».
-            </p>
-            <Button onClick={() => setShowRequest(true)}>Подключить номер</Button>
-          </Card>
-        ) : offer.data ? (
-          <p className="text-sm text-muted">Подключение номера недоступно на вашем тарифе или временно закрыто.</p>
-        ) : null}
-        {showRequest && <ChannelRequestModal onClose={() => setShowRequest(false)} />}
-      </section>
+      <NumbersBlock />
     </main>
   )
 }

@@ -218,7 +218,8 @@ jobs:
             ../contracts/cycle35/openapi.yaml \
             ../contracts/cycle37/openapi.yaml \
             ../contracts/cycle38/openapi.yaml \
-            ../contracts/cycle39/openapi.yaml
+            ../contracts/cycle39/openapi.yaml \
+            ../contracts/cycle40/openapi.yaml
 
       # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
       # (e.g. @redocly/cli's own dependency tree) is explicitly out of scope for this threshold so the
@@ -265,12 +266,13 @@ jobs:
           npm run types:api:cycle37
           npm run types:api:cycle38
           npm run types:api:cycle39
-          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts src/types/api-cycle24.generated.ts src/types/api-cycle25.generated.ts src/types/api-cycle26.generated.ts src/types/api-cycle29.generated.ts src/types/api-cycle31.generated.ts src/types/api-cycle32.generated.ts src/types/api-cycle35.generated.ts src/types/api-cycle37.generated.ts src/types/api-cycle38.generated.ts src/types/api-cycle39.generated.ts
+          npm run types:api:cycle40
+          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts src/types/api-cycle24.generated.ts src/types/api-cycle25.generated.ts src/types/api-cycle26.generated.ts src/types/api-cycle29.generated.ts src/types/api-cycle31.generated.ts src/types/api-cycle32.generated.ts src/types/api-cycle35.generated.ts src/types/api-cycle37.generated.ts src/types/api-cycle38.generated.ts src/types/api-cycle39.generated.ts src/types/api-cycle40.generated.ts
 
-      - name: Contract JSON must match cycle31, cycle32, cycle35, cycle37, cycle38 and cycle39 yaml
+      - name: Contract JSON must match cycle31, cycle32, cycle35, cycle37, cycle38, cycle39 and cycle40 yaml
         run: |
           npm run contracts:json
-          git diff --exit-code -- ../contracts/cycle31/openapi.json ../contracts/cycle32/openapi.json ../contracts/cycle35/openapi.json ../contracts/cycle37/openapi.json ../contracts/cycle38/openapi.json ../contracts/cycle39/openapi.json
+          git diff --exit-code -- ../contracts/cycle31/openapi.json ../contracts/cycle32/openapi.json ../contracts/cycle35/openapi.json ../contracts/cycle37/openapi.json ../contracts/cycle38/openapi.json ../contracts/cycle39/openapi.json ../contracts/cycle40/openapi.json
 
       # Цикл 17: тексты правовых уведомлений пишет legal-counsel, а каркас кода появляется
       # раньше текста. Заглушка видна владельцу на экране «Ваша подписка», поэтому её нельзя

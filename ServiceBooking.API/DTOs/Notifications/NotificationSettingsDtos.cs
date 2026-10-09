@@ -33,7 +33,14 @@ public record NotificationSettingsDto(
     NotificationDeliveryMode DeliveryMode,
     NotificationTransport PriorityTransport,
     IReadOnlyList<NotificationTransport> ConnectedTransports,
-    bool PriorityChannelHealthy);
+    bool PriorityChannelHealthy,
+    // ARCHITECTURE_CYCLE40.md §40.6.4 (API_CONTRACT_CYCLE40.md §40.29) — appended at the end: does this company send messages at all, what to tell the owner
+    // when not, which transports work, and whether the delivery choice is worth showing (two working transports, or a broken priority).
+    bool MessagingActive = false,
+    string? InactiveText = null,
+    bool DeliveryChoiceVisible = false,
+    string? PriorityWarning = null,
+    IReadOnlyList<NotificationTransport>? WorkingTransports = null);
 
 /// <summary>ARCHITECTURE_CYCLE9.md §104.5/§114.4: <see cref="DeliveryMode"/>/<see cref="PriorityTransport"/>
 /// are optional — "не прислали — не меняем", the same convention as every other optional PUT field in

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { PricingOptionDto } from '../../types/pricing'
+import type { PricingOptionDto, PublicPricingDto } from '../../types/pricing'
 
 /**
  * «Линейка» тарифов сервиса (ARCHITECTURE_CYCLE38.md §38.7.1): общий вид сетки для «Записи» и «Заказов».
@@ -24,6 +24,9 @@ export interface PricingGridView {
   options: readonly PricingOptionDto[]
   notice: string
   legalNotice: string | null
+  /** Cycle 40 (Т40-L-11): серверные строки мессенджеров линейки «Записи»; у «Заказов» нет. */
+  messengerAddons?: PublicPricingDto['messengerAddons']
+  messengerAddonsNote?: PublicPricingDto['messengerAddonsNote']
 }
 
 export interface PricingLine {

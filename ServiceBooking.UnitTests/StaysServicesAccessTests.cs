@@ -66,10 +66,10 @@ public class StaysServicesAccessTests
         foreach (var type in NotificationTypeCatalog.ServiceTypes)
         {
             var result = NotificationGate.Evaluate(
-                ServiceBooking.API.Services.EffectivePlan.Free with { AllowNotificationChannel = true, PaidNotificationNumbers = 1 }, type, true,
-                new ServiceBooking.Core.Entities.NotificationChannel(), new ServiceBooking.Core.Entities.CompanyNotificationSettings { EnabledTypeMask = 0 },
-                false, now, now.AddHours(2), channelIsFunded: true);
-            result.Outcome.Should().Be(NotificationGateOutcome.Allowed, type.ToString());
+                type, new ServiceBooking.API.Services.Notifications.MessagingAvailability(true, true, true),
+                new ServiceBooking.Core.Entities.CompanyNotificationSettings { EnabledTypeMask = 0 },
+                false, ServiceBooking.API.Services.Notifications.MessengerConsentDecision.Allowed, now, now.AddHours(2));
+            result.IsAllowed.Should().BeTrue(type.ToString());
         }
     }
 

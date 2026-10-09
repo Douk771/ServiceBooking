@@ -1,0 +1,4396 @@
+{
+  "_comment": "Эталон правил каналов рассылок цикла 40 (ARCHITECTURE_CYCLE40.md §40.3.1, §40.5, §40.6, §40.7.1, §40.10, §40.11.2, §40.14; API_CONTRACT_CYCLE40.md §40.39). ОДИН файл читают юнит-тесты бэкенда (ServiceBooking.UnitTests) и vitest (frontend/src/utils/channelRules.test.ts). Правка правила = правка векторов в том же коммите. Время 'now' фиксировано. Кейс: name/input/expect. Для display добавлен факт idleDays (N в тексте «им {N} {дней}» берётся из конфигурации простоя, не из дат).",
+  "version": 2,
+  "now": "2026-10-20T09:00:00Z",
+  "availability": [
+    {
+      "name": "WhatsApp без ключа - закрыт",
+      "input": {
+        "transport": "WhatsApp",
+        "settingValue": null,
+        "configDefault": false,
+        "isActive": true,
+        "pricePerMonth": 490,
+        "termsOwnerPublished": true
+      },
+      "expect": {
+        "open": false,
+        "sellable": false
+      }
+    },
+    {
+      "name": "MAX без ключа - открыт",
+      "input": {
+        "transport": "Max",
+        "settingValue": null,
+        "configDefault": true,
+        "isActive": true,
+        "pricePerMonth": 490,
+        "termsOwnerPublished": true
+      },
+      "expect": {
+        "open": true,
+        "sellable": true
+      }
+    },
+    {
+      "name": "Ключ \"true\" открывает WhatsApp",
+      "input": {
+        "transport": "WhatsApp",
+        "settingValue": "true",
+        "configDefault": false,
+        "isActive": true,
+        "pricePerMonth": 490,
+        "termsOwnerPublished": true
+      },
+      "expect": {
+        "open": true,
+        "sellable": true
+      }
+    },
+    {
+      "name": "Ключ \"false\" закрывает MAX",
+      "input": {
+        "transport": "Max",
+        "settingValue": "false",
+        "configDefault": true,
+        "isActive": true,
+        "pricePerMonth": 490,
+        "termsOwnerPublished": true
+      },
+      "expect": {
+        "open": false,
+        "sellable": false
+      }
+    },
+    {
+      "name": "MAX открыт, но без цены - не продаётся",
+      "input": {
+        "transport": "Max",
+        "settingValue": null,
+        "configDefault": true,
+        "isActive": true,
+        "pricePerMonth": null,
+        "termsOwnerPublished": true
+      },
+      "expect": {
+        "open": true,
+        "sellable": false
+      }
+    },
+    {
+      "name": "MAX открыт, но опция неактивна - не продаётся",
+      "input": {
+        "transport": "Max",
+        "settingValue": "true",
+        "configDefault": true,
+        "isActive": false,
+        "pricePerMonth": 490,
+        "termsOwnerPublished": true
+      },
+      "expect": {
+        "open": true,
+        "sellable": false
+      }
+    },
+    {
+      "name": "MAX открыт, оферта черновая - не продаётся (Т40-L-04)",
+      "input": {
+        "transport": "Max",
+        "settingValue": null,
+        "configDefault": true,
+        "isActive": true,
+        "pricePerMonth": 490,
+        "termsOwnerPublished": false
+      },
+      "expect": {
+        "open": true,
+        "sellable": false
+      }
+    },
+    {
+      "name": "WhatsApp открыт ключом, оферта опубликована - продаётся",
+      "input": {
+        "transport": "WhatsApp",
+        "settingValue": "true",
+        "configDefault": false,
+        "isActive": true,
+        "pricePerMonth": 590,
+        "termsOwnerPublished": true
+      },
+      "expect": {
+        "open": true,
+        "sellable": true
+      }
+    },
+    {
+      "name": "Мусор в ключе WhatsApp - умолчание (закрыт)",
+      "input": {
+        "transport": "WhatsApp",
+        "settingValue": "yes",
+        "configDefault": false,
+        "isActive": true,
+        "pricePerMonth": 490,
+        "termsOwnerPublished": true
+      },
+      "expect": {
+        "open": false,
+        "sellable": false
+      }
+    },
+    {
+      "name": "Мусор в ключе MAX - умолчание (открыт)",
+      "input": {
+        "transport": "Max",
+        "settingValue": "1",
+        "configDefault": true,
+        "isActive": true,
+        "pricePerMonth": 490,
+        "termsOwnerPublished": true
+      },
+      "expect": {
+        "open": true,
+        "sellable": true
+      }
+    },
+    {
+      "name": "Пустая строка в ключе MAX - умолчание (открыт)",
+      "input": {
+        "transport": "Max",
+        "settingValue": "",
+        "configDefault": true,
+        "isActive": true,
+        "pricePerMonth": 490,
+        "termsOwnerPublished": true
+      },
+      "expect": {
+        "open": true,
+        "sellable": true
+      }
+    },
+    {
+      "name": "WhatsApp закрыт ключом при цене - не продаётся",
+      "input": {
+        "transport": "WhatsApp",
+        "settingValue": "false",
+        "configDefault": false,
+        "isActive": true,
+        "pricePerMonth": 590,
+        "termsOwnerPublished": true
+      },
+      "expect": {
+        "open": false,
+        "sellable": false
+      }
+    }
+  ],
+  "optionFunding": [
+    {
+      "name": "Нет строки - не оплачено",
+      "input": {
+        "row": {
+          "exists": false,
+          "endsAtUtc": null,
+          "paidUntilUtc": null,
+          "grantedByTrial": false,
+          "activatedAtUtc": null
+        },
+        "trialEndsAtUtc": null,
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": false
+      }
+    },
+    {
+      "name": "EndsAtUtc прошёл - не оплачено, срок = EndsAtUtc",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": "2026-10-19T00:00:00Z",
+          "paidUntilUtc": "2026-12-01T00:00:00Z",
+          "grantedByTrial": false,
+          "activatedAtUtc": null
+        },
+        "trialEndsAtUtc": null,
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": false,
+        "paidUntil": "2026-10-19T00:00:00Z",
+        "isTrial": false
+      }
+    },
+    {
+      "name": "EndsAtUtc ровно сейчас - не оплачено (EndsAtUtc <= now)",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": "2026-10-20T09:00:00Z",
+          "paidUntilUtc": "2026-12-01T00:00:00Z",
+          "grantedByTrial": false,
+          "activatedAtUtc": null
+        },
+        "trialEndsAtUtc": null,
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": false,
+        "paidUntil": "2026-10-20T09:00:00Z",
+        "isTrial": false
+      }
+    },
+    {
+      "name": "EndsAtUtc в будущем, срок в будущем - оплачено",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": "2027-01-01T00:00:00Z",
+          "paidUntilUtc": "2026-12-01T00:00:00Z",
+          "grantedByTrial": false,
+          "activatedAtUtc": "2026-10-01T00:00:00Z"
+        },
+        "trialEndsAtUtc": null,
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": true,
+        "paidUntil": "2026-12-01T00:00:00Z",
+        "isTrial": false
+      }
+    },
+    {
+      "name": "PaidUntilUtc в будущем - оплачено",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": null,
+          "paidUntilUtc": "2026-11-20T00:00:00Z",
+          "grantedByTrial": false,
+          "activatedAtUtc": "2026-10-20T08:00:00Z"
+        },
+        "trialEndsAtUtc": null,
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false
+      }
+    },
+    {
+      "name": "PaidUntilUtc вчера - не оплачено",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": null,
+          "paidUntilUtc": "2026-10-19T09:00:00Z",
+          "grantedByTrial": false,
+          "activatedAtUtc": null
+        },
+        "trialEndsAtUtc": null,
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": false,
+        "paidUntil": "2026-10-19T09:00:00Z",
+        "isTrial": false
+      }
+    },
+    {
+      "name": "PaidUntilUtc ровно сейчас - оплачено (>= now)",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": null,
+          "paidUntilUtc": "2026-10-20T09:00:00Z",
+          "grantedByTrial": false,
+          "activatedAtUtc": null
+        },
+        "trialEndsAtUtc": null,
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": true,
+        "paidUntil": "2026-10-20T09:00:00Z",
+        "isTrial": false
+      }
+    },
+    {
+      "name": "Триал без даты, окончание триала в будущем - оплачено, пробный",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": null,
+          "paidUntilUtc": null,
+          "grantedByTrial": true,
+          "activatedAtUtc": null
+        },
+        "trialEndsAtUtc": "2026-10-23T00:00:00Z",
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": true,
+        "paidUntil": "2026-10-23T00:00:00Z",
+        "isTrial": true
+      }
+    },
+    {
+      "name": "Триал без даты, триал закончился - не оплачено",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": null,
+          "paidUntilUtc": null,
+          "grantedByTrial": true,
+          "activatedAtUtc": null
+        },
+        "trialEndsAtUtc": "2026-10-18T00:00:00Z",
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": false,
+        "paidUntil": "2026-10-18T00:00:00Z",
+        "isTrial": true
+      }
+    },
+    {
+      "name": "Триал без даты и без даты окончания триала - не оплачено",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": null,
+          "paidUntilUtc": null,
+          "grantedByTrial": true,
+          "activatedAtUtc": null
+        },
+        "trialEndsAtUtc": null,
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": true
+      }
+    },
+    {
+      "name": "Триал с датой окна рассылок в будущем - оплачено, пробный",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": null,
+          "paidUntilUtc": "2026-11-02T00:00:00Z",
+          "grantedByTrial": true,
+          "activatedAtUtc": null
+        },
+        "trialEndsAtUtc": null,
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": true,
+        "paidUntil": "2026-11-02T00:00:00Z",
+        "isTrial": true
+      }
+    },
+    {
+      "name": "Наследная строка без даты, подписка годна - оплачено сроком подписки",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": null,
+          "paidUntilUtc": null,
+          "grantedByTrial": false,
+          "activatedAtUtc": null
+        },
+        "trialEndsAtUtc": null,
+        "subscription": {
+          "usable": true,
+          "paidUntil": "2026-12-15T00:00:00Z"
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": true,
+        "paidUntil": "2026-12-15T00:00:00Z",
+        "isTrial": false
+      }
+    },
+    {
+      "name": "Наследная строка без даты, подписка истекла - не оплачено",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": null,
+          "paidUntilUtc": null,
+          "grantedByTrial": false,
+          "activatedAtUtc": null
+        },
+        "trialEndsAtUtc": null,
+        "subscription": {
+          "usable": false,
+          "paidUntil": "2026-10-10T00:00:00Z"
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": false,
+        "paidUntil": "2026-10-10T00:00:00Z",
+        "isTrial": false
+      }
+    },
+    {
+      "name": "«Старт» с оплаченной опцией - оплачено независимо от тарифа (О4)",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": null,
+          "paidUntilUtc": "2026-11-30T00:00:00Z",
+          "grantedByTrial": false,
+          "activatedAtUtc": "2026-10-10T00:00:00Z"
+        },
+        "trialEndsAtUtc": null,
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": true
+      },
+      "expect": {
+        "paid": true,
+        "paidUntil": "2026-11-30T00:00:00Z",
+        "isTrial": false
+      }
+    },
+    {
+      "name": "Закрытая, но оплаченная опция - оплачено (закрытие не отключает купленное)",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": null,
+          "paidUntilUtc": "2026-11-30T00:00:00Z",
+          "grantedByTrial": false,
+          "activatedAtUtc": null
+        },
+        "trialEndsAtUtc": null,
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": false
+      },
+      "expect": {
+        "paid": true,
+        "paidUntil": "2026-11-30T00:00:00Z",
+        "isTrial": false
+      }
+    },
+    {
+      "name": "Закрытая, пробная, триал идёт - оплачено",
+      "input": {
+        "row": {
+          "exists": true,
+          "endsAtUtc": null,
+          "paidUntilUtc": null,
+          "grantedByTrial": true,
+          "activatedAtUtc": null
+        },
+        "trialEndsAtUtc": "2026-10-25T00:00:00Z",
+        "subscription": {
+          "usable": false,
+          "paidUntil": null
+        },
+        "optionOpen": false
+      },
+      "expect": {
+        "paid": true,
+        "paidUntil": "2026-10-25T00:00:00Z",
+        "isTrial": true
+      }
+    }
+  ],
+  "routing": [
+    {
+      "name": "Только MAX при умолчании WhatsApp - [Max]",
+      "input": {
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "candidates": [
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "Max"
+        ]
+      }
+    },
+    {
+      "name": "Только WhatsApp - [WhatsApp]",
+      "input": {
+        "mode": "PriorityChannel",
+        "priority": "Max",
+        "candidates": [
+          {
+            "transport": "WhatsApp",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "WhatsApp"
+        ]
+      }
+    },
+    {
+      "name": "Оба, PriorityChannel, приоритет MAX - [Max]",
+      "input": {
+        "mode": "PriorityChannel",
+        "priority": "Max",
+        "candidates": [
+          {
+            "transport": "WhatsApp",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          },
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "Max"
+        ]
+      }
+    },
+    {
+      "name": "Оба, PriorityChannel, приоритет WhatsApp - [WhatsApp]",
+      "input": {
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "candidates": [
+          {
+            "transport": "WhatsApp",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          },
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "WhatsApp"
+        ]
+      }
+    },
+    {
+      "name": "Оба, AllChannels - оба",
+      "input": {
+        "mode": "AllChannels",
+        "priority": "WhatsApp",
+        "candidates": [
+          {
+            "transport": "WhatsApp",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          },
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "WhatsApp",
+          "Max"
+        ]
+      }
+    },
+    {
+      "name": "Оба, AllChannels, порядок кандидатов обратный - всё равно WhatsApp, Max",
+      "input": {
+        "mode": "AllChannels",
+        "priority": "Max",
+        "candidates": [
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          },
+          {
+            "transport": "WhatsApp",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "WhatsApp",
+          "Max"
+        ]
+      }
+    },
+    {
+      "name": "WhatsApp NotConnected + MAX работает - [Max]",
+      "input": {
+        "mode": "AllChannels",
+        "priority": "WhatsApp",
+        "candidates": [
+          {
+            "transport": "WhatsApp",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "NotConnected"
+          },
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "Max"
+        ]
+      }
+    },
+    {
+      "name": "WhatsApp DisabledByOwner + MAX работает, приоритет WhatsApp - [Max]",
+      "input": {
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "candidates": [
+          {
+            "transport": "WhatsApp",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "DisabledByOwner"
+          },
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "Max"
+        ]
+      }
+    },
+    {
+      "name": "Приостановленный не цель - [Max]",
+      "input": {
+        "mode": "AllChannels",
+        "priority": "WhatsApp",
+        "candidates": [
+          {
+            "transport": "WhatsApp",
+            "paid": true,
+            "funded": true,
+            "suspended": true,
+            "state": "Connected"
+          },
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "Max"
+        ]
+      }
+    },
+    {
+      "name": "Оба приостановлены - []",
+      "input": {
+        "mode": "AllChannels",
+        "priority": "WhatsApp",
+        "candidates": [
+          {
+            "transport": "WhatsApp",
+            "paid": true,
+            "funded": true,
+            "suspended": true,
+            "state": "Connected"
+          },
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": true,
+            "state": "Connected"
+          }
+        ]
+      },
+      "expect": {
+        "targets": []
+      }
+    },
+    {
+      "name": "Ни одного кандидата - []",
+      "input": {
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "candidates": []
+      },
+      "expect": {
+        "targets": []
+      }
+    },
+    {
+      "name": "Не оплачен - не цель, второй оплачен - [Max]",
+      "input": {
+        "mode": "AllChannels",
+        "priority": "WhatsApp",
+        "candidates": [
+          {
+            "transport": "WhatsApp",
+            "paid": false,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          },
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "Max"
+        ]
+      }
+    },
+    {
+      "name": "Лишний номер (не Funded) - не цель - [Max]",
+      "input": {
+        "mode": "AllChannels",
+        "priority": "WhatsApp",
+        "candidates": [
+          {
+            "transport": "WhatsApp",
+            "paid": true,
+            "funded": false,
+            "suspended": false,
+            "state": "Connected"
+          },
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connected"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "Max"
+        ]
+      }
+    },
+    {
+      "name": "Единственный маршрутизируемый Disconnected - цель (держит Pending)",
+      "input": {
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "candidates": [
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Disconnected"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "Max"
+        ]
+      }
+    },
+    {
+      "name": "Blocked маршрутизируем - цель",
+      "input": {
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "candidates": [
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Blocked"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "Max"
+        ]
+      }
+    },
+    {
+      "name": "Connecting не маршрутизируем (ни разу не привязан) - []",
+      "input": {
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "candidates": [
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "Connecting"
+          }
+        ]
+      },
+      "expect": {
+        "targets": []
+      }
+    },
+    {
+      "name": "Один маршрутизируемый - режим и приоритет не читаются: приоритет сломан - [Max]",
+      "input": {
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "candidates": [
+          {
+            "transport": "WhatsApp",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "NotConnected"
+          },
+          {
+            "transport": "Max",
+            "paid": true,
+            "funded": true,
+            "suspended": false,
+            "state": "NeedsReconnect"
+          }
+        ]
+      },
+      "expect": {
+        "targets": [
+          "Max"
+        ]
+      }
+    }
+  ],
+  "consent": [
+    {
+      "name": "Гость true - Allowed, журнал не пишется",
+      "input": {
+        "source": "Guest",
+        "notifyByMessenger": true,
+        "recipientIsAccount": false,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "Allowed",
+        "skipReason": null,
+        "stored": {
+          "notifyByMessenger": true,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Гость false - Declined",
+      "input": {
+        "source": "Guest",
+        "notifyByMessenger": false,
+        "recipientIsAccount": false,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "Declined",
+        "skipReason": "ClientDeclinedMessenger",
+        "stored": {
+          "notifyByMessenger": false,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Гость null - NoConsent",
+      "input": {
+        "source": "Guest",
+        "notifyByMessenger": null,
+        "recipientIsAccount": false,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "NoConsent",
+        "skipReason": "NoProviderDeliveryConsent",
+        "stored": {
+          "notifyByMessenger": null,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Гость null, номер принадлежит аккаунту с согласием - Allowed",
+      "input": {
+        "source": "Guest",
+        "notifyByMessenger": null,
+        "recipientIsAccount": true,
+        "accountHasProviderDeliveryConsent": true,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "Allowed",
+        "skipReason": null,
+        "stored": {
+          "notifyByMessenger": null,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Гость null, номер аккаунта без согласия - NoConsent",
+      "input": {
+        "source": "Guest",
+        "notifyByMessenger": null,
+        "recipientIsAccount": true,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "NoConsent",
+        "skipReason": "NoProviderDeliveryConsent",
+        "stored": {
+          "notifyByMessenger": null,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Вошедший true без согласия - Allowed + запись в журнал согласий",
+      "input": {
+        "source": "Customer",
+        "notifyByMessenger": true,
+        "recipientIsAccount": true,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "Allowed",
+        "skipReason": null,
+        "stored": {
+          "notifyByMessenger": true,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": true
+      }
+    },
+    {
+      "name": "Вошедший true с действующим согласием - Allowed, журнал не пишется",
+      "input": {
+        "source": "Customer",
+        "notifyByMessenger": true,
+        "recipientIsAccount": true,
+        "accountHasProviderDeliveryConsent": true,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "Allowed",
+        "skipReason": null,
+        "stored": {
+          "notifyByMessenger": true,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Вошедший false - Declined даже при согласии",
+      "input": {
+        "source": "Customer",
+        "notifyByMessenger": false,
+        "recipientIsAccount": true,
+        "accountHasProviderDeliveryConsent": true,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "Declined",
+        "skipReason": "ClientDeclinedMessenger",
+        "stored": {
+          "notifyByMessenger": false,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Вошедший null с согласием - Allowed",
+      "input": {
+        "source": "Customer",
+        "notifyByMessenger": null,
+        "recipientIsAccount": true,
+        "accountHasProviderDeliveryConsent": true,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "Allowed",
+        "skipReason": null,
+        "stored": {
+          "notifyByMessenger": null,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Вошедший null без согласия - NoConsent",
+      "input": {
+        "source": "Customer",
+        "notifyByMessenger": null,
+        "recipientIsAccount": true,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "NoConsent",
+        "skipReason": "NoProviderDeliveryConsent",
+        "stored": {
+          "notifyByMessenger": null,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Сотрудник true - Allowed, consentByStaff",
+      "input": {
+        "source": "Staff",
+        "notifyByMessenger": true,
+        "recipientIsAccount": false,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "Allowed",
+        "skipReason": null,
+        "stored": {
+          "notifyByMessenger": true,
+          "consentByStaff": true
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Сотрудник true, номер аккаунта - Allowed, журнал не пишется",
+      "input": {
+        "source": "Staff",
+        "notifyByMessenger": true,
+        "recipientIsAccount": true,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "Allowed",
+        "skipReason": null,
+        "stored": {
+          "notifyByMessenger": true,
+          "consentByStaff": true
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Сотрудник false - хранится null, номер без аккаунта - NoConsent",
+      "input": {
+        "source": "Staff",
+        "notifyByMessenger": false,
+        "recipientIsAccount": false,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "NoConsent",
+        "skipReason": "NoProviderDeliveryConsent",
+        "stored": {
+          "notifyByMessenger": null,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Сотрудник null, номер без аккаунта - NoConsent",
+      "input": {
+        "source": "Staff",
+        "notifyByMessenger": null,
+        "recipientIsAccount": false,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "NoConsent",
+        "skipReason": "NoProviderDeliveryConsent",
+        "stored": {
+          "notifyByMessenger": null,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Сотрудник null, номер аккаунта с согласием - Allowed",
+      "input": {
+        "source": "Staff",
+        "notifyByMessenger": null,
+        "recipientIsAccount": true,
+        "accountHasProviderDeliveryConsent": true,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "Allowed",
+        "skipReason": null,
+        "stored": {
+          "notifyByMessenger": null,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Сотрудник false, номер аккаунта с согласием - хранится null, Allowed",
+      "input": {
+        "source": "Staff",
+        "notifyByMessenger": false,
+        "recipientIsAccount": true,
+        "accountHasProviderDeliveryConsent": true,
+        "optedOut": false
+      },
+      "expect": {
+        "decision": "Allowed",
+        "skipReason": null,
+        "stored": {
+          "notifyByMessenger": null,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Гость true при отписке номера - RecipientOptedOut",
+      "input": {
+        "source": "Guest",
+        "notifyByMessenger": true,
+        "recipientIsAccount": false,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": true
+      },
+      "expect": {
+        "decision": null,
+        "skipReason": "RecipientOptedOut",
+        "stored": {
+          "notifyByMessenger": true,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Вошедший true при отписке - RecipientOptedOut, согласие в журнал всё равно пишется при создании",
+      "input": {
+        "source": "Customer",
+        "notifyByMessenger": true,
+        "recipientIsAccount": true,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": true
+      },
+      "expect": {
+        "decision": null,
+        "skipReason": "RecipientOptedOut",
+        "stored": {
+          "notifyByMessenger": true,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": true
+      }
+    },
+    {
+      "name": "Сотрудник true при отписке - RecipientOptedOut",
+      "input": {
+        "source": "Staff",
+        "notifyByMessenger": true,
+        "recipientIsAccount": false,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": true
+      },
+      "expect": {
+        "decision": null,
+        "skipReason": "RecipientOptedOut",
+        "stored": {
+          "notifyByMessenger": true,
+          "consentByStaff": true
+        },
+        "writesConsentLedger": false
+      }
+    },
+    {
+      "name": "Гость false при отписке - RecipientOptedOut приоритетнее",
+      "input": {
+        "source": "Guest",
+        "notifyByMessenger": false,
+        "recipientIsAccount": false,
+        "accountHasProviderDeliveryConsent": false,
+        "optedOut": true
+      },
+      "expect": {
+        "decision": null,
+        "skipReason": "RecipientOptedOut",
+        "stored": {
+          "notifyByMessenger": false,
+          "consentByStaff": false
+        },
+        "writesConsentLedger": false
+      }
+    }
+  ],
+  "display": [
+    {
+      "name": "#1 Replaced - владельцу не отдаётся (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Replaced",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": null,
+        "displayText": null,
+        "action": null
+      }
+    },
+    {
+      "name": "#1 Replaced - владельцу не отдаётся (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Replaced",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": null,
+        "displayText": null,
+        "action": null
+      }
+    },
+    {
+      "name": "#2 Сервис выключен платформой (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": false,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Off",
+        "displayText": "Рассылки временно отключены платформой",
+        "action": null
+      }
+    },
+    {
+      "name": "#2 Сервис выключен платформой (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": false,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Off",
+        "displayText": "Рассылки временно отключены платформой",
+        "action": null
+      }
+    },
+    {
+      "name": "#2 Сервис выключен приоритетнее приостановки и неоплаты (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": true,
+        "platformEnabled": false,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Off",
+        "displayText": "Рассылки временно отключены платформой",
+        "action": null
+      }
+    },
+    {
+      "name": "#2 Сервис выключен приоритетнее приостановки и неоплаты (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": true,
+        "platformEnabled": false,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Off",
+        "displayText": "Рассылки временно отключены платформой",
+        "action": null
+      }
+    },
+    {
+      "name": "#3 Приостановлен администратором (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": true,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Off",
+        "displayText": "Приостановлен администратором",
+        "action": null
+      }
+    },
+    {
+      "name": "#3 Приостановлен администратором (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": true,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Off",
+        "displayText": "Приостановлен администратором",
+        "action": null
+      }
+    },
+    {
+      "name": "#4 Отключён владельцем, оплачен - привязать (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "DisabledByOwner",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Off",
+        "displayText": "Отключён вами",
+        "action": "BindNumber"
+      }
+    },
+    {
+      "name": "#4 Отключён владельцем, оплачен - привязать (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "DisabledByOwner",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Off",
+        "displayText": "Отключён вами",
+        "action": "BindNumber"
+      }
+    },
+    {
+      "name": "#4 Отключён владельцем, не оплачен, продаётся - оплатить (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "DisabledByOwner",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Off",
+        "displayText": "Отключён вами",
+        "action": "Pay"
+      }
+    },
+    {
+      "name": "#4 Отключён владельцем, не оплачен, продаётся - оплатить (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "DisabledByOwner",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Off",
+        "displayText": "Отключён вами",
+        "action": "Pay"
+      }
+    },
+    {
+      "name": "#4 Отключён владельцем, не оплачен, не продаётся - без действия (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "DisabledByOwner",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": false,
+        "optionSellable": false,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Off",
+        "displayText": "Отключён вами",
+        "action": null
+      }
+    },
+    {
+      "name": "#4 Отключён владельцем, не оплачен, не продаётся - без действия (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "DisabledByOwner",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": false,
+        "optionSellable": false,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Off",
+        "displayText": "Отключён вами",
+        "action": null
+      }
+    },
+    {
+      "name": "#5 Лишний номер (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": true,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Лишний номер WhatsApp: сообщения уходят с другого номера. Отвяжите этот",
+        "action": "Unbind"
+      }
+    },
+    {
+      "name": "#5 Лишний номер (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": true,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Лишний номер MAX: сообщения уходят с другого номера. Отвяжите этот",
+        "action": "Unbind"
+      }
+    },
+    {
+      "name": "#6 Оплата на проверке (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": false,
+        "requestNewerThanPayment": true,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Оплата на проверке",
+        "action": null
+      }
+    },
+    {
+      "name": "#6 Оплата на проверке (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": false,
+        "requestNewerThanPayment": true,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Оплата на проверке",
+        "action": null
+      }
+    },
+    {
+      "name": "#6 Оплата на проверке приоритетнее «недоступно» (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": false,
+        "requestNewerThanPayment": true,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": false,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Оплата на проверке",
+        "action": null
+      }
+    },
+    {
+      "name": "#6 Оплата на проверке приоритетнее «недоступно» (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": false,
+        "requestNewerThanPayment": true,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": false,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Оплата на проверке",
+        "action": null
+      }
+    },
+    {
+      "name": "#7 Не оплачен, опция не продаётся (закрыта) (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": false,
+        "optionSellable": false,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Подключение WhatsApp временно недоступно",
+        "action": null
+      }
+    },
+    {
+      "name": "#7 Не оплачен, опция не продаётся (закрыта) (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": false,
+        "optionSellable": false,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Подключение MAX временно недоступно",
+        "action": null
+      }
+    },
+    {
+      "name": "#8 Оплата закончилась (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": "2026-10-01T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Оплата закончилась 01.10.2026",
+        "action": "Pay"
+      }
+    },
+    {
+      "name": "#8 Оплата закончилась (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": "2026-10-01T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Оплата закончилась 01.10.2026",
+        "action": "Pay"
+      }
+    },
+    {
+      "name": "#9 Не оплачено, срока нет (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Не оплачено",
+        "action": "Pay"
+      }
+    },
+    {
+      "name": "#9 Не оплачено, срока нет (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Не оплачено",
+        "action": "Pay"
+      }
+    },
+    {
+      "name": "#10 Не приняты условия, NotConnected (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": false,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Примите условия подключения WhatsApp",
+        "action": "AcceptTerms"
+      }
+    },
+    {
+      "name": "#10 Не приняты условия, NotConnected (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": false,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Примите условия подключения MAX",
+        "action": "AcceptTerms"
+      }
+    },
+    {
+      "name": "#10 Не приняты условия, пробный период (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": true,
+        "paidUntil": "2026-10-23T00:00:00Z",
+        "isTrial": true,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": false,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Примите условия подключения WhatsApp",
+        "action": "AcceptTerms"
+      }
+    },
+    {
+      "name": "#10 Не приняты условия, пробный период (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": true,
+        "paidUntil": "2026-10-23T00:00:00Z",
+        "isTrial": true,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": false,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Примите условия подключения MAX",
+        "action": "AcceptTerms"
+      }
+    },
+    {
+      "name": "#10 Не приняты условия, Disconnected (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Disconnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": false,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Примите условия подключения WhatsApp",
+        "action": "AcceptTerms"
+      }
+    },
+    {
+      "name": "#10 Не приняты условия, Disconnected (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Disconnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": false,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Примите условия подключения MAX",
+        "action": "AcceptTerms"
+      }
+    },
+    {
+      "name": "#10 Не приняты условия, NeedsReconnect (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NeedsReconnect",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": false,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": 14
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Примите условия подключения WhatsApp",
+        "action": "AcceptTerms"
+      }
+    },
+    {
+      "name": "#10 Не приняты условия, NeedsReconnect (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NeedsReconnect",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": false,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": 14
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Примите условия подключения MAX",
+        "action": "AcceptTerms"
+      }
+    },
+    {
+      "name": "#11 Оплата подтверждена, привязать номер (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Оплата подтверждена — привяжите номер",
+        "action": "BindNumber"
+      }
+    },
+    {
+      "name": "#11 Оплата подтверждена, привязать номер (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Оплата подтверждена — привяжите номер",
+        "action": "BindNumber"
+      }
+    },
+    {
+      "name": "#12 Номер привязывается (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Connecting",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Номер привязывается — отсканируйте QR",
+        "action": "BindNumber"
+      }
+    },
+    {
+      "name": "#12 Номер привязывается (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Connecting",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Номер привязывается — отсканируйте QR",
+        "action": "BindNumber"
+      }
+    },
+    {
+      "name": "#13 Страна экземпляра не совпала (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Disconnected",
+        "lastStateReason": "ServerCountryMismatch",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Требуется вмешательство платформы",
+        "action": null
+      }
+    },
+    {
+      "name": "#13 Страна экземпляра не совпала (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Disconnected",
+        "lastStateReason": "ServerCountryMismatch",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Требуется вмешательство платформы",
+        "action": null
+      }
+    },
+    {
+      "name": "#13 Страна не совпала при непринятых условиях - условия не запрашиваются (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Disconnected",
+        "lastStateReason": "ServerCountryMismatch",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": false,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Требуется вмешательство платформы",
+        "action": null
+      }
+    },
+    {
+      "name": "#13 Страна не совпала при непринятых условиях - условия не запрашиваются (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Disconnected",
+        "lastStateReason": "ServerCountryMismatch",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": false,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Требуется вмешательство платформы",
+        "action": null
+      }
+    },
+    {
+      "name": "#14 Связь разорвана (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Disconnected",
+        "lastStateReason": "ProviderReportsUnauthorized",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Связь с WhatsApp разорвана — подключите номер заново",
+        "action": "Reconnect"
+      }
+    },
+    {
+      "name": "#14 Связь разорвана (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Disconnected",
+        "lastStateReason": "ProviderReportsUnauthorized",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Связь с MAX разорвана — подключите номер заново",
+        "action": "Reconnect"
+      }
+    },
+    {
+      "name": "#15 Нужна повторная привязка после технических работ (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NeedsReconnect",
+        "lastStateReason": "SecretUnavailable",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Нужна повторная привязка после технических работ. Оплата сохранена",
+        "action": "Reconnect"
+      }
+    },
+    {
+      "name": "#15 Нужна повторная привязка после технических работ (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NeedsReconnect",
+        "lastStateReason": "SecretUnavailable",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Нужна повторная привязка после технических работ. Оплата сохранена",
+        "action": "Reconnect"
+      }
+    },
+    {
+      "name": "#16 Отключён за простой, 14 дней (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NeedsReconnect",
+        "lastStateReason": "IdleInstanceDeleted",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": 14
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Номер отключён: им 14 дней никто не пользовался. Оплата сохранена — подключите заново",
+        "action": "Reconnect"
+      }
+    },
+    {
+      "name": "#16 Отключён за простой, 14 дней (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NeedsReconnect",
+        "lastStateReason": "IdleInstanceDeleted",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": 14
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Номер отключён: им 14 дней никто не пользовался. Оплата сохранена — подключите заново",
+        "action": "Reconnect"
+      }
+    },
+    {
+      "name": "#16 Отключён за простой, 21 день (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NeedsReconnect",
+        "lastStateReason": "IdleInstanceDeleted",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": 21
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Номер отключён: им 21 день никто не пользовался. Оплата сохранена — подключите заново",
+        "action": "Reconnect"
+      }
+    },
+    {
+      "name": "#16 Отключён за простой, 21 день (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NeedsReconnect",
+        "lastStateReason": "IdleInstanceDeleted",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": 21
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Номер отключён: им 21 день никто не пользовался. Оплата сохранена — подключите заново",
+        "action": "Reconnect"
+      }
+    },
+    {
+      "name": "#16 Отключён за простой, 2 дня (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "NeedsReconnect",
+        "lastStateReason": "IdleInstanceDeleted",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": 2
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Номер отключён: им 2 дня никто не пользовался. Оплата сохранена — подключите заново",
+        "action": "Reconnect"
+      }
+    },
+    {
+      "name": "#16 Отключён за простой, 2 дня (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "NeedsReconnect",
+        "lastStateReason": "IdleInstanceDeleted",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": 2
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Номер отключён: им 2 дня никто не пользовался. Оплата сохранена — подключите заново",
+        "action": "Reconnect"
+      }
+    },
+    {
+      "name": "#17 Номер заблокирован мессенджером (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Blocked",
+        "lastStateReason": "ProviderReportsBlocked",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "WhatsApp заблокировал этот номер. Подключите другой — оплата сохранится",
+        "action": "ReplaceNumber"
+      }
+    },
+    {
+      "name": "#17 Номер заблокирован мессенджером (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Blocked",
+        "lastStateReason": "ProviderReportsBlocked",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "MAX заблокировал этот номер. Подключите другой — оплата сохранится",
+        "action": "ReplaceNumber"
+      }
+    },
+    {
+      "name": "#18 Работает, но простаивает - скоро отключится (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": "2026-10-10T00:00:00Z",
+        "idleDeadlineUtc": "2026-10-27T00:00:00Z",
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Номер отключится 27.10: ни у одной вашей компании не включены сообщения клиентам",
+        "action": null
+      }
+    },
+    {
+      "name": "#18 Работает, но простаивает - скоро отключится (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": "2026-10-10T00:00:00Z",
+        "idleDeadlineUtc": "2026-10-27T00:00:00Z",
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "ActionRequired",
+        "displayText": "Номер отключится 27.10: ни у одной вашей компании не включены сообщения клиентам",
+        "action": null
+      }
+    },
+    {
+      "name": "#19 Работает (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Working",
+        "displayText": "Сообщения уходят с номера +7 *** ***-45-67",
+        "action": null
+      }
+    },
+    {
+      "name": "#19 Работает (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Working",
+        "displayText": "Сообщения уходят с номера +7 *** ***-45-67",
+        "action": null
+      }
+    },
+    {
+      "name": "#19 Работает, пробный период (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-10-23T00:00:00Z",
+        "isTrial": true,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Working",
+        "displayText": "Сообщения уходят с номера +7 *** ***-45-67",
+        "action": null
+      }
+    },
+    {
+      "name": "#19 Работает, пробный период (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-10-23T00:00:00Z",
+        "isTrial": true,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Working",
+        "displayText": "Сообщения уходят с номера +7 *** ***-45-67",
+        "action": null
+      }
+    },
+    {
+      "name": "#19 Работает при закрытой опции (купленное работает) (WhatsApp)",
+      "input": {
+        "transport": "WhatsApp",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": false,
+        "optionSellable": false,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Working",
+        "displayText": "Сообщения уходят с номера +7 *** ***-45-67",
+        "action": null
+      }
+    },
+    {
+      "name": "#19 Работает при закрытой опции (купленное работает) (MAX)",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": false,
+        "optionSellable": false,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null
+      },
+      "expect": {
+        "displayStatus": "Working",
+        "displayText": "Сообщения уходят с номера +7 *** ***-45-67",
+        "action": null
+      }
+    }
+  ],
+  "wizardStep": [
+    {
+      "name": "Сервис выключен",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": false,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Unavailable",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Не оплачен и опция закрыта",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": false,
+        "optionSellable": false,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": false
+      },
+      "expect": {
+        "wizardStep": "Unavailable",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Не оплачен, опция не продаётся (нет цены)",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": false,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Unavailable",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Не оплачен, заявка новее платежа",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": false,
+        "requestNewerThanPayment": true,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "PaymentPending",
+        "canRequestPayment": true
+      }
+    },
+    {
+      "name": "Не оплачен, нет канала",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": false,
+        "paidUntil": null,
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": false
+      },
+      "expect": {
+        "wizardStep": "Payment",
+        "canRequestPayment": true
+      }
+    },
+    {
+      "name": "Не оплачен, срок прошёл",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": false,
+        "paidUntil": "2026-10-01T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Payment",
+        "canRequestPayment": true
+      }
+    },
+    {
+      "name": "Оплачен, приостановлен",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": true,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "None",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Оплачен, Blocked",
+      "input": {
+        "transport": "Max",
+        "state": "Blocked",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "None",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Оплачен, страна не совпала",
+      "input": {
+        "transport": "Max",
+        "state": "Disconnected",
+        "lastStateReason": "ServerCountryMismatch",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "None",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Оплачен, лишний номер",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": true,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "None",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Оплачен, Connected",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Done",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Оплачен, Connected, условия устарели - Done (Connected раньше Terms)",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": false,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Done",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Триал без условий, нет канала - Terms (Т40-L-03)",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-10-23T00:00:00Z",
+        "isTrial": true,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": false
+      },
+      "expect": {
+        "wizardStep": "Terms",
+        "canRequestPayment": true
+      }
+    },
+    {
+      "name": "Триал, канал есть, условия не приняты - Terms",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": true,
+        "paidUntil": "2026-10-23T00:00:00Z",
+        "isTrial": true,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": false,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Terms",
+        "canRequestPayment": true
+      }
+    },
+    {
+      "name": "Оплачен, нет канала - Terms",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": false
+      },
+      "expect": {
+        "wizardStep": "Terms",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Оплачен, риск старой версии - Terms",
+      "input": {
+        "transport": "Max",
+        "state": "Disconnected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": false,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Terms",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Оплачен, NotConnected, условия приняты - Qr",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Qr",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Оплачен, Connecting - Qr",
+      "input": {
+        "transport": "Max",
+        "state": "Connecting",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Qr",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Оплачен, Disconnected - Qr",
+      "input": {
+        "transport": "Max",
+        "state": "Disconnected",
+        "lastStateReason": "ProviderReportsUnauthorized",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Qr",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Оплачен, NeedsReconnect - Qr",
+      "input": {
+        "transport": "Max",
+        "state": "NeedsReconnect",
+        "lastStateReason": "IdleInstanceDeleted",
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Qr",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Оплачен, DisabledByOwner - Qr",
+      "input": {
+        "transport": "Max",
+        "state": "DisabledByOwner",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Qr",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Закрыт, но оплачен, условия приняты - Qr (купленное работает)",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": false,
+        "optionSellable": false,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Qr",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Закрыт, триал - Terms, оплату запросить нельзя",
+      "input": {
+        "transport": "Max",
+        "state": "Connected",
+        "lastStateReason": null,
+        "phoneMasked": "+7 *** ***-45-67",
+        "paid": true,
+        "paidUntil": "2026-10-23T00:00:00Z",
+        "isTrial": true,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": false,
+        "optionSellable": false,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": false
+      },
+      "expect": {
+        "wizardStep": "Terms",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Оплачен непробным, продаётся - canRequestPayment false",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": true,
+        "paidUntil": "2026-11-20T00:00:00Z",
+        "isTrial": false,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Qr",
+        "canRequestPayment": false
+      }
+    },
+    {
+      "name": "Триал, продаётся - canRequestPayment true",
+      "input": {
+        "transport": "Max",
+        "state": "NotConnected",
+        "lastStateReason": null,
+        "phoneMasked": null,
+        "paid": true,
+        "paidUntil": "2026-10-23T00:00:00Z",
+        "isTrial": true,
+        "requestNewerThanPayment": false,
+        "isDuplicate": false,
+        "suspended": false,
+        "platformEnabled": true,
+        "optionOpen": true,
+        "optionSellable": true,
+        "termsAccepted": true,
+        "idleSinceUtc": null,
+        "idleDeadlineUtc": null,
+        "idleDays": null,
+        "hasChannel": true
+      },
+      "expect": {
+        "wizardStep": "Qr",
+        "canRequestPayment": true
+      }
+    }
+  ],
+  "offer": [
+    {
+      "name": "Салон без включённых типов (booking/reminder) - нет",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Services",
+        "companyFlag": false,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "transports": {
+          "Max": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": false,
+        "transports": [],
+        "checkboxLabel": null
+      }
+    },
+    {
+      "name": "Салон, работает только MAX - предлагается MAX",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Services",
+        "companyFlag": true,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "transports": {
+          "Max": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": true,
+        "transports": [
+          "Max"
+        ],
+        "checkboxLabel": "Получать уведомления о записи в MAX"
+      }
+    },
+    {
+      "name": "Салон, оба работают, «во все» - оба",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Services",
+        "companyFlag": true,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "AllChannels",
+        "priority": "WhatsApp",
+        "transports": {
+          "WhatsApp": {
+            "routable": true,
+            "working": true
+          },
+          "Max": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": true,
+        "transports": [
+          "WhatsApp",
+          "Max"
+        ],
+        "checkboxLabel": "Получать уведомления о записи в WhatsApp и MAX"
+      }
+    },
+    {
+      "name": "Салон, оба работают, приоритет MAX - только MAX",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Services",
+        "companyFlag": true,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "PriorityChannel",
+        "priority": "Max",
+        "transports": {
+          "WhatsApp": {
+            "routable": true,
+            "working": true
+          },
+          "Max": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": true,
+        "transports": [
+          "Max"
+        ],
+        "checkboxLabel": "Получать уведомления о записи в MAX"
+      }
+    },
+    {
+      "name": "Приоритетный сломан в PriorityChannel - нет",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Services",
+        "companyFlag": true,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "transports": {
+          "WhatsApp": {
+            "routable": true,
+            "working": false
+          },
+          "Max": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": false,
+        "transports": [],
+        "checkboxLabel": null
+      }
+    },
+    {
+      "name": "Один маршрутизируемый, но не работает - нет",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Services",
+        "companyFlag": true,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "transports": {
+          "Max": {
+            "routable": true,
+            "working": false
+          }
+        }
+      },
+      "expect": {
+        "offered": false,
+        "transports": [],
+        "checkboxLabel": null
+      }
+    },
+    {
+      "name": "Нет маршрутизируемых - нет",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Services",
+        "companyFlag": true,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "transports": {
+          "WhatsApp": {
+            "routable": false,
+            "working": false
+          },
+          "Max": {
+            "routable": false,
+            "working": false
+          }
+        }
+      },
+      "expect": {
+        "offered": false,
+        "transports": [],
+        "checkboxLabel": null
+      }
+    },
+    {
+      "name": "Сервис выключен - нет",
+      "input": {
+        "platformEnabled": false,
+        "kind": "Services",
+        "companyFlag": true,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "transports": {
+          "Max": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": false,
+        "transports": [],
+        "checkboxLabel": null
+      }
+    },
+    {
+      "name": "Витрина (showcase) - нет",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Services",
+        "companyFlag": true,
+        "showcase": true,
+        "companyActive": true,
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "transports": {
+          "Max": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": false,
+        "transports": [],
+        "checkboxLabel": null
+      }
+    },
+    {
+      "name": "Компания неактивна - нет",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Services",
+        "companyFlag": true,
+        "showcase": false,
+        "companyActive": false,
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "transports": {
+          "Max": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": false,
+        "transports": [],
+        "checkboxLabel": null
+      }
+    },
+    {
+      "name": "Магазин, заказ - подпись «о заказе»",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Orders",
+        "companyFlag": true,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "transports": {
+          "WhatsApp": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": true,
+        "transports": [
+          "WhatsApp"
+        ],
+        "checkboxLabel": "Получать уведомления о заказе в WhatsApp"
+      }
+    },
+    {
+      "name": "Дома, бронь - подпись «о брони»",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Stays",
+        "companyFlag": true,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "transports": {
+          "Max": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": true,
+        "transports": [
+          "Max"
+        ],
+        "checkboxLabel": "Получать уведомления о брони в MAX"
+      }
+    },
+    {
+      "name": "Магазин, оба «во все» - «WhatsApp и MAX»",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Orders",
+        "companyFlag": true,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "AllChannels",
+        "priority": "WhatsApp",
+        "transports": {
+          "WhatsApp": {
+            "routable": true,
+            "working": true
+          },
+          "Max": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": true,
+        "transports": [
+          "WhatsApp",
+          "Max"
+        ],
+        "checkboxLabel": "Получать уведомления о заказе в WhatsApp и MAX"
+      }
+    },
+    {
+      "name": "Оба маршрутизируемы, «во все», работает один - только он",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Services",
+        "companyFlag": true,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "AllChannels",
+        "priority": "WhatsApp",
+        "transports": {
+          "WhatsApp": {
+            "routable": true,
+            "working": false
+          },
+          "Max": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": true,
+        "transports": [
+          "Max"
+        ],
+        "checkboxLabel": "Получать уведомления о записи в MAX"
+      }
+    },
+    {
+      "name": "Флаг магазина выключен - нет",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Orders",
+        "companyFlag": false,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "transports": {
+          "WhatsApp": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": false,
+        "transports": [],
+        "checkboxLabel": null
+      }
+    },
+    {
+      "name": "Флаг «Домов» выключен - нет",
+      "input": {
+        "platformEnabled": true,
+        "kind": "Stays",
+        "companyFlag": false,
+        "showcase": false,
+        "companyActive": true,
+        "mode": "PriorityChannel",
+        "priority": "WhatsApp",
+        "transports": {
+          "Max": {
+            "routable": true,
+            "working": true
+          }
+        }
+      },
+      "expect": {
+        "offered": false,
+        "transports": [],
+        "checkboxLabel": null
+      }
+    }
+  ],
+  "addons": [
+    {
+      "name": "Только MAX открыт - одна строка «+ MAX 490 ₽/мес», без сноски",
+      "input": {
+        "options": [
+          {
+            "code": "notifications.whatsapp",
+            "open": false,
+            "isActive": true,
+            "pricePerMonth": 490,
+            "legallySellable": true
+          },
+          {
+            "code": "notifications.max",
+            "open": true,
+            "isActive": true,
+            "pricePerMonth": 490,
+            "legallySellable": true
+          }
+        ]
+      },
+      "expect": {
+        "messengerAddons": [
+          {
+            "transport": "Max",
+            "label": "MAX",
+            "pricePerMonth": 490,
+            "text": "+ MAX 490 ₽/мес",
+            "footnote": null
+          }
+        ],
+        "noteShown": true
+      }
+    },
+    {
+      "name": "Оба открыты - две строки, сноска у WhatsApp",
+      "input": {
+        "options": [
+          {
+            "code": "notifications.whatsapp",
+            "open": true,
+            "isActive": true,
+            "pricePerMonth": 590,
+            "legallySellable": true
+          },
+          {
+            "code": "notifications.max",
+            "open": true,
+            "isActive": true,
+            "pricePerMonth": 490,
+            "legallySellable": true
+          }
+        ]
+      },
+      "expect": {
+        "messengerAddons": [
+          {
+            "transport": "WhatsApp",
+            "label": "WhatsApp",
+            "pricePerMonth": 590,
+            "text": "+ WhatsApp 590 ₽/мес",
+            "footnote": "Доступ к WhatsApp в России ограничен: сообщения могут не доходить"
+          },
+          {
+            "transport": "Max",
+            "label": "MAX",
+            "pricePerMonth": 490,
+            "text": "+ MAX 490 ₽/мес",
+            "footnote": null
+          }
+        ],
+        "noteShown": true
+      }
+    },
+    {
+      "name": "Порядок входа обратный - всё равно WhatsApp, MAX",
+      "input": {
+        "options": [
+          {
+            "code": "notifications.max",
+            "open": true,
+            "isActive": true,
+            "pricePerMonth": 490,
+            "legallySellable": true
+          },
+          {
+            "code": "notifications.whatsapp",
+            "open": true,
+            "isActive": true,
+            "pricePerMonth": 590,
+            "legallySellable": true
+          }
+        ]
+      },
+      "expect": {
+        "messengerAddons": [
+          {
+            "transport": "WhatsApp",
+            "label": "WhatsApp",
+            "pricePerMonth": 590,
+            "text": "+ WhatsApp 590 ₽/мес",
+            "footnote": "Доступ к WhatsApp в России ограничен: сообщения могут не доходить"
+          },
+          {
+            "transport": "Max",
+            "label": "MAX",
+            "pricePerMonth": 490,
+            "text": "+ MAX 490 ₽/мес",
+            "footnote": null
+          }
+        ],
+        "noteShown": true
+      }
+    },
+    {
+      "name": "MAX без цены - строки нет",
+      "input": {
+        "options": [
+          {
+            "code": "notifications.whatsapp",
+            "open": false,
+            "isActive": true,
+            "pricePerMonth": 490,
+            "legallySellable": true
+          },
+          {
+            "code": "notifications.max",
+            "open": true,
+            "isActive": true,
+            "pricePerMonth": null,
+            "legallySellable": true
+          }
+        ]
+      },
+      "expect": {
+        "messengerAddons": [],
+        "noteShown": false
+      }
+    },
+    {
+      "name": "Дробная цена - «+ MAX 490,50 ₽/мес»",
+      "input": {
+        "options": [
+          {
+            "code": "notifications.max",
+            "open": true,
+            "isActive": true,
+            "pricePerMonth": 490.5,
+            "legallySellable": true
+          }
+        ]
+      },
+      "expect": {
+        "messengerAddons": [
+          {
+            "transport": "Max",
+            "label": "MAX",
+            "pricePerMonth": 490.5,
+            "text": "+ MAX 490,50 ₽/мес",
+            "footnote": null
+          }
+        ],
+        "noteShown": true
+      }
+    },
+    {
+      "name": "Оферта не опубликована - строки нет",
+      "input": {
+        "options": [
+          {
+            "code": "notifications.max",
+            "open": true,
+            "isActive": true,
+            "pricePerMonth": 490,
+            "legallySellable": false
+          }
+        ]
+      },
+      "expect": {
+        "messengerAddons": [],
+        "noteShown": false
+      }
+    },
+    {
+      "name": "Опция неактивна - строки нет",
+      "input": {
+        "options": [
+          {
+            "code": "notifications.max",
+            "open": true,
+            "isActive": false,
+            "pricePerMonth": 490,
+            "legallySellable": true
+          }
+        ]
+      },
+      "expect": {
+        "messengerAddons": [],
+        "noteShown": false
+      }
+    },
+    {
+      "name": "Пустой список - noteShown false",
+      "input": {
+        "options": []
+      },
+      "expect": {
+        "messengerAddons": [],
+        "noteShown": false
+      }
+    },
+    {
+      "name": "Обе закрыты - noteShown false",
+      "input": {
+        "options": [
+          {
+            "code": "notifications.whatsapp",
+            "open": false,
+            "isActive": true,
+            "pricePerMonth": 490,
+            "legallySellable": true
+          },
+          {
+            "code": "notifications.max",
+            "open": false,
+            "isActive": true,
+            "pricePerMonth": 490,
+            "legallySellable": true
+          }
+        ]
+      },
+      "expect": {
+        "messengerAddons": [],
+        "noteShown": false
+      }
+    },
+    {
+      "name": "Только WhatsApp открыт - строка со сноской",
+      "input": {
+        "options": [
+          {
+            "code": "notifications.whatsapp",
+            "open": true,
+            "isActive": true,
+            "pricePerMonth": 590,
+            "legallySellable": true
+          },
+          {
+            "code": "notifications.max",
+            "open": false,
+            "isActive": true,
+            "pricePerMonth": 490,
+            "legallySellable": true
+          }
+        ]
+      },
+      "expect": {
+        "messengerAddons": [
+          {
+            "transport": "WhatsApp",
+            "label": "WhatsApp",
+            "pricePerMonth": 590,
+            "text": "+ WhatsApp 590 ₽/мес",
+            "footnote": "Доступ к WhatsApp в России ограничен: сообщения могут не доходить"
+          }
+        ],
+        "noteShown": true
+      }
+    }
+  ]
+}

@@ -14,8 +14,8 @@ namespace ServiceBooking.API.Controllers;
 /// <summary>
 /// <c>GET|PUT /api/companies/{companyId}/staff-push-settings</c> — whether staff get Web Push on new
 /// bookings (ARCHITECTURE_CYCLE9.md §105.7, US-117). Deliberately its OWN controller/route, NOT folded
-/// into <see cref="CompanyNotificationsController"/>'s <c>notification-settings</c>: that route answers
-/// 402 to every owner today (<c>AllowNotificationChannel</c> is off on every tariff) and this one must
+/// into <see cref="CompanyNotificationsController"/>'s <c>notification-settings</c>: that route is
+/// gated by the paid number (it used to answer 402 to every owner while the tariff flag was off) and this one must
 /// NEVER be tariff-gated (SPEC П6) — see <c>CompanyNotificationSettings.StaffPushEnabled</c>'s own doc
 /// comment for the full "почему не бит в маске" reasoning.
 /// </summary>

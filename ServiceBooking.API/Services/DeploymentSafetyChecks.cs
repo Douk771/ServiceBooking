@@ -272,12 +272,18 @@ public static class DeploymentSafetyChecks
         var creationEnabled = configuration.GetValue<bool>("Notifications:GreenApi:InstanceCreationEnabled");
         if (!creationEnabled) return;
 
-        var serverCountry = configuration["Notifications:GreenApi:ServerCountry"];
-        if (string.IsNullOrWhiteSpace(serverCountry))
-            throw new InvalidOperationException(
-                "Notifications:GreenApi:InstanceCreationEnabled is true but Notifications:GreenApi:ServerCountry " +
-                "is empty. Set NOTIFICATIONS_GREEN_API_SERVER_COUNTRY in .env — creating real WhatsApp instances " +
-                "without a known server location risks violating ч. 5 ст. 18 152-ФЗ (data localization).");
+        // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.7.4): the expected country is per transport; a transport without its own entry
+        // falls back to the common ServerCountry. Both transports must end up with a value.
+        var common = configuration["Notifications:GreenApi:ServerCountry"];
+        foreach (var transport in new[] { "WhatsApp", "Max" })
+        {
+            var own = configuration[$"Notifications:GreenApi:ServerCountryByTransport:{transport}"];
+            if (string.IsNullOrWhiteSpace(own) && string.IsNullOrWhiteSpace(common))
+                throw new InvalidOperationException(
+                    "Notifications:GreenApi:InstanceCreationEnabled is true but neither Notifications:GreenApi:ServerCountry nor " +
+                    $"Notifications:GreenApi:ServerCountryByTransport:{transport} is set. Set NOTIFICATIONS_GREEN_API_SERVER_COUNTRY in .env — " +
+                    "creating real instances without a known server location risks violating ч. 5 ст. 18 152-ФЗ (data localization).");
+        }
     }
 
     /// <summary>

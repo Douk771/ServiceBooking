@@ -2,13 +2,9 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/Button'
-import { Card } from '@/components/ui/Card'
-import { ChannelRequestModal } from '@/components/notifications/ChannelRequestModal'
-import { ChannelCard } from '@/pages/owner/NotificationsSection'
-import { notificationChannelsApi } from '@/api/notificationChannels'
+import { NumbersBlock } from '@/components/notifications/NumbersBlock'
+import { notificationNumbersApi, NUMBERS_OVERVIEW_QUERY_KEY } from '@/api/notificationNumbers'
 import { TRANSPORT_LABELS } from '@/utils/notificationTransport'
-import { formatRub } from '@/utils/money'
-import type { Company } from '@/types'
 import { staysCompaniesApi } from '../../api/staysCompanies'
 import { SwitchRow } from '../../components/cabinet/formParts'
 import { ErrorState, InlineError, LoadingList } from '../../components/StatePanels'
@@ -25,8 +21,8 @@ const MODES = [
 
 /**
  * `/cabinet/:companyId/notifications` (`ManageCompany`, US-37-29/30) — what the company sends: push and MAX to staff, the guest's browser
- * push and messages in MAX/WhatsApp. Whether messages are possible (`messengerAvailable`) is the server's; the numbers are connected with
- * the SAME shared components as on ezbook and goods (`api/notification-channels`). The guest always sees everything on the booking page,
+ * push and messages in MAX/WhatsApp. Whether messages are possible (`messengerAvailable`) is the server's; the numbers are the account's, in the
+ * SAME «Номера» block as on ezbook and goods (cycle 40: payment request → terms → QR; no assignment of companies). The guest always sees everything on the booking page,
  * so a switched-off channel loses nothing.
  */
 export function NotificationsPage() {
@@ -36,9 +32,8 @@ export function NotificationsPage() {
   const q = useQuery({ queryKey: key, queryFn: () => staysCompaniesApi.notificationSettings(company.id) })
   const [draft, setDraft] = useState<StaysNotificationSettingsDto | null>(null)
   const [saved, setSaved] = useState(false)
-  const [showRequest, setShowRequest] = useState(false)
-  const channels = useQuery({ queryKey: ['notification-channels'], queryFn: notificationChannelsApi.list })
-  const offer = useQuery({ queryKey: ['notification-channel-offer'], queryFn: notificationChannelsApi.offer })
+  // The working messengers come from the shared overview (the SAME query the numbers block uses, so one request serves both).
+  const overview = useQuery({ queryKey: NUMBERS_OVERVIEW_QUERY_KEY, queryFn: notificationNumbersApi.overview })
 
   useEffect(() => {
     if (q.data) setDraft(q.data)
@@ -78,14 +73,10 @@ export function NotificationsPage() {
     save.reset()
   }
   const differs = JSON.stringify(draft) !== JSON.stringify(q.data)
-  const companyAsList = [{ id: company.id, name: company.name }] as unknown as Company[]
-  const ownChannels = channels.data ?? []
-  const assignedElsewhere = (channelId: string, transport: string) => {
-    const ids = new Set<string>()
-    for (const ch of ownChannels) if (ch.id !== channelId && ch.transport === transport) ch.companies.forEach((c) => ids.add(c.companyId))
-    return ids
-  }
-  const transports = [...new Set(ownChannels.filter((c) => c.companies.some((x) => x.companyId === company.id)).map((c) => c.transport))]
+  // Working = a bound number of a paid transport; a saved priority that stopped working stays visible and marked.
+  const working = (overview.data?.transports ?? []).filter((t) => t.channel?.displayStatus === 'Working').map((t) => t.transport)
+  const saved0 = draft.priorityTransport as (typeof working)[number] | null | undefined
+  const priorityOptions = [...working, ...(saved0 && !working.includes(saved0) ? [saved0] : [])]
   const saveConflict = save.isError ? readConflict<{ code: string; message: string }>(save.error) : null
 
   return (
@@ -142,8 +133,11 @@ export function NotificationsPage() {
           />
         </div>
 
-        {draft.messengerAvailable && draft.guestMessengerEnabled && (
+        {draft.messengerAvailable && draft.guestMessengerEnabled && draft.deliveryChoiceVisible && (
           <div className="mt-4 flex flex-col gap-4">
+            {draft.priorityWarning && (
+              <p className="rounded-xl bg-warning-bg px-4 py-2.5 text-sm text-warning" data-testid="priority-warning">{draft.priorityWarning}</p>
+            )}
             <fieldset>
               <legend className="mb-2 text-[13px] font-medium text-[#4A4038]">Куда отправлять</legend>
               <div className="flex flex-wrap gap-2">
@@ -155,14 +149,14 @@ export function NotificationsPage() {
                 ))}
               </div>
             </fieldset>
-            {draft.deliveryMode === 'PriorityChannel' && transports.length > 1 && (
+            {draft.deliveryMode === 'PriorityChannel' && (
               <fieldset>
                 <legend className="mb-2 text-[13px] font-medium text-[#4A4038]">Приоритетный мессенджер</legend>
                 <div className="flex flex-wrap gap-2">
-                  {transports.map((t) => (
+                  {priorityOptions.map((t) => (
                     <label key={t} className={`inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full border px-4 text-sm ${draft.priorityTransport === t ? 'border-ink bg-cream-deep/60 font-semibold' : 'border-line'}`}>
                       <input type="radio" name="priority-transport" className="accent-gold" checked={draft.priorityTransport === t} onChange={() => set({ priorityTransport: t })} />
-                      {TRANSPORT_LABELS[t] ?? t}
+                      {(TRANSPORT_LABELS[t] ?? t) + (working.includes(t) ? '' : ' (не работает)')}
                     </label>
                   ))}
                 </div>
@@ -188,33 +182,7 @@ export function NotificationsPage() {
         </div>
       </section>
 
-      <section aria-labelledby="ntf-channels" className="flex flex-col gap-3">
-        <h2 id="ntf-channels" className="font-serif text-[22px] text-ink">
-          Номера для сообщений
-        </h2>
-        {channels.isLoading ? (
-          <LoadingList rows={1} rowClass="h-28" />
-        ) : channels.isError ? (
-          <ErrorState message={getStayErrorMessage(channels.error, 'Не удалось загрузить номера.')} onRetry={() => void channels.refetch()} />
-        ) : (
-          ownChannels.map((ch) => (
-            <ChannelCard key={ch.id} channel={ch} myCompanies={companyAsList} assignedElsewhereIds={assignedElsewhere(ch.id, ch.transport)} riskVersion={offer.data?.riskVersion} />
-          ))
-        )}
-        {offer.data && offer.data.pricePerMonth != null && offer.data.allowedByPlan ? (
-          <Card className="flex flex-wrap items-center justify-between gap-4 p-5">
-            <p className="text-sm text-ink-soft">
-              Сообщения уходят гостям с вашего номера. {formatRub(offer.data.pricePerMonth)} / мес за номер; оплату включает администратор по заявке в разделе «Подписка».
-            </p>
-            <Button onClick={() => setShowRequest(true)} className="min-h-[44px]">
-              Подключить номер
-            </Button>
-          </Card>
-        ) : offer.data ? (
-          <p className="text-sm text-muted">Подключение номера недоступно на вашем тарифе или временно закрыто.</p>
-        ) : null}
-        {showRequest && <ChannelRequestModal onClose={() => setShowRequest(false)} />}
-      </section>
+      <NumbersBlock />
     </main>
   )
 }

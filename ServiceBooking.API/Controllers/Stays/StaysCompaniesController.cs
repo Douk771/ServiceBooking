@@ -27,8 +27,9 @@ namespace ServiceBooking.API.Controllers.Stays;
 [Authorize]
 public class StaysCompaniesController(
     AppDbContext db, CompanyCreationService companyCreation, StaysAccessResolver access, StaysCompanyService companyService,
-    PublicSiteLinks links, StaysTrialService trial, BillingAccountProvisioner accounts, ShopChannelReader channelReader,
-    IStaysClock clock, ArrivalReminderService reminder, StayActorResolver actors, Microsoft.Extensions.Options.IOptions<StaysOptions> staysOptions) : ControllerBase
+    PublicSiteLinks links, StaysTrialService trial, BillingAccountProvisioner accounts,
+    IStaysClock clock, ArrivalReminderService reminder, StayActorResolver actors, Microsoft.Extensions.Options.IOptions<StaysOptions> staysOptions,
+    ServiceBooking.API.Services.Notifications.AccountMessagingReader messagingReader) : ControllerBase
 {
     public const string MessengerUnavailableText = "Подключите канал WhatsApp или MAX, чтобы отправлять сообщения гостям";
 
@@ -295,12 +296,11 @@ public class StaysCompaniesController(
             priority = t;
         }
 
-        var channels = await channelReader.LoadAsync(companyId, ct);
-        var funded = channels.Where(c => c.IsFunded).ToList();
-        if (input.GuestMessengerEnabled && funded.Count == 0)
+        // Cycle 40 (§40.6.4): "available" = the account has a PAID transport; the 409 for switching the flag on without one stays, the 400 for a priority
+        // that is not funded is gone.
+        var messagingAtWrite = await messagingReader.ForCompanyAsync(companyId, ct: ct);
+        if (input.GuestMessengerEnabled && !messagingAtWrite.AnyPaid)
             return Conflict(new StaysConflictDto("MessengerUnavailable", MessengerUnavailableText));
-        if (priority is { } p && funded.All(c => c.Channel.Transport != p))
-            return BadRequest("Приоритетный канал должен быть среди оплаченных каналов компании");
 
         var settings = await companyService.LoadSettingsAsync(companyId, track: true, ct);
         if (db.Entry(settings).State == EntityState.Detached) db.StaysSettings.Add(settings);
@@ -328,10 +328,13 @@ public class StaysCompaniesController(
     {
         var settings = await companyService.LoadSettingsAsync(companyId, ct: ct);
         var n = await db.CompanyNotificationSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == companyId, ct) ?? new CompanyNotificationSettings { CompanyId = companyId };
-        var available = await channelReader.IsMessengerAvailableAsync(companyId, ct);
+        var messaging = await messagingReader.ForCompanyAsync(companyId, ct: ct);
+        var status = ServiceBooking.API.Services.Notifications.CompanyMessagingStatus.Evaluate(
+            messaging.PlatformEnabled, n.DeliveryMode, n.PriorityTransport,
+            messaging.Transports.Select(t => new ServiceBooking.API.Services.Notifications.TransportMessagingFacts(t.Transport, t.Option.Open, t.Paid, t.Routable, t.Working)).ToList());
         return new StaysNotificationSettingsDto(
-            n.StaffPushEnabled, settings.StaffMaxEnabled, settings.GuestWebPushEnabled, settings.GuestMessengerEnabled, available,
-            n.DeliveryMode.ToString(), n.PriorityTransport.ToString());
+            n.StaffPushEnabled, settings.StaffMaxEnabled, settings.GuestWebPushEnabled, settings.GuestMessengerEnabled, messaging.AnyPaid,
+            n.DeliveryMode.ToString(), n.PriorityTransport.ToString(), status.MessagingActive, status.DeliveryChoiceVisible, status.PriorityWarning);
     }
 
     private void Touch(StaysSettings s)

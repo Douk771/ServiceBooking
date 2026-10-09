@@ -1,4 +1,5 @@
 import type { components } from '@/types/api-cycle37.generated'
+import type { components as Cycle40Components } from '@/types/api-cycle40.generated'
 
 /**
  * dom types are read straight off the generated cycle-37 schema (ARCHITECTURE_CYCLE37.md §37.14.5) — never retyped by hand,
@@ -49,7 +50,8 @@ export type CompanyKindsSummaryDto = S['CompanyKindsSummaryDto']
 export type StayCatalogItemDto = S['StayCatalogItemDto']
 export type StayCatalogPage = S['StayCatalogPage']
 export type PublicStaysCompanyDto = S['PublicStaysCompanyDto']
-export type PublicHouseDto = S['PublicHouseDto']
+/** Cycle 40 (API_CONTRACT_CYCLE40.md §40.30.3): `messenger` — the server's «Получать уведомления о брони в {М}» offer; absent on an older server = not offered. */
+export type PublicHouseDto = S['PublicHouseDto'] & { messenger?: Cycle40Components['schemas']['CustomerMessagingOfferDto'] }
 export type HousePhotoDto = S['HousePhotoDto']
 export type HouseCalendarDto = S['HouseCalendarDto']
 export type CalendarDayDto = S['CalendarDayDto']
@@ -72,7 +74,12 @@ export type PaymentDetailsDto = S['PaymentDetailsDto']
 export type StaysCompanyManageDto = S['StaysCompanyManageDto']
 export type StaysPlanSummaryDto = S['StaysPlanSummaryDto']
 export type ChecklistItemDto = S['ChecklistItemDto']
-export type StaysNotificationSettingsDto = S['StaysNotificationSettingsDto']
+// Cycle 40 (API_CONTRACT_CYCLE40.md §40.29): messagingActive / deliveryChoiceVisible / priorityWarning are appended by the server (the cycle37 schema is frozen).
+export type StaysNotificationSettingsDto = S['StaysNotificationSettingsDto'] & {
+  messagingActive?: boolean
+  deliveryChoiceVisible?: boolean
+  priorityWarning?: string | null
+}
 export type StaysNotificationSettingsInput = S['StaysNotificationSettingsInput']
 export type HouseListItemDto = S['HouseListItemDto']
 export type HouseSetupInput = S['HouseSetupInput']

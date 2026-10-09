@@ -82,4 +82,11 @@ public class Booking
     // Cycle 10 (ARCHITECTURE_CYCLE10.md §102.1): append-only journal of what happened to this booking.
     // Written only through ServiceBooking.API.Services.Bookings.BookingEventLog.
     public ICollection<BookingEvent> Events { get; set; } = new List<BookingEvent>();
+
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.2.3, §40.11.1): consent to messenger messages. NotifyByMessenger is
+    // null when nothing was asked/ticked; MessengerConsentByUserId is the staff member who ticked it (no FK).
+    public bool? NotifyByMessenger { get; set; }
+    public string? MessengerConsentVersion { get; set; }
+    public DateTime? MessengerConsentAtUtc { get; set; }
+    public string? MessengerConsentByUserId { get; set; }
 }

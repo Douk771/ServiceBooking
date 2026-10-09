@@ -62,7 +62,8 @@ public sealed record TransferResult(bool Success, TransferFailure? Failure)
 /// </summary>
 public class CompanyTransferService(
     AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
-    AccountUsageReader usageReader, CompanyOwnerWriter companyOwnerWriter, OrdersPlanResolver ordersPlans, Stays.StaysPlanResolver staysPlans, ILogger<CompanyTransferService> logger)
+    AccountUsageReader usageReader, CompanyOwnerWriter companyOwnerWriter, OrdersPlanResolver ordersPlans, Stays.StaysPlanResolver staysPlans, Notifications.PendingRebinder pendingRebinder,
+    ILogger<CompanyTransferService> logger)
 {
     /// <summary>
     /// §51.1's linkage rule, evaluated against the database, wrapping the pure
@@ -319,21 +320,12 @@ public class CompanyTransferService(
             db.ChannelCompanyAssignments.Remove(assignment);
         }
 
-        // TD-10 (ARCHITECTURE_CYCLE16.md §253): drop the company's undelivered notification queue on
-        // every transfer, not only when it happened to have a channel assignment. Before this fix, a
-        // company transferred while its ChannelCompanyAssignment row was absent (e.g. never assigned,
-        // or already removed by something else) kept its Pending OutboundNotifications sitting in the
-        // queue for the number that now belongs to a different company/account — the exact leak TD-10
-        // names. Already-sent rows and the log itself are untouched; existing Cancelled reason reused.
-        var pending = await db.OutboundNotifications
-            .Where(n => n.CompanyId == companyId && n.Status == NotificationStatus.Pending)
-            .ToListAsync();
-        foreach (var row in pending)
-        {
-            row.Status = NotificationStatus.Cancelled;
-            row.Reason = NotificationReason.BookingOrAssignmentCancelled;
-        }
-        if (assignment is not null || pending.Count > 0)
+        // TD-10 (ARCHITECTURE_CYCLE16.md §253) + cycle 40 (ARCHITECTURE_CYCLE40.md §40.9, Р40-Ю3): the company's undelivered queue never
+        // stays on the number of the account it leaves. Each Pending row follows to the routable number of the SAME transport of the
+        // receiving account; with none there it is cancelled (existing BookingOrAssignmentCancelled). Already-sent rows and the log
+        // itself are untouched. Done before the payer changes, while the rows still point at the source account's numbers.
+        var rebound = await pendingRebinder.OnCompanyTransferAsync(companyId, targetBillingAccountId);
+        if (assignment is not null || rebound.Total > 0)
         {
             await db.SaveChangesAsync();
         }

@@ -530,8 +530,21 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("MessengerConsentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MessengerConsentByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("MessengerConsentVersion")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
                     b.Property<string>("Notes")
                         .HasColumnType("text");
+
+                    b.Property<bool?>("NotifyByMessenger")
+                        .HasColumnType("boolean");
 
                     b.Property<int>("PaymentStatus")
                         .HasColumnType("integer");
@@ -706,6 +719,55 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("ChannelId", "BillingAccountId", "Transport");
 
                     b.ToTable("ChannelCompanyAssignments");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelOptionChangeLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BillingAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ChangedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ChangedByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("ChannelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("NewEndsAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("NewPaidUntilUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("OldEndsAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("OldPaidUntilUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OptionCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BillingAccountId", "OptionCode", "ChangedAtUtc");
+
+                    b.ToTable("ChannelOptionChangeLogs");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelPaymentLog", b =>
@@ -1925,6 +1987,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AutoTestInstanceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<Guid?>("BillingAccountId")
                         .IsRequired()
                         .HasColumnType("uuid");
@@ -1969,6 +2035,12 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<DateTime?>("LastTestMessageAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("LastTestResult")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LastTestResultAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int?>("LegalEntityForm")
                         .HasColumnType("integer");
 
@@ -1991,6 +2063,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<string>("ProviderSecretKeyId")
                         .HasColumnType("text");
 
+                    b.Property<string>("ProviderServerCountry")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<Guid?>("ReplacedByChannelId")
                         .HasColumnType("uuid");
 
@@ -2012,6 +2088,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BillingAccountId");
+
+                    b.HasIndex("Id")
+                        .HasDatabaseName("IX_NotificationChannels_TestPending")
+                        .HasFilter("\"LastTestResult\" IN (0, 1)");
 
                     b.HasIndex("OwnerUserId");
 
@@ -5962,6 +6042,17 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Channel");
 
                     b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelOptionChangeLog", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.BillingAccount", "BillingAccount")
+                        .WithMany()
+                        .HasForeignKey("BillingAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("BillingAccount");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelPaymentLog", b =>

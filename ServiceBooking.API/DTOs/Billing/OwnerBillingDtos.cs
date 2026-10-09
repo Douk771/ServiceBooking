@@ -34,7 +34,10 @@ public record OwnerSubscriptionDto(
     string Line = nameof(Core.Enums.CompanyKind.Services), OrdersUsageDto? Orders = null,
     IReadOnlyList<AvailablePlanDto>? AvailablePlans = null,
     // Cycle 37 (API_CONTRACT_CYCLE37.md §37.21.4) — the «Дома» block; set only when Line = Stays.
-    StaysSubscriptionBlockDto? Stays = null);
+    StaysSubscriptionBlockDto? Stays = null,
+    // Cycle 40 (§40.14): the price lines of the messenger options, as on the public price list.
+    IReadOnlyList<MessengerAddonDto>? MessengerAddons = null,
+    MessengerAddonsNoteDto? MessengerAddonsNote = null);
 
 /// <summary>Published houses against the limit of the «Дома» tariff, the trial and the banner level (the same words as StaysPlanSummaryDto).</summary>
 public record StaysSubscriptionBlockDto(int HousesPublished, int? MaxHouses, bool IsTrial, DateTime? TrialEndsAtUtc, string WarningLevel, string? Text);

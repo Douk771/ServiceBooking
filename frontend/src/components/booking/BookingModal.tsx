@@ -25,6 +25,9 @@ import { SmartCaptcha, smartCaptchaEnabled } from './SmartCaptcha'
 import { BookingCalendar } from './BookingCalendar'
 import type { Booking, Company, Service } from '../../types'
 import { formatRub } from '../../utils/money'
+import { useMessengerOptInDefault } from '../../hooks/useMessengerOptInDefault'
+import { MessengerOptIn } from '../notifications/MessengerOptIn'
+import { StaffMessengerConsentCheckbox } from '../notifications/StaffMessengerConsentCheckbox'
 
 // US-67 (API_CONTRACT_CYCLE6.md §41.1/§43.1) — server rejects a visit of more than 5 services.
 const MAX_SERVICES = 5
@@ -115,6 +118,21 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
   const [bookedForOther, setBookedForOther] = useState(false)
   // API_CONTRACT_CYCLE28.md §593 — the created booking says whether it sits in a showcase company (drives the success screen).
   const [createdBooking, setCreatedBooking] = useState<Booking | null>(null)
+
+  // API_CONTRACT_CYCLE40.md §40.30.1/§40.30.4 — «Рассылки работают» приходит только в `GET /api/companies/{slug}`; в списках (выбор
+  // компании сотрудником) `customerMessaging` = null, поэтому на шаге данных дочитываем компанию по slug. Решает сервер, не фронт.
+  const offerFromProp = effectiveCompany?.customerMessaging ?? null
+  const offerQuery = useQuery({
+    queryKey: ['company-messaging-offer', effectiveCompany?.slug],
+    queryFn: () => companiesApi.getBySlug(effectiveCompany!.slug).then((c) => c.customerMessaging ?? null),
+    enabled: !!effectiveCompany && !offerFromProp && step === 'info',
+    staleTime: 30 * 1000,
+    retry: false,
+  })
+  const messagingOffer = offerFromProp ?? offerQuery.data ?? null
+  const optIn = useMessengerOptInDefault(isAuthenticated())
+  // US-40-08: отметка сотрудника «Клиент согласился…» — всегда снята по умолчанию, не из профиля.
+  const [staffMessengerConsent, setStaffMessengerConsent] = useState(false)
 
   // API_CONTRACT_CYCLE5.md §46.3 — informational ст. 18 notice; §41.2 — guardian-confirmation text.
   // §108.3 — neither applies to a staff booking (GuardianConfirmation is a self-booking concept).
@@ -279,6 +297,13 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
           !bookForClient && bookedForOther && guardianText
             ? { textVersion: guardianText.version, confirmed: true }
             : undefined,
+        // §40.30.4: клиент — отметка в форме (true/false), сотрудник — только `true` по отметке «Клиент согласился…»; иначе поле не шлём
+        // (null = прежнее правило). Не предложено сейчас — не шлём вовсе.
+        notifyByMessenger: bookForClient
+          ? staffMessengerConsent && messagingOffer?.offered
+            ? true
+            : undefined
+          : optIn.payload(!!messagingOffer?.offered),
       }),
     onSuccess: (created) => {
       setCreatedBooking(created ?? null)
@@ -759,6 +784,23 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                   onChange={(e) => setNotes(e.target.value)}
                 />
               </div>
+
+              {/* US-40-07/08: клиент — галочка по подписи сервера; сотрудник — отдельная отметка. Только при offered. */}
+              {bookForClient ? (
+                <StaffMessengerConsentCheckbox
+                  offer={messagingOffer}
+                  checked={staffMessengerConsent}
+                  onChange={setStaffMessengerConsent}
+                />
+              ) : (
+                <MessengerOptIn
+                  kind="booking"
+                  offer={messagingOffer}
+                  state={optIn}
+                  companyName={effectiveCompany?.name}
+                  profileHref="/profile"
+                />
+              )}
 
               {!bookForClient && !isAuthenticated() && smartCaptchaEnabled && (
                 <div className="flex flex-col gap-1">

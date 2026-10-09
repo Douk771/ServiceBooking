@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
 import { companiesApi } from '../../api/companies'
@@ -887,7 +887,9 @@ function CompanyNotificationsTab({ companyId }: { companyId: string }) {
 
 export function CompanyManagePage() {
   const { id } = useParams<{ id: string }>()
-  const [tab, setTab] = useState<Tab>('services')
+  const [searchParams] = useSearchParams()
+  // Cycle 40 (US-40-06): the cabinet and the breach banner link here with ?tab=notifications.
+  const [tab, setTab] = useState<Tab>(searchParams.get('tab') === 'notifications' ? 'notifications' : 'services')
 
   const { data: companies } = useQuery({ queryKey: ['my-companies'], queryFn: companiesApi.getMy })
   const company = companies?.find((c) => c.id === id)
@@ -896,7 +898,7 @@ export function CompanyManagePage() {
     { key: 'services', label: 'Услуги' },
     { key: 'schedule', label: 'Расписание' },
     { key: 'members', label: 'Сотрудники' },
-    { key: 'notifications', label: 'Уведомления' },
+    { key: 'notifications', label: 'Уведомления клиентам' },
     { key: 'settings', label: 'Настройки' },
   ]
 

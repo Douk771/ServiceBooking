@@ -1,5 +1,40 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
+> **Цикл 40 «Упрощение каналов рассылок (WhatsApp / MAX)» в `develop` НЕ влит.** Правка этого файла сделана в worktree ветки
+> `cycle/040-simplify-notification-channels` на `4d65578`; в ветку уже влит `origin/develop` = `4741843` (циклы 38, 41, 39 и их
+> закрывающие документы — мердж `ce5a428`). После мерджа в `develop` хеш в отметке ниже заменить на хеш мерджа.
+
+**Актуально по состоянию на коммит: `4d65578` (ветка `cycle/040-simplify-notification-channels`, в `develop` не влита; база — `origin/develop` = `4741843`), дата: 2026-10-09.**
+**Следующий diff отсчитывайте от коммита мерджа цикла 40 в `develop` (до мерджа — от `4d65578`).**
+
+**Обновление на `4d65578`** (✔ `git log origin/develop..HEAD`: 56 коммитов; `git diff --stat origin/develop...HEAD`: 253 файла,
++35 071/−4 320, из них ~17 600 строк генератов и эталонов (`Cycle40ChannelOptions.Designer.cs` — 6 279, `contracts/cycle40/openapi.yaml` +
+`openapi.json` — ~7 800, `channel-vectors.json` — 4 396, `api-cycle40.generated.ts` — 3 102) и ~4 000 строк документов цикла;
+**codebase-analyst ничего не запускал** — ни тесты, ни сборку, ни `redocly`, ни SQL-отчёт `deploy/checks/cycle40-*.sql`). Это **цикл 40
+«Упрощение каналов рассылок»**: номер мессенджера принадлежит аккаунту и работает на **все** его компании (назначений компаний больше нет);
+«оплачено» решается по транспорту — по строке опции аккаунта `notifications.whatsapp` / `notifications.max` (новая опция), флаг тарифа
+`AllowNotificationChannel` не читается; доступность каждой опции — переключатель платформы (по умолчанию **WhatsApp закрыт, MAX открыт**);
+мастер подключения и блок «Номера» вместо старых карточек каналов; согласие клиента на сообщения в записи (в том числе отметка сотрудника);
+автоматическое проверочное сообщение после привязки; админка номеров с карточкой и «Подтвердить оплату»; глобальный выключатель рассылок.
+Источник намерения — корневой `SPEC.md` (= спека цикла 40, редакция 2026-10-09), `ARCHITECTURE_CYCLE40.md` (§40.0a — решения заказчика
+Р40-Ю1…Ю4 по правовому обзору приоритетнее SPEC), `API_CONTRACT_CYCLE40.md`, `LEGAL_REVIEW_CYCLE40.md`, `DEPLOY.md` §31 (на `4d65578` — второй раздел `## 29.`, см. ниже).
+Где документы расходятся с кодом, записано по коду (§5.16, §9.11). Обновлены: шапка, §0 (ветки), §1, §2, §3 (блок «Каналы рассылок — цикл
+40», «Биллинг», «Уведомления», инварианты), §4 (каналы, админка, биллинг, публичные ответы; 394 строки эталона), §5.1, §5.2, §5.4, §5.5 (блок
+«Цикл 40»), §5.6, §5.12 (пометка), §5.13 (пометка), §5.16 (новый), §6.1, §6.2, §7.1–§7.4, §9.1, §9.2 (пометки C22-6, C-13), §9.11 (новый —
+долг цикла 40), §10.
+- **Нумерация.** Цикл 40 получил **§5.16** и **§9.11**. Номер 40 до этого резервировался под iCal (C39-3); iCal в цикл 40 **не вошёл**, кода
+  iCal по-прежнему нет, `NotificationType` 39–40 не заняты (✔ цикл 40 `NotificationType` не менял). В `DEPLOY.md` на `4d65578` цикл 40
+  взял номер **§29**, уже занятый циклом 38 (в файле два раздела `## 29.`). На момент этой правки в рабочей копии ветки лежит
+  **незакоммиченная параллельная правка** другой задачи: раздел переименован в **§31** (`DEPLOY.md`, ссылки в `ARCHITECTURE_CYCLE40.md`
+  §40.16 и в тексте `RAISE EXCEPTION` `cycle40-channels-report.sql`), там же правятся `CHANGELOG.md` (раздел цикла 40) и `README.md`. Ниже
+  раздел выката цикла 40 называется **§31**; если та правка не будет закоммичена, читать как «второй раздел `## 29.`» (§9.11 C40-14, C40-15).
+- **Архив документов.** Ветка заархивировала спеку цикла 36 как `SPEC_CYCLE36_TEST_SUITE_AUDIT.md` (✔ побайтно равна `SPEC.md` из
+  `origin/develop`); корневой `SPEC.md` (938 строк) — спека цикла 40. `docs/history/` нет — переносить нечего.
+- **Машина** (🖥 со слов постановки задачи, в репозитории не проверяемо): цикл 40 не выкачен. Ничего из цикла на бою не проверялось;
+  живой отправки через GREEN-API (ни WhatsApp, ни MAX) не было ни разу — ни тестом, ни человеком (§9.11 C40-1).
+
+*Ниже — шапка прежнего обновления (цикл 39 влит, `5bcd015`), сохранена для истории.*
+
 > **Циклы 32, 35, 36, 37 и 38 влиты в `develop`** (✔ `git merge-base --is-ancestor` для 32–37): цикл 32 — мердж `09344b1` (2026-10-01, ещё до
 > снимка `c28ccbb`), цикл 35 — fast-forward до `c28ccbb`, цикл 36 — мердж `c43ec62`, цикл 37 — мердж `a7e3168`, цикл 38 — мердж
 > `origin/develop` (`ece8038`) в `cycle/038-unified-landing-template` с последующим вливанием в `develop`. Цикл 32 (общий
@@ -10,9 +45,9 @@
 > мердж `a9ee820`, затем фиксы `0a9c0b7` и `050c3d0` (`171e623`); цикл 41 — мердж `68e9ba9` (вторым родителем — `eaf47d2`, закрывающие
 > документы поверх `707899e`); цикл 39 «Дома, цикл 2» — мердж `5bcd015` (внутри ветки — мердж `c2cf651` «origin/develop → cycle/039»).
 > Открытых веток циклов с невлитым кодом на 09.10 по локальным ссылкам нет. Номер 40 (iCal) зарезервирован, цикла ещё нет.
+> (✔ на `4d65578`: номер 40 занял цикл «Упрощение каналов рассылок», iCal туда не вошёл — шапка выше.)
 
-**Актуально по состоянию на коммит: `5bcd015` (`develop`, мердж цикла 39; правка сделана в ветке `docs/cycle39-closing` от него), дата: 2026-10-09.**
-**Следующий diff отсчитывайте от `5bcd015` (если эта правка будет влита отдельным мерджем — от него, вписав хеш сюда).**
+**Прежняя отметка: `5bcd015` (`develop`, мердж цикла 39; правка сделана в ветке `docs/cycle39-closing` от него, влита мерджем `4741843`), дата: 2026-10-09.**
 
 **Обновление на `5bcd015`** (✔ `git diff --stat 68e9ba9..5bcd015`: 368 файлов в диапазоне `ece8038..5bcd015`, из них по циклу 39 —
 ~17 000 строк генератов (`Cycle39StaysServices.Designer.cs`, снапшот, `contracts/cycle39/openapi.json`, `api-cycle39.generated.ts`);
@@ -189,6 +224,11 @@ GUID тарифов `5a1e0c38…`). Подразделы цикла 38 полу�
 - 🖥 — факт о боевой машине. В репозитории его нет, в этом сканировании он не проверялся (SSH не использовался).
   Источник — прежняя редакция, блок «🚀20», проверено по SSH 30.09.2026.
 
+**Ветки на `4d65578`** (✔ локальные ссылки, 2026-10-09; `git fetch` не делался): `origin/develop` = `4741843` (мердж
+`docs/cycle39-closing`: этот файл, CHANGELOG и README после цикла 39). Ветка `cycle/040-simplify-notification-channels` = `4d65578` —
+56 коммитов поверх `origin/develop` (внутри — мердж `ce5a428` «origin/develop (циклы 38, 39, 41) → cycle/040» и мерджи задач `task/c40-*`),
+в `develop` **не влита**; рабочая копия — отдельный worktree `ServiceBooking-c40`. Ориентиры: 1 518 коммитов, 2 892 отслеживаемых файла
+(✔ `git rev-list --count HEAD`, `git ls-files`).
 **Ветки на `5bcd015`** (✔ локальные ссылки, 2026-10-09; `git fetch` не делался): `develop` = `5bcd015` (мердж цикла 39); ветка этой
 правки `docs/cycle39-closing` создана от него. Циклы 38, 41, 39 влиты (шапка). Ориентиры: 1 459 коммитов, 2 815 отслеживаемых файлов
 (✔ `git rev-list --count 5bcd015`, `git ls-files`).
@@ -323,7 +363,9 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
   `DEPLOY.md` §28 п. 7 писали «уведомления гостю на бою выключены (`logging`)» — это верно было до включения web-push 08.10.2026.
   `DEPLOY.md` §28 п. 7 исправлен коммитом `12d1e3f`; R37-5 в `ARCHITECTURE_CYCLE37.md` — нет (C37-2).
 - WhatsApp/MAX гостю — только при `StaysSettings.GuestMessengerEnabled` (по умолчанию **`false`**), галочке гостя и доступном
-  оплаченном канале компании (`IsMessengerAvailableAsync`); провайдер на бою `green-api`, живой отправки не было ни разу.
+  оплаченном канале компании (`IsMessengerAvailableAsync`); провайдер на бою `green-api`, живой отправки не было ни разу. *С цикла 40
+  (✔ `StayBookingCreationService`, `StaysHousePageService`): «доступен» решает `CustomerMessagingOfferService` (номер аккаунта компании
+  оплачен, маршрутизируем и подключён, выключатель платформы включён), галочка в `BookingPanel` показывается только при `messenger.offered`.*
 - MAX персоналу о бронях — тот же `STAFFMAX_ENABLED` (на бою `false`).
 - Адрес третьего сайта — `PublicSites:StaysBaseUrl` (в `appsettings.json` = `https://dom.ezbook.ru`, новой обязательной
   переменной боя нет; в `.env.dev.example` — `SB_DOM_WEB_PORT=5175` и закомментированная подсказка `# PublicSites__StaysBaseUrl=http://localhost:5175`).
@@ -334,6 +376,16 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 `tstzrange`/`EXCLUDE` по сеансам работают на уже включённом `btree_gist`. Заказы услуг и напоминание накануне ездят на тех же
 каналах, что брони домов: push гостю (`IWebPushSender`), WhatsApp/MAX гостю (флаг компании), push и MAX персоналу. Новых обязательных
 переменных окружения нет; новые настройки — `Stays:Services:*` и сроки `Retention:StayService*` в `appsettings.json` (§5.15).
+
+**Цикл 40 и интеграции** (✔ по коду на `4d65578`): новых пакетов NuGet/npm нет (✔ `git diff` csproj/`package.json`: в `package.json` —
+только скрипт `types:api:cycle40`). Провайдер тот же — GREEN-API для обоих транспортов (`NOTIFICATIONS_PROVIDER`, значение **`green-api`**;
+другое значение роняет старт). Новое в конфигурации (`appsettings.json`, секция `Notifications`): `OptionAvailability:WhatsApp=false` /
+`:Max=true` (только умолчание для отсутствующего ключа платформы), `GreenApi:ServerCountryByTransport:{WhatsApp,Max}` (пусто — берётся общий
+`GreenApi:ServerCountry`; `DeploymentSafetyChecks` при `InstanceCreationEnabled=true` требует значение для **обоих** транспортов),
+`TestMessage:AllowSameNumber=false`, `RebindPendingToOtherTransport=false`. В `docker-compose.prod.yml` и `.env.production.example` новых
+переменных нет — проброшен только общий `NOTIFICATIONS_GREEN_API_SERVER_COUNTRY`. `Notifications:ProviderDeliveryConsent` на решение о
+сообщении больше **не влияет** (решает `MessengerConsentRule`, §5.16), но по-прежнему проверяется на старте — ради отката. Состояние боя по
+каналам: живой отправки через GREEN-API не было ни разу (§9.11 C40-1).
 
 **Интеграций, которых нет** (✔): платёжного шлюза нет — ни YooKassa, ни Robokassa, ни других. Предоплата — флаг
 `Company.RequirePrepayment` и `PaymentStatus.Pending`, в «Оплачено» запись переводит персонал
@@ -347,13 +399,13 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | Путь | Что там |
 |---|---|
 | `ServiceBooking.Core/` | `Entities/` (67 файлов, POCO-сущности), `Enums/` (47). Зависит только от `Microsoft.AspNetCore.Identity.EntityFrameworkCore` |
-| `ServiceBooking.Infrastructure/` | `Data/AppDbContext.cs` (1 086 строк, вся Fluent-конфигурация) и `Migrations/` (79 миграций + снапшот; последняя — `Cycle28ShowcaseMarks`, цикл 28). **На `a7e3168`** (✔ `wc -l`, `ls`): `AppDbContext.cs` — 1 338 строк, 81 строка с `DbSet<`; 80 миграций, последняя — `20261008070135_Cycle37Stays`. `Core/Entities` — 74 файла, `Core/Enums` — 49 (+`StaysEnums.cs`). **На `5bcd015`** (✔): `AppDbContext.cs` — 1 579 строк, 92 строки с `DbSet<`; 81 миграция, последняя — `20261008220221_Cycle39StaysServices`; `Core/Entities` — 75 файлов (новый `StayService.cs` — все сущности услуг в одном файле) |
+| `ServiceBooking.Infrastructure/` | `Data/AppDbContext.cs` (1 086 строк, вся Fluent-конфигурация) и `Migrations/` (79 миграций + снапшот; последняя — `Cycle28ShowcaseMarks`, цикл 28). **На `a7e3168`** (✔ `wc -l`, `ls`): `AppDbContext.cs` — 1 338 строк, 81 строка с `DbSet<`; 80 миграций, последняя — `20261008070135_Cycle37Stays`. `Core/Entities` — 74 файла, `Core/Enums` — 49 (+`StaysEnums.cs`). **На `5bcd015`** (✔): `AppDbContext.cs` — 1 579 строк, 92 строки с `DbSet<`; 81 миграция, последняя — `20261008220221_Cycle39StaysServices`; `Core/Entities` — 75 файлов (новый `StayService.cs` — все сущности услуг в одном файле). **На `4d65578`** (✔): `AppDbContext.cs` — 1 595 строк, 93 строки с `DbSet<` (+`ChannelOptionChangeLogs`); 82 миграции, последняя — `20261009100000_Cycle40ChannelOptions`; `Core/Entities` — 76 файлов (+`ChannelOptionChangeLog.cs`), `Core/Enums` — 51 (+`ChannelTestResult.cs`, `ChannelOptionChangeSource.cs`) |
 | `ServiceBooking.API/` | Веб-приложение, в нём же **вся бизнес-логика** (отдельного слоя Application нет) |
 | `ServiceBooking.API/Program.cs` | **Точка входа**, 48 строк — только порядок вызовов расширений |
 | `ServiceBooking.API/Startup/` | Инфраструктура запуска: `ApiExtensions` (MVC/JSON/CORS/Swagger/обработчик 500/раздача загрузок), `AuthenticationExtensions` (JWT, `OnTokenValidated`), `ApplicationServicesExtensions` (DI прикладных сервисов, фоновые задачи, подтверждение телефона), `NotificationServicesExtensions` (транспорты, реестры, Web Push), `RateLimitingExtensions`, `DeploymentValidationExtensions` (fail-fast проверки прод-конфигурации), `HealthEndpointsExtensions` (`/api/health/live`, `/api/health/ready`), `LoggingExtensions`, `StartupSeedingExtensions` (миграции, роли, суперадмин) |
 | `ServiceBooking.API/Controllers/` | 53 контроллера (с циклом 31 — `CompanyCatalogListingController`) и 2 помощника (`BookingEndpointHelpers`, `AdminAccountDtoBuilder`). Мелкие DTO часто лежат в конце файла контроллера |
 | `ServiceBooking.API/DTOs/<Домен>/` | Крупные DTO (`record`), `DTOs/Common/` — `PagedResult<T>`, `Optional<T>` |
-| `ServiceBooking.API/Services/` | Бизнес-логика. В корне 45 файлов общего назначения (слоты, доступ, телефоны, файлы, изображения, проверки деплоя…) и предметные подкаталоги: `Billing/` (36), `Bookings/` (7), `Companies/` (10, с циклом 31 — `SalonListingRules`, `SalonListingQuery`), `Legal/` (20), `Notifications/` (30 + `GreenApi/`, `GreenApiMax/`, `WebPush/`), `Orders/` (23 + `Notifications/`, `Reports/`), `Shops/` (30), `PhoneVerification/` (13 + `Max/` 16), `StaffMax/` (7), `Retention/` (+ `Rules/` 27 правил), `Scheduling/` (+ `Tasks/` 10 задач), `Subjects/` (права субъекта ПДн), `Signals/` (GlitchTip), `PublicSites/`, `Health/`, `Hosting/` |
+| `ServiceBooking.API/Services/` | Бизнес-логика. В корне 45 файлов общего назначения (слоты, доступ, телефоны, файлы, изображения, проверки деплоя…) и предметные подкаталоги: `Billing/` (36), `Bookings/` (7), `Companies/` (10, с циклом 31 — `SalonListingRules`, `SalonListingQuery`), `Legal/` (20), `Notifications/` (30 + `GreenApi/`, `GreenApiMax/`, `WebPush/`), `Orders/` (23 + `Notifications/`, `Reports/`), `Shops/` (30), `PhoneVerification/` (13 + `Max/` 16), `StaffMax/` (7), `Retention/` (+ `Rules/` 27 правил), `Scheduling/` (+ `Tasks/` 10 задач), `Subjects/` (права субъекта ПДн), `Signals/` (GlitchTip), `PublicSites/`, `Health/`, `Hosting/`. **На `4d65578`** (✔ `ls`): `Notifications/` — 48 файлов в корне + `Funding/` (5: `ChannelOptionCodes`, `ChannelOptionAvailability`, `ChannelOptionFunding`, `TransportFunding`, `MessagingDemand`) + `GreenApi/`, `GreenApiMax/`, `WebPush/`; `Billing/` — 41 (удалены `ChannelEligibility`, `TrialMailingRulePolicy`; добавлены `ChannelOptionLog`, `ChannelOptionAssignmentRules`, `TrialOptionGrantRule`, `MessengerAddonsBuilder`, `MessengerAddonsProvider`); новая задача `Scheduling/Tasks/ChannelTestMessageTask.cs` (§5.16) |
 | `ServiceBooking.API/App_Data/legal/` | **Собранный** артефакт правовых текстов (18 файлов, `legal.json`). Лежит в git, руками не правится |
 | `ServiceBooking.LegalKit/` | CLI `build/check/links/publish/rollback/status` для правовых текстов. Ссылается на API как на библиотеку |
 | `ServiceBooking.TestKit/` | Изоляция тестовых БД (Testcontainers, лизинг баз `sbtest_<key>_<slot>`), CLI `status/sweep/doctor` |
@@ -370,6 +422,9 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | `contracts/cycle37/` | **Цикл 37.** `openapi.yaml` (OpenAPI 3.0.3, ~2 900 строк) + `openapi.json`, `dom-routes.json` (маршруты dom, формат и резерв slug — встраивается в API для `StaysSlugPolicy`), `stay-vectors.json` (эталон расчёта для юнит-тестов C# и TS). Цикл 39 дописал сюда значения перечислений и почистил под `redocly lint` (US-39-22); `dom-routes.json` здесь больше **не** встраивается в API |
 | `contracts/cycle39/` | **Цикл 39.** `openapi.yaml` (~3 560 строк: новые маршруты целиком + изменённые маршруты цикла 37 частичными DTO с `additionalProperties: true`) + `openapi.json`; `dom-routes.json` — надмножество карты dom (+ `/:slug/uslugi/:serviceSlug`, `/s/:token`, маршруты кабинета услуг, резерв `uslugi` и слов календарей в адресах домов) — **его** теперь встраивает API для `StaysSlugPolicy`; `service-vectors.json` — общий эталон времени/цены/возврата/пересечений для C# `ServiceVectorsTests` и TS `serviceVectors.test.ts` |
 | `frontend/src/components/staffMax/` | **Цикл 39** (US-39-21, C37-4): общая карточка «MAX для сотрудника» `StaffMaxCard.tsx` (+ тест, `staffMaxPolling.ts`), API — `frontend/src/api/staffMax.ts` (перенесён из `goods/src/api/`). goods держит тонкую обёртку `goods/src/components/staffMax/StaffMaxCard.tsx` (свои тексты ошибок и панели состояний), dom вызывает общую карточку из `ProfilePage.tsx` |
+| `contracts/cycle40/` | **Цикл 40.** `openapi.yaml` (OpenAPI 3.0.3, 3 227 строк: новые маршруты каналов и админки + изменённые ответы; с `x-examples` для prism-мока — валидатор `OpenApiContract.cs` их пропускает как аннотацию) + `openapi.json`; `channel-vectors.json` (version 2) — один эталон правил для C# (`ServiceBooking.UnitTests/Cycle40/ChannelVectorsTests.cs`) и TS (`frontend/src/utils/channelRules.test.ts`): `availability` 12, `optionFunding` 16, `routing` 17, `consent` 20, `display` 62, `wizardStep` 25, `offer` 16, `addons` 10 кейсов |
+| `frontend/src/components/notifications/` | **Цикл 40** (§5.16): общий для ezbook, goods и dom блок «Номера» — `NumbersBlock`, `NumberRow` (статус, кнопка по `action`, меню «Заменить номер»/«Отвязать»), `ConnectWizard` (шаги `Payment`/`Terms` — одна форма `TermsStep`, `Qr` — `QrStep`, `Done`, информационные `PaymentPending`/`Unavailable`/`None`), `numbersTexts.ts`; согласие клиента — `MessengerOptIn` (+ хук `src/hooks/useMessengerOptInDefault.ts`, `useMessengerLegalText.ts`, чистые `src/utils/messengerOptIn.ts`), `StaffMessengerConsentCheckbox`; правила — `src/utils/channelRules.ts` (TS-двойник по `channel-vectors.json`); API — `src/api/notificationNumbers.ts` (`overview`, админская карточка, `confirm-payment`). `ChannelBreachBanner.tsx` — старый (цикл 19), не менялся. Удалены `AssignCompanyDialog`, `ChannelRequestModal` (+ тест), `QrModal`, `RiskAcceptanceModal` и `src/pages/owner/NotificationsSection.tsx` |
+| `deploy/checks/cycle40-*.sql` | **Цикл 40** (DO-40-01): `cycle40-channels-report.sql` — отчёт до выката, только чтение, 5 блоков, блок 1 — стоп-сигнал (ненулевой → ошибка psql); `cycle40-rollback-assignments.sql` — запись, только при откате релиза: назначает каждую активную компанию на первый живой канал каждого транспорта аккаунта. Результатов прогона на копии боя в репозитории нет (§9.11 C40-13) |
 | `tools/bench/cycle39/` | **Цикл 39** (US-39-23): `bench_catalog.py` + `README.md` — замер p95 каталога dom на 500 домах; **ни разу не прогонялся** (§9.10) |
 | `frontend/scripts/contracts-to-json.mjs` | Цикл 31: `npm run contracts:json` — `contracts/<цикл>/openapi.yaml` → `openapi.json` через `js-yaml`. Список циклов в скрипте на `2834e00` — `['cycle31', 'cycle32']`; **`cycle33` в нём нет** (§5.10, §9.1 C33-1) |
 | `frontend/goods-shared-sources.js` (+ `.d.ts`) | Цикл 31: **единый список** ezbook-исходников, которые можно импортировать из goods. Из него строятся `content` в `tailwind.goods.config.js` и регэксп ESLint; полноту списка проверяет guard-тест `goods/src/sharedSources.guard.test.ts` (§5.8, §6.2) |
@@ -490,13 +545,22 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
 **Биллинг.**
 - `BillingAccount` — владелец подписки. Хранит заявку на смену тарифа (поля `Requested*`, отдельной сущности нет),
   состояние триала `Trial*`, реквизиты оператора согласия.
-- `SubscriptionPlanConfig` — тариф: `Line`, лимиты, флаги `Allow*`, `IsSystemFree`/`IsSystemTrial`, `IsPublic`.
-- `AccountSubscription`, `SubscriptionOption`, `PlanOptionRule`, `AccountSubscriptionOption`, `SubscriptionChangeLog`.
+- `SubscriptionPlanConfig` — тариф: `Line`, лимиты, флаги `Allow*`, `IsSystemFree`/`IsSystemTrial`, `IsPublic`. *С цикла 40 колонка
+  `AllowNotificationChannel` осталась в БД и в сущности, но **код её не читает** (страж `AllowNotificationChannelReadGuardTests`); из
+  рекордов `EffectivePlan`/`OrdersPlan`/`StaysPlan` поле удалено.*
+- `AccountSubscription`, `SubscriptionOption`, `PlanOptionRule`, `AccountSubscriptionOption`, `SubscriptionChangeLog`. *С цикла 40 для двух
+  опций каналов (`notifications.whatsapp`, `notifications.max`) «оплачено» читается только из строки `AccountSubscriptionOption` аккаунта;
+  `PlanOptionRule` этих опций остаются в БД, но не читаются.*
 - `TrialGrant`, `TrialPhoneRegistration` (HMAC телефона).
+- (цикл 40) `ChannelOptionChangeLog` — журнал изменений двух опций каналов аккаунта (append-only, писатель — `ChannelOptionLog.Write`).
 
 **Уведомления.**
-- `NotificationChannel` — канал владельца, секрет провайдера зашифрован.
-- `ChannelCompanyAssignment`, `ChannelStateEvent`, `ChannelPaymentLog`.
+- `NotificationChannel` — канал (номер) аккаунта, секрет провайдера зашифрован. С цикла 40 — ещё `LastTestResult`, `LastTestResultAtUtc`,
+  `AutoTestInstanceId` (автопроверка) и `ProviderServerCountry` (страна экземпляра, которую сообщил провайдер).
+- `ChannelCompanyAssignment`, `ChannelStateEvent`, `ChannelPaymentLog`. *С цикла 40 `ChannelCompanyAssignments` **не читается и не
+  пишется** (номер работает на все компании аккаунта); таблица и навигация `NotificationChannel.Assignments` остались; строки только
+  удаляются — при передаче компании (`CompanyTransferService`, ради составного FK) и при удалении аккаунта (`AccountDeletionService`);
+  страж `AssignmentReadGuardTests`.*
 - `OutboundNotification` — очередь сообщений по записям и заказам.
 - `CompanyNotificationSettings`, `NotificationTemplate` + `History`, `NotificationOptOut`.
 - `PlatformSetting` + `ChangeLog` — настройки платформы, которые правит суперадмин.
@@ -553,7 +617,12 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
 - Пять колонок `Companies.AddressVerifiedInputKey/AddressVerifiedAt/AddressPrecision/AddressLatitude/AddressLongitude` —
   теневые свойства EF. CLR-свойствами их не делать, `DropColumn` не генерировать (C19-7).
 - Правило «один канал на транспорт» держит уникальный индекс `(CompanyId, Transport)` и составной FK
-  `(Id, BillingAccountId)`.
+  `(Id, BillingAccountId)`. *С цикла 40 это ограничения таблицы назначений, которую код больше не пишет; «один номер на транспорт аккаунта»
+  держит код: создание заявки — под advisory-lock `channel-request:{account}:{transport}`, «лишние» живые номера транспорта получают
+  `Unfunded` (`TransportFunding.Rank`: первый живой по `CreatedAt, Id` — основной). Уникального индекса на (`BillingAccountId`, `Transport`)
+  нет.*
+- (цикл 40) Новые значения enum — с явными числами, только в конец: `NotificationReason` 34–36, `ChannelStateReason` 11–15, `ConsentSource`
+  12–14; новые `ChannelTestResult` (0–6) и `ChannelOptionChangeSource` (0–5) хранятся числом. Держит `Cycle40EnumAppendOnlyTests`.
 - Миграция `Cycle20PurgeHealthNotesWithoutWrittenConsent` необратима (`Down` пуст). `ResetUnverifiedPhoneNumberConfirmedMirror`
   необратима. У `Cycle24OrdersTimeNotifyTariffs` `Down` может упасть на дублях номеров (C24-10).
 - Сидинг:
@@ -602,6 +671,36 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
   миграции): возвращает NOT NULL у `StayPaymentProofs.StayBookingId` и `StayGuestPushSubscriptions.StayBookingId` и **упадёт**, если уже
   есть подтверждения оплаты или push-подписки заказов услуг (строки молча не удаляются); переименование slug домов не откатывается.
   `DEPLOY.md` §28а: только с `pg_dump` и решением заказчика. Накат → откат → накат на пустых данных проверяет CY39-140.
+
+**Каналы рассылок — цикл 40, миграция `20261009100000_Cycle40ChannelOptions`** (✔ по миграции, `Entities/`, `AppDbContext` на `4d65578`;
+форма — `ARCHITECTURE_CYCLE40.md` §40.2). Миграция одна, **только добавления**:
+- **Строка опции `notifications.max`** в `SubscriptionOptions` (`Id = c4000000-0000-4000-8000-000000000040`, `ChannelOptionCodes.MaxOptionSeedId`):
+  `INSERT … SELECT` — **копия строки `notifications.whatsapp`** (`Kind`, `PricePerMonth`, `UnitName`, `MaxQuantity`, `UnitPriceText`, `IsPublic`,
+  `IsActive`), `Name = 'MAX'`, `CapabilityKey = 'notifications.max'`, `SortOrder` WhatsApp + 1; идемпотентно (`WHERE NOT EXISTS`). Нет строки
+  WhatsApp — вставка с `PricePerMonth = NULL`, `IsActive = true`, `IsPublic = false`. `PlanOptionRules` и `AccountSubscriptionOptions` не трогаются.
+  ⚠️ Если у WhatsApp на бою задана цена и опция активна, MAX получит ту же цену и станет продаваемым сразу после выката (§9.11 C40-12).
+- **`Bookings`** + `NotifyByMessenger boolean NULL` (`null` — не спрашивали/нет отметки), `MessengerConsentVersion varchar(80) NULL`,
+  `MessengerConsentAtUtc timestamptz NULL`, `MessengerConsentByUserId text NULL` (сотрудник, поставивший отметку; без FK). `Orders` и
+  `StayBookings` свои поля согласия имели и раньше — не менялись.
+- **`NotificationChannels`** + `LastTestResult int NULL`, `LastTestResultAtUtc timestamptz NULL`, `AutoTestInstanceId varchar(100) NULL`,
+  `ProviderServerCountry varchar(32) NULL`; частичный индекс `IX_NotificationChannels_TestPending` по `Id` `WHERE "LastTestResult" IN (0, 1)`.
+- **Новая таблица `ChannelOptionChangeLogs`**: `BillingAccountId` (FK `Restrict`), `OptionCode varchar(64)`, `Source int`
+  (`ChannelOptionChangeSource`: `AdminBillingAccount`, `AdminChannelCard`, `TrialGrant`, `TrialWindowStart`, `TrialExpiry`, `AdminOptionEnded`),
+  старый/новый `PaidUntilUtc` и `EndsAtUtc`, `ChangedByUserId` (без FK), `ChangedAtUtc`, `ChannelId` (без FK), `Comment varchar(500)`; индекс
+  `(BillingAccountId, OptionCode, ChangedAtUtc)`. В `ShowcaseOwnership.NeverWritten`.
+- **Перечисления** (только дописывание, явные числа): `NotificationReason` `ClientDeclinedMessenger = 34`, `PlatformMessagingDisabled = 35`,
+  `ChannelAccountMismatch = 36`; `ChannelStateReason` `ReplacedByOwner = 11`, `RebindStarted = 12`, `TestMessageSent/Failed/Skipped = 13/14/15`;
+  `ConsentSource` `MessengerOptInBooking/Order/Stay = 12/13/14`; новые `ChannelTestResult` (`Pending, Sending, Sent, Failed, SkippedSameNumber,
+  SkippedNoOwnerPhone, SkippedPlatformDisabled`) и `ChannelOptionChangeSource`. Только в API (не хранятся): `ChannelDisplayStatus`
+  (`Working/ActionRequired/Off`), `ChannelAction`, `ChannelWizardStep`.
+- **Не тронуто** (остаются в БД, код не читает): `ChannelCompanyAssignments`, `SubscriptionPlanConfigs.AllowNotificationChannel`,
+  `PlanOptionRules` двух опций, настройка платформы `notifications.channel.price-per-month`. Удаление — отдельным циклом.
+- **Новые ключи `PlatformSettings`** (данные, не схема; пишет `PlatformSettingsWriter` с журналом): `notifications.option.whatsapp.open`,
+  `notifications.option.max.open` (`"true"`/`"false"`; нет ключа — умолчание из конфигурации), `notifications.customer-messaging.enabled`
+  (нет ключа или не `"false"` — включено). Кеш настроек — 60 с, сбрасывается при записи через админку.
+- **Откат `Down()`**: `RAISE EXCEPTION`, если на `notifications.max` уже есть `AccountSubscriptionOptions`; иначе удаляет таблицу, колонки,
+  индекс и строку опции. По `DEPLOY.md` (§31) схему назад не откатывают — откатывают релиз и запускают
+  `deploy/checks/cycle40-rollback-assignments.sql`. Функционального теста наката/отката (как CY37-140, CY39-140) у цикла 40 **нет**.
 
 ---
 
@@ -676,6 +775,9 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
 - Каналы — auth:
   - `GET|POST /api/notification-channels`, `GET /api/notification-channels/offer`, `GET|DELETE /api/notification-channels/{id}`;
   - `POST …/{id}/{accept-risk,connect,test-message,replace,companies}`, `GET …/{id}/qr`, `DELETE …/{id}/companies/{companyId}`.
+  - **С цикла 40** (✔ `NotificationChannelsController`, эталон): новый `GET /api/notification-channels/overview`; `POST …/{id}/companies` →
+    **410** «Назначать компании больше не нужно…» (атрибут `RequiresOwnerTerms` с маршрута снят), `DELETE …/{id}/companies/{companyId}` →
+    204 без изменения данных. Поведение остальных — блок «Каналы рассылок — цикл 40» ниже.
 - `GET|PUT /api/notifications/preferences` — auth. `GET|POST /api/notifications/unsubscribe/{token}`,
   `POST /api/notifications/provider-webhook/{token}`, `POST /api/notifications/provider-webhook/{transport}/{token}` — anon.
 - Web Push — auth: `GET /api/push/config`, `GET|POST /api/push/subscriptions`, `DELETE /api/push/subscriptions/{current|{id}}`.
@@ -752,9 +854,11 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
   - `GET|POST /api/admin/plans`, `PUT|DELETE /api/admin/plans/{id}`, `PUT …/{id}/{system-free,system-trial}`;
   - `GET|POST /api/admin/options`, `PUT|DELETE /api/admin/options/{id}`, `GET /api/admin/option-capabilities`;
   - `GET /api/admin/pricing/preview`.
-- Каналы: `GET /api/admin/notification-channels[/summary]`, `POST …/{id}/{suspend,resume}`.
+- Каналы: `GET /api/admin/notification-channels[/summary]`, `POST …/{id}/{suspend,resume}`; с цикла 40 — ещё
+  `GET /api/admin/notification-channels/{id}` (карточка) и `POST …/{id}/confirm-payment` (блок «Каналы рассылок — цикл 40» ниже).
 - Платформа:
-  - `GET /api/admin/scheduled-tasks`, `GET|PUT /api/admin/platform-settings`;
+  - `GET /api/admin/scheduled-tasks`, `GET|PUT /api/admin/platform-settings` (с цикла 40 — три переключателя мессенджеров, поле
+    `channelPricePerMonth` принимается и игнорируется);
   - `GET /api/admin/retention/policy`, `GET /api/admin/guest-data-gate-events`.
 - Права и уведомления:
   - `GET|POST /api/admin/subject-requests`, `POST …/{id}/status`;
@@ -846,6 +950,69 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
   `CompanyNotificationsController.BuildMask` теперь учитывает только `BookingTypes` (раньше сдвигал любой тип из запроса — в C#
   `1 << 32 == 1`).
 
+**Каналы рассылок — цикл 40** (✔ атрибуты контроллеров и diff эталона `Cycle22RouteTable.golden.txt` `origin/develop...4d65578`: **+3
+маршрута**, изменены 6 строк (параметры, снятый фильтр), удалённых нет, **итого 394 строки** эталона). Форма — `contracts/cycle40/openapi.yaml`,
+словами — `API_CONTRACT_CYCLE40.md` §40.20–§40.39. В `API_DOCUMENTATION.md` цикл 40 **не вписан** (§9.11 C40-15).
+- **Новые маршруты:** `GET /api/notification-channels/overview` (auth; владелец компании или владелец хоть одного канала, иначе 403;
+  503 без правовых документов) — всё для блока «Номера»: `messagingEnabled`, компании аккаунта, ссылки на оферту и риск, по транспорту —
+  `open`, цена и `sellable`, оплата (`paid`, `paidUntil`, `isTrial`, `paymentPending`, `canRequestPayment`), `termsAccepted`, `wizardStep`,
+  три состояния (`displayStatus`/`displayText`/`action`), основной канал и «лишние» (`extraChannels`), инструкция QR, подстановка формы и ИНН.
+  Закрытый транспорт показывается только если у аккаунта уже есть его живой канал или оплата/триал.
+  `GET /api/admin/notification-channels/{id}` (SA) — карточка: состояние и причина, форма и ИНН, риск и `termsAccepted`, даты, простой,
+  `providerServerCountry`, последняя проверка, оплата, `optionOpen`, цепочка замен, компании аккаунта, журнал состояний (до 200) и журнал
+  оплаты (`ChannelPaymentLog` + `ChannelOptionChangeLog`), доступные действия.
+  `POST /api/admin/notification-channels/{id}/confirm-payment` (SA) `{months 1…12, comment ≤ 500}`: 404; 400 по срокам/длине; 409 для
+  заменённого номера, отсутствующей опции, **закрытой опции**; иначе под `billing-account:{id}` строка опции аккаунта получает
+  `PaidUntilUtc = max(now, текущий срок) + months`, `ActivatedAtUtc = now`, `GrantedByTrial = false`; пишутся `ChannelPaymentLog` и
+  `ChannelOptionChangeLog`; ответ — карточка. **`SubscriptionChangeLog` не пишется** (§9.11 C40-7).
+- **`POST /api/notification-channels`** — шаги мастера «Оплата» и «Условия»: тело + `riskAccepted {version}` и `paymentRequest` (по умолчанию
+  `true`). Порядок отказов: 400 форма/оферта, 400 ИНН, 503 документы, 409 устаревшая оферта, 400 «текст риска изменился», 409 выключатель
+  платформы; `paymentRequest: true` — 409 «Подключение {М} сейчас недоступно» (опция не продаётся), 409 «У вас уже есть номер {М}» (есть живой
+  оплаченный не пробный); `paymentRequest: false` — 409 «Сначала отправьте заявку на оплату {М}», если транспорт не оплачен. Строка создаётся
+  (201) или обновляется (200) под advisory-lock `channel-request:{account}:{transport}`; `RequestedAtUtc` ставит только `paymentRequest: true`;
+  после коммита — согласие `TermsOwner`/`ChannelOffer` в `ConsentLedger`. 402 «недоступно на вашем тарифе» больше нет.
+- **`connect`**: 404 → 409 выключатель → 409 приостановлен → **402 «Номер не оплачен»** (не `Funded`) → 409 «Условия подключения обновились»
+  (риск не текущей версии, нет формы/ИНН или согласия с офертой) → 409 по состоянию (`Connected`, `Blocked`, `Replaced`,
+  `Disconnected`+`ServerCountryMismatch`) → 202 при `Connecting` без нового экземпляра → 409 `InstanceCreationEnabled=false` → 503 без ключа
+  шифрования. Разрешён и из `Disconnected` (старый экземпляр — в `OrphanedInstanceId`, событие `RebindStarted`); `ConnectedAtUtc` обнуляется;
+  страна экземпляра пишется в `ProviderServerCountry`, сравнивается с ожидаемой **по транспорту**.
+- **`qr`**: `Connecting` без экземпляра → 200 с `qrBase64: null`; переход в `Connected` — под `channel-connect:{id}`, там же метка автопроверки.
+- **`test-message`** (ручная проверка): 409 выключатель, 409 не `Connected`, 429 чаще раза в 5 минут, 409 нет телефона у владельца,
+  409 номер канала совпадает с телефоном владельца (если не `TestMessage:AllowSameNumber`); отправка синхронная, результат пишется в
+  `LastTestResult` и журнал состояний. Блокировки нет — §9.11 C40-6.
+- **`replace`** — из любого состояния, кроме `NotConnected`/`Replaced`; новая строка копирует форму, ИНН, риск и `RequestedAtUtc`, `Pending`
+  переезжают на неё; ответ 201 `{newChannelId, paidUntil, companiesMoved}`. **`DELETE /{id}`** («Отвязать») — `Pending` отменяются
+  (перенос на другой мессенджер только при `RebindPendingToOtherTransport=true`).
+- **`GET /api/notification-channels`, `GET /{id}`** — `ChannelDto` + в конце `displayStatus`, `displayText`, `action`, `lastTest`, `isTrial`,
+  `paymentPending`. **`GET …/offer`** — в `transports[]` только продаваемые; `pricePerMonth` верхнего уровня — цена WhatsApp (null, если закрыт);
+  `allowedByPlan` всегда `true`.
+- **Настройки уведомлений компаний** — салон `GET|PUT /api/companies/{id}/notification-settings` (+ `messagingActive`, `inactiveText`,
+  `deliveryChoiceVisible`, `priorityWarning`, `workingTransports`; `planAllowsChannel` всегда `true`; **402 сняты** и в настройках, и в
+  шаблонах; шаблоны салонных сообщений уходят с первой строкой `«{Компания}»:` — `NotificationTemplateRenderer.WithSender`), магазин
+  `…/shops/{id}/notification-settings` и «Дома» `…/stays/companies/{id}/notification-settings` (+ `messagingActive`, `deliveryChoiceVisible`,
+  `priorityWarning`; `messengerAvailable` = есть оплаченный транспорт, 409 `MessengerUnavailable` при включении без него сохранён).
+- **Публичные ответы (поле «рассылки работают», `CustomerMessagingOfferDto {offered, transports, checkboxLabel}`, кеш 30 с):**
+  `GET /api/companies/{slug}` — `customerMessaging` (только у салона; у магазина и «Домов» `offered: false`); `GET /api/storefront/{slug}` —
+  `customerNotifications.messengerTransports`, `messengerLabel`; страница дома — `messenger`. Создание записи/заказа/брони перепроверяет без кеша.
+- **Запись** `POST /api/bookings` — поле `notifyByMessenger` (bool?): у клиента/гостя хранится как прислано; у сотрудника `true` = «клиент
+  согласился» (+ `MessengerConsentByUserId`), иначе `null`. Версия текста — `BookingMessengerConsent` / `StaffBookingMessengerConsentHint`, а пока
+  текстов нет в манифесте — `fallback:<sha256 ключа>`. `BookingDto` + `notifyByMessenger`, `messengerConsentAtUtc`, `messengerConsentByStaff`
+  (имя сотрудника не отдаётся).
+- **Профиль:** `GET /api/notifications/preferences` + `providerDeliveryConsent` (есть действующее согласие `PdnConsent/ProviderDelivery`);
+  отзыв согласия (`POST /api/profile/consents/revoke`) теперь ещё снимает `NotifyByMessenger` у будущих записей и живых заказов аккаунта
+  (`4d65578`).
+- **Админка:** `GET /api/admin/notification-channels` + query `displayStatus`, `payment` (`Paid|NotPaid|Requested|Suspended|Trial`),
+  `includeReplaced` (по умолчанию заменённые скрыты); `AdminChannelDto` + поля представления, `companyCount` = компании аккаунта; сводка +
+  `working`, `actionRequired`, `off`. `GET|PUT /api/admin/platform-settings` — `customerMessagingEnabled`, `whatsAppOptionOpen`,
+  `maxOptionOpen` (GET — всегда значение; PUT — `null` = не менять; смена пишется в журнал, сбрасывает кеш настроек и кеш цен).
+  «Биллинг-аккаунты» (`PUT /api/admin/billing-accounts/{id}/subscription`): для двух опций каналов дата `PaidUntil` обязательна, правило тарифа
+  не проверяется, создание/продление строки закрытой опции → 409 (`ChannelOptionAssignmentRules`), запись в `ChannelOptionChangeLog`.
+- **Цены:** `GET /api/pricing` и `GET /api/billing/subscription` (линейка «Записи») — в конце `messengerAddons[] {transport, label,
+  pricePerMonth, text, footnote}` и `messengerAddonsNote {conditionsUrl: "/offer-channel", conditionsLabel, taxNote}`; строка есть только у
+  продаваемой опции (открыта, активна, с ценой, `TermsOwner` опубликован); у WhatsApp — сноска об ограничении доступа. В общем списке опций
+  `/api/pricing` и в `availableOptions` подписки всех трёх линеек опции каналов больше не показываются. `GET /api/pricing/orders` и
+  подписки «Заказов»/«Домов» строк мессенджеров не получают.
+
 **Маршруты фронтенда** (✔ `App.tsx`, `GoodsApp.tsx`; dom — ✔ `DomApp.tsx` на `a7e3168`):
 - dom (цикл 37; эталон — `contracts/cycle37/dom-routes.json`, его сверяет `dom/src/domRoutes.test.ts`, бэкенд читает как ресурс
   для `StaysSlugPolicy`): `/` (каталог, фильтры в URL), `/:slug` (компания), `/:slug/:houseSlug` (дом), `/b/:token` (бронь),
@@ -910,10 +1077,22 @@ dom задеплоен на ту же машину (она и стенд, и б�
 повтор certbot после копирования). Статус выката циклов 38 и 41 в этом обновлении не проверялся. Ограничение вертикали прежнее:
 реальных владельцев не приглашать до вычитки текстов живым юристом (все новые тексты `Stay*` цикла 39 — тоже черновые).
 
+**Цикл 40 (каналы рассылок)** — **не выкачен**: ветка `cycle/040-simplify-notification-channels` в `develop` не влита (шапка). Порядок выката —
+`DEPLOY.md`, §31 «Каналы-мессенджеры…» (отчёт `cycle40-channels-report.sql` на копии боя → выкат → проверка доступности и цен опций →
+выключатель → ручные M40-01…08 → открыть владельцам только после вычитки текстов юристом). Миграция `Cycle40ChannelOptions` применится при
+любом деплое кода цикла. Статус по решению заказчика: **WhatsApp закрыт до заключения юриста, MAX открыт** (оба — умолчания конфигурации,
+меняются в админке).
+
 ### 5.2 Код есть целиком, но выключен переключателем (✔ дефолты; 🖥 бой)
 - **Уведомления клиентам салонов в WhatsApp/MAX через GREEN-API.** Каналы, шаблоны, очередь, диспетчер, вебхуки, отписка —
   всё есть. На бою `NOTIFICATIONS_PROVIDER=green-api` (`.env`, 08.10.2026). Живого вызова GREEN-API не делал ни один тест и ни один человек. Договор с GREEN-API подписан и партнёрские
   токены добавлены (со слов заказчика, 08.10.2026); до включения не хватало `InstanceCreationEnabled` и `ServerCountry` в compose (исправлено в `55d01ee`) (C-13, C20-3).
+  **С цикла 40** (в ветке, не влит и не выкачен; §5.16) переключателей стало больше, и все они — **настройки платформы без релиза**:
+  доступность опции WhatsApp — **закрыта** по умолчанию (`Notifications:OptionAvailability:WhatsApp=false`; решение заказчика Р40-Ю1:
+  закрыта до письменного заключения юриста), MAX — **открыта**; глобальный выключатель рассылок клиентам
+  (`notifications.customer-messaging.enabled`, по умолчанию включён). «Открыта» ≠ «продаётся»: продаётся опция с ценой, `IsActive` и
+  опубликованным `TermsOwner`. Закрытая опция не продаётся и не выдаётся в пробном периоде, но уже оплаченный или пробный номер работает до
+  конца срока. Живого вызова GREEN-API по-прежнему не было (M40-01…08 не проходили, §9.11).
 - **Web Push** персоналу ezbook/goods и покупателям goods. Есть VAPID, service worker'ы `frontend/public/sw.js` и
   `frontend/goods/public/sw.js`, диспетчеры на полосе `realtime`. По словам заказчика (08.10.2026), на бою включён и проверен на
   телефонах; в репозитории этого не видно (`.env` в git нет), письменных результатов M33-01…07 нет. С цикла 33 одно включение на
@@ -965,6 +1144,18 @@ dom задеплоен на ту же машину (она и стенд, и б�
   `ProtectedRoute` в `App.tsx` (→ `src/components/auth/ProtectedRoute.tsx`), встроенный `<footer>` главной ezbook, ключ кеша
   react-query `['public-pricing']` (→ `['public-pricing', 'services' | 'orders']`). Генерат `api-cycle38.generated.ts` — не только
   сверочный: из него берёт типы `goods/src/api/ordersPricing.ts`; CI его сверяет (§7.3).
+- **Удалено циклом 40** (✔ `git diff --name-status`, grep): классы `Services/Billing/ChannelEligibility.cs` (+ регистрация DI) и
+  `TrialMailingRulePolicy.cs` (+ тесты `TrialMailingRulePolicyTests`, `ChannelFundingTests`, `SubscriptionResolverOptionGatingTests`,
+  старые `NotificationGateTests`, `NotificationRoutingTests`), метод `ChannelFunding.Rank(channels, int)` (в файле остался только enum
+  `ChannelFundingState`), поля `AllowNotificationChannel`/`PaidNotificationNumbers` из `EffectivePlan`, `OrdersPlan`, `StaysPlan`, строки
+  «Сообщения … в MAX и WhatsApp» в `Includes` подписки, `BillingTexts.FundingText(state, paidNumbers, …)` (тексты оплаты теперь —
+  `MessengerTexts.FundingText` по транспорту). Фронт: `src/pages/owner/NotificationsSection.tsx`
+  (со старыми карточками `ChannelCard`/`OfferCard`), `src/components/notifications/{AssignCompanyDialog,ChannelRequestModal,QrModal,RiskAcceptanceModal}.tsx`
+  (+ `ChannelRequestModal.test.tsx`), запись `'owner/NotificationsSection'` в `frontend/shared-sources.js`, метод `messengerConsent` в
+  `goods/src/api/legalNotice.ts` (правовой текст галочки теперь читает общий `useMessengerLegalText`). Поля цены канала в админке нет — вместо
+  него подсказка «цена подключения мессенджера — это цена его опции».
+  **Остались в БД без чтения:** `ChannelCompanyAssignments`, `SubscriptionPlanConfigs.AllowNotificationChannel`, правила `PlanOptionRules` двух
+  опций каналов, настройка `notifications.channel.price-per-month` (поле цены канала в админке сервер принимает и игнорирует).
 - **Константа без потребителя в продукте** (✔ grep): `OrdersTariffCatalog.FreeHighlights` (три преимущества бесплатного тарифа
   «Заказов») читает только юнит-тест `OrdersTariffCatalogTests`; сидер её в БД не пишет (§5.13, §9.8 C38-2).
 - `openapi-cycle6.yaml` в корне и `contracts/cycle{10,11,15,17}/openapi.yaml` — исторические контракты, в CI не линтуются.
@@ -973,6 +1164,24 @@ dom задеплоен на ту же машину (она и стенд, и б�
 - ↪ C22-1: восемь навигационных свойств EF без ссылок в коде.
 
 ### 5.5 Что сделали последние циклы
+
+**Цикл 40 — упрощение каналов рассылок (WhatsApp / MAX)** (✔ `git diff origin/develop...4d65578`; ветка
+`cycle/040-simplify-notification-channels`, **в `develop` не влита**). Подробно — §5.16, долг — §9.11. Коротко:
+- номер мессенджера принадлежит аккаунту и работает на **все** его компании (салоны, магазины, «Дома»); назначений компаний больше нет —
+  `ChannelCompanyAssignments` не читается и не пишется, старые маршруты назначения отвечают 410/204;
+- «оплачено» — по транспорту: строка опции аккаунта `notifications.whatsapp` или новой `notifications.max`; флаг тарифа
+  `AllowNotificationChannel` и правила тарифа для этих опций не читаются; пробный период выдаёт только **открытые** опции;
+- доступность каждой опции — переключатель в админке без релиза (по умолчанию WhatsApp закрыт, MAX открыт) + глобальный выключатель рассылок;
+- владельцу — блок «Номера» и мастер подключения (оплата → условия → QR → готово) в разделе «Уведомления клиентам» каждой компании
+  (ezbook — вкладка компании, goods и dom — страница уведомлений), три состояния номера «работает / нужно действие / выключено»;
+  автоматическое проверочное сообщение на телефон владельца после привязки;
+- клиенту — галочка «Получать уведомления о записи в …» только когда сообщения реально уйдут; в ручной записи сотрудника — отметка «Клиент
+  согласился»; без отметки гость и клиент, записанный по телефону, сообщений больше не получают (Р40-Ю2); отметка вошедшего пишет согласие
+  `ProviderDelivery`; в начале каждого сообщения салона — название компании;
+- суперадмину — таблица номеров с тремя состояниями и фильтрами, карточка номера с двумя журналами, «Подтвердить оплату», блок «Подключение
+  мессенджеров»; строки цен мессенджеров на `/pricing` и в подписке «Записей»;
+- одна миграция `Cycle40ChannelOptions` (только добавления), новая фоновая задача `channel-test-message`, контракт `contracts/cycle40/` с общими
+  векторами правил для C# и TS; SQL-отчёт до выката и скрипт отката назначений; выкат — `DEPLOY.md`, §31.
 
 **Цикл 39 — «Дома», цикл 2: услуги-слоты, напоминание накануне заезда, хвосты цикла 37** (✔ `git diff 68e9ba9..5bcd015`; влит
 мерджем `5bcd015`). Подробно — §5.15, долг — §9.10. Коротко:
@@ -1182,7 +1391,7 @@ dom задеплоен на ту же машину (она и стенд, и б�
   (`!db.Companies.Any(c => c.Id == o.CompanyId && c.IsShowcase)`; маркеры `SUBJECT-PHONE-GATE` сохранены).
 - **Служебный тариф «Заказов»** (D35-2): `ShowcaseCatalog.OrdersShowcasePlanId = 5a1e0c35-0000-4000-8000-000000000901`, имя «Демо»,
   `Line = Orders`, `IsPublic = false`, `MaxOrdersPerMonth = null`, `MaxCompanies 3 / MaxEmployees 10 / MaxProductsPerShop 200`,
-  `AllowNotificationChannel = false`, все опции «недоступна»; `ShowcaseCatalog.IsServicePlan(id)` (оба служебных).
+  `AllowNotificationChannel = false` (с цикла 40 не читается), все опции «недоступна»; `ShowcaseCatalog.IsServicePlan(id)` (оба служебных).
   `ShowcaseMixingGuard.CheckServicePlan` перешёл на `IsServicePlan` и вызывается ещё и в
   `AdminBillingController.AssignOrdersSubscriptionAsync` (409). Публичной сетки тарифов «Заказов» нет.
 - **Удаление витрины** (`ShowcaseOwnership`): 14 шагов goods в `DeleteSteps` перед `companies` (дети раньше родителей: `OrderEvents`,
@@ -1243,7 +1452,7 @@ dom задеплоен на ту же машину (она и стенд, и б�
   `ShowcaseVisitorBookingRule` (24 ч, `Retention:ShowcaseVisitorBookingHours`); `InactiveAccountRule` пропускает витрину. `CompanyDto` +`isShowcase`/`showcaseBookingOpen`, `BookingDto` +`companyIsShowcase`.
 - **Админка** — параметр `showcase=all|only|exclude`, поля `isShowcase`, `stats` без витрины + три счётчика.
 - **Решения заказчика Q28-1…Q28-4 в коде:** `EffectivePlan.Free` теперь `AllowOnlineBooking=true`, `AccountMaxEmployees=2` (**меняет поведение всех существующих бесплатных компаний**); `TrialTermsRegistry` — новая редакция `2026-09-30`
-  без обещания рассылок и без параметра `{3}` (`RenderCurrent(plan, days, endsAt)`), редакция `2026-09-26` сохранена; `TrialActivationService` не шлёт сигнал, если у пробного тарифа `AllowNotificationChannel = false`.
+  без обещания рассылок и без параметра `{3}` (`RenderCurrent(plan, days, endsAt)`), редакция `2026-09-26` сохранена; `TrialActivationService` не шлёт сигнал, если у пробного тарифа `AllowNotificationChannel = false`. *(Устарело с цикла 40: флаг не читается; триал выдаёт каждую **открытую** опцию канала при опубликованном `TermsOwner`, закрытую пропускает с записью в лог, сигнал — только если открытой опции нет в каталоге; §5.16.)*
 - Тесты: unit +180 (`OpsCommandLineTests`, `ZapisTariffCatalogTests`, `Showcase*Tests`, `TrialMailingRulePolicyTests`, …); в функциональных обновлены 6 тестов под новый бесплатный тариф (`CompaniesTests`, `AdminTests`).
   Функциональных тестов цикла 28 backend не писал — их пишет QA (`CY28-*`).
 
@@ -1347,6 +1556,19 @@ dom задеплоен на ту же машину (она и стенд, и б�
 текст — из шаблона компании (`ArrivalReminderTemplate.Render`), снимок для страницы брони пишется в `StayBookings.ArrivalReminderPageText`
 и событие `ArrivalReminderSent`. Retention: **+5 правил** (`stay-service-order-payment-proofs`, `stay-service-order-unpaid-personalization`,
 `stay-service-order-personalization`, `stay-service-order-events`, `stay-service-schedule-events`; §5.15) — итого правил «Домов» 11.
+**Цикл 40** (✔ `ApplicationServicesExtensions`, `appsettings.json` на `4d65578`) добавил **пятнадцатую** задачу и изменил три:
+
+| Задача | Полоса | Что делает |
+|---|---|---|
+| `channel-test-message` | realtime, 10 с, `MaxRunMinutes=1` | автоматическое проверочное сообщение после привязки номера (`ChannelTestMessageService`): берёт каналы с `LastTestResult = Pending` в `Connected`, захватывает условным `UPDATE … SET Sending WHERE Pending AND AutoTestInstanceId = @inst` (безопасно при двух экземплярах API), шлёт на телефон владельца или ставит `Skipped*` (номер совпадает с телефоном — если не `TestMessage:AllowSameNumber`; нет телефона; выключатель платформы или демо-режим); `Sending` дольше 5 мин → `Failed` без повтора, `Pending` дольше 1 ч не в `Connected` → `Failed`. В `Testing` выключена |
+
+- `notification-dispatch` — перед отправкой триаж пакетом: выключатель платформы → `Skipped/PlatformMessagingDisabled`; канал другого
+  аккаунта, чем компания → `Skipped/ChannelAccountMismatch`; канал не `Funded` или приостановлен админом → `Skipped/NotOnPaidPlan`
+  (**приостановка админом теперь реально останавливает отправку**); `DisabledByOwner`/`Replaced` → `Skipped/NoUsableChannel`. Согласие
+  повторно не проверяется (решено при постановке).
+- `channel-health` — простой номера считается по аккаунту (`MessagingDemand`: есть активная невитринная компания с включёнными сообщениями
+  клиентам), один запрос на проход.
+- `trial-lifecycle` — истечение триальных строк опций пишется в `ChannelOptionChangeLog` (`TrialExpiry`).
 Задачи до цикла 37:
 
 | Задача | Полоса | Что делает |
@@ -1918,7 +2140,9 @@ goods нет (✔ grep по `frontend/goods/src`); гостевой заказ �
 **Тарифы и триал «Дома»** (✔ SQL миграции, `appsettings.json`): линейка `Line = Stays`, своя таблица `StaysSubscriptions`, бесплатного
 уровня нет (нет строки — нет тарифа). Тарифы с фиксированными Id: «Один дом» — **200 ₽/мес**, 1 опубликованный дом; «До 3 домов» —
 **500 ₽/мес**, 3 дома; «Без ограничения» — **1000 ₽/мес**, без лимита; «Пробный период «Дома»» — 0 ₽, не публичный, **14 дней**
-(`Stays:TrialDays`). Платным разрешена опция канала `notifications.whatsapp`. Триал однократен на аккаунт и на подтверждённый номер
+(`Stays:TrialDays`). Платным разрешена опция канала `notifications.whatsapp` (*с цикла 40 это правило тарифа не читается: номер оплачен
+строкой опции аккаунта, флага и правил тарифа для каналов нет; пробный период «Домов» опции каналов не выдаёт — `StaysTrialService` не менялся,
+выдаёт их только салонный `TrialActivationService`, ✔ grep; §5.16*). Триал однократен на аккаунт и на подтверждённый номер
 **в линейке** (`TrialGrants.Line`, `TrialPhoneRegistrations.Line`); условия триала — `StaysTrialTerms` (`StaysTrialService.cs`, версия
 `stays-2026-10-08`), в коде помечены «DRAFT until a lawyer reads it». Плашки предупреждений — `warningLevel` (`TrialEnding3d`,
 `TrialEnding1d`, `Expired`, `NoPlan`, `OverLimit`). Назначение тарифа — по-прежнему вручную суперадмином по заявке; платёжного шлюза нет.
@@ -2051,7 +2275,9 @@ EZBOOK», CTA «Зарегистрировать компанию» → `/regist
   | «Сеть магазинов» | `5a1e0c38-…-000000000040` | 2 990 (в описании «от 2 990») | без огр. | без огр. | 1 000 | без огр. | 40 |
 
   У каждого — описание и 3 преимущества. Создаются с `IsActive = IsPublic = true`, `AllowOrders`, `AllowPublicListing`,
-  `AllowNotificationChannel` = true, остальные `Allow*` = false, `PhotoQuotaMb` 100.
+  `AllowNotificationChannel` = true, остальные `Allow*` = false, `PhotoQuotaMb` 100. *С цикла 40 флаг `AllowNotificationChannel` никем не
+  читается (страж `AllowNotificationChannelReadGuardTests` запрещает обращение `.AllowNotificationChannel`; остались только инициализаторы
+  свойств в сидере `TariffCatalogSeeder.cs`).*
 - Бесплатный тариф «Заказов» (`IsSystemFree && Line == Orders`, сид миграции цикла 24: «Заказы · Бесплатно», 1/2/50/150,
   `IsPublic = false`, `Highlights = NULL`, `SortOrder = -1`). Целевые значения в каталоге: «Бесплатный», новое описание, `SortOrder` 10,
   `FreeHighlights` (3 строки).
@@ -2250,6 +2476,126 @@ Contract, MigrationRollback) + `Infrastructure/Cycle39TestBase.cs`; 136 атри
 84 `it` (в т.ч. `serviceVectors.test.ts` по общим векторам, `guestServicesQa.test.tsx`, `guestCopy.guard.test.ts` — запрет слов
 «бизнес-день»/«задаток» и т.п. в текстах для гостя). Ручных проверок на стенде в каталоге нет.
 
+### 5.16 Каналы рассылок: номер на аккаунт, оплата по транспорту, мастер, согласие клиента — цикл 40 (✔ по коду на `4d65578`, ветка не влита, ничего не запускалось)
+Документы цикла: корневой `SPEC.md` (US-40-01…14, T-40-01…13, редакция 2026-10-09), `ARCHITECTURE_CYCLE40.md` (§40.0a — решения заказчика
+Р40-Ю1…Ю4, §40.0 — сводка A1–A16, §40.1–§40.19), `API_CONTRACT_CYCLE40.md` (§40.20–§40.39), `LEGAL_REVIEW_CYCLE40.md` (Т40-L-01…14),
+`contracts/cycle40/`, `DEPLOY.md` (§31). Схема — §3 («Каналы рассылок — цикл 40»), маршруты — §4, задачи — §5.6. Где документы
+расходятся с кодом, ниже — по коду.
+
+**Сервер — кто что решает** (`ServiceBooking.API/Services/Notifications/`, `…/Funding/`, `…/Billing/`; чистые правила — статические классы,
+покрыты юнит-тестами и векторами `channel-vectors.json`):
+- **`AccountMessagingReader`** (scoped) — **единственный** читатель «оплачено / открыто / работает» по аккаунту: `LoadAsync(accountIds)`,
+  `ForAccountAsync`, `ForCompanyAsync(companyId)` — четыре запроса на любой набор аккаунтов (каналы, строки двух опций, `AccountSubscriptions`,
+  `BillingAccounts.TrialEndsAtUtc`) + кеш каталога опций и настроек платформы. Результат — `AccountMessagingState { PlatformEnabled, Transports[]
+  (WhatsApp, Max), Channels }`, у транспорта — `Payment`, `Option {Open, Sellable, PricePerMonth}`, `Primary` (первый живой номер), `Duplicates`,
+  `Routable`, `Working`. «Каналы компании» = живые каналы её **аккаунта**.
+- **`ChannelOptionFunding.Evaluate`** (pure) — «транспорт оплачен» по строке `AccountSubscriptionOption`: нет строки — нет; `EndsAtUtc ≤ now` —
+  нет; `PaidUntilUtc` задан — `≥ now`; без даты и `GrantedByTrial` — до `TrialEndsAtUtc`; без даты и не триальная (наследная) — по годности
+  подписки «Записей» аккаунта. `PlanOptionRule`, `MailingUntilUtc`, флаги тарифа не читаются. **Доступность опции на «оплачено» не влияет.**
+- **`TransportFunding.Rank`** — живые каналы транспорта по `CreatedAt, Id`: первый — `Funded`/`NotPaid`, остальные — `Unfunded` («лишний номер»).
+- **`ChannelFundingReader`** — фасад прежней формы поверх `AccountMessagingReader` (`IsFundedAsync(channel)`, `LoadAsync(channels)`), им
+  пользуются `connect`, приостановка в админке, `ShopChannelReader`.
+- **`ChannelOptionAvailability`** — `IsOpen(setting, default)` и `Sellable(open, isActive, price ≠ null, TermsOwner опубликован)` — одно место
+  решения «продаётся ли»; потребители: `overview`, `offer`, `POST` мастера, цены, триал (без требования цены), админ-оплата и «Биллинг-аккаунты»
+  (только `open`). `PlatformSettings.IsOptionOpenAsync`, `IsCustomerMessagingEnabledAsync`. `LegalOptionGuards` и `OptionCapabilityCatalog`
+  знают `notifications.max`.
+- **`NotificationRouting.SelectRoutedTargets`** — маршрутизируемый транспорт = оплачен ∧ `Funded` ∧ не приостановлен ∧ номер хоть раз
+  привязан (`Connected`, `Disconnected`, `NeedsReconnect`, `Blocked`); 0 → ничего, 1 → он (режим и приоритет не читаются), 2 → `AllChannels` —
+  оба, `PriorityChannel` — приоритетный без тихого перехода.
+- **`NotificationGate.Evaluate`** (pure, новая сигнатура: `MessagingAvailability`, настройки компании, отписка, решение о согласии, время) —
+  порядок: `PlatformMessagingDisabled` → `RecipientOptedOut` → `ClientDeclinedMessenger` → `NoProviderDeliveryConsent` → `NotOnPaidPlan` →
+  `NoUsableChannel` → `TypeDisabledByCompany` → `BelowMinimumLeadTime`. План, назначения и финансирование канала из гейта ушли.
+  `MessagingQueueing.Decide` собирает гейт и маршрутизацию для трёх планировщиков (`NotificationScheduler`, `OrderMessageScheduler`,
+  `StayMessageScheduler`) — общий порядок: `ShowcaseOutboundGuard` → контекст → `ForCompanyAsync` → `MessengerConsentResolver` → гейт →
+  маршрутизация → строки.
+- **`MessengerConsentRule`** (pure) — `false` → `Declined`; `true` → `Allowed`; `null` → `Allowed`, только если у получателя есть аккаунт
+  (`ClientId` записи или аккаунт с подтверждённым номером получателя — `MessengerConsentResolver`, маркер `SUBJECT-PHONE-GATE`) **и** у него
+  действующее согласие `PdnConsent/ProviderDelivery`; иначе `NoConsent`. `Store(origin, mark)`: у сотрудника `true` → `(true, byStaff)`, иначе
+  `null`; у клиента и гостя — как прислано. **Намеренная смена поведения (Р40-Ю2):** гость салона без отметки и клиент, записанный сотрудником
+  без отметки, сообщений не получают. `Notifications:ProviderDeliveryConsent` на решение не влияет.
+- **Отметка вошедшего** (Т40-L-07) — `MessengerOptInLedger.GrantForCustomerAsync`: при `notifyByMessenger = true` у вошедшего клиента и
+  отсутствии действующего согласия пишет `PdnConsent/ProviderDelivery` (`ConsentSource.MessengerOptInBooking|Order|Stay`). Вызывается
+  **после коммита** записи/заказа/брони, ошибка только логируется (§9.11 C40-8). В записи салона — только если запись не «за другого» и без
+  гостевого телефона. Отметка гостя в журнал не пишется — доказательство в самой записи.
+- **`CustomerMessagingOfferService`** (+ pure `CustomerMessagingOfferRule`) — «рассылки работают» для клиента: выключатель платформы ∧ компания
+  активна ∧ не витрина/не демо ∧ флаг компании (салон — включены `BookingConfirmed` или `Reminder`; магазин — `CustomerMessengerEnabled`;
+  «Дома» — `GuestMessengerEnabled`) ∧ маршрутизация над маршрутизируемыми ∩ работающие ≠ ∅; наружу — `offered`, `transports`, `checkboxLabel`
+  («Получать уведомления о {записи|заказе|брони} в {WhatsApp|MAX|WhatsApp и MAX}»). Кеш 30 с на компанию; создание записи/заказа/брони
+  перепроверяет без кеша (`OrderCreationService`, `StayBookingCreationService` больше не зовут `ShopChannelReader.IsMessengerAvailableAsync`).
+- **`CompanyMessagingStatus`** (pure) — для настроек трёх видов компаний: `messagingActive`, `inactiveText`, `workingTransports`,
+  `deliveryChoiceVisible` (оба транспорта работают, либо оба маршрутизируемы при `PriorityChannel` и приоритетный не работает), `priorityWarning`.
+- **`ChannelPresentation.Display`/`WizardStep`** — три состояния номера (таблица §40.6.2 архитектуры, 19 правил; первым — `Replaced` (владельцу
+  не отдаётся), выключатель, приостановка, `DisabledByOwner`, лишний номер, «Оплата на проверке», «временно недоступно», «оплата закончилась»,
+  «не оплачено», «примите условия», …, «Сообщения уходят с номера {маска}») и шаг мастера (`Unavailable`, `PaymentPending`, `Payment`, `None`,
+  `Done`, **`Terms`** — оплаченный, в т. ч. пробный, транспорт без принятых условий текущей редакции, `Qr`). `TermsAccepted` = риск текущей
+  версии `ChannelRiskNotice` ∧ форма и ИНН заявлены ∧ действующее согласие владельца с офертой (`TermsOwner`/`ChannelOffer`).
+- **`NumbersOverviewBuilder`** — собирает `overview` и `ChannelDto` (используется и в `GET /`, `GET /{id}`, `POST`). **`AdminChannelsBuilder`** —
+  строки админской таблицы, карточка, `ConfirmPaymentAsync` (§4).
+- **`MessengerAddonsProvider`** (+ pure `MessengerAddonsBuilder`) — строки цен мессенджеров «+ MAX 490 ₽/мес» для `/api/pricing` и подписки
+  «Записей»; только продаваемые опции; сноска у WhatsApp; `messengerAddonsNote` с `/offer-channel` и налоговой оговоркой из `notice`.
+- **`PendingRebinder`** (+ pure `PendingRebind`) — судьба `Pending` при трёх событиях: отвязка номера — **отмена** (перенос на другой
+  мессенджер только при `Notifications:RebindPendingToOtherTransport=true`, по умолчанию `false`, Р40-Ю3); замена номера — на новую строку того
+  же транспорта; передача компании (`CompanyTransferService`) — на маршрутизируемый номер того же транспорта нового аккаунта, иначе отмена;
+  превью передачи считает, сколько отменится. При смене транспорта переписывается последний сегмент `IdempotencyKey`, дубль ключа отменяет исходную.
+- **Автопроверка (`channel-test-message`, §5.6)** — метку ставит `ChannelStateTransition.Apply` при переходе в `Connected` с причиной
+  `Authorized`: `AutoTestInstanceId = ProviderInstanceId`, `LastTestResult = Pending` (один экземпляр = одна проверка). Текст —
+  «Проверка номера {М} для уведомлений ezbook.ru: …» (`MessengerTexts.TestMessageBody`). История — `ChannelStateEvents` (`TestMessageSent/
+  Failed/Skipped`), не `OutboundNotifications`. Ручная повторная проверка — `POST …/{id}/test-message` (§4).
+- **Пробный период (салонный `TrialActivationService`)** — для каждой опции из `ChannelOptionCodes.All`: опция закрыта или `TermsOwner` не
+  опубликован → пропуск (лог); открыта — строка создаётся/оживляется (`Quantity = 1`, `GrantedByTrial = true`, `PaidUntilUtc = null` до
+  старта окна рассылок), платная строка не трогается (`TrialOptionGrantRule`); запись в `ChannelOptionChangeLog`. Открытие WhatsApp позже идущим
+  триалам его не доначисляет. Старт окна (`TrialMailingWindowStarter`) датирует строки и пишет журнал.
+- **Название компании в каждом сообщении** — салон: `NotificationTemplateRenderer.WithSender` ставит `«{Company.Name}»:` первой строкой (и в
+  превью шаблона); заказы и брони начинались с названия и раньше.
+- **Тексты сервера** — `MessengerTexts` (заголовки и отказы мастера, инструкции QR по транспорту — для MAX черновик до M40-02, тексты оплаты,
+  причины журнала доставки, цены); страж `MessengerTextsForbiddenWordsTests` запрещает «VPN/ВПН/прокси/обход» (Т40-L-14).
+- **Страна экземпляра** — ожидаемая по транспорту (`GreenApiOptions.ExpectedServerCountry`), фактическая пишется в `ProviderServerCountry` и
+  видна в карточке админа; несовпадение — как раньше, `Disconnected/ServerCountryMismatch` + 503.
+
+**Фронт** (✔ по файлам; общий код — `frontend/src/components/notifications/`, §2):
+- **ezbook:** вкладка компании переименована в «Уведомления клиентам» (`CompanyManagePage`, открывается и по `?tab=notifications`);
+  `NotificationSettingsTab` — `NumbersBlock` сверху, «Как доставлять» только при `deliveryChoiceVisible` (+ `priorityWarning`), без 402-заглушек.
+  В кабинете вкладка «Уведомления» — только указатель «Номера для сообщений клиентам — в настройках каждой компании» со ссылкой на первую
+  компанию; баннер поломки канала `ChannelBreachBanner` в шапке кабинета — **прежний** (по `state` канала, без ссылки в раздел).
+- **goods** (`ShopNotificationsPage`) и **dom** (`cabinet/NotificationsPage`) — тот же `NumbersBlock` + выбор доставки по `deliveryChoiceVisible`;
+  старые карточки каналов удалены. Отдельного компонента `DeliveryModeBlock` нет — выбор доставки свёрстан в каждой странице.
+- **`NumbersBlock`** — ключ react-query `['notification-numbers']`, строка на каждый показанный транспорт (`NumberRow`: статус, текст сервера,
+  кнопка по `action`, результат последней проверки, меню «Заменить номер»/«Отвязать» с подтверждением), `companiesText`, `statusNotice`.
+  **`ConnectWizard`** — модалка, стартовый шаг — `wizardStep` с сервера; `Payment`/`Terms` — одна форма `TermsStep` (статус, ИНН, оферта и
+  риск — две отметки, текст риска полностью; `paymentRequest` true/false); `QrStep` (опрос `qr`); `Done` — текст канала, **результат
+  автопроверки на шаге «Готово» не опрашивается**. Кнопки «Отправить проверочное ещё раз» нет (метод `notificationChannelsApi.testMessage` есть,
+  не вызывается) — часть FE-40-7.
+- **Согласие клиента:** `MessengerOptIn` + `useMessengerOptInDefault` — в `BookingModal` ezbook (клиентский режим; используется и `/embed/:slug`),
+  `CartPanel` goods, `BookingPanel` dom (галочка больше не показывается безусловно — только при `offered`). Умолчание: гость — снята; вошедший
+  отписан в профиле — строка со ссылкой в профиль ezbook, поле не отправляется; `enabled ∧ providerDeliveryConsent` — стоит; иначе снята.
+  Правовой текст — `GET /api/legal/texts/<ключ>` (`useMessengerLegalText`), на 404 — запасной текст из кода (`utils/messengerOptIn.ts`).
+  Ручная запись сотрудником — `StaffMessengerConsentCheckbox` («Клиент согласился…», снята по умолчанию); `customerMessaging` компании модалка
+  при необходимости дочитывает по slug.
+- **Цены:** `MessengerAddonLines` под карточками `PlanCard` (`/pricing` «Записи») и на `BillingPage`.
+- **Админка** (`src/pages/admin/NotificationsAdminTab.tsx`, без отдельной папки `components/admin/`): таблица с тремя состояниями и фильтрами,
+  карточка номера, «Подтвердить оплату» (месяцы, комментарий), блок «Подключение мессенджеров» — переключатели «WhatsApp/MAX — открыто для
+  владельцев» и «Рассылки клиентам в мессенджеры»; поле цены канала убрано.
+- **Типы:** генерат `api-cycle40.generated.ts` (CI сверяет), рукописные `src/types/index.ts` (+28 строк), `goods/src/types.ts`, `dom/src/types.ts`.
+- **Не сделано — FE-40-7 (P2):** `NotificationPreferencesCard` в профилях goods и dom (в goods/dom профиля уведомлений в мессенджеры нет; у
+  ezbook — прежняя карточка в `ProfilePage`) и «Отправить проверочное ещё раз».
+
+**Тесты цикла** (✔ по файлам; ничего не запускалось): функциональные — 2 новых класса, **12** `[Fact]/[Theory]`: `Cycle40ChannelsTests.cs`
+(CY40-ADM-01…07, CY40-CTR-01 — ответы цикла сверяются `OpenApiContract.Load("cycle40")`) и `Cycle40MessagingTests.cs` (CY40-MSG-01, 02, 03, 05;
+номера MSG-04 нет); переписаны под новый контракт `NotificationChannelsTests` (22 атрибута в файле), `Cycle18TrialLifecycleTests`,
+`Cycle22ChannelFundingTests`, `Cycle24NotificationsTests`, `NotificationMaxTransportTests`, `NotificationQueueingTests`, `LegalPricingGateTests`,
+`Cycle29ContractTests`/`Cycle37ContractTests` (белые списки новых полей), эталон маршрутов (`3348955`: «16 функциональных тестов под новый
+контракт»). Планировавшихся архитектурой классов `Cycle40RollbackReadTests`, `MessengerBodiesNameSenderTests`, `WizardApiTests`,
+`PendingRebindTests` и др. (§40.16) **нет**; в `OpenApiContractValidatorTests` строки `[InlineData("cycle40")]` нет. Юнит — каталог
+`ServiceBooking.UnitTests/Cycle40/` (17 файлов: `AccountMessagingReaderTests`, `ChannelVectorsTests` по всем 8 разделам векторов,
+`NotificationGateCycle40Tests`, `MessagingQueueingTests`, `CompanyMessagingStatusTests`, `NumbersOverviewBuilderTests`, `PendingRebindKeyTests`,
+`ChannelTestMessageRuleTests`, `ChannelOptionAssignmentRulesTests`, `MessengerTextsTests`, `MessengerTextsForbiddenWordsTests`,
+`PlatformSettingsOptionDefaultsTests`, `ServerCountryByTransportTests`, `TransportFundingTests`, `TrialOptionGrantRuleTests`,
+`MessagingDemandTests`, `ChannelOptionLogTests`; 135 атрибутов) + стражи `Cycle40EnumAppendOnlyTests`, `AllowNotificationChannelReadGuardTests`,
+`AssignmentReadGuardTests` (11) и правки ~15 старых файлов. Фронт (vitest) — 10 новых файлов (~47 `it`: `channelRules.test.ts` по векторам,
+`MessengerOptIn`, `NumbersBlock`, `numbersTexts`, `MessengerAddonLines`, `useMessengerOptInDefault`, `messengerOptIn`,
+`messengerOptInFallbackRevision`, фикстура `numbersOverview`, `dom/.../NotificationsPage`), правки 8, удалён 1 (`ChannelRequestModal.test.tsx`).
+Раздела цикла 40 в `TEST_CATALOG.md` **нет**; ручные M40-01…08 (гейт выката, `ARCHITECTURE_CYCLE40.md` §40.18.5) **не проходили**.
+
 ## 6. Конвенции проекта (✔ выборочно по коду; им следовать, а не вводить рядом свои)
 
 ### 6.1 Бэкенд (C#)
@@ -2300,6 +2646,16 @@ Contract, MigrationRollback) + `Infrastructure/Cycle39TestBase.cs`; 136 атри
   `StayNotificationTexts`, настройки — `StaysOptions` (секция `Stays`). Конфликты домена — JSON `StaysConflictDto`/`StayRefusalDto`
   (409), отказы салонных маршрутов «Домам» — `text/plain`. Деньги — `int` рублей. Проверка «вид компании» — только в `CompanyKindGuard`/
   `StaysAccess`, бинарные развилки по `Kind` запрещены стражем.
+- **Каналы рассылок (с цикла 40, §5.16)** — каналы компании узнают **только** через `AccountMessagingReader.ForCompanyAsync` (каналы
+  аккаунта); `ChannelCompanyAssignments`/`.Assignments` не читать и не писать (страж `AssignmentReadGuardTests`, исключения — удаление строк в
+  `CompanyTransferService`/`AccountDeletionService`, `ShowcaseOwnership`); `.AllowNotificationChannel`, `PaidNotificationNumbers`,
+  `ChannelEligibility`, `ChannelFunding.Rank`, `TrialMailingRulePolicy`, `PaidNumbers(`/`IsOptionCurrentlyPaid(` — запрещены
+  `AllowNotificationChannelReadGuardTests`. «Продаётся ли опция» — только `ChannelOptionAvailability`; «оплачено» — только
+  `ChannelOptionFunding`; согласие на сообщения — только `MessengerConsentRule`; доставка — `MessagingQueueing` (гейт + маршрутизация) в
+  трёх планировщиках. Любая правка этих правил — правка `contracts/cycle40/channel-vectors.json` в том же коммите (их читают и C#, и TS).
+  Изменение опций каналов аккаунта пишется в `ChannelOptionChangeLog` через `ChannelOptionLog.Write`. Новые правовые ключи согласия
+  (`BookingMessengerConsent`, `StaffBookingMessengerConsentHint`) — вне `LegalTextKey.All`, версия при отсутствии текста — `fallback:<sha256>`
+  (`MessengerConsentVersions`), как у заверения реестра «Домов».
 
 ### 6.2 Фронтенд (TypeScript/React, оба приложения)
 - Функциональные компоненты и **именованные экспорты**. Default export есть только у `App.tsx`/`GoodsApp.tsx`.
@@ -2318,7 +2674,8 @@ Contract, MigrationRollback) + `Infrastructure/Cycle39TestBase.cs`; 136 атри
 - **Общий код двух сайтов живёт в `frontend/src`, goods импортирует его через алиас `@/`.** Обратное направление
   запрещено ESLint. **С цикла 31 разрешённый список ведётся в одном месте — `frontend/goods-shared-sources.js`** (§5.8).
   Сейчас это 8 страниц (`LegalDocumentPage`, `SubjectRequestPage`, `ConsentsPage`, `LoginPage`, `RegisterPage`,
-  `NoticesPage`, `BillingPage`, `owner/NotificationsSection`), каталоги `src/components`, `src/utils`, `src/hooks`, «без
+  `NoticesPage`, `BillingPage`, `owner/NotificationsSection` — *с цикла 40 её нет: файл удалён, список в `frontend/shared-sources.js` —
+  7 страниц*), каталоги `src/components`, `src/utils`, `src/hooks`, «без
   разметки» `src/api`, `src/store`, `src/types` и отдельные файлы `queryClient.ts`, `pages/billingPageHelpers.ts`.
   Общий для двух сайтов компонент кладут в `src/components/**` (компании — в `src/components/company/`), а не в
   `src/pages/`. Новую общую страницу вписывают в этот модуль, а не руками в `tailwind.goods.config.js` или
@@ -2368,6 +2725,12 @@ Contract, MigrationRollback) + `Infrastructure/Cycle39TestBase.cs`; 136 атри
   `stay-vectors.json` у ночей). Новые компоненты услуг — в `dom/src/components/services/` (`cabinet/`, `staff/`). Общее для двух
   вторичных сайтов, но не ezbook (как `StaffMaxCard`), кладётся в `src/components/<домен>/` с тонкой обёрткой на стороне goods.
   В текстах для гостя запрещены «бизнес-день», «задаток / невозвратный / депозит» и т.п. (`dom/src/guestCopy.guard.test.ts`).
+- **Номера мессенджеров и согласие клиента (цикл 40)** — один блок на три сайта: `NumbersBlock`/`ConnectWizard`/`NumberRow` из
+  `src/components/notifications/`, данные — только `GET /api/notification-channels/overview` (ключ `['notification-numbers']`, после любого
+  действия — `invalidateQueries`). Фронт **не вычисляет** шаг мастера, статус, «продаётся», «показывать выбор доставки», «предлагать
+  галочку» — берёт поля сервера (`wizardStep`, `displayStatus`/`action`, `canRequestPayment`, `deliveryChoiceVisible`,
+  `customerMessaging.offered`, `preferences.providerDeliveryConsent`); из TS-двойника `utils/channelRules.ts` компоненты берут только тип
+  `WizardStep`, сами правила в нём — для сверки с векторами (`channelRules.test.ts`). Галочка мессенджера в любой форме — `MessengerOptIn` + `useMessengerOptInDefault`, у сотрудника — `StaffMessengerConsentCheckbox`.
 
 ### 6.3 Правовые тексты
 Правится только `legal-drafts/`, потом `dotnet run --project ServiceBooking.LegalKit -- build` и коммит обоих деревьев
@@ -2483,6 +2846,12 @@ CY37-140 (`Cycle37MigrationRollbackTests`) создаёт и удаляет **о
 `OpenApiContractValidatorTests`; в сеансовых тестах подключён анализатор xUnit1031 (`7ec7479`). Юнит — +5 файлов (§5.15). Фронт —
 16 новых файлов vitest, 84 `it`. Эталон маршрутов — 391 строка. Число «181 функциональный» из постановки задачи ↪ не пересчитывалось
 (в каталоге — номера CY39-01…181 с пропусками, 134 строки).
+
+**На `4d65578` (цикл 40, ветка не влита)** (✔ подсчёт по diff и `ls`; **ничего не запускалось, числа прогонов цикла при постановке
+задачи не передавались**): `ServiceBooking.Tests/Tests/` — 121 файл `.cs` (+`Cycle40ChannelsTests.cs` 8, `Cycle40MessagingTests.cs` 4 атрибута;
+переписаны тесты каналов и триала под новый контракт); `ServiceBooking.UnitTests` — 236 файлов `.cs` (+ каталог `Cycle40/` из 17 файлов, 135
+атрибутов, + 3 стража, 11; удалены 5 файлов старых правил); фронт — 285 файлов `*.test.ts(x)` (+10, −1). Эталон маршрутов — 394 строки.
+Подробно — §5.16. Тестов наката/отката миграции цикла 40 нет.
 
 Прогоны различаются по объёму: в прогоне считаются и наборы `[Theory]`, поэтому число прогонов больше числа атрибутов.
 Были ли в отчёте цикла 31 зелёные `tsc`, `lint`, `typecheck:node`, `build:release` и сколько тестов упало, в этом
@@ -2603,6 +2972,18 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   ⚠️ `tools/bench/cycle39/bench_catalog.py` — не тест, а нагрузочный замер (засевает 500 домов); на боевой машине не запускать
   (`DEPLOY.md` §28а). ⚠️ Параллельные полные прогоны из разных сессий на одной машине мешают друг другу: контейнеры Testcontainers у
   каждой сессии свои, общая нагрузка ложится на одну VM colima — прогоны заметно замедляются (↪ из отчётов цикла 39).
+- **Цикл 40 «Каналы рассылок»** (запускает qa-engineer, не codebase-analyst; ветка не влита): функциональные —
+  `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle40"` (12 тестов) и регрессия каналов, триала и уведомлений, которые цикл
+  переписал: `--filter "FullyQualifiedName~NotificationChannelsTests|FullyQualifiedName~Cycle18TrialLifecycle|FullyQualifiedName~Cycle22ChannelFunding|FullyQualifiedName~Cycle24Notifications|FullyQualifiedName~NotificationMaxTransport|FullyQualifiedName~NotificationQueueing|FullyQualifiedName~LegalPricingGate"`
+  (фильтр составлен по именам изменённых классов, ↪ в документах цикла не зафиксирован; раздела цикла 40 в `TEST_CATALOG.md` нет). Побочные
+  эффекты — как у всего набора: `Notifications:Provider=logging` (провайдер GREEN-API не вызывается), фоновые задачи, включая
+  `channel-test-message`, в `Testing` выключены. Юнит — `dotnet test ServiceBooking.UnitTests --filter "FullyQualifiedName~Cycle40|FullyQualifiedName~AllowNotificationChannelReadGuard|FullyQualifiedName~AssignmentReadGuard"`
+  (векторы `contracts/cycle40/channel-vectors.json` читаются с диска). Vitest — `cd frontend && npm run test:area -- notifications billing
+  orders stays` (области ↪ по префиксам `contracts/cycle36/test-areas.json`: `notifications` дополнена `src/utils/channelRules`,
+  `src/utils/messengerOptIn`, `src/hooks/useMessengerOptInDefault`) или `npx vitest run src/utils/channelRules src/components/notifications`.
+  ⚠️ `deploy/checks/cycle40-channels-report.sql` и `cycle40-rollback-assignments.sql` — **не тесты**: первый читает копию боевой БД, второй
+  **пишет** назначения; их запускает человек по `DEPLOY.md` (§31). Ручные M40-01…08 требуют реальных номеров WhatsApp/MAX и
+  партнёрского аккаунта GREEN-API (стенд DO-40-04) — живые отправки.
 - `npm run contracts:json` — не тест: скрипт **перезаписывает** `contracts/cycle31/openapi.json` и `contracts/cycle32/openapi.json`
   (с цикла 35 — и `contracts/cycle35/openapi.json`, с цикла 37 — и `contracts/cycle37/openapi.json`).
   (с цикла 35 — и `contracts/cycle35/openapi.json`, с цикла 38 — `contracts/cycle38/openapi.json`, с цикла 39 — `contracts/cycle39/openapi.json`).
@@ -2677,6 +3058,11 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   `git diff --exit-code`, `cycle39/openapi.json` в шаге «Contract JSON must match cycle31, cycle32, cycle35, cycle37, cycle38 and cycle39
   yaml»; **новый шаг** «Check dom nginx log masking» — ставит `nginx-light` и гоняет `deploy/nginx/test-dom-masking.sh` (токены `/b/`, `/s/`
   и API `public/<token>` не должны попадать в access log). Джоб `backend` не менялся. Результатов CI на `5bcd015` в этом обновлении не смотрели.
+- **Цикл 40** (✔ diff `ci.yml` `origin/develop...4d65578`, DO-40-02): дописыванием в существующие списки — `cycle40/openapi.yaml` в `redocly
+  lint`, `npm run types:api:cycle40` + `api-cycle40.generated.ts` в `git diff --exit-code`, `cycle40/openapi.json` в шаге «Contract JSON must
+  match cycle31, cycle32, cycle35, cycle37, cycle38, cycle39 and cycle40 yaml»; `cycle40` добавлен в `scripts/contracts-to-json.mjs`. Новых
+  шагов нет, джоб `backend` не менялся (тесты цикла идут в общем прогоне). SQL-отчёт и скрипт отката CI не запускает. Результатов CI на
+  `4d65578` в этом обновлении не смотрели.
 - **Время CI, цикл 36** (↪ таблицы «CI: до / после» в `docs/testing-isolation.md`; последняя строка — ✔ `gh run view`, только чтение):
 
   | Что | `backend` | Функциональные | `frontend` | vitest | `docker-build` |
@@ -2726,6 +3112,15 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   не запускать (кода-гейта нет, барьер — этот ручной шаг); после `apply` вручную опубликовать в админке бесплатный тариф «Заказов» и
   заполнить ему преимущества (иначе «Бесплатного» в сетке не будет); `legal-notice` — ключ `PlatformSettings`; демо засевается сбросом;
   откат — снять `IsPublic` у платных (у опубликованного системного бесплатного админка снять его не даёт, 409).
+- **Цикл 40** (✔ `DEPLOY.md` на `4d65578`: второй раздел `## 29. Каналы-мессенджеры: номер на аккаунт, оплата по транспорту` — строка ~2558,
+  после §30; файл — 2 885 строк; в рабочей копии — незакоммиченное переименование в **§31**, шапка): агенты выкат не делают; порядок — SQL-отчёт `deploy/checks/cycle40-channels-report.sql` на копии боя и на бою (блок 1
+  ненулевой → «СТОП», выкат не начинать) → выкат (миграция при старте) → доступность и цены опций (WhatsApp закрыт, MAX открыт; цены не
+  задавать или держать опции неактивными до публикации новой редакции D3 и Приложения № 1) → выключатель рассылок включён, проверить
+  `NOTIFICATIONS_PROVIDER` и `ServerCountry*` → ручные M40-01…08 → открыть владельцам после вычитки текстов. Выключатель
+  `customerMessagingEnabled=false` — стоп-кран без релиза (≤ 60 с). Откат — `rollback.sh` + `cycle40-rollback-assignments.sql`, схема назад не
+  откатывается; после отката записи сотрудников без отметки снова получают сообщения «как до цикла». DO-40-04 (стенд M40 с реальными номерами)
+  и DO-40-05 (снять с боя `ServerCountry*` и фактическую страну экземпляров для юриста) — за заказчиком. Новых обязательных переменных боя нет.
+  ⚠️ Неточности раздела — §9.11 C40-14.
 - **Демо-стек** (✔ по файлам): `docker-compose.demo.yml` + `.env.demo.example`, vhost-ы `deploy/nginx/demo.visit.ezbook.conf` и
   `deploy/nginx/demo.zakaz.ezbook.conf` (ставятся руками), смоуки `deploy/ci/demo-smoke.sh` и `deploy/ci/demo-zakaz-smoke.sh`.
   `deploy-remote.sh` в шаге демо гоняет `demo-smoke.sh`, а `demo-zakaz-smoke.sh` — только при `DEMO_ZAKAZ_ENABLED=true`; сбой демо —
@@ -3009,7 +3404,8 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 - **Крупные файлы, на которых завязано много:**
   - `frontend/src/pages/owner/CompanyManagePage.tsx` — 1 312 строк (на `364cc2b`; цикл 31 убрал чекбокс каталога);
   - `CompaniesController` — около 500 строк, от него зависят оба каталога салонов (с цикла 31 — через `SalonListingQuery`);
-  - `NotificationChannelsController` — 845 (не режется по решению цикла 22);
+  - `NotificationChannelsController` — 845 (не режется по решению цикла 22); на `4d65578` — 804 (сборка ответов ушла в
+    `NumbersOverviewBuilder`, 232 строки); правила каналов теперь размазаны по ~20 файлам `Services/Notifications/` (§5.16);
   - `AdminBillingController` — 791, `AdminController` — 675, `BookingsController` — 595;
   - `AppDbContext` — 1 086.
 - **Модель релизов разошлась с документами.** Кнопка «staging» фактически выкатывает боевой ezbook.ru, `master`/теги/
@@ -3039,7 +3435,7 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 - **C24-7.** Лимиты считаются в пределах линейки. Это меняет решение Q5 цикла 23, старые тесты переписаны.
 - **C22-5.** Состояние финансирования канала живёт по реальным часам, а не по `INotificationClock`.
 - **C22-6 / C22-7 / C22-8.** Цена производительности: админский список каналов, повторное чтение пользователя,
-  `masters/clients` в памяти.
+  `masters/clients` в памяти. *С цикла 40 админский список стал дороже — §9.11 C40-9.*
 - **C17-2 / C17-3 / C17-6.**
   - Коды ответов отмены и переноса расходятся.
   - Клиент может отменить `Completed`.
@@ -3064,7 +3460,8 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 - **AV7 / C25-8.** `npm audit`: умеренные advisories `react-router` (GHSA-wrjc-x8rr-h8h6) и мажорные апгрейды
   `vite`/`vitest`/`esbuild`.
 - **C15-8 / C17-4.** Ручное назначение скрытого тарифа (п. 2 ст. 426 ГК) — нет решения заказчика.
-- **C-13.** Продажа канала WhatsApp гражданам без статуса — заказчик думает.
+- **C-13.** Продажа канала WhatsApp гражданам без статуса — заказчик думает. *С цикла 40 (в ветке): WhatsApp закрыт для владельцев
+  переключателем до письменного заключения юриста (Р40-Ю1); мастер требует заявить статус и ИНН перед QR (шаг «Условия»).*
 - **C20-1.** Callback как второй канал подтверждения телефона не сделан.
 - **C20-3.** Действия заказчика вне кода: уведомления РКН (NP5), акты принятия рисков, вычитка живым юристом.
 - **NP1 / NP2.** Требования режима НПД — чеки, проверка статуса, автопродление — не реализованы. Сейчас не нужны: списаний нет.
@@ -3442,6 +3839,76 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 - **C39-14 — ручных проверок цикла в каталоге нет.** Раздел «Цикл 39» `TEST_CATALOG.md` — только автотесты CY39-*; таблицы `M39-` и вердиктов
   QA на стенде нет (выбор времени через полночь на iOS, push с фильтром, страница `/s/` на 360 px — не зафиксированы).
 
+### 9.11 Долг и риски цикла 40 (каналы рассылок) — ✔ по коду и документам на `4d65578`, ветка не влита, ничего не запускалось
+Пометка ↪ — со слов постановки задачи / документов цикла, codebase-analyst не перепроверял; 🖥 — факт о машине, в репозитории не виден.
+- **C40-1 — живой отправки через GREEN-API не было ни разу** (R-40-1). Ни тест, ни человек не вызывали провайдера ни для WhatsApp, ни для MAX:
+  функциональные тесты идут с `Notifications:Provider=logging`. Не проверены на живом провайдере: создание экземпляра и страна сервера по
+  транспорту, QR и переход в `Connected`, автопроверка, отправка, вебхуки. Инструкция QR для MAX в `MessengerTexts` — черновик до M40-02.
+  🖥 Со слов постановки: на бою `NOTIFICATIONS_PROVIDER=green-api`, договор подписан, но код цикла 40 не выкачен.
+- **C40-2 — статус WhatsApp и правовые тексты.** WhatsApp **закрыт до письменного заключения юриста** (Р40-Ю1, умолчание
+  `Notifications:OptionAvailability:WhatsApp=false`), MAX открыт. Все новые тексты — **черновые**: новой редакции Соглашения (D3) и Приложения
+  № 1, текста риска, правок Согласия и Политики в `legal-drafts/` нет (✔ `git diff --stat`: каталог не трогался) — они только в
+  `LEGAL_REVIEW_CYCLE40.md` (§3–§9). Ключи `BookingMessengerConsent`, `StaffBookingMessengerConsentHint` — вне `LegalTextKey.All`, фронт
+  показывает запасные тексты из кода, сервер пишет версию `fallback:<sha256>`. Т40-L-06 (продление оплаченных дней при выключении платформой)
+  в объём не вошёл (R-40-13). Т40-L-08 / QA-40-7 (старое согласие `ProviderDelivery` не покрывает MAX) ↪ — результат проверки в репозитории не
+  найден. Реальных владельцев к функции не допускать до вычитки и публикации редакций (`DEPLOY.md`, §31, п. 6).
+- **C40-3 — ручные проверки M40-01…08 не проходили**, а это гейт выката (`ARCHITECTURE_CYCLE40.md` §40.18.5). Раздела цикла 40 в
+  `TEST_CATALOG.md` нет (ни CY40-*, ни M40-*), вердиктов QA нет.
+- **C40-4 — FE-40-7 (P2) не сделан:** нет `NotificationPreferencesCard` в профилях goods и dom (отписаться от сообщений в мессенджеры там
+  нельзя — ссылка ведёт в профиль ezbook) и кнопки «Отправить проверочное ещё раз» в блоке «Номера» (метод API на фронте есть, не вызывается).
+  Шаг «Готово» мастера результат автопроверки не опрашивает (виден позже в строке номера, `lastTest`).
+- **C40-5 — стенд для M40 и данные для юриста** (🖥, за заказчиком): DO-40-04 — партнёрский аккаунт GREEN-API, реальные номера WhatsApp и
+  MAX (в т. ч. совпадающий с телефоном владельца для M40-02); DO-40-05 — снять с боя `ServerCountry*` и фактическую страну экземпляров по
+  транспортам для `{{МЕСТО_ОБРАБОТКИ_ПОСРЕДНИКОМ}}`. В репозитории не видно, что сделано. `ServerCountryByTransport` в `docker-compose.prod.yml`
+  не проброшен — по транспортам на бою задать нельзя без правки compose (работает общий `NOTIFICATIONS_GREEN_API_SERVER_COUNTRY`).
+- **C40-6 — двойная ручная проверочная отправка через API.** `POST /api/notification-channels/{id}/test-message` читает канал без блокировки
+  (`LoadOwnedChannelAsync(forUpdate: true)` — только отслеживание EF, без `FOR UPDATE`/advisory-lock), проверяет «не чаще раза в 5 минут» по
+  `LastTestMessageAtUtc` и шлёт синхронно; два одновременных запроса оба проходят проверку и оба отправляют сообщение. Автопроверку это не
+  касается (там захват условным `UPDATE`).
+- **C40-7 — `SubscriptionChangeLog` не пишется при «Подтвердить оплату».** `AdminChannelsBuilder.ConfirmPaymentAsync` пишет `ChannelPaymentLog`
+  и `ChannelOptionChangeLog`, но не `SubscriptionChangeLog`, хотя `ARCHITECTURE_CYCLE40.md` §40.13 требует все три. История подписки аккаунта
+  (`GET …/subscription-history`) продление опции через карточку номера не покажет.
+- **C40-8 — согласие вошедшего пишется после коммита.** `MessengerOptInLedger.GrantForCustomerAsync` вызывается после `CommitAsync` записи,
+  заказа или брони (в `try/catch`, ошибка только в лог), а не в той же транзакции, как предписывал §40.11.3 (Т40-L-07). При сбое запись
+  останется с `NotifyByMessenger = true` без согласия `ProviderDelivery` в журнале: сообщения по этой записи уйдут (отметка `true` решает), а
+  предзаполнение и записи с `null` у этого аккаунта будут считать, что согласия нет.
+- **C40-9 — N+1 в админской таблице номеров.** `AdminChannelsBuilder.BuildRowsAsync` группирует каналы по владельцу и на каждую группу зовёт
+  `NumbersOverviewBuilder.LoadAsync` (несколько запросов на владельца); список и сводка сначала материализуют **все** каналы, фильтры
+  `displayStatus`/`payment` и пагинация — в памяти. При десятках владельцев — сотни запросов на один экран (продолжение C22-6).
+- **C40-10 — намеренная смена поведения: меньше напоминаний** (Р40-Ю2, R-40-3). Гость салона без отметки, клиент, записанный сотрудником без
+  отметки, и все записи, созданные до цикла (`NotifyByMessenger = null`), получают сообщения, только если номер получателя принадлежит аккаунту
+  с действующим согласием `ProviderDelivery`. Масштаб на бою — блок 5 SQL-отчёта (не прогонялся). После отката релиза такие записи снова
+  получают сообщения без зафиксированного согласия (`DEPLOY.md`, §31).
+- **C40-11 — расхождения фронта с архитектурой (не ошибки, для сведения):** `ChannelBreachBanner` в шапке кабинета ezbook — прежний (по `state`
+  канала, без ссылки в раздел «Уведомления клиентам»), а не по `displayStatus`/`action`; отдельного `DeliveryModeBlock` нет — выбор доставки
+  свёрстан в трёх страницах; папки `src/components/admin/notifications/` нет — всё в `NotificationsAdminTab.tsx` (372 строки изменений).
+- **C40-12 — MAX может начать продаваться и выдаваться сразу после выката.** Миграция копирует в строку `notifications.max` цену и `IsActive`
+  строки WhatsApp; MAX открыт по умолчанию, а «продаётся» = открыт + активен + цена + опубликованный `TermsOwner`. Если у WhatsApp на бою есть
+  цена (🖥 не проверялось), MAX станет продаваемым без отдельного шага. Пробный период цены не требует: при опубликованном `TermsOwner` (на бою
+  опубликована редакция `2026-09-30`, ↪ §5.1) каждый новый салонный триал после выката получит MAX — до публикации новой редакции D3 и
+  Приложения № 1. `DEPLOY.md` (§31, п. 3) предлагает держать цены пустыми или опции неактивными, но про триал и унаследованную цену не
+  предупреждает.
+- **C40-13 — проверки выката и отката не выполнялись.** `deploy/checks/cycle40-channels-report.sql` (стоп-сигнал «оплачено по старому и новому
+  правилу») и `cycle40-rollback-assignments.sql` — результатов прогона на копии боя в репозитории нет. Функционального теста наката/отката
+  миграции и чтения новых enum старым кодом (`Cycle40RollbackReadTests`, M40-08) нет; `OpenApiContractValidatorTests` не включает `cycle40`
+  (форму ответов проверяет только CY40-CTR-01).
+- **C40-14 — неточности `DEPLOY.md`.** На `4d65578` — два раздела `## 29.` (цикл 38 и цикл 40; цикл 40 стоит после §30); в рабочей копии
+  ветки это чинит незакоммиченная правка (§29 → §31), до коммита пункт открыт. В п. 4 сказано «для боя —
+  `greenapi`», а распознаваемое значение — **`green-api`** (`NotificationServicesExtensions`); любое другое значение **роняет старт** API.
+  Фраза «Точные имена и умолчания сверять с `appsettings.json` после слияния BE-40» осталась от черновика (✔ имена в таблице совпадают с
+  `appsettings.json`).
+- **C40-15 — документы отстали.** На `4d65578` `CHANGELOG.md`, `README.md`, `API_DOCUMENTATION.md`, `TEST_CATALOG.md` веткой не трогались
+  (✔ `git diff --stat`): раздела цикла 40, описания новых маршрутов и кейсов CY40/M40 нет. В рабочей копии параллельная задача уже дописывает
+  раздел цикла 40 в `CHANGELOG.md` и абзацы в `README.md` (не закоммичено, шапка); `API_DOCUMENTATION.md` и `TEST_CATALOG.md` не тронуты и там. В пользовательских `docs/owner.md`/`docs/admin.md` каналов WhatsApp/MAX нет
+  вовсе (✔ grep) — руководства владельцу по блоку «Номера» и админу по карточке номера нет.
+- **C40-16 — «один номер на транспорт аккаунта» держит только код.** Уникального индекса по (`BillingAccountId`, `Transport`) для живых каналов
+  нет: создание заявки сериализует advisory-lock `channel-request:{account}:{transport}`, старые дубли становятся «лишними» (`Unfunded`,
+  «Отвяжите этот номер»). Сколько аккаунтов с двумя живыми каналами одного транспорта на бою — блок 3 отчёта (не прогонялся).
+- **C40-17 — хвосты схемы.** `ChannelCompanyAssignments`, `SubscriptionPlanConfigs.AllowNotificationChannel`, правила `PlanOptionRules` двух
+  опций и `notifications.channel.price-per-month` остались в БД без чтения (удаление — отдельным циклом); на таблицу назначений опирается
+  откат (скрипт `cycle40-rollback-assignments.sql`). Наследное правило «строка опции без даты → срок подписки „Записей“» оставлено в коде
+  (О-40-5).
+
 ---
 
 ## 10. Что уже существует в документации и тест-кейсах (дополнять существующее, параллельных версий не заводить)
@@ -3500,6 +3967,11 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   цикла 39 нет; README (~557) и раздел цикла 37 в CHANGELOG (~364) говорят «услуг-слотов у „Домов“ пока нет» — устарело (§9.10 C39-9).
   Раздел цикла 39 по сложившемуся шаблону («Что стоит прочитать до выката», тематические блоки, «Чего этот цикл не даёт», «Для команды»)
   встаёт самым верхним; во вступлении — счёт разделов «Не выпущено» (сейчас «тридцать семь»).
+- **На `4d65578` (цикл 40, ветка не влита)** (✔ `git diff --stat origin/develop...HEAD`, `wc -l`): ветка **не трогала** ни `CHANGELOG.md`
+  (на `4d65578` — версия закрывающего коммита цикла 39 из `origin/develop`, самый верхний раздел — цикл 39), ни `README.md`. Раздела цикла 40
+  в коммите нет (§9.11 C40-15). В рабочей копии на момент правки параллельная задача (не закоммичено) уже вписала самым верхним
+  `## Не выпущено — цикл 40: упрощение каналов рассылок клиентам (WhatsApp / MAX)…` (строка 19; файл — 5 501 строка) и абзацы «С цикла 40
+  (пока не выкачено)…» в блок уведомлений `README.md` (1 014 строк) — по сложившемуся шаблону; содержание этих правок здесь не сверялось.
 - Releases на GitHub и wiki не используются: тегов нет, ссылок на wiki в репозитории нет.
 - Внутренние справки: `BRIEF_BRAND_AND_DOMAINS.md` (бренд и домены «EZBOOK Запись» / «EZBOOK Заказы»),
   `BENCHMARK_CYCLE22.md`.
@@ -3542,6 +4014,12 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   39»** (строка ~2507, подраздел внутри §28: vhost руками, миграция, `BusinessDayStartMinute`, откат, смоук; файл — 2 828 строк). Правовой
   обзор — `LEGAL_REVIEW_CYCLE39.md` (643 строки, markdown: §0 оговорка, §1 резюме, §2–§10 по вопросам L39-*, §11 iCal предварительно,
   §12 черновые тексты, §13 требования Т39-01…17, §14 развилки, §16 что проверяет живой юрист).
+- **Цикл 40** (✔ `git diff --stat`): `docs/` не трогал — руководства владельцу по блоку «Номера»/мастеру и админу по карточке номера нет
+  (каналов WhatsApp/MAX в `docs/owner.md`/`admin.md` нет вовсе); подсказки — тексты сервера (`MessengerTexts`, `ChannelPresentation`) и фронта
+  (`numbersTexts.ts`, запасные правовые тексты в `utils/messengerOptIn.ts`). Выкат — `DEPLOY.md` §31 (на `4d65578` — второй `## 29.`, ~строка
+  2558: порядок, стоп-кран, таблица конфигурации, откат, DO-40-04/05). Правовой обзор — `LEGAL_REVIEW_CYCLE40.md` (978 строк, markdown: §0
+  оговорка, §1 резюме, §2 найденное, §3–§10 по пунктам — оферта D3 + Прил. 1, текст риска, галочка клиента, подстановка из профиля, записи
+  сотрудника, отписка, Политика, цены; §11 требования Т40-L-01…14, §12 риски и что требует живого юриста, §13–§16).
 - Руководства по демо-стендам для пользователей в `docs/` нет (✔ цикл 35 `docs/` не трогал); описание демо — только README и CHANGELOG.
 - Эксплуатация: на `c28ccbb` `DEPLOY.md` — 2 724 строки, §25 (демо `demo.visit`), §26 (тарифы и витрина), **§27 «Демо „Заказов“
   demo.zakaz.ezbook.ru»** (строка ~2399: §27.1 порядок, §27.2 перед встречей с клиентом, §27.3 откат, §27.4 замер памяти M35).
@@ -3589,6 +4067,11 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   генерат `api-cycle39.generated.ts`, JSON), `contracts/cycle39/dom-routes.json` (надмножество карты dom; встраивается в API вместо cycle37 —
   в cycle37-файле пометка `_supersededBy`), `contracts/cycle39/service-vectors.json` (векторы времени, цены, возврата, пересечений).
   Словами — `API_CONTRACT_CYCLE39.md` (535 строк, §39.20–§39.3x: конвенции, изменения маршрутов cycle37, маршруты по группам, лимиты §39.32).
+- **С цикла 40** (ветка не влита) — `contracts/cycle40/openapi.yaml` + `openapi.json` (OpenAPI 3.0.3, 3 227 строк: 3 новых маршрута целиком и
+  изменённые ответы каналов, настроек уведомлений, публичных страниц, записи, профиля, цен и админки; `x-examples` для prism-мока), JSON читает
+  `OpenApiContract.Load("cycle40")` в CY40-CTR-01; в CI — lint, генерат `api-cycle40.generated.ts`, JSON. `contracts/cycle40/channel-vectors.json`
+  — эталон правил каналов для C# и TS (§2). Словами — `API_CONTRACT_CYCLE40.md` (655 строк, §40.20–§40.39: конвенции, сводка изменений,
+  общие DTO, маршруты по одному, тексты §40.33, состав OpenAPI §40.38 и векторов §40.39). В `API_DOCUMENTATION.md` цикл 40 **не вписан** (C40-15).
 - Прочие контракты: `contracts/cycle23/goods-routes.json`, `order-money-vectors.json`, `cycle24/pickup-schedule-vectors.json`,
 - **С цикла 38** — `contracts/cycle38/openapi.yaml` + `openapi.json` (дельта: `GET /api/pricing/orders`, схемы `OrdersPublicPricingDto`,
   `OrdersPublicPlanDto`); JSON читает `OpenApiContract.Load("cycle38")`; в CI — lint, генерат, JSON (§7.3). Словесное описание —
@@ -3669,12 +4152,24 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
     Критерии` (11 групп CY39-01…16, …, 170…181 с привязкой к US-39/ЮР39/Т39), запись реестра QA об изменённом CY37-43, строка о фронтовых
     тестах QA, таблица `Кейс | Класс | Метод` (134 строки, CY39-01…181 с пропусками) и строка «Прогон: `dotnet test ServiceBooking.Tests
     --filter "FullyQualifiedName~Cycle39"`» (+ `DOCKER_HOST`/`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`). **Ручных кейсов `M39-` и вердиктов нет** (C39-14).
+  - **На `4d65578` (цикл 40, ветка не влита)**: `TEST_CATALOG.md` веткой **не тронут** (7 742 строки, последним — раздел цикла 41). Раздела
+    «Цикл 40» нет: автотесты CY40-ADM-01…07, CY40-CTR-01, CY40-MSG-01/02/03/05 описаны только атрибутами `[TestCase]` в коде, ручные M40-01…08 —
+    только словами в `ARCHITECTURE_CYCLE40.md` §40.18.5 (без таблицы и вердиктов), QA-задачи `CY40-*` — §40.18.4 (§9.11 C40-3).
   - ↪ TD16-7: вердикты раздела «Цикл 16» устарели.
 - ID кейсов продублированы в коде атрибутом `[TestCase("CY26-01")]` на тестах `ServiceBooking.Tests`.
 - Ручные живые проверки выката — чек-листы в `DEPLOY.md` (§16 и шаги циклов).
 - Отдельного `TESTPLAN.md` или `docs/testing/` нет. Каталог сценариев — только `TEST_CATALOG.md`.
 
 ### 10.5 Документы циклов
+- **На `4d65578`** (✔ `ls`, `wc -l`, `cmp`; ветка `cycle/040-simplify-notification-channels`, не влита): корневой `SPEC.md` (938 строк) —
+  **спека цикла 40** («упрощение каналов рассылок (WhatsApp / MAX)», дата 2026-10-08, редакция 2026-10-09; §0 запрос и решения О1–О8 и §0.4
+  решения по юрразбору, §1–§10: пользователи, что есть по коду на `ece8038`, вне цикла, US-40-01…14, миграция, НФТ, задачи T-40-01…13,
+  правовая часть, риски, вопросы); спека цикла 36 заархивирована — `SPEC_CYCLE36_TEST_SUITE_AUDIT.md` (303 строки, побайтно равна прежнему
+  `SPEC.md`). Добавились `ARCHITECTURE_CYCLE40.md` (923 строки, §40.0a решения заказчика Р40-Ю1…Ю4 и таблица Т40-L → где закрыто, §40.0 сводка
+  A1–A16 и найденное по коду №1–№4, §40.1–§40.19: модель, оплата, номер на все компании (перечень 26 мест §40.4.2), маршрутизация, три
+  состояния, мастер, автопроверка, ожидающие сообщения, «рассылки работают», согласие, выключатель, админка, цены, фронт, структура, выкат,
+  задачи BE-40-*/FE-40-*/DO-40-*/QA, ручные M40 §40.18.5, риски R-40-1…15 и отклонения от SPEC §40.19), `API_CONTRACT_CYCLE40.md` (655 строк),
+  `LEGAL_REVIEW_CYCLE40.md` (978 строк), `contracts/cycle40/`. Брифа цикла нет. `docs/history/` нет — переносить нечего.
 - **На `5bcd015`** (✔ `ls`, `wc -l`): корневой `SPEC.md` — всё ещё спека **цикла 36**. Цикл 39 положил документы сразу под архивными
   именами: `SPEC_CYCLE39_STAYS_SLOTS_ICAL.md` (913 строк, US-39-01…28; iCal в нём описан, но вынесен в цикл 40), `ARCHITECTURE_CYCLE39.md`
   (1 134 строки, §39.0a решения ЮР39-1…10, §39.0 сводка A39-1…14, §39.1–§39.19: модель, бизнес-день, старты, двойная бронь и порядок

@@ -112,3 +112,24 @@ describe('PricingPage — states', () => {
     expect(document.title).toBe('Тарифы и цены — EZBOOK')
   })
 })
+
+describe('PricingPage — messenger addon lines (cycle 40, Т40-L-11)', () => {
+  it('shows server lines on every plan card (incl. free and trial, SPEC §0.3 О4) and nothing when the server sends none', async () => {
+    getPublicPricing.mockResolvedValue({
+      ...CATALOG,
+      messengerAddons: [{ transport: 'Max', label: 'MAX', pricePerMonth: 490, text: '+ MAX 490 ₽/мес', footnote: null }],
+      messengerAddonsNote: { conditionsUrl: '/offer-channel', conditionsLabel: 'Условия', taxNote: 'Цены указаны с учётом налогов' },
+    })
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: 'Студия' })
+    expect(within(card('Студия')).getByText('+ MAX 490 ₽/мес')).toBeInTheDocument()
+    expect(within(card('Бесплатный')).getByText('+ MAX 490 ₽/мес')).toBeInTheDocument()
+    expect(within(card('Пробный период')).getByText('+ MAX 490 ₽/мес')).toBeInTheDocument()
+  })
+
+  it('renders no lines without messengerAddons (WhatsApp closed, nothing sellable)', async () => {
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: 'Студия' })
+    expect(screen.queryByTestId('messenger-addon-lines')).toBeNull()
+  })
+})

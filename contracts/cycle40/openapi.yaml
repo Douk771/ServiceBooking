@@ -1,0 +1,3227 @@
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 40 (упрощение каналов рассылок: WhatsApp / MAX).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл, порядок проверок и тексты — API_CONTRACT_CYCLE40.md (§40.20–§40.39),
+# решения — ARCHITECTURE_CYCLE40.md (§40.0–§40.19). При расхождении по ФОРМЕ прав ЭТОТ файл.
+#
+# Рядом:
+#   contracts/cycle40/channel-vectors.json — эталон правил (доступность, оплата, маршрутизация, согласие, отображение,
+#                                            шаг мастера, предложение клиенту, цены мессенджеров)
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle40/openapi.yaml --port 4040
+#             npm run types:api:cycle40   (openapi-typescript -> src/types/api-cycle40.generated.ts)
+#   QA        schemathesis run contracts/cycle40/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle40/openapi.yaml
+#             npm run contracts:json (cycle40 -> openapi.json для ServiceBooking.Tests/Infrastructure/OpenApiContract.cs)
+#
+# Описаны ВСЕ новые маршруты цикла и существующие, у которых меняется форма. Файл написан задачей BE-40-C.
+
+openapi: 3.0.3
+info:
+  title: ServiceBooking API — цикл 40 (каналы рассылок)
+  version: 40.2.0
+  license:
+    name: Proprietary
+  description: |-
+    Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ:
+      * camelCase; enum — строками (имена членов C#); DateTime — ISO-8601 UTC; деньги опций — number;
+      * тела осознанных 400/402/409/410/429/503 маршрутов каналов и настроек — ГОЛАЯ СТРОКА (text/plain) по-русски; 401/403 — пустое тело; 404 — пустое тело (чужой канал неотличим от несуществующего);
+        исключения — JSON-409 магазина (CatalogConflictDto) и «Домов» (StaysConflictDto);
+      * 451 — гейты правовых документов; владельческие действия — [RequiresOwnerTerms];
+      * новые поля DTO — В КОНЕЦ рекордов; существующие не удаляются и не переименовываются;
+      * текст, который видит человек, собирает СЕРВЕР; ни один текст не упоминает средства обхода блокировок.
+
+    Большие существующие DTO (CompanyDto, PublicHouseDto, StorefrontDto, OwnerSubscriptionDto, PublicPricingDto, AdminPlatformSettingsDto, CreateBookingDto, BookingDto, NotificationPreferencesDto) описаны ТОЛЬКО новыми полями (*Cycle40Part, additionalProperties: true).
+    Схемы с x-examples хранят несколько примеров для мока (prism берёт example).
+servers:
+- url: http://localhost:5000
+  description: dev (dotnet run)
+- url: http://localhost:4040
+  description: prism mock по этой схеме
+tags:
+- name: owner-numbers
+  description: 'Номера рассылок владельца: обзор, заявка, подключение по QR, замена, отвязка.'
+- name: company-settings
+  description: Настройки уведомлений салона, магазина и «Домов».
+- name: public
+  description: Публичные страницы, создание записи — предложение рассылки клиенту.
+- name: profile
+  description: Настройки уведомлений пользователя.
+- name: admin-channels
+  description: Админка номеров и настроек платформы (SuperAdmin).
+- name: billing
+  description: 'Биллинг: опции каналов, цены мессенджеров, передача компании.'
+paths:
+  /api/notification-channels/overview:
+    get:
+      tags:
+      - owner-numbers
+      operationId: getNotificationNumbersOverview
+      summary: Всё для блока «Номера» (новый)
+      description: 'Доступ как у GET /api/notification-channels (владелец компании или канала), иначе 403. Новый фронт читает этот маршрут вместо
+        offer+list. Примеры: MAX на шаге Terms при скрытом WhatsApp; оба открыты.'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Обзор номеров аккаунта
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NumbersOverviewDto'
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+  /api/notification-channels:
+    get:
+      tags:
+      - owner-numbers
+      operationId: listNotificationChannels
+      summary: Номера аккаунта
+      description: Элементы ChannelDto; порядок createdAt по убыванию.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Список
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelListDto'
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+    post:
+      tags:
+      - owner-numbers
+      operationId: requestNotificationChannel
+      summary: Шаги «Оплата» и «Условия»
+      description: '[RequiresOwnerTerms]. Порядок проверок (первый отказ): 403 не владелец; 400 пустые форма/версия оферты или неверный ИНН; 503
+        правовые документы недоступны; 409 версия оферты устарела; 400 устарел riskAccepted; 409 сервис выключен; paymentRequest=true: 409 опция
+        не продаётся, 409 уже есть оплаченный непробный номер, иначе продление заявки (200) или новая строка (201); paymentRequest=false: 409
+        транспорт не оплачен, иначе обновление (200) или новая строка (201) без RequestedAtUtc. Закрытость опции при paymentRequest=false не проверяется.'
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChannelRequestDto'
+      responses:
+        '200':
+          description: Продление заявки / обновление существующего номера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelDto'
+        '201':
+          description: Создан номер
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelDto'
+        '400':
+          description: Пустые данные, неверный ИНН или устарел текст риска
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Текст изменился, прочитайте заново
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '451':
+          description: Не приняты правовые документы (гейт).
+        '409':
+          description: Отказ по состоянию
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                optionClosed:
+                  value: Подключение MAX сейчас недоступно
+                alreadyHave:
+                  value: У вас уже есть номер MAX
+                payFirst:
+                  value: Сначала отправьте заявку на оплату MAX
+                serviceOff:
+                  value: Подключение временно недоступно
+                offerOutdated:
+                  value: Соглашение владельца было обновлено ещё раз — перечитайте и примите новую редакцию.
+        '503':
+          description: Правовые документы недоступны
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Правовые документы временно недоступны.
+  /api/notification-channels/offer:
+    get:
+      tags:
+      - owner-numbers
+      operationId: getNotificationChannelOffer
+      summary: Оферта подключения (старые вкладки)
+      description: transports[] - только продаваемые транспорты; pricePerMonth - цена WhatsApp или null; allowedByPlan всегда true.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Оферта
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelOfferDto'
+              example:
+                pricePerMonth: null
+                allowedByPlan: true
+                riskText: Текст о рисках
+                riskVersion: '2026-10-20'
+                transports:
+                - transport: Max
+                  displayName: MAX
+                  available: true
+                  connectionNotice: Для авторизации по QR в MAX нужно отключить пароль входа в мессенджере.
+                  pricePerMonth: 490
+                  priceText: 490 ₽/мес
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+  /api/notification-channels/{id}:
+    get:
+      tags:
+      - owner-numbers
+      operationId: getNotificationChannel
+      summary: Номер по id
+      description: 404 - чужой или несуществующий.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '200':
+          description: Номер
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelDto'
+        '401':
+          description: Не авторизован (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+    delete:
+      tags:
+      - owner-numbers
+      operationId: disconnectNotificationChannel
+      summary: Отвязать номер
+      description: Состояние DisabledByOwner, экземпляр удаляется. Pending номера отменяются (BookingOrAssignmentCancelled); перенос на второй
+        мессенджер - только при Notifications:RebindPendingToOtherTransport = true (по умолчанию false).
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '204':
+          description: Отвязан
+        '401':
+          description: Не авторизован (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+  /api/notification-channels/{id}/connect:
+    post:
+      tags:
+      - owner-numbers
+      operationId: connectNotificationChannel
+      summary: Начало шага «QR»
+      description: '[RequiresOwnerTerms], тело пустое. Порядок: 404; 409 сервис выключен; 409 приостановлен; 402 не оплачен/не Funded; 409 условия
+        не приняты в текущей редакции; Connecting - 202 без нового экземпляра; 409 Connected/Blocked/mismatch/Replaced; 409 создание каналов приостановлено;
+        503 нет ключа; 503 ошибка провайдера или страна не совпала с ожидаемой для транспорта. Доступность опции не проверяется.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '202':
+          description: Подключение начато (в том числе повтор при Connecting)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectResponseDto'
+        '402':
+          description: Номер не оплачен
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Номер не оплачен
+        '401':
+          description: Не авторизован (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+        '451':
+          description: Не приняты правовые документы (гейт).
+        '409':
+          description: Отказ по состоянию
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                terms:
+                  value: Условия подключения обновились — примите их заново
+                suspended:
+                  value: Номер приостановлен администратором
+                serviceOff:
+                  value: Рассылки временно отключены платформой
+                connected:
+                  value: Номер уже подключён
+                blocked:
+                  value: Номер заблокирован — замените его
+                replaced:
+                  value: Номер заменён
+                mismatch:
+                  value: Требуется вмешательство платформы для восстановления канала
+                creationPaused:
+                  value: Создание каналов приостановлено платформой
+        '503':
+          description: Сервис подключения недоступен или страна экземпляра не совпала
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Сервис подключения временно недоступен, попробуйте позже
+  /api/notification-channels/{id}/qr:
+    get:
+      tags:
+      - owner-numbers
+      operationId: getNotificationChannelQr
+      summary: Опрос QR
+      description: 404; состояние не Connecting/Connected - 409 «Канал не в процессе подключения»; Connected - 200 без QR; Connecting без экземпляра
+        - 200 с qrBase64 = null; секрет недоступен - 409; провайдер «авторизован» - переход в Connected, 200; иначе 200 с QR (expiresInSeconds
+        20).
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '200':
+          description: Состояние/QR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QrResponseDto'
+        '401':
+          description: Не авторизован (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+        '409':
+          description: Канал не в процессе подключения
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Канал не в процессе подключения
+  /api/notification-channels/{id}/test-message:
+    post:
+      tags:
+      - owner-numbers
+      operationId: sendNotificationChannelTestMessage
+      summary: Проверочное сообщение
+      description: 'Порядок: 404; 409 сервис выключен; 409 канал не подключён; 429 чаще раза в 5 минут; 409 нет телефона аккаунта; 409 номер канала
+        совпадает с телефоном аккаунта (при AllowSameNumber = false); 200. Результат пишется в lastTest и журнал.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '200':
+          description: Отправлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestMessageResponseDto'
+        '401':
+          description: Не авторизован (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+        '409':
+          description: Отказ
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                serviceOff:
+                  value: Рассылки временно отключены платформой
+                notConnected:
+                  value: Канал не подключён
+                noPhone:
+                  value: У вашего аккаунта не указан номер телефона
+                sameNumber:
+                  value: Номер канала совпадает с телефоном вашего аккаунта — проверочное сообщение на него не отправляем
+        '429':
+          description: Слишком часто
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Проверять канал можно не чаще одного раза в 5 минут
+  /api/notification-channels/{id}/replace:
+    post:
+      tags:
+      - owner-numbers
+      operationId: replaceNotificationChannel
+      summary: Заменить номер
+      description: 404 -> 409 «Заменить можно только привязанный номер» (NotConnected) -> 409 «Номер уже заменён» (Replaced) -> 201. Удалено 409
+        «Канал не заблокирован». companiesMoved - компании аккаунта.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '201':
+          description: Создан новый номер
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplaceChannelResponseDto'
+        '401':
+          description: Не авторизован (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+        '409':
+          description: Отказ
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                notBound:
+                  value: Заменить можно только привязанный номер
+                already:
+                  value: Номер уже заменён
+  /api/notification-channels/{id}/companies:
+    post:
+      tags:
+      - owner-numbers
+      operationId: assignCompanyToChannelLegacy
+      summary: Назначение компании (наследный, отключён)
+      description: Тело не читается. Номер работает для всех компаний аккаунта - всегда 410 (после проверки 404).
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ChannelId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+        '410':
+          description: Назначение больше не нужно
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: 'Назначать компании больше не нужно: номер работает для всех ваших компаний'
+        '401':
+          description: Не авторизован (пустое тело).
+  /api/notification-channels/{id}/companies/{companyId}:
+    delete:
+      tags:
+      - owner-numbers
+      operationId: unassignCompanyFromChannelLegacy
+      summary: Снятие назначения (наследный)
+      description: Данные не меняются.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ChannelId'
+      - $ref: '#/components/parameters/CompanyId'
+      responses:
+        '204':
+          description: Без изменения данных
+        '401':
+          description: Не авторизован (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+  /api/companies/{companyId}/notification-settings:
+    get:
+      tags:
+      - company-settings
+      operationId: getCompanyNotificationSettings
+      summary: 'Настройки уведомлений: салон'
+      description: Агрегируется по аккаунту.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/CompanyId'
+      responses:
+        '200':
+          description: Настройки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSettingsDto'
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+    put:
+      tags:
+      - company-settings
+      operationId: updateCompanyNotificationSettings
+      summary: 'Сохранить настройки уведомлений: салон'
+      description: 'Удалены 402 «Недоступно на вашем тарифе»/«Канал не оплачен» и проверка приоритета. '
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/CompanyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNotificationSettingsDto'
+      responses:
+        '200':
+          description: Сохранено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSettingsDto'
+        '400':
+          description: Неверные сроки
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Неверные значения
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+  /api/shops/{shopId}/notification-settings:
+    get:
+      tags:
+      - company-settings
+      operationId: getShopNotificationSettings
+      summary: 'Настройки уведомлений: магазин'
+      description: Агрегируется по аккаунту.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ShopId'
+      responses:
+        '200':
+          description: Настройки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShopNotificationSettingsDto'
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+    put:
+      tags:
+      - company-settings
+      operationId: updateShopNotificationSettings
+      summary: 'Сохранить настройки уведомлений: магазин'
+      description: Удалены 402 «Недоступно на вашем тарифе»/«Канал не оплачен» и проверка приоритета. 409 MessengerUnavailable - включение флага
+        клиентских сообщений без оплаченного транспорта.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ShopId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShopNotificationSettingsInput'
+      responses:
+        '200':
+          description: Сохранено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShopNotificationSettingsDto'
+        '400':
+          description: Неверные сроки
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Неверные значения
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+        '409':
+          description: Нельзя включить без оплаченного транспорта
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogConflictDto'
+  /api/stays/companies/{companyId}/notification-settings:
+    get:
+      tags:
+      - company-settings
+      operationId: getStaysNotificationSettings
+      summary: 'Настройки уведомлений: «Дома»'
+      description: Агрегируется по аккаунту.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/CompanyId'
+      responses:
+        '200':
+          description: Настройки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaysNotificationSettingsDto'
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+    put:
+      tags:
+      - company-settings
+      operationId: updateStaysNotificationSettings
+      summary: 'Сохранить настройки уведомлений: «Дома»'
+      description: Удалены 402 «Недоступно на вашем тарифе»/«Канал не оплачен» и проверка приоритета. 409 MessengerUnavailable - включение флага
+        клиентских сообщений без оплаченного транспорта.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/CompanyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaysNotificationSettingsInput'
+      responses:
+        '200':
+          description: Сохранено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaysNotificationSettingsDto'
+        '400':
+          description: Неверные сроки
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Неверные значения
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+        '409':
+          description: Нельзя включить без оплаченного транспорта
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaysConflictDto'
+  /api/companies/{slug}:
+    get:
+      tags:
+      - public
+      operationId: getPublicCompanyBySlug
+      summary: Публичная страница компании
+      description: В CompanyDto добавлено customerMessaging (только этим маршрутом).
+      parameters:
+      - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: Компания (описаны только новые поля)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyDtoCycle40Part'
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+  /api/storefront/{slug}:
+    get:
+      tags:
+      - public
+      operationId: getStorefront
+      summary: Витрина магазина
+      description: customerNotifications.messengerOffered - по новому правилу; + messengerTransports, messengerLabel.
+      parameters:
+      - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: Витрина (описана изменённая часть)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorefrontDtoCycle40Part'
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+  /api/stays/public/companies/{slug}/houses/{houseSlug}:
+    get:
+      tags:
+      - public
+      operationId: getPublicHouse
+      summary: Публичная карточка дома
+      description: PublicHouseDto + messenger.
+      parameters:
+      - $ref: '#/components/parameters/Slug'
+      - $ref: '#/components/parameters/HouseSlug'
+      responses:
+        '200':
+          description: Дом (описаны только новые поля)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicHouseDtoCycle40Part'
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+  /api/bookings:
+    post:
+      tags:
+      - public
+      operationId: createBooking
+      summary: Создать запись
+      description: Тело CreateBookingDto + notifyByMessenger (клиент и сотрудник); ответ BookingDto + три новых поля. Новых проверок и ответов
+        нет. Отписка номера важнее любой отметки. Ответ не сообщает, уйдёт ли сообщение. Остальные поля тела и ответа - без изменений (additionalProperties).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingDtoCycle40Part'
+            example:
+              notifyByMessenger: true
+      responses:
+        '201':
+          description: Запись создана (описаны только новые поля ответа)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDtoCycle40Part'
+        '400':
+          description: Ошибка валидации (существующее поведение).
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '409':
+          description: Слот занят и т. п. (существующее поведение).
+  /api/notifications/preferences:
+    get:
+      tags:
+      - profile
+      operationId: getNotificationPreferences
+      summary: Настройки уведомлений пользователя
+      description: 'NotificationPreferencesDto + providerDeliveryConsent. Без телефона у аккаунта - {enabled: true, providerDeliveryConsent: <по
+        журналу>}. PUT без изменений.'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Настройки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferencesDtoCycle40Part'
+        '401':
+          description: Не авторизован (пустое тело).
+  /api/admin/notification-channels:
+    get:
+      tags:
+      - admin-channels
+      operationId: adminListNotificationChannels
+      summary: Таблица номеров
+      description: 'SuperAdmin. Параметры: существующие state, paymentState, transport, page, pageSize; новые displayStatus, payment, includeReplaced
+        (по умолчанию false).'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: state
+        in: query
+        schema:
+          $ref: '#/components/schemas/ChannelState'
+      - name: paymentState
+        in: query
+        schema:
+          $ref: '#/components/schemas/ChannelPaymentStatus'
+      - name: transport
+        in: query
+        schema:
+          $ref: '#/components/schemas/NotificationTransport'
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+      - name: pageSize
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+      - name: displayStatus
+        in: query
+        schema:
+          $ref: '#/components/schemas/ChannelDisplayStatus'
+      - name: payment
+        in: query
+        schema:
+          $ref: '#/components/schemas/PaymentFilter'
+      - name: includeReplaced
+        in: query
+        schema:
+          type: boolean
+          default: false
+      responses:
+        '200':
+          description: Страница номеров
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminChannelListDto'
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+  /api/admin/notification-channels/summary:
+    get:
+      tags:
+      - admin-channels
+      operationId: adminGetNotificationChannelsSummary
+      summary: Сводка по номерам
+      description: SuperAdmin. Добавлены working, actionRequired, off.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Сводка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminChannelSummaryDto'
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+  /api/admin/notification-channels/{id}:
+    get:
+      tags:
+      - admin-channels
+      operationId: adminGetNotificationChannel
+      summary: Карточка номера (новый)
+      description: SuperAdmin. 404 - нет канала.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '200':
+          description: Карточка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminChannelCardDto'
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+  /api/admin/notification-channels/{id}/confirm-payment:
+    post:
+      tags:
+      - admin-channels
+      operationId: adminConfirmChannelPayment
+      summary: Подтвердить оплату (новый)
+      description: 'SuperAdmin. Порядок: 404; months не 1..12 - 400; comment > 500 - 400; Replaced - 409; опции нет в каталоге - 409; опция закрыта
+        - 409; 200 - AdminChannelCardDto. Срок продлевается от max(сейчас, текущий срок); повтор - ещё одно продление.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ChannelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmChannelPaymentInput'
+      responses:
+        '200':
+          description: Карточка после подтверждения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminChannelCardDto'
+        '400':
+          description: Неверные данные
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                months:
+                  value: Срок — от 1 до 12 месяцев
+                comment:
+                  value: Комментарий — не длиннее 500 символов
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+        '409':
+          description: Отказ
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                replaced:
+                  value: Номер заменён — подтвердите оплату в карточке нового номера
+                noOption:
+                  value: Опция MAX отсутствует в каталоге
+                closed:
+                  value: Опция MAX закрыта для подключения. Откройте её в блоке „Подключение мессенджеров“
+  /api/admin/platform-settings:
+    get:
+      tags:
+      - admin-channels
+      operationId: adminGetPlatformSettings
+      summary: Настройки платформы
+      description: SuperAdmin. Существующие поля + customerMessagingEnabled, whatsAppOptionOpen, maxOptionOpen (в конец).
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Настройки (описаны только новые поля)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPlatformSettingsCycle40Part'
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+    put:
+      tags:
+      - admin-channels
+      operationId: adminUpdatePlatformSettings
+      summary: Сохранить настройки платформы
+      description: 'SuperAdmin. Три новых поля: null - не менять. channelPricePerMonth принимается и игнорируется. Существующие проверки и ответы
+        (в т. ч. 409 PricingPublicationBlockedDto) без изменений.'
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPlatformSettingsCycle40Part'
+            example:
+              whatsAppOptionOpen: true
+              maxOptionOpen: null
+              customerMessagingEnabled: null
+      responses:
+        '200':
+          description: Сохранено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPlatformSettingsCycle40Part'
+        '400':
+          description: Ошибка валидации (существующее поведение).
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '409':
+          description: Публикация цен заблокирована (существующее поведение).
+  /api/admin/billing-accounts/{id}/subscription:
+    put:
+      tags:
+      - billing
+      operationId: adminAssignSubscription
+      summary: Назначить подписку/опции аккаунту
+      description: 'SuperAdmin, все линейки. Строки опций notifications.whatsapp / notifications.max: без paidUntil - 400; создание строки или
+        продление срока закрытой опции - 409; неизменённая строка закрытой опции проходит; 409 «Опция недоступна на выбранном тарифе» для этих
+        двух опций не выдаётся. Остальная форма запроса и ответов без изменений.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/BillingAccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Форма запроса без изменений.
+      responses:
+        '200':
+          description: Назначено (существующее поведение).
+        '400':
+          description: Не указана дата окончания оплаты опции (и прочие существующие 400)
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Для опций WhatsApp и MAX укажите дату окончания оплаты
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+        '409':
+          description: Опция закрыта (и прочие существующие 409)
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Опция MAX закрыта для подключения. Откройте её в блоке „Подключение мессенджеров“
+  /api/admin/companies/{companyId}/transfer/preview:
+    get:
+      tags:
+      - billing
+      operationId: adminGetCompanyTransferPreview
+      summary: Предпросмотр передачи компании
+      description: Форма без изменений; новый смысл willDetachFromChannel и willCancelPendingNotifications.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/CompanyId'
+      - name: targetBillingAccountId
+        in: query
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Предпросмотр (описаны только изменившиеся поля)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyTransferPreviewCycle40Part'
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Не найдено или чужое (пустое тело; чужой неотличим от несуществующего).
+  /api/pricing:
+    get:
+      tags:
+      - billing
+      operationId: getPublicPricing
+      summary: Публичные цены
+      description: PublicPricingDto + messengerAddons, messengerAddonsNote (в конец).
+      responses:
+        '200':
+          description: Цены (описаны только новые поля)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicPricingCycle40Part'
+  /api/billing/subscription:
+    get:
+      tags:
+      - billing
+      operationId: getOwnerSubscription
+      summary: Подписка владельца
+      description: OwnerSubscriptionDto + messengerAddons, messengerAddonsNote; availableOptions - без двух опций каналов; usage.numbersPaid/numbersText.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: line
+        in: query
+        schema:
+          type: string
+        description: Линейка подписки.
+      responses:
+        '200':
+          description: Подписка (описаны только новые поля)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerSubscriptionCycle40Part'
+        '401':
+          description: Не авторизован (пустое тело).
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ChannelId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CompanyId:
+      name: companyId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ShopId:
+      name: shopId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    BillingAccountId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Slug:
+      name: slug
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 100
+    HouseSlug:
+      name: houseSlug
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 100
+  schemas:
+    NotificationTransport:
+      type: string
+      enum:
+      - WhatsApp
+      - Max
+      description: 'Транспорт рассылки. Отображаемые имена: «WhatsApp» / «MAX». Хранимые значения WhatsApp=0, Max=1.'
+    ChannelState:
+      type: string
+      enum:
+      - NotConnected
+      - Connecting
+      - Connected
+      - Disconnected
+      - Blocked
+      - DisabledByOwner
+      - NeedsReconnect
+      - Replaced
+    ChannelStateReason:
+      type: string
+      enum:
+      - Authorized
+      - ProviderReportsUnauthorized
+      - ProviderReportsBlocked
+      - ConsecutiveSendFailuresExceeded
+      - DisconnectedByOwner
+      - SuspendedByAdmin
+      - UnauthorizedInstanceTimedOut
+      - IdleInstanceDeleted
+      - ReplacedAfterBan
+      - SecretUnavailable
+      - ServerCountryMismatch
+      - ReplacedByOwner
+      - RebindStarted
+      - TestMessageSent
+      - TestMessageFailed
+      - TestMessageSkipped
+      description: 'Причина перехода состояния. Цикл 40 дописывает в конец пять членов (11..15): ReplacedByOwner, RebindStarted, TestMessageSent,
+        TestMessageFailed, TestMessageSkipped.'
+    ChannelPaymentStatus:
+      type: string
+      enum:
+      - Paid
+      - NotPaid
+      - Suspended
+    ChannelFundingState:
+      type: string
+      enum:
+      - Funded
+      - Unfunded
+      - NotPaid
+      description: Funded - транспорт оплачен, номер основной; Unfunded - лишний номер транспорта; NotPaid - транспорт не оплачен.
+    ChannelDisplayStatus:
+      type: string
+      enum:
+      - Working
+      - ActionRequired
+      - 'Off'
+      description: Три состояния номера для владельца (ARCHITECTURE_CYCLE40.md §40.6.2).
+    ChannelAction:
+      type: string
+      enum:
+      - Pay
+      - AcceptTerms
+      - BindNumber
+      - Reconnect
+      - ReplaceNumber
+      - Unbind
+      description: Единственная кнопка номера.
+    ChannelWizardStep:
+      type: string
+      enum:
+      - Payment
+      - PaymentPending
+      - Terms
+      - Qr
+      - Done
+      - Unavailable
+      - None
+      description: Шаг мастера, с которого открывать подключение (§40.6.3).
+    ChannelTestResult:
+      type: string
+      enum:
+      - Pending
+      - Sending
+      - Sent
+      - Failed
+      - SkippedSameNumber
+      - SkippedNoOwnerPhone
+      - SkippedPlatformDisabled
+    ChannelOptionChangeSource:
+      type: string
+      enum:
+      - AdminBillingAccount
+      - AdminChannelCard
+      - TrialGrant
+      - TrialWindowStart
+      - TrialExpiry
+      - AdminOptionEnded
+      description: Источник изменения опции канала (журнал оплаты в карточке админа).
+    ConsentSource:
+      type: string
+      enum:
+      - Registration
+      - ReAcceptance
+      - Profile
+      - CompanyCreation
+      - ChannelRequest
+      - ChannelLink
+      - PhotoForm
+      - HealthForm
+      - Booking
+      - Migrated
+      - AddressForm
+      - PaperForm
+      - MessengerOptInBooking
+      - MessengerOptInOrder
+      - MessengerOptInStay
+      description: Источник согласия в журнале. Цикл 40 дописывает MessengerOptInBooking=12, MessengerOptInOrder=13, MessengerOptInStay=14 (видны
+        в «Согласиях» профиля и выгрузке). В ответах маршрутов цикла 40 не используется напрямую.
+    LegalEntityForm:
+      type: string
+      enum:
+      - Ip
+      - Company
+      - SelfEmployed
+    NotificationDeliveryMode:
+      type: string
+      enum:
+      - PriorityChannel
+      - AllChannels
+    NotificationType:
+      type: string
+      enum:
+      - BookingConfirmed
+      - Reminder
+      - BookingCancelled
+      - BookingRescheduled
+      - StaffBookingCreated
+      - StaffBookingCancelled
+      - StaffBookingRescheduled
+      - StaffOrderCreated
+      - StaffOrderCancelledByCustomer
+      - OrderAccepted
+      - OrderReady
+      - OrderRejected
+      - OrderCancelledByShop
+      - OrderEditedByShop
+      - OrderPickupChanged
+      - OwnerOrderLimitWarning
+      - StaffStayCreated
+      - StaffStayPaymentProofUploaded
+      - StaffStayCancelledByGuest
+      - StayGuestCreated
+      - StayGuestHoldExpiring
+      - StayGuestHoldExpired
+      - StayGuestConfirmed
+      - StayGuestPaymentRejected
+      - StayGuestCancelledByOwner
+      - StayGuestArrivalReminder
+      - StayGuestCheckInInfo
+    NotificationReason:
+      type: string
+      enum:
+      - Delivered
+      - RecipientHasNoWhatsApp
+      - RejectedByProvider
+      - RetriesExhausted
+      - VisitAlreadyStarted
+      - RecipientOptedOut
+      - NotOnPaidPlan
+      - NoUsableChannel
+      - TypeDisabledByCompany
+      - BelowMinimumLeadTime
+      - BookingOrAssignmentCancelled
+      - NoProviderDeliveryConsent
+      - RecipientNotInMax
+      - PriorityChannelUnavailable
+      - ClientDeclinedMessenger
+      - PlatformMessagingDisabled
+      - ChannelAccountMismatch
+      description: Причина пропуска/отказа доставки (журнал доставки). Перечислены члены, значимые для рассылок по каналам; полный список - в
+        ServiceBooking.Core. Цикл 40 дописывает ClientDeclinedMessenger=34, PlatformMessagingDisabled=35, ChannelAccountMismatch=36. Тексты -
+        API_CONTRACT_CYCLE40.md §40.33.9.
+    PaymentFilter:
+      type: string
+      enum:
+      - Paid
+      - NotPaid
+      - Requested
+      - Suspended
+      - Trial
+    ChannelCompanyDto:
+      type: object
+      description: Компания аккаунта; после цикла 40 - ВСЕ компании аккаунта (номер общий).
+      required:
+      - companyId
+      - companyName
+      - isActive
+      properties:
+        companyId:
+          type: string
+          format: uuid
+        companyName:
+          type: string
+        isActive:
+          type: boolean
+    ChannelTestDto:
+      type: object
+      description: Последнее проверочное сообщение. Тексты - API_CONTRACT_CYCLE40.md §40.33.3.
+      required:
+      - result
+      - atUtc
+      - text
+      properties:
+        result:
+          $ref: '#/components/schemas/ChannelTestResult'
+        atUtc:
+          type: string
+          format: date-time
+        text:
+          type: string
+    ChannelDto:
+      type: object
+      description: Номер рассылки владельца. Существующие поля не меняют форму; новые (displayStatus, displayText, action, lastTest, isTrial,
+        paymentPending) - в конце. Примеры по состояниям - x-examples.
+      required:
+      - id
+      - transport
+      - state
+      - stateText
+      - paymentState
+      - companies
+      - canConnect
+      - canReplace
+      - fundingState
+      - fundingText
+      - isTrial
+      - paymentPending
+      properties:
+        id:
+          type: string
+          format: uuid
+        transport:
+          $ref: '#/components/schemas/NotificationTransport'
+        state:
+          $ref: '#/components/schemas/ChannelState'
+        stateText:
+          type: string
+        phoneMasked:
+          type: string
+          nullable: true
+        paymentState:
+          $ref: '#/components/schemas/ChannelPaymentStatus'
+        paidUntil:
+          type: string
+          format: date-time
+          nullable: true
+        requestedAt:
+          type: string
+          format: date-time
+          nullable: true
+        connectedAt:
+          type: string
+          format: date-time
+          nullable: true
+        riskAcceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+        idleSince:
+          type: string
+          format: date-time
+          nullable: true
+        idleDeadline:
+          type: string
+          format: date-time
+          nullable: true
+        replacedByChannelId:
+          type: string
+          format: uuid
+          nullable: true
+        companies:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelCompanyDto'
+        canConnect:
+          type: boolean
+        canReplace:
+          type: boolean
+        fundingState:
+          $ref: '#/components/schemas/ChannelFundingState'
+        fundingText:
+          type: string
+        inn:
+          type: string
+          nullable: true
+        legalEntityForm:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/LegalEntityForm'
+        displayStatus:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ChannelDisplayStatus'
+          description: null только у Replaced.
+        displayText:
+          type: string
+          nullable: true
+        action:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ChannelAction'
+        lastTest:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ChannelTestDto'
+        isTrial:
+          type: boolean
+        paymentPending:
+          type: boolean
+      example:
+        id: 6f1d7a52-0b3c-4a7e-9c11-2f6a1b0c9d01
+        transport: Max
+        state: Connected
+        stateText: Номер работает, сообщения уходят с номера +7 *** ***-45-67
+        phoneMasked: +7 *** ***-45-67
+        paymentState: Paid
+        paidUntil: '2026-11-20T00:00:00Z'
+        requestedAt: '2026-10-20T09:00:00Z'
+        connectedAt: '2026-10-21T10:00:00Z'
+        riskAcceptedAt: '2026-10-20T09:05:00Z'
+        idleSince: null
+        idleDeadline: null
+        replacedByChannelId: null
+        companies:
+        - companyId: 0a1b2c3d-1111-4222-8333-444455556666
+          companyName: Салон «Лён»
+          isActive: true
+        canConnect: false
+        canReplace: true
+        fundingState: Funded
+        fundingText: Оплачено до 20.11.2026
+        inn: '7707083893'
+        legalEntityForm: Ip
+        displayStatus: Working
+        displayText: Сообщения уходят с номера +7 *** ***-45-67
+        action: null
+        lastTest:
+          result: Sent
+          atUtc: '2026-10-21T10:01:00Z'
+          text: Проверочное сообщение отправлено на ваш номер +7 *** ***-12-34
+        isTrial: false
+        paymentPending: false
+      x-examples:
+        Working:
+          id: 6f1d7a52-0b3c-4a7e-9c11-2f6a1b0c9d01
+          transport: Max
+          state: Connected
+          stateText: Номер работает, сообщения уходят с номера +7 *** ***-45-67
+          phoneMasked: +7 *** ***-45-67
+          paymentState: Paid
+          paidUntil: '2026-11-20T00:00:00Z'
+          requestedAt: '2026-10-20T09:00:00Z'
+          connectedAt: '2026-10-21T10:00:00Z'
+          riskAcceptedAt: '2026-10-20T09:05:00Z'
+          idleSince: null
+          idleDeadline: null
+          replacedByChannelId: null
+          companies:
+          - companyId: 0a1b2c3d-1111-4222-8333-444455556666
+            companyName: Салон «Лён»
+            isActive: true
+          canConnect: false
+          canReplace: true
+          fundingState: Funded
+          fundingText: Оплачено до 20.11.2026
+          inn: '7707083893'
+          legalEntityForm: Ip
+          displayStatus: Working
+          displayText: Сообщения уходят с номера +7 *** ***-45-67
+          action: null
+          lastTest:
+            result: Sent
+            atUtc: '2026-10-21T10:01:00Z'
+            text: Проверочное сообщение отправлено на ваш номер +7 *** ***-12-34
+          isTrial: false
+          paymentPending: false
+        ActionRequiredPay:
+          id: 6f1d7a52-0b3c-4a7e-9c11-2f6a1b0c9d01
+          transport: Max
+          state: NotConnected
+          stateText: Номер не привязан
+          phoneMasked: null
+          paymentState: NotPaid
+          paidUntil: '2026-10-01T00:00:00Z'
+          requestedAt: '2026-10-20T09:00:00Z'
+          connectedAt: null
+          riskAcceptedAt: '2026-10-20T09:05:00Z'
+          idleSince: null
+          idleDeadline: null
+          replacedByChannelId: null
+          companies:
+          - companyId: 0a1b2c3d-1111-4222-8333-444455556666
+            companyName: Салон «Лён»
+            isActive: true
+          canConnect: false
+          canReplace: false
+          fundingState: NotPaid
+          fundingText: Номер MAX не оплачен
+          inn: '7707083893'
+          legalEntityForm: Ip
+          displayStatus: ActionRequired
+          displayText: Оплата закончилась 01.10.2026
+          action: Pay
+          lastTest: null
+          isTrial: false
+          paymentPending: false
+        ActionRequiredAcceptTerms:
+          id: 6f1d7a52-0b3c-4a7e-9c11-2f6a1b0c9d01
+          transport: Max
+          state: NotConnected
+          stateText: Номер не привязан
+          phoneMasked: null
+          paymentState: Paid
+          paidUntil: '2026-10-23T00:00:00Z'
+          requestedAt: '2026-10-20T09:00:00Z'
+          connectedAt: null
+          riskAcceptedAt: null
+          idleSince: null
+          idleDeadline: null
+          replacedByChannelId: null
+          companies:
+          - companyId: 0a1b2c3d-1111-4222-8333-444455556666
+            companyName: Салон «Лён»
+            isActive: true
+          canConnect: false
+          canReplace: false
+          fundingState: Funded
+          fundingText: Пробный период до 23.10.2026
+          inn: '7707083893'
+          legalEntityForm: Ip
+          displayStatus: ActionRequired
+          displayText: Примите условия подключения MAX
+          action: AcceptTerms
+          lastTest: null
+          isTrial: true
+          paymentPending: false
+        PaymentUnderReview:
+          id: 6f1d7a52-0b3c-4a7e-9c11-2f6a1b0c9d01
+          transport: Max
+          state: NotConnected
+          stateText: Номер не привязан
+          phoneMasked: null
+          paymentState: NotPaid
+          paidUntil: null
+          requestedAt: '2026-10-20T09:00:00Z'
+          connectedAt: null
+          riskAcceptedAt: '2026-10-20T09:05:00Z'
+          idleSince: null
+          idleDeadline: null
+          replacedByChannelId: null
+          companies:
+          - companyId: 0a1b2c3d-1111-4222-8333-444455556666
+            companyName: Салон «Лён»
+            isActive: true
+          canConnect: false
+          canReplace: false
+          fundingState: NotPaid
+          fundingText: Номер MAX не оплачен
+          inn: '7707083893'
+          legalEntityForm: Ip
+          displayStatus: ActionRequired
+          displayText: Оплата на проверке
+          action: null
+          lastTest: null
+          isTrial: false
+          paymentPending: true
+        OffSuspended:
+          id: 6f1d7a52-0b3c-4a7e-9c11-2f6a1b0c9d01
+          transport: Max
+          state: Connected
+          stateText: Номер работает, сообщения уходят с номера +7 *** ***-45-67
+          phoneMasked: +7 *** ***-45-67
+          paymentState: Suspended
+          paidUntil: '2026-11-20T00:00:00Z'
+          requestedAt: '2026-10-20T09:00:00Z'
+          connectedAt: '2026-10-21T10:00:00Z'
+          riskAcceptedAt: '2026-10-20T09:05:00Z'
+          idleSince: null
+          idleDeadline: null
+          replacedByChannelId: null
+          companies:
+          - companyId: 0a1b2c3d-1111-4222-8333-444455556666
+            companyName: Салон «Лён»
+            isActive: true
+          canConnect: false
+          canReplace: true
+          fundingState: Funded
+          fundingText: Оплачено до 20.11.2026
+          inn: '7707083893'
+          legalEntityForm: Ip
+          displayStatus: 'Off'
+          displayText: Приостановлен администратором
+          action: null
+          lastTest:
+            result: Sent
+            atUtc: '2026-10-21T10:01:00Z'
+            text: Проверочное сообщение отправлено на ваш номер +7 *** ***-12-34
+          isTrial: false
+          paymentPending: false
+    ChannelListDto:
+      type: object
+      description: 'Порядок: createdAt по убыванию.'
+      required:
+      - channels
+      properties:
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelDto'
+    TransportOfferDto:
+      type: object
+      description: Только продаваемые транспорты (цикл 40). pricePerMonth/priceText - в конце.
+      required:
+      - transport
+      - displayName
+      - available
+      properties:
+        transport:
+          $ref: '#/components/schemas/NotificationTransport'
+        displayName:
+          type: string
+        available:
+          type: boolean
+        connectionNotice:
+          type: string
+          nullable: true
+        pricePerMonth:
+          type: number
+          nullable: true
+        priceText:
+          type: string
+          nullable: true
+    ChannelOfferDto:
+      type: object
+      required:
+      - allowedByPlan
+      - riskText
+      - riskVersion
+      - transports
+      properties:
+        pricePerMonth:
+          type: number
+          nullable: true
+          description: Цена опции notifications.whatsapp, если WhatsApp продаётся, иначе null.
+        allowedByPlan:
+          type: boolean
+          description: Всегда true (старые вкладки).
+        riskText:
+          type: string
+        riskVersion:
+          type: string
+        transports:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransportOfferDto'
+    OfferAcceptedDto:
+      type: object
+      required:
+      - version
+      properties:
+        version:
+          type: string
+    RiskAcceptedDto:
+      type: object
+      required:
+      - version
+      properties:
+        version:
+          type: string
+    CreateChannelRequestDto:
+      type: object
+      description: 'Тело POST /api/notification-channels. Поля проверяются вручную: домен-специфичный 400 строкой.'
+      required:
+      - legalEntityForm
+      - inn
+      - offerAccepted
+      properties:
+        legalEntityForm:
+          $ref: '#/components/schemas/LegalEntityForm'
+        inn:
+          type: string
+        offerAccepted:
+          $ref: '#/components/schemas/OfferAcceptedDto'
+        transport:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/NotificationTransport'
+          description: Отсутствует/null = WhatsApp.
+        riskAccepted:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/RiskAcceptedDto'
+          description: Необязательно; мастер шлёт всегда. Присутствует - версия должна быть текущей ChannelRiskNotice, иначе 400.
+        paymentRequest:
+          type: boolean
+          default: true
+          description: true - шаг «Оплата» (заявка на оплату); false - шаг «Условия» (только статус, ИНН, оферта, риск, для уже оплаченного или
+            пробного транспорта).
+      example:
+        legalEntityForm: Ip
+        inn: '7707083893'
+        offerAccepted:
+          version: '2026-10-20'
+        transport: Max
+        riskAccepted:
+          version: '2026-10-20'
+        paymentRequest: true
+    ConnectResponseDto:
+      type: object
+      required:
+      - state
+      - refreshAfterSeconds
+      properties:
+        state:
+          $ref: '#/components/schemas/ChannelState'
+        refreshAfterSeconds:
+          type: integer
+      example:
+        state: Connecting
+        refreshAfterSeconds: 3
+    QrResponseDto:
+      type: object
+      description: Connecting без экземпляра - 200 с qrBase64 = null, refreshAfterSeconds = 2, expiresInSeconds = 0. С QR - expiresInSeconds =
+        20. Connected - без QR.
+      required:
+      - state
+      - refreshAfterSeconds
+      - expiresInSeconds
+      properties:
+        state:
+          $ref: '#/components/schemas/ChannelState'
+        qrBase64:
+          type: string
+          nullable: true
+        refreshAfterSeconds:
+          type: integer
+        expiresInSeconds:
+          type: integer
+      example:
+        state: Connecting
+        qrBase64: null
+        refreshAfterSeconds: 2
+        expiresInSeconds: 0
+    TestMessageResponseDto:
+      type: object
+      required:
+      - delivered
+      - message
+      properties:
+        delivered:
+          type: boolean
+        message:
+          type: string
+      example:
+        delivered: true
+        message: Проверочное сообщение отправлено
+    ReplaceChannelResponseDto:
+      type: object
+      required:
+      - newChannelId
+      - companiesMoved
+      properties:
+        newChannelId:
+          type: string
+          format: uuid
+        paidUntil:
+          type: string
+          format: date-time
+          nullable: true
+        companiesMoved:
+          type: integer
+          description: Число компаний аккаунта.
+    OverviewCompanyDto:
+      type: object
+      required:
+      - id
+      - name
+      - kind
+      - isActive
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        kind:
+          type: string
+        isActive:
+          type: boolean
+    OfferRefDto:
+      type: object
+      required:
+      - version
+      - url
+      properties:
+        version:
+          type: string
+        url:
+          type: string
+    RiskRefDto:
+      type: object
+      required:
+      - version
+      - html
+      - url
+      properties:
+        version:
+          type: string
+        html:
+          type: string
+        url:
+          type: string
+    PrefillDto:
+      type: object
+      description: Из последнего канала аккаунта с ИНН.
+      required:
+      - legalEntityForm
+      - inn
+      properties:
+        legalEntityForm:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/LegalEntityForm'
+        inn:
+          type: string
+          nullable: true
+    TransportNumbersDto:
+      type: object
+      required:
+      - transport
+      - displayName
+      - open
+      - sellable
+      - paid
+      - isTrial
+      - paymentPending
+      - canRequestPayment
+      - termsAccepted
+      - wizardStep
+      - extraChannels
+      - qrInstruction
+      properties:
+        transport:
+          $ref: '#/components/schemas/NotificationTransport'
+        displayName:
+          type: string
+        open:
+          type: boolean
+          description: Опция открыта для владельцев (Р40-Ю1).
+        pricePerMonth:
+          type: number
+          nullable: true
+        priceText:
+          type: string
+          nullable: true
+        sellable:
+          type: boolean
+          description: открыта И активна И есть цена И оферта опубликована.
+        unavailableText:
+          type: string
+          nullable: true
+          description: «Подключение {М} сейчас недоступно» при !sellable и !paid.
+        paid:
+          type: boolean
+        paidUntil:
+          type: string
+          format: date-time
+          nullable: true
+        isTrial:
+          type: boolean
+        paymentPending:
+          type: boolean
+        canRequestPayment:
+          type: boolean
+          description: (!paid или isTrial) и sellable.
+        termsAccepted:
+          type: boolean
+          description: 'Условия текущей редакции приняты: риск текущей версии, статус и ИНН заявлены, оферта текущей версии.'
+        wizardStep:
+          $ref: '#/components/schemas/ChannelWizardStep'
+        displayStatus:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ChannelDisplayStatus'
+        displayText:
+          type: string
+          nullable: true
+        action:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ChannelAction'
+        channel:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ChannelDto'
+        extraChannels:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelDto'
+        connectionNotice:
+          type: string
+          nullable: true
+          description: У MAX - про пароль входа.
+        qrInstruction:
+          type: array
+          items:
+            type: string
+        prefill:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/PrefillDto'
+    NumbersOverviewDto:
+      type: object
+      description: Всё для блока «Номера» (GET /api/notification-channels/overview).
+      required:
+      - messagingEnabled
+      - note
+      - companies
+      - companiesText
+      - offer
+      - risk
+      - statusNotice
+      - transports
+      properties:
+        messagingEnabled:
+          type: boolean
+          description: Глобальный выключатель рассылок.
+        messagingDisabledText:
+          type: string
+          nullable: true
+          description: «Рассылки временно отключены платформой» при false.
+        note:
+          type: string
+        companies:
+          type: array
+          items:
+            $ref: '#/components/schemas/OverviewCompanyDto'
+        companiesText:
+          type: string
+        offer:
+          $ref: '#/components/schemas/OfferRefDto'
+        risk:
+          $ref: '#/components/schemas/RiskRefDto'
+        statusNotice:
+          type: string
+        transports:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransportNumbersDto'
+          minItems: 0
+          maxItems: 2
+          description: 0..2 элемента, порядок WhatsApp, MAX. Транспорт есть, если опция открыта либо у аккаунта уже есть его живой канал, оплата
+            или триал.
+      example:
+        messagingEnabled: true
+        messagingDisabledText: null
+        note: Номера общие для всех ваших компаний
+        companies:
+        - id: 0a1b2c3d-1111-4222-8333-444455556666
+          name: Салон «Лён»
+          kind: Services
+          isActive: true
+        companiesText: 'Работает для всех ваших компаний: 1'
+        offer:
+          version: '2026-10-20'
+          url: /offer-channel
+        risk:
+          version: '2026-10-20'
+          html: <p>Текст о рисках</p>
+          url: /channel-risk
+        statusNotice: Мессенджеры подключаются только тем, кто указал статус ИП, организации или самозанятого
+        transports:
+        - transport: Max
+          displayName: MAX
+          open: true
+          pricePerMonth: 490
+          priceText: 490 ₽/мес
+          sellable: true
+          unavailableText: null
+          paid: true
+          paidUntil: '2026-10-23T00:00:00Z'
+          isTrial: true
+          paymentPending: false
+          canRequestPayment: true
+          termsAccepted: false
+          wizardStep: Terms
+          displayStatus: null
+          displayText: null
+          action: null
+          channel: null
+          extraChannels: []
+          connectionNotice: Для авторизации по QR в MAX нужно отключить пароль входа в мессенджере.
+          qrInstruction:
+          - Отключите пароль входа в настройках MAX
+          - Откройте MAX на телефоне с номером, который будет отправлять сообщения
+          - Профиль → Устройства → Подключить устройство
+          - Наведите камеру на QR-код на этом экране
+          prefill: null
+      x-examples:
+        MaxOnTermsStepWhatsAppHidden:
+          messagingEnabled: true
+          messagingDisabledText: null
+          note: Номера общие для всех ваших компаний
+          companies:
+          - id: 0a1b2c3d-1111-4222-8333-444455556666
+            name: Салон «Лён»
+            kind: Services
+            isActive: true
+          companiesText: 'Работает для всех ваших компаний: 1'
+          offer:
+            version: '2026-10-20'
+            url: /offer-channel
+          risk:
+            version: '2026-10-20'
+            html: <p>Текст о рисках</p>
+            url: /channel-risk
+          statusNotice: Мессенджеры подключаются только тем, кто указал статус ИП, организации или самозанятого
+          transports:
+          - transport: Max
+            displayName: MAX
+            open: true
+            pricePerMonth: 490
+            priceText: 490 ₽/мес
+            sellable: true
+            unavailableText: null
+            paid: true
+            paidUntil: '2026-10-23T00:00:00Z'
+            isTrial: true
+            paymentPending: false
+            canRequestPayment: true
+            termsAccepted: false
+            wizardStep: Terms
+            displayStatus: null
+            displayText: null
+            action: null
+            channel: null
+            extraChannels: []
+            connectionNotice: Для авторизации по QR в MAX нужно отключить пароль входа в мессенджере.
+            qrInstruction:
+            - Отключите пароль входа в настройках MAX
+            - Откройте MAX на телефоне с номером, который будет отправлять сообщения
+            - Профиль → Устройства → Подключить устройство
+            - Наведите камеру на QR-код на этом экране
+            prefill: null
+        BothOpenWhatsAppWorkingMaxPayment:
+          messagingEnabled: true
+          messagingDisabledText: null
+          note: Номера общие для всех ваших компаний
+          companies:
+          - id: 0a1b2c3d-1111-4222-8333-444455556666
+            name: Салон «Лён»
+            kind: Services
+            isActive: true
+          companiesText: 'Работает для всех ваших компаний: 1'
+          offer:
+            version: '2026-10-20'
+            url: /offer-channel
+          risk:
+            version: '2026-10-20'
+            html: <p>Текст о рисках</p>
+            url: /channel-risk
+          statusNotice: Мессенджеры подключаются только тем, кто указал статус ИП, организации или самозанятого
+          transports:
+          - transport: WhatsApp
+            displayName: WhatsApp
+            open: true
+            pricePerMonth: 490
+            priceText: 490 ₽/мес
+            sellable: true
+            unavailableText: null
+            paid: true
+            paidUntil: '2026-11-20T00:00:00Z'
+            isTrial: false
+            paymentPending: false
+            canRequestPayment: false
+            termsAccepted: true
+            wizardStep: Done
+            displayStatus: Working
+            displayText: Сообщения уходят с номера +7 *** ***-45-67
+            action: null
+            channel:
+              id: 6f1d7a52-0b3c-4a7e-9c11-2f6a1b0c9d01
+              transport: WhatsApp
+              state: Connected
+              stateText: Номер работает, сообщения уходят с номера +7 *** ***-45-67
+              phoneMasked: +7 *** ***-45-67
+              paymentState: Paid
+              paidUntil: '2026-11-20T00:00:00Z'
+              requestedAt: '2026-10-20T09:00:00Z'
+              connectedAt: '2026-10-21T10:00:00Z'
+              riskAcceptedAt: '2026-10-20T09:05:00Z'
+              idleSince: null
+              idleDeadline: null
+              replacedByChannelId: null
+              companies:
+              - companyId: 0a1b2c3d-1111-4222-8333-444455556666
+                companyName: Салон «Лён»
+                isActive: true
+              canConnect: false
+              canReplace: true
+              fundingState: Funded
+              fundingText: Оплачено до 20.11.2026
+              inn: '7707083893'
+              legalEntityForm: Ip
+              displayStatus: Working
+              displayText: Сообщения уходят с номера +7 *** ***-45-67
+              action: null
+              lastTest:
+                result: Sent
+                atUtc: '2026-10-21T10:01:00Z'
+                text: Проверочное сообщение отправлено на ваш номер +7 *** ***-12-34
+              isTrial: false
+              paymentPending: false
+            extraChannels: []
+            connectionNotice: null
+            qrInstruction:
+            - Откройте WhatsApp на телефоне с номером, который будет отправлять сообщения
+            - Настройки → Связанные устройства → Привязка устройства
+            - Наведите камеру на QR-код на этом экране
+            prefill:
+              legalEntityForm: Ip
+              inn: '7707083893'
+          - transport: Max
+            displayName: MAX
+            open: true
+            pricePerMonth: 490
+            priceText: 490 ₽/мес
+            sellable: true
+            unavailableText: null
+            paid: false
+            paidUntil: null
+            isTrial: false
+            paymentPending: false
+            canRequestPayment: true
+            termsAccepted: false
+            wizardStep: Payment
+            displayStatus: null
+            displayText: null
+            action: null
+            channel: null
+            extraChannels: []
+            connectionNotice: Для авторизации по QR в MAX нужно отключить пароль входа в мессенджере.
+            qrInstruction:
+            - Отключите пароль входа в настройках MAX
+            - Откройте MAX на телефоне с номером, который будет отправлять сообщения
+            - Профиль → Устройства → Подключить устройство
+            - Наведите камеру на QR-код на этом экране
+            prefill: null
+    SettingsChannelDto:
+      type: object
+      required:
+      - assigned
+      properties:
+        assigned:
+          type: boolean
+        channelId:
+          type: string
+          format: uuid
+          nullable: true
+        state:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ChannelState'
+        stateText:
+          type: string
+          nullable: true
+        paymentState:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ChannelPaymentStatus'
+        paidUntil:
+          type: string
+          format: date-time
+          nullable: true
+    NotificationSettingsDto:
+      type: object
+      description: Настройки уведомлений салона. Новые поля (messagingActive..workingTransports) - в конце.
+      required:
+      - enabledTypes
+      - reminderLeadMinutes
+      - minLeadMinutes
+      - planAllowsChannel
+      - channel
+      - effectiveEnabled
+      - deliveryMode
+      - priorityTransport
+      - connectedTransports
+      - priorityChannelHealthy
+      - messagingActive
+      - deliveryChoiceVisible
+      - workingTransports
+      properties:
+        enabledTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationType'
+        reminderLeadMinutes:
+          type: integer
+        minLeadMinutes:
+          type: integer
+        planAllowsChannel:
+          type: boolean
+          description: Всегда true.
+        channel:
+          $ref: '#/components/schemas/SettingsChannelDto'
+        effectiveEnabled:
+          type: boolean
+          description: = messagingActive.
+        blockedReason:
+          type: string
+          nullable: true
+        deliveryMode:
+          $ref: '#/components/schemas/NotificationDeliveryMode'
+        priorityTransport:
+          $ref: '#/components/schemas/NotificationTransport'
+        connectedTransports:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationTransport'
+        priorityChannelHealthy:
+          type: boolean
+        messagingActive:
+          type: boolean
+        inactiveText:
+          type: string
+          nullable: true
+        deliveryChoiceVisible:
+          type: boolean
+        priorityWarning:
+          type: string
+          nullable: true
+        workingTransports:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationTransport'
+      example:
+        enabledTypes:
+        - BookingConfirmed
+        - Reminder
+        reminderLeadMinutes: 120
+        minLeadMinutes: 30
+        planAllowsChannel: true
+        channel:
+          assigned: true
+          channelId: 6f1d7a52-0b3c-4a7e-9c11-2f6a1b0c9d01
+          state: Connected
+          stateText: Номер работает
+          paymentState: Paid
+          paidUntil: '2026-11-20T00:00:00Z'
+        effectiveEnabled: true
+        blockedReason: null
+        deliveryMode: PriorityChannel
+        priorityTransport: Max
+        connectedTransports:
+        - Max
+        priorityChannelHealthy: true
+        messagingActive: true
+        inactiveText: null
+        deliveryChoiceVisible: false
+        priorityWarning: null
+        workingTransports:
+        - Max
+    UpdateNotificationSettingsDto:
+      type: object
+      description: deliveryMode/priorityTransport не прислан - не меняется; фронт присылает их только при deliveryChoiceVisible.
+      required:
+      - enabledTypes
+      - reminderLeadMinutes
+      - minLeadMinutes
+      properties:
+        enabledTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationType'
+        reminderLeadMinutes:
+          type: integer
+        minLeadMinutes:
+          type: integer
+        deliveryMode:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/NotificationDeliveryMode'
+        priorityTransport:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/NotificationTransport'
+    ShopChannelStatusDto:
+      type: object
+      required:
+      - channelId
+      - transport
+      - stateText
+      - isConnected
+      - funded
+      - fundingText
+      properties:
+        channelId:
+          type: string
+          format: uuid
+        transport:
+          $ref: '#/components/schemas/NotificationTransport'
+        phoneMasked:
+          type: string
+          nullable: true
+        stateText:
+          type: string
+        isConnected:
+          type: boolean
+        funded:
+          type: boolean
+        fundingText:
+          type: string
+    ShopNotificationSettingsDto:
+      type: object
+      description: 'Настройки уведомлений магазина. Новые: messagingActive, deliveryChoiceVisible, priorityWarning (в конце).'
+      required:
+      - staffPushEnabled
+      - customerWebPushEnabled
+      - customerMessengerEnabled
+      - deliveryMode
+      - priorityTransport
+      - messengerAvailable
+      - platformPushEnabled
+      - channels
+      - messagingActive
+      - deliveryChoiceVisible
+      properties:
+        staffPushEnabled:
+          type: boolean
+        customerWebPushEnabled:
+          type: boolean
+        customerMessengerEnabled:
+          type: boolean
+        deliveryMode:
+          $ref: '#/components/schemas/NotificationDeliveryMode'
+        priorityTransport:
+          $ref: '#/components/schemas/NotificationTransport'
+        messengerAvailable:
+          type: boolean
+          description: У аккаунта есть оплаченный транспорт.
+        messengerUnavailableText:
+          type: string
+          nullable: true
+        platformPushEnabled:
+          type: boolean
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShopChannelStatusDto'
+        staffMaxEnabled:
+          type: boolean
+        staffMaxAvailable:
+          type: boolean
+        staffMaxUnavailableText:
+          type: string
+          nullable: true
+        messagingActive:
+          type: boolean
+        deliveryChoiceVisible:
+          type: boolean
+        priorityWarning:
+          type: string
+          nullable: true
+    ShopNotificationSettingsInput:
+      type: object
+      required:
+      - staffPushEnabled
+      - customerWebPushEnabled
+      - customerMessengerEnabled
+      properties:
+        staffPushEnabled:
+          type: boolean
+        customerWebPushEnabled:
+          type: boolean
+        customerMessengerEnabled:
+          type: boolean
+        deliveryMode:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/NotificationDeliveryMode'
+        priorityTransport:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/NotificationTransport'
+        staffMaxEnabled:
+          type: boolean
+          nullable: true
+    StaysNotificationSettingsDto:
+      type: object
+      description: 'Настройки уведомлений «Домов». Новые: messagingActive, deliveryChoiceVisible, priorityWarning (в конце).'
+      required:
+      - staffPushEnabled
+      - staffMaxEnabled
+      - guestWebPushEnabled
+      - guestMessengerEnabled
+      - messengerAvailable
+      - messagingActive
+      - deliveryChoiceVisible
+      properties:
+        staffPushEnabled:
+          type: boolean
+        staffMaxEnabled:
+          type: boolean
+        guestWebPushEnabled:
+          type: boolean
+        guestMessengerEnabled:
+          type: boolean
+        messengerAvailable:
+          type: boolean
+        deliveryMode:
+          type: string
+          nullable: true
+        priorityTransport:
+          type: string
+          nullable: true
+        messagingActive:
+          type: boolean
+        deliveryChoiceVisible:
+          type: boolean
+        priorityWarning:
+          type: string
+          nullable: true
+    StaysNotificationSettingsInput:
+      type: object
+      required:
+      - staffPushEnabled
+      - staffMaxEnabled
+      - guestWebPushEnabled
+      - guestMessengerEnabled
+      properties:
+        staffPushEnabled:
+          type: boolean
+        staffMaxEnabled:
+          type: boolean
+        guestWebPushEnabled:
+          type: boolean
+        guestMessengerEnabled:
+          type: boolean
+        deliveryMode:
+          type: string
+          nullable: true
+        priorityTransport:
+          type: string
+          nullable: true
+    CatalogConflictDto:
+      type: object
+      description: '409 магазина. При включении customerMessengerEnabled без оплаченного транспорта: code = MessengerUnavailable.'
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      example:
+        code: MessengerUnavailable
+        message: Сначала подключите и оплатите номер WhatsApp или MAX
+    StaysConflictDto:
+      type: object
+      description: '409 «Домов». При включении guestMessengerEnabled без оплаченного транспорта: code = MessengerUnavailable.'
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      example:
+        code: MessengerUnavailable
+        message: Подключите и оплатите номер WhatsApp или MAX, чтобы отправлять сообщения гостям
+    CustomerMessagingOfferDto:
+      type: object
+      description: Публичный. offered = false даёт transports = [] и checkboxLabel = null. Никогда не содержит номера, состояния, оплаты, причины.
+      required:
+      - offered
+      - transports
+      - checkboxLabel
+      properties:
+        transports:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationTransport'
+        offered:
+          type: boolean
+        checkboxLabel:
+          type: string
+          nullable: true
+      example:
+        offered: true
+        transports:
+        - Max
+        checkboxLabel: Получать уведомления о записи в MAX
+      x-examples:
+        Offered:
+          offered: true
+          transports:
+          - WhatsApp
+          - Max
+          checkboxLabel: Получать уведомления о записи в WhatsApp и MAX
+        NotOffered:
+          offered: false
+          transports: []
+          checkboxLabel: null
+    CompanyDtoCycle40Part:
+      type: object
+      description: 'Новое поле CompanyDto (только GET /api/companies/{slug}; в списках null; для Orders/Stays - offered: false).'
+      additionalProperties: true
+      properties:
+        customerMessaging:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/CustomerMessagingOfferDto'
+      example:
+        customerMessaging:
+          offered: true
+          transports:
+          - Max
+          checkboxLabel: Получать уведомления о записи в MAX
+    StorefrontCustomerNotificationsDto:
+      type: object
+      description: 'storefront.customerNotifications: messengerOffered - по новому правилу; messengerTransports, messengerLabel - в конец («Получать
+        уведомления о заказе в {М}»).'
+      additionalProperties: true
+      properties:
+        messengerOffered:
+          type: boolean
+        messengerTransports:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationTransport'
+        messengerLabel:
+          type: string
+          nullable: true
+      example:
+        messengerOffered: true
+        messengerTransports:
+        - WhatsApp
+        messengerLabel: Получать уведомления о заказе в WhatsApp
+    StorefrontDtoCycle40Part:
+      type: object
+      description: Изменённая часть StorefrontDto.
+      additionalProperties: true
+      properties:
+        customerNotifications:
+          $ref: '#/components/schemas/StorefrontCustomerNotificationsDto'
+    PublicHouseDtoCycle40Part:
+      type: object
+      description: Новое поле PublicHouseDto («Получать уведомления о брони в {М}»).
+      additionalProperties: true
+      properties:
+        messenger:
+          $ref: '#/components/schemas/CustomerMessagingOfferDto'
+      example:
+        messenger:
+          offered: false
+          transports: []
+          checkboxLabel: null
+    CreateBookingDtoCycle40Part:
+      type: object
+      description: Новое поле CreateBookingDto (в конец).
+      additionalProperties: true
+      properties:
+        notifyByMessenger:
+          type: boolean
+          nullable: true
+          default: null
+          description: 'Клиент: true - согласие на эту запись, false - сообщений нет, null - только если номер принадлежит аккаунту с действующим
+            ProviderDelivery. Сотрудник: true = отметка «Клиент согласился…», false/null = отметки нет.'
+    BookingDtoCycle40Part:
+      type: object
+      description: Новые поля BookingDto (во всех ответах с записью, в конец).
+      additionalProperties: true
+      properties:
+        notifyByMessenger:
+          type: boolean
+          nullable: true
+        messengerConsentAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        messengerConsentByStaff:
+          type: boolean
+          description: Отметил сотрудник. Имя сотрудника не отдаётся.
+      example:
+        notifyByMessenger: true
+        messengerConsentAtUtc: '2026-10-21T10:00:00Z'
+        messengerConsentByStaff: false
+    NotificationPreferencesDtoCycle40Part:
+      type: object
+      description: Новое поле NotificationPreferencesDto (в конец; enabled остаётся).
+      additionalProperties: true
+      properties:
+        providerDeliveryConsent:
+          type: boolean
+          description: У пользователя действующее согласие PdnConsent/ProviderDelivery текущей редакции.
+      example:
+        enabled: true
+        providerDeliveryConsent: true
+    AdminChannelDto:
+      type: object
+      description: 'Строка таблицы админа. Новые поля (displayStatus..availableActions) - в конце. paymentText: «оплачено до дд.мм.гггг» / «пробный
+        до …» / «заявка от дд.мм» / «приостановлен» / «не оплачено».'
+      required:
+      - id
+      - transport
+      - state
+      - paymentState
+      - ownerName
+      - companyCount
+      - stateText
+      - paymentText
+      - isSuspended
+      - createdAt
+      - availableActions
+      properties:
+        id:
+          type: string
+          format: uuid
+        transport:
+          $ref: '#/components/schemas/NotificationTransport'
+        state:
+          $ref: '#/components/schemas/ChannelState'
+        paymentState:
+          $ref: '#/components/schemas/ChannelPaymentStatus'
+        ownerName:
+          type: string
+        ownerPhoneMasked:
+          type: string
+          nullable: true
+        paidUntil:
+          type: string
+          format: date-time
+          nullable: true
+        companyCount:
+          type: integer
+          description: Компании аккаунта.
+        idleSince:
+          type: string
+          format: date-time
+          nullable: true
+        requestedAt:
+          type: string
+          format: date-time
+          nullable: true
+        inn:
+          type: string
+          nullable: true
+        legalEntityForm:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/LegalEntityForm'
+        displayStatus:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ChannelDisplayStatus'
+        displayText:
+          type: string
+          nullable: true
+        stateText:
+          type: string
+        phoneMasked:
+          type: string
+          nullable: true
+        paymentText:
+          type: string
+        isSuspended:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        availableActions:
+          type: array
+          items:
+            type: string
+            enum:
+            - Suspend
+            - Resume
+            - ConfirmPayment
+    AdminChannelListDto:
+      type: object
+      description: Страница списка. Существующий конверт списка не менялся; описан приблизительно, items - главное.
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminChannelDto'
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      additionalProperties: true
+    AdminChannelSummaryDto:
+      type: object
+      description: Первые 8 полей существуют; working, actionRequired, off - новые (в конец). pendingRequests - заявка новее подтверждения оплаты;
+        expiringIn7Days - по сроку транспорта.
+      required:
+      - connected
+      - connecting
+      - disconnected
+      - blocked
+      - needsReconnect
+      - idle
+      - expiringIn7Days
+      - pendingRequests
+      - working
+      - actionRequired
+      - 'off'
+      properties:
+        connected:
+          type: integer
+        connecting:
+          type: integer
+        disconnected:
+          type: integer
+        blocked:
+          type: integer
+        needsReconnect:
+          type: integer
+        idle:
+          type: integer
+        expiringIn7Days:
+          type: integer
+        pendingRequests:
+          type: integer
+        working:
+          type: integer
+        actionRequired:
+          type: integer
+        'off':
+          type: integer
+      example:
+        connected: 3
+        connecting: 1
+        disconnected: 0
+        blocked: 0
+        needsReconnect: 1
+        idle: 0
+        expiringIn7Days: 2
+        pendingRequests: 1
+        working: 3
+        actionRequired: 3
+        'off': 1
+    AdminChannelStateEventDto:
+      type: object
+      required:
+      - occurredAtUtc
+      - toState
+      - reason
+      - reasonText
+      properties:
+        occurredAtUtc:
+          type: string
+          format: date-time
+        fromState:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ChannelState'
+        toState:
+          $ref: '#/components/schemas/ChannelState'
+        reason:
+          $ref: '#/components/schemas/ChannelStateReason'
+        reasonText:
+          type: string
+        detail:
+          type: string
+          nullable: true
+    AdminChannelPaymentEventDto:
+      type: object
+      required:
+      - occurredAtUtc
+      - kind
+      properties:
+        occurredAtUtc:
+          type: string
+          format: date-time
+        kind:
+          type: string
+          enum:
+          - Suspended
+          - Resumed
+          - PaymentConfirmed
+          - OptionChanged
+        source:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ChannelOptionChangeSource'
+        changedByName:
+          type: string
+          nullable: true
+        oldPaidUntil:
+          type: string
+          format: date-time
+          nullable: true
+        newPaidUntil:
+          type: string
+          format: date-time
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+    AdminChannelPaymentDto:
+      type: object
+      required:
+      - paid
+      - isTrial
+      - requested
+      properties:
+        paid:
+          type: boolean
+        paidUntil:
+          type: string
+          format: date-time
+          nullable: true
+        isTrial:
+          type: boolean
+        requested:
+          type: boolean
+        lastPaymentAt:
+          type: string
+          format: date-time
+          nullable: true
+    AdminChannelCardDto:
+      type: object
+      description: Карточка номера для SuperAdmin.
+      required:
+      - channel
+      - billingAccountId
+      - ownerUserId
+      - state
+      - termsAccepted
+      - payment
+      - optionOpen
+      - companies
+      - stateEvents
+      - paymentEvents
+      - availableActions
+      properties:
+        channel:
+          $ref: '#/components/schemas/AdminChannelDto'
+        billingAccountId:
+          type: string
+          format: uuid
+        ownerUserId:
+          type: string
+        state:
+          $ref: '#/components/schemas/ChannelState'
+        lastStateReason:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ChannelStateReason'
+        lastStateReasonText:
+          type: string
+          nullable: true
+        legalEntityForm:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/LegalEntityForm'
+        inn:
+          type: string
+          nullable: true
+        requestedAt:
+          type: string
+          format: date-time
+          nullable: true
+        riskAcceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+        riskAcceptedVersion:
+          type: string
+          nullable: true
+        termsAccepted:
+          type: boolean
+        instanceCreatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        connectedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastStateCheckAt:
+          type: string
+          format: date-time
+          nullable: true
+        idleSince:
+          type: string
+          format: date-time
+          nullable: true
+        idleDeadline:
+          type: string
+          format: date-time
+          nullable: true
+        providerServerCountry:
+          type: string
+          nullable: true
+          description: Страна, сообщённая провайдером при создании экземпляра.
+        lastTest:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ChannelTestDto'
+        payment:
+          $ref: '#/components/schemas/AdminChannelPaymentDto'
+        optionOpen:
+          type: boolean
+        replacedByChannelId:
+          type: string
+          format: uuid
+          nullable: true
+        replacesChannelId:
+          type: string
+          format: uuid
+          nullable: true
+        companies:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelCompanyDto'
+        stateEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminChannelStateEventDto'
+          maxItems: 200
+          description: 200 последних.
+        paymentEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminChannelPaymentEventDto'
+        availableActions:
+          type: array
+          items:
+            type: string
+            enum:
+            - Suspend
+            - Resume
+            - ConfirmPayment
+          description: ConfirmPayment - если канал не Replaced, опция есть в каталоге и открыта.
+      example:
+        channel:
+          id: 6f1d7a52-0b3c-4a7e-9c11-2f6a1b0c9d01
+          transport: Max
+          state: Connected
+          paymentState: Paid
+          ownerName: Иван Петров
+          ownerPhoneMasked: +7 *** ***-12-34
+          paidUntil: '2026-11-20T00:00:00Z'
+          companyCount: 1
+          idleSince: null
+          requestedAt: '2026-10-20T09:00:00Z'
+          inn: '7707083893'
+          legalEntityForm: Ip
+          displayStatus: Working
+          displayText: Сообщения уходят с номера +7 *** ***-45-67
+          stateText: Номер работает
+          phoneMasked: +7 *** ***-45-67
+          paymentText: оплачено до 20.11.2026
+          isSuspended: false
+          createdAt: '2026-10-20T09:00:00Z'
+          availableActions:
+          - Suspend
+          - ConfirmPayment
+        billingAccountId: 11111111-2222-4333-8444-555566667777
+        ownerUserId: owner-1
+        state: Connected
+        lastStateReason: Authorized
+        lastStateReasonText: Владелец завершил привязку по QR
+        legalEntityForm: Ip
+        inn: '7707083893'
+        requestedAt: '2026-10-20T09:00:00Z'
+        riskAcceptedAt: '2026-10-20T09:05:00Z'
+        riskAcceptedVersion: '2026-10-20'
+        termsAccepted: true
+        instanceCreatedAt: '2026-10-21T09:58:00Z'
+        connectedAt: '2026-10-21T10:00:00Z'
+        lastStateCheckAt: '2026-10-21T10:30:00Z'
+        idleSince: null
+        idleDeadline: null
+        providerServerCountry: RU
+        lastTest:
+          result: Sent
+          atUtc: '2026-10-21T10:01:00Z'
+          text: Проверочное сообщение отправлено на ваш номер +7 *** ***-12-34
+        payment:
+          paid: true
+          paidUntil: '2026-11-20T00:00:00Z'
+          isTrial: false
+          requested: false
+          lastPaymentAt: '2026-10-20T12:00:00Z'
+        optionOpen: true
+        replacedByChannelId: null
+        replacesChannelId: null
+        companies:
+        - companyId: 0a1b2c3d-1111-4222-8333-444455556666
+          companyName: Салон «Лён»
+          isActive: true
+        stateEvents:
+        - occurredAtUtc: '2026-10-21T10:00:00Z'
+          fromState: Connecting
+          toState: Connected
+          reason: Authorized
+          reasonText: Владелец завершил привязку по QR
+          detail: null
+        paymentEvents:
+        - occurredAtUtc: '2026-10-20T12:00:00Z'
+          kind: PaymentConfirmed
+          source: null
+          changedByName: Админ
+          oldPaidUntil: null
+          newPaidUntil: '2026-11-20T00:00:00Z'
+          comment: Счёт 17
+        - occurredAtUtc: '2026-10-20T11:00:00Z'
+          kind: OptionChanged
+          source: AdminChannelCard
+          changedByName: Админ
+          oldPaidUntil: null
+          newPaidUntil: '2026-10-23T00:00:00Z'
+          comment: null
+        availableActions:
+        - Suspend
+        - ConfirmPayment
+    ConfirmChannelPaymentInput:
+      type: object
+      required:
+      - months
+      properties:
+        months:
+          type: integer
+          minimum: 1
+          maximum: 12
+        comment:
+          type: string
+          nullable: true
+          maxLength: 500
+      example:
+        months: 1
+        comment: Счёт 17
+    AdminPlatformSettingsCycle40Part:
+      type: object
+      description: Новые поля AdminPlatformSettingsDto (в конец). channelPricePerMonth на PUT принимается и игнорируется. Действие переключателей
+        мгновенное для новых запросов.
+      additionalProperties: true
+      properties:
+        customerMessagingEnabled:
+          type: boolean
+          nullable: true
+          description: 'GET - bool. PUT - null: не менять; значение: запись (журнал).'
+        whatsAppOptionOpen:
+          type: boolean
+          nullable: true
+          description: 'GET - bool (нет ключа - умолчание конфигурации, false). PUT - null: не менять.'
+        maxOptionOpen:
+          type: boolean
+          nullable: true
+          description: 'GET - bool (нет ключа - умолчание конфигурации, true). PUT - null: не менять.'
+      example:
+        customerMessagingEnabled: true
+        whatsAppOptionOpen: false
+        maxOptionOpen: true
+    MessengerAddonDto:
+      type: object
+      required:
+      - transport
+      - label
+      - pricePerMonth
+      - text
+      properties:
+        transport:
+          $ref: '#/components/schemas/NotificationTransport'
+        label:
+          type: string
+          enum:
+          - WhatsApp
+          - MAX
+        pricePerMonth:
+          type: number
+        text:
+          type: string
+        footnote:
+          type: string
+          nullable: true
+          description: 'У WhatsApp: «Доступ к WhatsApp в России ограничен: сообщения могут не доходить»; у MAX - null.'
+      example:
+        transport: Max
+        label: MAX
+        pricePerMonth: 490
+        text: + MAX 490 ₽/мес
+        footnote: null
+    MessengerAddonsNoteDto:
+      type: object
+      required:
+      - conditionsUrl
+      - conditionsLabel
+      - taxNote
+      properties:
+        conditionsUrl:
+          type: string
+          example: /offer-channel
+        conditionsLabel:
+          type: string
+          example: Условия
+        taxNote:
+          type: string
+    PublicPricingCycle40Part:
+      type: object
+      description: Новые поля PublicPricingDto (в конец). messengerAddonsNote = null, если список пуст.
+      additionalProperties: true
+      properties:
+        messengerAddons:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessengerAddonDto'
+          minItems: 0
+          maxItems: 2
+          description: 'Только продаваемые: открыта, активна, с ценой, оферта опубликована.'
+        messengerAddonsNote:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/MessengerAddonsNoteDto'
+      example:
+        messengerAddons:
+        - transport: Max
+          label: MAX
+          pricePerMonth: 490
+          text: + MAX 490 ₽/мес
+          footnote: null
+        messengerAddonsNote:
+          conditionsUrl: /offer-channel
+          conditionsLabel: Условия
+          taxNote: Цены указаны с учётом налогов
+    OwnerSubscriptionCycle40Part:
+      type: object
+      description: Новые поля OwnerSubscriptionDto. availableOptions - без двух опций каналов; plan.includes - без строк про мессенджеры; usage.numbersPaid/numbersText;
+        coveredCompanies[].hasNumber - есть работающий номер.
+      additionalProperties: true
+      properties:
+        messengerAddons:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessengerAddonDto'
+          minItems: 0
+          maxItems: 2
+        messengerAddonsNote:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/MessengerAddonsNoteDto'
+        usage:
+          type: object
+          description: Новый смысл numbersPaid; numbersText - §40.33.8.
+          additionalProperties: true
+          properties:
+            numbersPaid:
+              type: integer
+              description: Число оплаченных транспортов (0..2).
+            numbersText:
+              type: string
+      example:
+        messengerAddons:
+        - transport: Max
+          label: MAX
+          pricePerMonth: 490
+          text: + MAX 490 ₽/мес
+          footnote: null
+        messengerAddonsNote:
+          conditionsUrl: /offer-channel
+          conditionsLabel: Условия
+          taxNote: Цены указаны с учётом налогов
+        usage:
+          numbersPaid: 1
+          numbersText: 'WhatsApp: не подключён; MAX: пробный до 23.10.2026'
+    CompanyTransferPreviewCycle40Part:
+      type: object
+      description: Форма CompanyTransferPreviewDto без изменений; новый смысл двух полей.
+      additionalProperties: true
+      properties:
+        willDetachFromChannel:
+          type: boolean
+          description: У исходного аккаунта есть живой канал.
+        willCancelPendingNotifications:
+          type: integer
+          description: Число Pending, для которых у целевого аккаунта нет маршрутизируемого номера того же транспорта.
+      example:
+        willDetachFromChannel: true
+        willCancelPendingNotifications: 0

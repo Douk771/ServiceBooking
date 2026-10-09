@@ -115,8 +115,9 @@ public class ShowcaseOwnershipCoverageTests
         // Cycle 39 (ARCHITECTURE_CYCLE39.md §39.2.6): the 11 tables of the time-slot services are declared never written too.
         string[] services = ["StayServices", "StayServicePhotos", "StayServiceWeeklyWindows", "StayServiceDateOverrides", "StayServiceScheduleEvents",
             "StayServicePriceRules", "StayServiceItems", "StayServiceSessions", "StayServiceOrders", "StayServiceOrderEvents", "StaysReminderTemplateChanges"];
-        ShowcaseOwnership.NeverWritten.Keys.Where(k => k != "NotificationChannels").Should().BeEquivalentTo(stays.Concat(services));
-        ShowcaseOwnership.NeverWritten.Keys.Should().Contain("NotificationChannels").And.HaveCount(27);
+        // Cycle 40 (§40.2.3): ChannelOptionChangeLogs — journal of channel options, showcase accounts own no numbers.
+        ShowcaseOwnership.NeverWritten.Keys.Where(k => k != "NotificationChannels" && k != "ChannelOptionChangeLogs").Should().BeEquivalentTo(stays.Concat(services));
+        ShowcaseOwnership.NeverWritten.Keys.Should().Contain("NotificationChannels").And.Contain("ChannelOptionChangeLogs").And.HaveCount(28);
     }
 
     [Fact]

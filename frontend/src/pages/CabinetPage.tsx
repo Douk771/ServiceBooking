@@ -12,7 +12,6 @@ import { Icon } from '../components/ui/Icon'
 import { ScheduleTab } from './owner/ScheduleTab'
 import { DashboardTab } from './owner/DashboardTab'
 import { MailingTab } from './owner/MailingTab'
-import { NotificationsSection } from './owner/NotificationsSection'
 import { MasterClientsPage } from './MasterClientsPage'
 import { notificationChannelsApi } from '../api/notificationChannels'
 import { ChannelBreachBanner } from '../components/notifications/ChannelBreachBanner'
@@ -314,6 +313,24 @@ function ReportsTab() {
   )
 }
 
+/**
+ * Cycle 40 (US-40-06): the numbers and the messages to customers live in ONE place — the notifications tab of each company. The cabinet only points there
+ * (the breach banner above stays and leads to the same section).
+ */
+function NotificationsPointer({ companyId }: { companyId?: string }) {
+  return (
+    <Card className="p-8 text-center">
+      <Icon name="megaphone" size={28} strokeWidth={1.6} className="mx-auto mb-2 text-muted" />
+      <p className="text-ink-soft mb-4">Номера для сообщений клиентам — в настройках каждой компании</p>
+      {companyId ? (
+        <Link to={`/owner/company/${companyId}?tab=notifications`}>
+          <Button size="sm" variant="secondary">Открыть уведомления</Button>
+        </Link>
+      ) : null}
+    </Card>
+  )
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function CabinetPage() {
@@ -393,7 +410,7 @@ export function CabinetPage() {
         {tab === 'clients' && <ClientsSection />}
         {tab === 'reports' && <ReportsTab />}
         {tab === 'mailing' && <MailingSection />}
-        {tab === 'notifications' && <NotificationsSection />}
+        {tab === 'notifications' && <NotificationsPointer companyId={companiesForTabs?.[0]?.id} />}
       </ErrorBoundary>
     </div>
   )

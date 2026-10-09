@@ -2,35 +2,36 @@ import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { fmtDate } from '../../utils/dateFormat'
 import { adminNotificationsApi } from '../../api/platformSettings'
+import { adminNumbersApi, type AdminChannelCardDto, type AdminChannelDto } from '../../api/notificationNumbers'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Icon } from '../../components/ui/Icon'
 import { Pagination } from '../../components/ui/Pagination'
+import { Modal } from '../../components/ui/Modal'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
 import { TRANSPORT_FILTER_OPTIONS, TRANSPORT_LABELS } from '../../utils/notificationTransport'
+import { adminErrorText } from './adminChannelsHelpers'
 import { getPricingPublicBlockedMessage } from '../../utils/legalError'
 import type { NotificationTransport, PricingPublicBlockedReason } from '../../types'
 
 // ── Summary tile row ─────────────────────────────────────────────────────────
+// Cycle 40 (§40.13): five tiles — the three states the owner sees, the applications waiting for a confirmation and the numbers whose paid period ends soon.
 
 function SummaryRow() {
-  const { data } = useQuery({ queryKey: ['admin-channel-summary'], queryFn: adminNotificationsApi.summary })
+  const { data } = useQuery({ queryKey: ['admin-channel-summary'], queryFn: adminNumbersApi.summary })
   if (!data) return <div className="h-20 bg-cream-deep rounded-2xl animate-pulse mb-4" />
 
   const tiles = [
-    { label: 'Подключено', value: data.connected },
-    { label: 'Подключается', value: data.connecting },
-    { label: 'Отвалилось', value: data.disconnected },
-    { label: 'Заблокировано', value: data.blocked },
-    { label: 'Требует переподключения', value: data.needsReconnect },
-    { label: 'Простаивает', value: data.idle },
+    { label: 'Работает', value: data.working },
+    { label: 'Нужно действие', value: data.actionRequired },
+    { label: 'Выключен', value: data.off },
+    { label: 'Заявок на оплату', value: data.pendingRequests },
     { label: 'Истекает за 7 дней', value: data.expiringIn7Days },
-    { label: 'Заявок', value: data.pendingRequests },
   ]
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
       {tiles.map((t) => (
         <Card key={t.label} className="p-4 text-center">
           <p className="text-xl font-bold text-ink">{t.value}</p>
@@ -41,48 +42,147 @@ function SummaryRow() {
   )
 }
 
-// ── Channels list ─────────────────────────────────────────────────────────────
-// Оплата номера больше не отмечается здесь — единица оплаты переехала в подписку биллинг-аккаунта
-// (POST /admin/notification-channels/{id}/payment отвечает 410, API_CONTRACT_CYCLE7.md §53).
-// Замена — вкладка «Биллинг-аккаунты» → карточка аккаунта → «Назначить подписку», опция
-// notifications.whatsapp с количеством.
+// ── Channels table, card and «Подтвердить оплату» ────────────────────────────
+// Cycle 40 (§40.13): the SAME three states the owner sees (displayStatus/displayText come from the server), the payment text, and the actions the server allows.
 
-const STATE_LABEL_RU: Record<string, string> = {
-  NotConnected: 'не подключён',
-  Connecting: 'подключается',
-  Connected: 'подключён',
-  Disconnected: 'отвалился',
-  Blocked: 'заблокирован',
-  DisabledByOwner: 'отключён владельцем',
-  NeedsReconnect: 'требует переподключения',
-  Replaced: 'заменён',
+const DISPLAY_STATUS_LABEL: Record<string, string> = { Working: 'Работает', ActionRequired: 'Нужно действие', Off: 'Выключен' }
+const DISPLAY_STATUS_CLASS: Record<string, string> = {
+  Working: 'bg-success-bg text-success',
+  ActionRequired: 'bg-warning-bg text-warning',
+  Off: 'bg-cream-deep text-ink-soft',
+}
+const PAYMENT_OPTIONS = [
+  { value: '', label: 'Любая оплата' },
+  { value: 'Paid', label: 'Оплачен' },
+  { value: 'Trial', label: 'Пробный' },
+  { value: 'Requested', label: 'Заявка' },
+  { value: 'NotPaid', label: 'Не оплачен' },
+  { value: 'Suspended', label: 'Приостановлен' },
+]
+const STATUS_OPTIONS = [
+  { value: '', label: 'Любой статус' },
+  { value: 'Working', label: 'Работает' },
+  { value: 'ActionRequired', label: 'Нужно действие' },
+  { value: 'Off', label: 'Выключен' },
+]
+
+function ConfirmPaymentModal({ channel, onClose }: { channel: AdminChannelDto; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [months, setMonths] = useState('1')
+  const [comment, setComment] = useState('')
+  const mut = useMutation({
+    mutationFn: () => adminNumbersApi.confirmPayment(channel.id, { months: Number(months), comment: comment.trim() || null }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin-channels'] })
+      void qc.invalidateQueries({ queryKey: ['admin-channel-summary'] })
+      void qc.invalidateQueries({ queryKey: ['admin-channel-card', channel.id] })
+      onClose()
+    },
+  })
+  return (
+    <Modal title="Подтвердить оплату" onClose={onClose} dismissible={!mut.isPending}>
+      <p className="text-sm text-ink-soft mb-4">
+        {TRANSPORT_LABELS[channel.transport]} · {channel.ownerName}. Срок продлевается от конца текущего оплаченного периода (или от сегодняшнего дня).
+      </p>
+      <div className="grid gap-4">
+        <Input label="На сколько месяцев (1–12)" type="number" min={1} max={12} value={months} onChange={(e) => setMonths(e.target.value)} />
+        <Input label="Комментарий (счёт, платёж)" value={comment} maxLength={500} onChange={(e) => setComment(e.target.value)} />
+      </div>
+      {mut.isError && <p className="text-sm text-danger mt-3">{adminErrorText(mut.error)}</p>}
+      <div className="flex justify-end gap-2 mt-5">
+        <Button variant="secondary" onClick={onClose} disabled={mut.isPending}>Отмена</Button>
+        <Button loading={mut.isPending} disabled={!(Number(months) >= 1 && Number(months) <= 12)} onClick={() => mut.mutate()}>Подтвердить</Button>
+      </div>
+    </Modal>
+  )
+}
+
+function ChannelCardModal({ id, onClose }: { id: string; onClose: () => void }) {
+  const { data, isLoading, isError } = useQuery({ queryKey: ['admin-channel-card', id], queryFn: () => adminNumbersApi.card(id) })
+  const card: AdminChannelCardDto | undefined = data
+  return (
+    <Modal title="Карточка номера" onClose={onClose}>
+      {isLoading && <div className="h-32 bg-cream-deep rounded-2xl animate-pulse" />}
+      {isError && <p className="text-sm text-danger">Не удалось загрузить карточку номера.</p>}
+      {card && (
+        <div className="grid gap-4 text-sm">
+          <div>
+            <p className="font-medium text-ink">{card.channel.ownerName} · {TRANSPORT_LABELS[card.channel.transport]}</p>
+            <p className="text-ink-soft">{card.channel.displayText}</p>
+            <p className="text-xs text-muted mt-1">
+              {card.channel.paymentText} · {card.companies.length} компаний аккаунта
+              {card.inn && <> · ИНН {card.inn}</>}
+              {card.providerServerCountry && <> · сервер провайдера: {card.providerServerCountry}</>}
+            </p>
+            {card.lastTest && <p className="text-xs text-muted mt-1">Проверка: {card.lastTest.text}</p>}
+            {card.replacedByChannelId && <p className="text-xs text-muted mt-1">Заменён другим номером</p>}
+            {card.replacesChannelId && <p className="text-xs text-muted mt-1">Заменяет прежний номер</p>}
+          </div>
+          <div>
+            <h3 className="font-semibold text-ink mb-1.5">Оплата и приостановки</h3>
+            <ul className="grid gap-1">
+              {card.paymentEvents.length === 0 && <li className="text-muted">Записей нет</li>}
+              {card.paymentEvents.map((e, i) => (
+                <li key={i} className="text-xs text-ink-soft">
+                  {fmtDate(e.occurredAtUtc)} · {e.kind === 'PaymentConfirmed' ? 'оплата подтверждена' : e.kind === 'OptionChanged' ? 'опция изменена' : e.kind === 'Suspended' ? 'приостановлен' : 'возобновлён'}
+                  {e.changedByName && <> · {e.changedByName}</>}
+                  {e.newPaidUntil && <> · до {fmtDate(e.newPaidUntil)}</>}
+                  {e.comment && <> · {e.comment}</>}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-semibold text-ink mb-1.5">Состояния номера</h3>
+            <ul className="grid gap-1">
+              {card.stateEvents.length === 0 && <li className="text-muted">Записей нет</li>}
+              {card.stateEvents.map((e, i) => (
+                <li key={i} className="text-xs text-ink-soft">
+                  {fmtDate(e.occurredAtUtc)} · {e.reasonText}{e.detail && <> · {e.detail}</>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
 }
 
 function ChannelsList() {
   const [page, setPage] = useState(1)
   const [transport, setTransport] = useState<NotificationTransport | ''>('')
+  const [displayStatus, setDisplayStatus] = useState('')
+  const [payment, setPayment] = useState('')
+  const [includeReplaced, setIncludeReplaced] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [confirming, setConfirming] = useState<AdminChannelDto | null>(null)
+  const [cardId, setCardId] = useState<string | null>(null)
   const qc = useQueryClient()
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-channels', page, transport],
-    queryFn: () => adminNotificationsApi.listChannels({ page, pageSize: 20, transport: transport || undefined }),
+    queryKey: ['admin-channels', page, transport, displayStatus, payment, includeReplaced],
+    queryFn: () =>
+      adminNumbersApi.list({
+        page, pageSize: 20, transport: transport || undefined,
+        displayStatus: (displayStatus || undefined) as never, payment: (payment || undefined) as never,
+        includeReplaced: includeReplaced || undefined,
+      }),
   })
 
+  const refresh = () => {
+    setActionError('')
+    void qc.invalidateQueries({ queryKey: ['admin-channels'] })
+    void qc.invalidateQueries({ queryKey: ['admin-channel-summary'] })
+  }
   const suspendMut = useMutation({
     mutationFn: (id: string) => adminNotificationsApi.suspend(id),
-    onSuccess: () => {
-      setActionError('')
-      qc.invalidateQueries({ queryKey: ['admin-channels'] })
-    },
+    onSuccess: refresh,
     onError: (err: unknown) => setActionError(getNotificationErrorMessage(err)),
   })
   const resumeMut = useMutation({
     mutationFn: (id: string) => adminNotificationsApi.resume(id),
-    onSuccess: () => {
-      setActionError('')
-      qc.invalidateQueries({ queryKey: ['admin-channels'] })
-    },
+    onSuccess: refresh,
     onError: (err: unknown) => setActionError(getNotificationErrorMessage(err)),
   })
 
@@ -95,86 +195,152 @@ function ChannelsList() {
       </div>
     )
 
+  const selectClass = 'rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink'
+  const resetPage = () => setPage(1)
+
   return (
     <div>
       {actionError && <p className="text-sm text-danger mb-3">{actionError}</p>}
 
-      {/* API_CONTRACT_CYCLE9.md §114.3 — new ?transport= filter on the admin channel list. */}
-      <div className="mb-3">
-        <select
-          aria-label="Канал"
-          value={transport}
-          onChange={(e) => {
-            setTransport(e.target.value as NotificationTransport | '')
-            setPage(1)
-          }}
-          className="rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink"
-        >
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <select aria-label="Канал" value={transport} onChange={(e) => { setTransport(e.target.value as NotificationTransport | ''); resetPage() }} className={selectClass}>
           {TRANSPORT_FILTER_OPTIONS.map((f) => (
-            <option key={f.value} value={f.value}>
-              {f.label}
-            </option>
+            <option key={f.value} value={f.value}>{f.label}</option>
           ))}
         </select>
+        <select aria-label="Статус" value={displayStatus} onChange={(e) => { setDisplayStatus(e.target.value); resetPage() }} className={selectClass}>
+          {STATUS_OPTIONS.map((f) => (<option key={f.value} value={f.value}>{f.label}</option>))}
+        </select>
+        <select aria-label="Оплата" value={payment} onChange={(e) => { setPayment(e.target.value); resetPage() }} className={selectClass}>
+          {PAYMENT_OPTIONS.map((f) => (<option key={f.value} value={f.value}>{f.label}</option>))}
+        </select>
+        <label className="flex items-center gap-2 text-sm text-ink-soft cursor-pointer">
+          <input type="checkbox" className="accent-gold" checked={includeReplaced} onChange={(e) => { setIncludeReplaced(e.target.checked); resetPage() }} />
+          Показать заменённые
+        </label>
       </div>
 
       <div className="grid gap-3">
-        {(data?.items ?? []).map((c) => (
-          <Card key={c.id} className="p-4 flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-medium text-ink">{c.ownerName}</span>
-                <span className="text-xs text-muted">{c.ownerPhoneMasked}</span>
-                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-cream-deep text-ink-soft">
-                  {TRANSPORT_LABELS[c.transport]}
-                </span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-cream-deep text-ink-soft">
-                  {STATE_LABEL_RU[c.state] ?? c.state}
-                </span>
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    c.paymentState === 'Paid' ? 'bg-success-bg text-success' : 'bg-warning-bg text-warning'
-                  }`}
-                >
-                  {c.paymentState === 'Paid' ? 'оплачен' : c.paymentState === 'Suspended' ? 'приостановлен' : 'не оплачен'}
-                </span>
+        {(data?.items ?? []).map((c) => {
+          const actions = c.availableActions ?? []
+          return (
+            <Card key={c.id} className="p-4 flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-ink">{c.ownerName}</span>
+                  <span className="text-xs text-muted">{c.ownerPhoneMasked}</span>
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-cream-deep text-ink-soft">{TRANSPORT_LABELS[c.transport]}</span>
+                  {c.displayStatus && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${DISPLAY_STATUS_CLASS[c.displayStatus]}`}>{DISPLAY_STATUS_LABEL[c.displayStatus]}</span>
+                  )}
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-cream-deep text-ink-soft">{c.paymentText}</span>
+                </div>
+                <p className="text-sm text-ink-soft mt-0.5">{c.displayText}</p>
+                <p className="text-xs text-muted mt-0.5">
+                  {c.companyCount} компаний
+                  {c.requestedAt && <> · заявка от {fmtDate(c.requestedAt)}</>}
+                  {c.idleSince && <> · простой с {fmtDate(c.idleSince)}</>}
+                  {/* §50.2 — INN is visible only to the owner and to SuperAdmin. */}
+                  {c.inn && <> · ИНН {c.inn}</>}
+                </p>
               </div>
-              <p className="text-xs text-muted mt-0.5">
-                {c.companyCount} компаний · оплачен до {fmtDate(c.paidUntil)}
-                {c.requestedAt && <> · заявка от {fmtDate(c.requestedAt)}</>}
-                {c.idleSince && <> · простой с {fmtDate(c.idleSince)}</>}
-                {/* §50.2 — INN is visible only to the owner and to SuperAdmin. */}
-                {c.inn && <> · ИНН {c.inn}</>}
-              </p>
-            </div>
-            <div className="flex gap-2 shrink-0">
-              {c.paymentState === 'Paid' ? (
-                <Button size="sm" variant="danger" loading={suspendMut.isPending} onClick={() => suspendMut.mutate(c.id)}>
-                  Приостановить
-                </Button>
-              ) : c.paymentState === 'Suspended' ? (
-                <Button size="sm" variant="secondary" loading={resumeMut.isPending} onClick={() => resumeMut.mutate(c.id)}>
-                  Возобновить
-                </Button>
-              ) : null}
-            </div>
-          </Card>
-        ))}
+              <div className="flex gap-2 shrink-0 flex-wrap">
+                <Button size="sm" variant="ghost" onClick={() => setCardId(c.id)}>Карточка</Button>
+                {actions.includes('ConfirmPayment') && (
+                  <Button size="sm" onClick={() => setConfirming(c)}>Подтвердить оплату</Button>
+                )}
+                {actions.includes('Suspend') && (
+                  <Button size="sm" variant="danger" loading={suspendMut.isPending} onClick={() => suspendMut.mutate(c.id)}>Приостановить</Button>
+                )}
+                {actions.includes('Resume') && (
+                  <Button size="sm" variant="secondary" loading={resumeMut.isPending} onClick={() => resumeMut.mutate(c.id)}>Возобновить</Button>
+                )}
+              </div>
+            </Card>
+          )
+        })}
         {data?.items.length === 0 && (
           <Card className="p-10 text-center text-muted">
             <Icon name="megaphone" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
-            <p>Каналов пока нет</p>
+            <p>Номеров пока нет</p>
           </Card>
         )}
       </div>
-      {data && (
-        <Pagination page={data.page} pageSize={data.pageSize} total={data.total} hasNext={data.hasNext} onPageChange={setPage} />
+      {data && data.total != null && data.page != null && data.pageSize != null && (
+        <Pagination page={data.page} pageSize={data.pageSize} total={data.total} hasNext={data.page * data.pageSize < data.total} onPageChange={setPage} />
       )}
+      {confirming && <ConfirmPaymentModal channel={confirming} onClose={() => setConfirming(null)} />}
+      {cardId && <ChannelCardModal id={cardId} onClose={() => setCardId(null)} />}
     </div>
   )
 }
 
-// ── Platform settings (price, idle days) ──────────────────────────────────────
+// ── Messenger availability and the stop-cock (cycle 40, §40.12–§40.13) ───────
+
+function MessengersCard() {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery({ queryKey: ['admin-platform-settings'], queryFn: adminNotificationsApi.getSettings })
+  const mut = useMutation({
+    mutationFn: (patch: { whatsAppOptionOpen?: boolean; maxOptionOpen?: boolean; customerMessagingEnabled?: boolean }) =>
+      // Only the switch (null = "do not change" for everything else): sending the trial fields back would make the server re-check them against the current terms text
+      // — and the stop-cock of messaging must not fail on an unrelated validation during an incident.
+      adminNotificationsApi.updateSettings({
+        channelPricePerMonth: data?.channelPricePerMonth ?? null,
+        channelIdleDays: data?.channelIdleDays ?? 3,
+        pricingPublicEnabled: data?.pricingPublicEnabled ?? false,
+        pricingPublicBlockedReason: null,
+        trialDurationDays: null,
+        trialMailingWindowDays: null,
+        trialWarningThresholdsDays: null,
+        ...patch,
+      }),
+    onSuccess: (res) => {
+      qc.setQueryData(['admin-platform-settings'], res)
+      void qc.invalidateQueries({ queryKey: ['admin-channels'] })
+    },
+  })
+  if (isLoading || !data) return <div className="h-32 bg-cream-deep rounded-2xl animate-pulse mb-5" />
+
+  const rows: { key: 'whatsAppOptionOpen' | 'maxOptionOpen' | 'customerMessagingEnabled'; label: string; hint: string; on: boolean }[] = [
+    { key: 'whatsAppOptionOpen', label: 'WhatsApp — открыто для владельцев', on: !!data.whatsAppOptionOpen,
+      hint: 'Закрытый мессенджер не продаётся, не показывается в мастере и ценах и не выдаётся в пробном периоде; уже оплаченные номера работают до конца срока.' },
+    { key: 'maxOptionOpen', label: 'MAX — открыто для владельцев', on: !!data.maxOptionOpen,
+      hint: 'То же правило для MAX. Цена и опубликованная оферта задаются отдельно: без них опция не продаётся и у открытого мессенджера.' },
+    { key: 'customerMessagingEnabled', label: 'Рассылки клиентам в мессенджеры', on: data.customerMessagingEnabled !== false,
+      hint: 'Общий стоп-кран. Выключен — сообщения не ставятся в очередь, ожидающие не уходят, владельцы видят «временно отключены платформой»; номера не удаляются.' },
+  ]
+
+  return (
+    <Card className="p-6 mb-5">
+      <h2 className="text-base font-semibold text-ink mb-1">Подключение мессенджеров</h2>
+      <p className="text-sm text-muted mb-4">Переключатели действуют сразу, без релиза, на новые заявки и новые сообщения.</p>
+      <div className="grid gap-4">
+        {rows.map((r) => (
+          <div key={r.key} className="flex items-start justify-between gap-4">
+            <div>
+              <label htmlFor={`sw-${r.key}`} className="text-sm font-medium text-ink block mb-0.5">{r.label}</label>
+              <p className="text-xs text-muted max-w-md">{r.hint}</p>
+            </div>
+            <button
+              id={`sw-${r.key}`}
+              type="button"
+              role="switch"
+              aria-checked={r.on}
+              disabled={mut.isPending}
+              onClick={() => mut.mutate({ [r.key]: !r.on })}
+              className={`relative shrink-0 w-11 h-6 rounded-full transition-colors disabled:opacity-40 ${r.on ? 'bg-gold-dark' : 'bg-cream-deep border border-line-strong'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${r.on ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+        ))}
+      </div>
+      {mut.isError && <p className="text-sm text-danger mt-3">{getNotificationErrorMessage(mut.error)}</p>}
+    </Card>
+  )
+}
+
+// ── Platform settings (idle days, trial, public prices) ──────────────────────────────────────
 
 // Copy for pricingPublicBlockedReason (API_CONTRACT_CYCLE11.md §114.1) — informational only, shown
 // next to the toggle before the operator even tries to switch it on.
@@ -187,7 +353,6 @@ const PRICING_BLOCKED_LABEL: Record<PricingPublicBlockedReason, string> = {
 function PlatformSettingsCard() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['admin-platform-settings'], queryFn: adminNotificationsApi.getSettings })
-  const [price, setPrice] = useState('')
   const [idleDays, setIdleDays] = useState('3')
   // Local toggle state so a rejected PUT (409) can be visibly reverted rather than left stuck
   // "on" while the server never applied it (API_CONTRACT_CYCLE11.md §119 п. 1).
@@ -210,7 +375,6 @@ function PlatformSettingsCard() {
 
   useEffect(() => {
     if (!data) return
-    setPrice(data.channelPricePerMonth != null ? String(data.channelPricePerMonth) : '')
     setIdleDays(String(data.channelIdleDays))
     setPricingPublicEnabled(data.pricingPublicEnabled)
     if (data.trialDurationDays != null) setTrialDurationDays(String(data.trialDurationDays))
@@ -233,11 +397,7 @@ function PlatformSettingsCard() {
 
   const mut = useMutation({
     mutationFn: (nextPricingPublicEnabled: boolean) => {
-      const parsedPrice = price.trim() === '' ? null : Number(price)
       const parsedIdleDays = Number(idleDays)
-      if (parsedPrice !== null && Number.isNaN(parsedPrice)) {
-        throw new Error('Некорректная цена опции «канал» — исправьте поле перед сохранением.')
-      }
       if (Number.isNaN(parsedIdleDays)) {
         throw new Error('Некорректный срок простоя — исправьте поле перед сохранением.')
       }
@@ -287,7 +447,8 @@ function PlatformSettingsCard() {
       }
 
       return adminNotificationsApi.updateSettings({
-        channelPricePerMonth: parsedPrice,
+        // Cycle 40 (§40.13): the retired field is accepted and IGNORED by the server; it is sent back as read.
+        channelPricePerMonth: data?.channelPricePerMonth ?? null,
         channelIdleDays: parsedIdleDays,
         pricingPublicEnabled: nextPricingPublicEnabled,
         pricingPublicBlockedReason: data?.pricingPublicBlockedReason ?? null,
@@ -315,19 +476,11 @@ function PlatformSettingsCard() {
 
   return (
     <Card className="p-6 mb-5">
-      <h2 className="text-base font-semibold text-ink mb-1">Параметры опции «канал»</h2>
+      <h2 className="text-base font-semibold text-ink mb-1">Параметры номеров</h2>
       <p className="text-sm text-muted mb-4">
-        Пока цена не задана, подключение канала не предлагается владельцам (не показывается с нулём).
+        Цена подключения мессенджера — это цена его опции (вкладка «Биллинг-аккаунты» и каталог опций); без цены и опубликованной оферты опция не продаётся.
       </p>
       <div className="grid sm:grid-cols-2 gap-4">
-        <Input
-          label="Цена опции «канал» в месяц (₽)"
-          type="number"
-          min={0}
-          placeholder="не задана"
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-        />
         <Input
           label="Срок простоя до отключения номера (дней)"
           type="number"
@@ -441,6 +594,7 @@ export function NotificationsAdminTab() {
   return (
     <div>
       <SummaryRow />
+      <MessengersCard />
       <PlatformSettingsCard />
       <ChannelsList />
     </div>

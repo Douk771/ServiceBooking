@@ -21,6 +21,9 @@ public class SubscriptionPlanConfig
     // Whether accounts on this plan may buy the WhatsApp notification channel option (cycle 4, Q1: off
     // by default on every plan including new ones — a superadmin turns it on per plan deliberately, see
     // ARCHITECTURE_CYCLE4.md §33 and §38.5 p.1).
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.4): NOT READ any more — what is paid is decided per transport from the account's option rows
+    // (ChannelOptionFunding), never from a tariff flag. The column and the property stay (a drop is a separate cycle); a new read is
+    // forbidden by AllowNotificationChannelReadGuardTests.
     public bool AllowNotificationChannel { get; set; } = false;
     // Client-note photo storage cap in megabytes; null = unlimited (US-24). Enforced against the sum of
     // ClientNotePhoto.SizeBytes for the company, not against this field's unit directly — see

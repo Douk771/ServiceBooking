@@ -11,7 +11,8 @@ namespace ServiceBooking.API.Services.Stays;
 /// API_CONTRACT_CYCLE37.md §37.22.4, §37.22.6 — the public house page and the calendar of nights. Neither ever contains the requisites for payment (Т37-04), a guest's
 /// name or phone, or the reason a night is taken: only the state of the night.
 /// </summary>
-public class StaysHousePageService(AppDbContext db, StaysCompanyService companyService, IStaysClock clock)
+public class StaysHousePageService(
+    AppDbContext db, StaysCompanyService companyService, IStaysClock clock, ServiceBooking.API.Services.Notifications.CustomerMessagingOfferService messagingOffer)
 {
     public const string BadPeriodText = "Неверный период календаря";
 
@@ -47,7 +48,8 @@ public class StaysHousePageService(AppDbContext db, StaysCompanyService companyS
                 StaysTexts.CancellationSummary(settings.CancellationPolicy)),
             HousePricing.PriceFrom(house.PriceMode, house.ConstantPriceRub, periods, today),
             available && gate.Accepting, available && gate.Accepting ? null : StaysTexts.NotAcceptingGuest,
-            available, available ? null : StaysTexts.HouseUnavailable, today, company.TimeZoneId);
+            available, available ? null : StaysTexts.HouseUnavailable, today, company.TimeZoneId,
+            Messenger: await messagingOffer.ForCompanyAsync(company, ct: ct));
     }
 
     public async Task<(ActionResult? Error, HouseCalendarDto? Calendar)> CalendarAsync(Guid houseId, string? fromRaw, string? toRaw, CancellationToken ct)

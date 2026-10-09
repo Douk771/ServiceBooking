@@ -63,7 +63,9 @@ public record PublicHouseDto(
     bool DogsForbidden, int DogFeeRub, bool HasCot, int CotFeeRub, List<HouseAmenityDto> Amenities, string? Address,
     string? YandexMapsUrl, string? TwoGisUrl, PublicRegistryDto? Registry, PublicCompanyRefDto Company, ProviderPublicDto? Provider,
     PublicStayRulesDto Rules, int? PriceFromRub, bool AcceptingBookings, string? NotAcceptingText, bool Available,
-    string? NotAvailableText, DateOnly Today, string TimeZoneId, List<ServiceLinkDto>? ServicesForStay = null);
+    string? NotAvailableText, DateOnly Today, string TimeZoneId, List<ServiceLinkDto>? ServicesForStay = null,
+    // ARCHITECTURE_CYCLE40.md §40.10 — do messenger messages work for this company's guests (the booking-form tick).
+    ServiceBooking.API.Services.Notifications.CustomerMessagingOfferDto? Messenger = null);
 
 public record CalendarDayDto(DateOnly Date, CalendarDayState State, int? PriceRub);
 
@@ -169,7 +171,9 @@ public record StaysCompanyManageDto(
 
 public record StaysNotificationSettingsDto(
     bool StaffPushEnabled, bool StaffMaxEnabled, bool GuestWebPushEnabled, bool GuestMessengerEnabled, bool MessengerAvailable,
-    string? DeliveryMode, string? PriorityTransport);
+    string? DeliveryMode, string? PriorityTransport,
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.6.4): do guest messages go out at all, is the delivery choice worth showing, the broken-priority warning.
+    bool MessagingActive = false, bool DeliveryChoiceVisible = false, string? PriorityWarning = null);
 
 public record StaysNotificationSettingsInput(
     bool StaffPushEnabled, bool StaffMaxEnabled, bool GuestWebPushEnabled, bool GuestMessengerEnabled, string? DeliveryMode, string? PriorityTransport);

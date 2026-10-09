@@ -64,6 +64,7 @@ internal static class BookingEndpointHelpers
             totalDurationMinutes, items,
             b.BookingNoticeVersion, b.BookedForOther, b.GuardianConfirmedAtUtc, historyEventCount,
             clientRescheduleAllowed, clientRescheduleMinHours, companyBookingHorizonDays, clientCancelAllowed,
-            clientCancelMinHours, b.ShowcaseKind != ShowcaseBookingKind.None);
+            clientCancelMinHours, b.ShowcaseKind != ShowcaseBookingKind.None,
+            b.NotifyByMessenger, b.MessengerConsentAtUtc, b.MessengerConsentByUserId is not null);
     }
 }
