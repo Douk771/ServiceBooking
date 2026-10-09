@@ -127,6 +127,9 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceSessionAddService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceCatalogService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ArrivalReminderService>();
+    // Cycle 42 (BE-42-3): positions writer with the alcohol/tobacco journal, the tariff check of publishing a «Бани» resource.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Slots.ServiceItemWriter>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Baths.BathsPublishGate>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceDayService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceScheduleWriter>();
 
