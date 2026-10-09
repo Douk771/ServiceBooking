@@ -90,7 +90,7 @@ public class StaysTrialService(
         var isBaths = vertical.Kind == CompanyKind.Baths;
         var staysSub = isBaths ? null : await db.StaysSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == accountId, ct);
         var bathsSub = isBaths ? await db.BathsSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == accountId, ct) : null;
-        var current = isBaths ? StaysPlanResolver.Resolve(bathsSub, now) : StaysPlanResolver.Resolve(staysSub, now);
+        var current = isBaths ? StaysPlanResolver.ResolveBaths(bathsSub, now) : StaysPlanResolver.Resolve(staysSub, now);
         if (current.HasActivePlan && current.IsTrial) return Refuse("TrialAlreadyActive", StaysTrialTerms.AlreadyActive);
         if (current.HasActivePlan) return Refuse("AlreadyOnPaidPlan", StaysTrialTerms.AlreadyOnPaidPlan);
         if (await db.TrialGrants.AnyAsync(g => g.BillingAccountId == accountId && g.Line == vertical.Kind && g.Source != TrialGrantSource.SuperAdminOverride, ct))

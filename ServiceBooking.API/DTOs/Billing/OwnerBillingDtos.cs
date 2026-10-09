@@ -34,7 +34,12 @@ public record OwnerSubscriptionDto(
     string Line = nameof(Core.Enums.CompanyKind.Services), OrdersUsageDto? Orders = null,
     IReadOnlyList<AvailablePlanDto>? AvailablePlans = null,
     // Cycle 37 (API_CONTRACT_CYCLE37.md §37.21.4) — the «Дома» block; set only when Line = Stays.
-    StaysSubscriptionBlockDto? Stays = null);
+    StaysSubscriptionBlockDto? Stays = null,
+    // Cycle 42 (API_CONTRACT_CYCLE42.md §42.5.5) — the «Бани» block; set only when Line = Baths.
+    BathsSubscriptionBlockDto? Baths = null);
+
+/// <summary>Published resources against the limit of the «Бани» tariff, the trial and the banner level (the same words as BathsPlanSummaryDto).</summary>
+public record BathsSubscriptionBlockDto(int ResourcesPublished, int? MaxResources, bool IsTrial, DateTime? TrialEndsAtUtc, string WarningLevel, string? Text);
 
 /// <summary>Published houses against the limit of the «Дома» tariff, the trial and the banner level (the same words as StaysPlanSummaryDto).</summary>
 public record StaysSubscriptionBlockDto(int HousesPublished, int? MaxHouses, bool IsTrial, DateTime? TrialEndsAtUtc, string WarningLevel, string? Text);
@@ -49,7 +54,8 @@ public record OrdersUsageDto(
 /// "no limit" for a «Дома» plan; for the other lines the field is OMITTED (the schema of cycle 24 is strict about unknown properties).</summary>
 public record AvailablePlanDto(
     Guid PlanId, string Name, decimal PricePerMonth, string? Description, IReadOnlyList<string> Highlights, string LimitsText,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? MaxHouses = null);
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? MaxHouses = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? MaxResources = null);
 
 public record RejectedRequestDto(string Reason, DateTime RejectedAtUtc);
 

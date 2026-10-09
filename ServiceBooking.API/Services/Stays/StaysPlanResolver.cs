@@ -29,7 +29,7 @@ public class StaysPlanResolver(AppDbContext db)
     public static StaysPlan Resolve(StaysSubscription? sub, DateTime nowUtc) =>
         Resolve(SlotVerticals.Stays, sub?.PlanConfig, sub is null ? null : (sub.IsActive, sub.PaidUntil), nowUtc);
 
-    public static StaysPlan Resolve(BathsSubscription? sub, DateTime nowUtc) =>
+    public static StaysPlan ResolveBaths(BathsSubscription? sub, DateTime nowUtc) =>
         Resolve(SlotVerticals.Baths, sub?.PlanConfig, sub is null ? null : (sub.IsActive, sub.PaidUntil), nowUtc);
 
     /// <summary>The subscription row of the vertical's table, resolved: <c>plan.Line</c> must be the vertical's, the trial is the vertical's trial plan.</summary>
@@ -51,7 +51,7 @@ public class StaysPlanResolver(AppDbContext db)
         if (vertical.Kind == CompanyKind.Baths)
         {
             var sub = await db.BathsSubscriptions.AsNoTracking().Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == accountId, ct);
-            return Resolve(sub, now);
+            return ResolveBaths(sub, now);
         }
         var staysSub = await db.StaysSubscriptions.AsNoTracking().Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == accountId, ct);
         return Resolve(staysSub, now);
