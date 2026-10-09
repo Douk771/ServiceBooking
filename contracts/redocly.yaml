@@ -39,6 +39,8 @@
 #     ../contracts/cycle35/openapi.yaml   (цикл 35, ARCHITECTURE_CYCLE35 §35.15)
 #     ../contracts/cycle37/openapi.yaml   (цикл 37, ARCHITECTURE_CYCLE37 §37.15.4)
 #     ../contracts/cycle38/openapi.yaml   (цикл 38, ARCHITECTURE_CYCLE38 §38.13 T-38-03)
+#     ../contracts/cycle39/openapi.yaml   (цикл 39, ARCHITECTURE_CYCLE39)
+#     ../contracts/cycle42/openapi.yaml   (цикл 42, ARCHITECTURE_CYCLE42 §42.13.3)
 
 extends:
   - minimal

@@ -218,7 +218,8 @@ jobs:
             ../contracts/cycle35/openapi.yaml \
             ../contracts/cycle37/openapi.yaml \
             ../contracts/cycle38/openapi.yaml \
-            ../contracts/cycle39/openapi.yaml
+            ../contracts/cycle39/openapi.yaml \
+            ../contracts/cycle42/openapi.yaml
 
       # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
       # (e.g. @redocly/cli's own dependency tree) is explicitly out of scope for this threshold so the
@@ -240,6 +241,10 @@ jobs:
       # ARCHITECTURE_CYCLE37.md §37.15.4 — dom.ezbook.ru is a third app in the same package with its own tsconfig.
       - name: Type-check dom
         run: npx tsc --noEmit -p tsconfig.dom.json
+
+      # ARCHITECTURE_CYCLE42.md §42.13.3 — bani.ezbook.ru is a fourth app in the same package with its own tsconfig.
+      - name: Type-check bani
+        run: npx tsc --noEmit -p tsconfig.bani.json
 
       - name: Type-check node (shots)
         run: npm run typecheck:node
@@ -265,12 +270,13 @@ jobs:
           npm run types:api:cycle37
           npm run types:api:cycle38
           npm run types:api:cycle39
-          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts src/types/api-cycle24.generated.ts src/types/api-cycle25.generated.ts src/types/api-cycle26.generated.ts src/types/api-cycle29.generated.ts src/types/api-cycle31.generated.ts src/types/api-cycle32.generated.ts src/types/api-cycle35.generated.ts src/types/api-cycle37.generated.ts src/types/api-cycle38.generated.ts src/types/api-cycle39.generated.ts
+          npm run types:api:cycle42
+          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts src/types/api-cycle24.generated.ts src/types/api-cycle25.generated.ts src/types/api-cycle26.generated.ts src/types/api-cycle29.generated.ts src/types/api-cycle31.generated.ts src/types/api-cycle32.generated.ts src/types/api-cycle35.generated.ts src/types/api-cycle37.generated.ts src/types/api-cycle38.generated.ts src/types/api-cycle39.generated.ts src/types/api-cycle42.generated.ts
 
-      - name: Contract JSON must match cycle31, cycle32, cycle35, cycle37, cycle38 and cycle39 yaml
+      - name: Contract JSON must match cycle31, cycle32, cycle35, cycle37, cycle38, cycle39 and cycle42 yaml
         run: |
           npm run contracts:json
-          git diff --exit-code -- ../contracts/cycle31/openapi.json ../contracts/cycle32/openapi.json ../contracts/cycle35/openapi.json ../contracts/cycle37/openapi.json ../contracts/cycle38/openapi.json ../contracts/cycle39/openapi.json
+          git diff --exit-code -- ../contracts/cycle31/openapi.json ../contracts/cycle32/openapi.json ../contracts/cycle35/openapi.json ../contracts/cycle37/openapi.json ../contracts/cycle38/openapi.json ../contracts/cycle39/openapi.json ../contracts/cycle42/openapi.json
 
       # Цикл 17: тексты правовых уведомлений пишет legal-counsel, а каркас кода появляется
       # раньше текста. Заглушка видна владельцу на экране «Ваша подписка», поэтому её нельзя
@@ -289,7 +295,7 @@ jobs:
       # ARCHITECTURE_CYCLE24.md §463.2 п.1 — goods has its own worker (goods/public/sw.js), the same ban applies.
       - name: Service worker must not intercept fetch/cache (R11)
         run: |
-          for f in public/sw.js goods/public/sw.js dom/public/sw.js; do
+          for f in public/sw.js goods/public/sw.js dom/public/sw.js bani/public/sw.js; do
             if grep -nE "addEventListener\s*\(\s*['\"\`]fetch|\bcaches\b|CacheStorage" "$f"; then
               echo "$f must never register a fetch handler or use the Cache API (ARCHITECTURE_CYCLE9.md §105.9, R11)" >&2
               exit 1
@@ -358,6 +364,15 @@ jobs:
           SMOKE_PROFILE: dom
           PORT: "4175"
 
+      # ARCHITECTURE_CYCLE42.md §42.13.3 — the bani build (fourth site) in dist/__bani: index.html, icons, manifest, sw.js.
+      - name: Smoke test (bani build in dist/__bani)
+        working-directory: .
+        run: bash deploy/ci/smoke-frontend.sh
+        env:
+          DIST_DIR: frontend/dist/__bani
+          SMOKE_PROFILE: bani
+          PORT: "4176"
+
       # Цикл 39 (S1): токены /b/, /s/ и API public/<token> не должны попадать в access log dom.
       - name: Check dom nginx log masking
         working-directory: .
@@ -365,6 +380,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends nginx-light >/dev/null
           sudo systemctl stop nginx || true
           PATH=/usr/sbin:$PATH bash deploy/nginx/test-dom-masking.sh
+
+      # Цикл 42 (C39-6): то же для bani — токены /b/, /s/, API baths|stays public/<token>.
+      - name: Check bani nginx log masking
+        working-directory: .
+        run: |
+          PATH=/usr/sbin:$PATH bash deploy/nginx/test-bani-masking.sh
 
       # Frontend build moves off the production server entirely (T-D3, US-44, ARCHITECTURE.md §12.3):
       # deploy/deploy.sh downloads this artifact and ships it to the VPS instead of running `npm ci &&

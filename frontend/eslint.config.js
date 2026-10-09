@@ -14,7 +14,7 @@ import { SHARED_EZBOOK_PAGES, appAllowedPagesRegex } from './shared-sources.js'
 // is last in the array so it can turn off any formatting rule that would otherwise fight Prettier.
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'dist-goods/**', 'dist-dom/**', 'coverage/**', 'node_modules/**'],
+    ignores: ['dist/**', 'dist-goods/**', 'dist-dom/**', 'dist-bani/**', 'coverage/**', 'node_modules/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -63,6 +63,7 @@ export default tseslint.config(
               message: `goods may import only these ezbook pages: ${SHARED_EZBOOK_PAGES.join(', ')} (single list: shared-sources.js, ARCHITECTURE_CYCLE31.md §31.7, ARCHITECTURE_CYCLE37.md §37.14.1). Shared components live in src/components/.`,
             },
             { regex: '(^@dom/)|(/dom/)|(^dom/)', message: 'goods must not import from dom/ (ARCHITECTURE_CYCLE37.md §37.14.4).' },
+            { regex: '(^@bani/)|(/bani/)|(^bani/)', message: 'goods must not import from bani/ (ARCHITECTURE_CYCLE42.md §42.13.2).' },
           ],
         },
       ],
@@ -82,6 +83,27 @@ export default tseslint.config(
               message: `dom may import only these ezbook pages: ${SHARED_EZBOOK_PAGES.join(', ')} (single list: shared-sources.js, ARCHITECTURE_CYCLE37.md §37.14.4). Shared components live in src/components/.`,
             },
             { regex: '(^@goods/)|(/goods/)|(^goods/)', message: 'dom must not import from goods/ (ARCHITECTURE_CYCLE37.md §37.14.4).' },
+            { regex: '(^@bani/)|(/bani/)|(^bani/)', message: 'dom must not import from bani/ (ARCHITECTURE_CYCLE42.md §42.13.2).' },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // ARCHITECTURE_CYCLE42.md §42.13.2 — bani.ezbook.ru: the same boundaries as dom; goods and dom are off limits.
+    files: ['bani/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            { group: ['@/App', '**/src/App', '../../src/App', '../src/App'], message: 'bani must not import the ezbook app shell.' },
+            {
+              regex: appAllowedPagesRegex(),
+              message: `bani may import only these ezbook pages: ${SHARED_EZBOOK_PAGES.join(', ')} (single list: shared-sources.js, ARCHITECTURE_CYCLE42.md §42.13.2). Shared components live in src/components/.`,
+            },
+            { regex: '(^@goods/)|(/goods/)|(^goods/)', message: 'bani must not import from goods/ (ARCHITECTURE_CYCLE42.md §42.13.2).' },
+            { regex: '(^@dom/)|(/dom/)|(^dom/)', message: 'bani must not import from dom/ (ARCHITECTURE_CYCLE42.md §42.13.2).' },
           ],
         },
       ],
@@ -96,6 +118,7 @@ export default tseslint.config(
           patterns: [
             { regex: '(^@goods/)|(/goods/)|(^goods/)', message: 'ezbook (src/) must not import from goods/.' },
             { regex: '(^@dom/)|(/dom/)|(^dom/)', message: 'ezbook (src/) must not import from dom/ (ARCHITECTURE_CYCLE37.md §37.14.4).' },
+            { regex: '(^@bani/)|(/bani/)|(^bani/)', message: 'ezbook (src/) must not import from bani/ (ARCHITECTURE_CYCLE42.md §42.13.2).' },
           ],
         },
       ],
@@ -113,7 +136,7 @@ export default tseslint.config(
   {
     // ARCHITECTURE_CYCLE9.md §105.9 — plain JS served verbatim from public/, not built by Vite, so it
     // needs the service-worker global scope (`self`, `caches`, `clients`) instead of the browser one.
-    files: ['public/sw.js', 'goods/public/sw.js', 'dom/public/sw.js'], // goods: ARCHITECTURE_CYCLE24.md §454; dom: ARCHITECTURE_CYCLE37.md §37.14.6
+    files: ['public/sw.js', 'goods/public/sw.js', 'dom/public/sw.js', 'bani/public/sw.js'], // goods: ARCHITECTURE_CYCLE24.md §454; dom: ARCHITECTURE_CYCLE37.md §37.14.6
     languageOptions: { globals: globals.serviceworker },
   },
   prettierConfig,

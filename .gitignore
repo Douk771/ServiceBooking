@@ -24,6 +24,7 @@ TestResults/
 frontend/node_modules/
 frontend/goods/node_modules/
 frontend/dom/node_modules/
+frontend/bani/node_modules/
 frontend/dist/
 frontend/.env
 frontend/.env.local
@@ -80,6 +81,7 @@ ServiceBooking.API/logs/
 .schemathesis/
 frontend/dist-goods/
 frontend/dist-dom/
+frontend/dist-bani/
 
 # Демо-стенд (цикл 28, DEPLOY.md §25): локальные секреты и данные машины
 .env.demo

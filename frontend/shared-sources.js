@@ -18,7 +18,7 @@ export const MARKUP_FREE_EZBOOK_DIRS = ['api', 'store', 'types'] // under src/, 
 // Individual src/ files outside the dirs above (found by the guard on its first run, §31.7.3 item 5).
 export const SHARED_EZBOOK_FILES = ['queryClient.ts', 'pages/billingPageHelpers.ts']
 
-export const SECONDARY_APPS = ['goods', 'dom']
+export const SECONDARY_APPS = ['goods', 'dom', 'bani']
 
 function assertApp(app) {
   if (!SECONDARY_APPS.includes(app)) throw new Error(`unknown app "${app}" (expected one of ${SECONDARY_APPS.join(', ')})`)

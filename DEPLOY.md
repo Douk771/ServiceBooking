@@ -2555,6 +2555,49 @@ DNS, vhost, certbot и консоль Яндекса делает человек
    - **ezbook.ru и goods.ezbook.ru:** главные выглядят так же, как до выката (шаблон менялся, но их шапка — нет).
 3. **Откат** — обычный `deploy/rollback.sh`: данных и схемы цикл не трогает.
 
+## 31. bani.ezbook.ru — четвёртый сайт, «Бани» (цикл 42, ARCHITECTURE_CYCLE42.md §42.13; SPEC_CYCLE42_BANI.md)
+
+**Статус.** Подготовлено в репозитории (DO-42-01…03); на машину ничего не выкатывалось. Ручные шаги ниже — за заказчиком (sudo, регистратор, консоль Яндекса);
+**агенты DNS, vhost, certbot и консоль капчи не трогают.** Номер раздела — следующий свободный на момент цикла 42; если цикл 40 займёт §31 раньше, берётся следующий (R42-10).
+
+**Что уже готово в репозитории.**
+- Сборка: `npm run build:release` кладёт bani в `frontend/dist/__bani` (рядом с `__goods` и `__dom`); релиз и откат переключают все сайты одним symlink `current`.
+- `deploy/nginx/bani.ezbook.conf` — vhost: корень `current/__bani`, маскирование токена в логе `bani.access.log` с первого коммита (`/s/<token>`, `/b/<token>`,
+  `/api/baths/service-orders/public/<token>`, `/api/stays/service-orders/public/<token>`, `/api/stays/bookings/public/<token>` и Referer), `client_max_body_size 11M`,
+  `X-Robots-Tag: noindex, nofollow`, вебхуки и отписка — 404, `sw.js` и манифест без кеша. Проверка: `deploy/nginx/test-bani-masking.sh` (идёт и в CI).
+- `ezbook.conf` — `location ^~ /__bani/ { return 404; }`; `demo.visit.ezbook.conf` — `/__bani/` и `/__dom/` → 404; `dom.ezbook.conf` — маска дополнена `api/baths/service-orders/public`.
+- CI: `redocly lint` и `npm run types:api:cycle42` с `git diff --exit-code`, `openapi.json` cycle42, `tsc -p tsconfig.bani.json`, запрет `fetch`/Cache API в `bani/public/sw.js`,
+  смоук `SMOKE_PROFILE=bani` по `dist/__bani` (включая `noindex` в index.html), проверка маскирования bani.
+- `.env.dev.example`: `SB_BANI_WEB_PORT=5176`, подсказка `PublicSites__BathsBaseUrl`. В бою `PublicSites:BathsBaseUrl` по умолчанию `https://bani.ezbook.ru` — задавать только для стенда с другим адресом.
+- Смоук bani в `deploy/deploy-remote.sh` (`BANI_HOST`, `BANI_SMOKE`, `BANI_VHOST`) добавляется задачей DO-42-04, не этой.
+
+**⚠️ Миграция `Cycle42Baths` применится при ЛЮБОМ следующем деплое** ветки с циклом 42 на эту машину (стенд = бой), независимо от того, поднят ли vhost bani.
+Up — только добавления (вид компании «Бани», таблица подписок, вместимость и число гостей, настройки напоминания, тарифы «Бань»).
+
+**Порядок первого выката (когда заказчик решит).**
+1. **DNS.** A-запись `bani.ezbook.ru` → та же машина, что у `ezbook.ru`, `goods.ezbook.ru` и `dom.ezbook.ru`.
+2. **vhost.** `sudo cp deploy/nginx/bani.ezbook.conf /etc/nginx/sites-available/`, `ln -s` в `sites-enabled`, `sudo nginx -t && sudo systemctl reload nginx`. Копирование поверх установленного
+   файла **сносит 443-блок certbot**, поэтому сразу после — `sudo certbot --nginx -d bani.ezbook.ru` (отдельный сертификат). Имена `map` и `log_format` в vhost уникальны (`bani_*`) — иначе nginx не стартует.
+3. **Остальные vhost.** Обновить на машине `ezbook.conf` (строка `/__bani/`), `demo.visit.ezbook.conf` (`/__bani/`, `/__dom/`) и `dom.ezbook.conf` (маска `api/baths/service-orders/public`) —
+   вручную, не затирая блоки certbot, затем `nginx -t` и reload. Без правки `dom.ezbook.conf` токен бани останется в `dom.access.log` при запросе не на тот хост.
+4. **SmartCaptcha.** В консоли Yandex Cloud добавить домен `bani.ezbook.ru` в разрешённые домены виджета (без этого форма брони для анонима не получит токен). Ключ клиента — тот же `VITE_SMARTCAPTCHA_SITEKEY`.
+5. **Деплой** обычным путём; сборка ляжет в `current/__bani`.
+6. **Смоук.** `curl -s https://bani.ezbook.ru/ | grep 'id="root"'`, `curl -s -o /dev/null -w '%{http_code}' https://bani.ezbook.ru/api/health/ready` (200),
+   `curl -sI https://bani.ezbook.ru/sw.js | grep -i cache-control` (no-cache), `curl -sI https://bani.ezbook.ru/ | grep -i x-robots-tag` (noindex).
+7. **Ручные проверки `M42-*`** (раздел «Цикл 42» в `TEST_CATALOG.md`) после выката, вердикты записать там: выбор времени через полночь на iOS Safari и Android (360 px), главная на 360/768/1280 без
+   горизонтальной прокрутки, push гостю на реальном телефоне, **`M42-04` — на машине создать запрос `/s/TESTTOKEN` и убедиться, что в `/var/log/nginx/bani.access.log` стоит `/s/MASKED`**.
+
+**Что нельзя и что не менять.**
+- **Реальные бани не приглашать** до вычитки живым юристом и публикации правок D1–D4 (Т42-17, R42-3). Все новые правовые тексты черновые. `noindex` снимается строкой в vhost и в `bani/index.html` только по решению заказчика.
+- **Цены тарифов «Бань» — начальные** (по образцу «Домов», триал 14 дней): сверить с заказчиком до приглашения владельцев; суперадмин меняет их без деплоя.
+- **`BusinessDayStartMinute` не менять** — граница бизнес-дня общая с «Домами» (C39-11); смена сдвинет принадлежность существующих сеансов дням.
+
+**Откат.** Обычный: `deploy/rollback.sh` (symlink `current`; bani откатывается вместе с остальными, правки не нужны) — старый код работает на новой схеме. **Откат миграции `Cycle42Baths`**
+(`Down()`) — только с `pg_dump` и после удаления компаний `Kind = 3` («Бани»); данные броней содержат ПДн гостей, вручную таблицы и значения не удалять без решения заказчика.
+
+**Локальный стенд.** `docker compose up` (API, БД) и `npm run dev:bani` в `frontend/` (порт 5176, прокси `/api` и `/uploads`). Без бэкенда — `npx @stoplight/prism mock contracts/cycle42/openapi.yaml --port 4042`
+и `VITE_API_TARGET=http://localhost:4042 npm run dev:bani`.
+
 ## Почему так сделано
 
 ### Docker не из snap

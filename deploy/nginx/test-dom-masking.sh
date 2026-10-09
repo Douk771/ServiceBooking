@@ -10,7 +10,7 @@ W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
   echo "server{listen 18089; access_log $W/a.log dom_masked; location / {return 200 ok;}} }"; } > "$W/n.conf"
 nginx -t -c "$W/n.conf" -p "$W" 2>/dev/null || { echo "nginx -t failed"; exit 1; }
 nginx -c "$W/n.conf" -p "$W"; sleep 1
-for u in /b/SECRETB /s/SECRETS /api/stays/bookings/public/SECRETA /api/stays/service-orders/public/SECRETO/cancel; do
+for u in /b/SECRETB /s/SECRETS /api/stays/bookings/public/SECRETA /api/stays/service-orders/public/SECRETO/cancel /api/baths/service-orders/public/SECRETX/cancel; do
   curl -s -H 'Referer: https://dom.ezbook.ru/s/SECRETREF' "localhost:18089$u" >/dev/null; done
 nginx -c "$W/n.conf" -p "$W" -s stop
 if grep -q SECRET "$W/a.log"; then echo "FAIL: токен в логе"; cat "$W/a.log"; exit 1; fi

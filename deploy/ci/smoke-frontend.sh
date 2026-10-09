@@ -18,6 +18,9 @@
 # SMOKE_PROFILE=dom (ARCHITECTURE_CYCLE37.md §37.15.4) checks the dom.ezbook.ru build in dist/__dom: index.html with the React
 # root, favicon.ico/svg, apple-touch-icon.png, manifest (display=standalone) and GET /sw.js = 200 — same as goods.
 #
+# SMOKE_PROFILE=bani (ARCHITECTURE_CYCLE42.md §42.13.3) checks the bani.ezbook.ru build in dist/__bani: the same checks as dom
+# plus <meta name="robots"> with noindex in index.html.
+#
 # Any failed step exits 1.
 set -euo pipefail
 
@@ -54,7 +57,7 @@ favicon_svg_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/favicon.svg
 [ "$favicon_svg_code" = "200" ] || fail "GET /favicon.svg returned $favicon_svg_code (expected 200)"
 log "favicon OK"
 
-if [ "$SMOKE_PROFILE" = "goods" ] || [ "$SMOKE_PROFILE" = "dom" ]; then
+if [ "$SMOKE_PROFILE" = "goods" ] || [ "$SMOKE_PROFILE" = "dom" ] || [ "$SMOKE_PROFILE" = "bani" ]; then
   index_html=$(curl -sf "$BASE_URL/index.html") || fail "GET /index.html failed"
   grep -q '<div id="root">' <<<"$index_html" || fail "$SMOKE_PROFILE index.html has no <div id=\"root\">"
   apple_icon_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/apple-touch-icon.png")
@@ -71,6 +74,9 @@ assert m.get("icons"), "icons"
 PY
   grep -q 'rel="manifest" href="/manifest.webmanifest"' <<<"$index_html" || fail "goods index.html does not link the manifest"
   grep -q 'rel="apple-touch-icon"' <<<"$index_html" || fail "goods index.html does not link apple-touch-icon"
+  if [ "$SMOKE_PROFILE" = "bani" ]; then
+    grep -qE '<meta name="robots" content="[^"]*noindex' <<<"$index_html" || fail "bani index.html has no meta robots noindex"
+  fi
   sw_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/sw.js")
   [ "$sw_code" = "200" ] || fail "$SMOKE_PROFILE: GET /sw.js returned $sw_code (expected 200)"
   log "ALL FRONTEND SMOKE CHECKS PASSED ($SMOKE_PROFILE)"
