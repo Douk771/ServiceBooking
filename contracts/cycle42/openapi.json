@@ -2210,8 +2210,11 @@
           "staffMaxEnabled",
           "guestWebPushEnabled",
           "guestMessengerEnabled",
-          "messengerAvailable"
+          "messengerAvailable",
+          "messagingActive",
+          "deliveryChoiceVisible"
         ],
+        "description": "Тот же ответ, что у «Домов» (StaysNotificationSettingsDto цикла 40): messengerAvailable = у аккаунта оплачен хотя бы один транспорт; messagingActive, deliveryChoiceVisible, priorityWarning добавлены циклом 40.",
         "properties": {
           "staffPushEnabled": {
             "type": "boolean"
@@ -2235,6 +2238,19 @@
           "priorityTransport": {
             "type": "string",
             "nullable": true
+          },
+          "messagingActive": {
+            "type": "boolean",
+            "description": "Сообщения гостям реально уходят (платформа включена, есть работающий маршрутизируемый транспорт)."
+          },
+          "deliveryChoiceVisible": {
+            "type": "boolean",
+            "description": "Есть смысл показывать выбор способа доставки (два маршрутизируемых транспорта)."
+          },
+          "priorityWarning": {
+            "type": "string",
+            "nullable": true,
+            "description": "Предупреждение, если выбранный приоритетный транспорт не работает."
           }
         }
       },

@@ -110,7 +110,11 @@ public class Cycle42ContractTests(TestDatabaseFixture fixture) : Cycle42TestBase
         await v.Check("PUT", "/api/baths/companies/{companyId}/provider",
             await client.PutJsonAsync(b + "/provider", new ProviderInput(StayProviderStatus.SelfEmployed, "Иванов Иван Иванович", ValidPersonInn, null, "г. Новокузнецк, ул. Мира, 1")), 200);
         await v.Check("PUT", "/api/baths/companies/{companyId}/slug", await client.PutJsonAsync(b + "/slug", new SlugInput(Unique("ns-").ToLowerInvariant())), 200);
-        await v.Check("GET", "/api/baths/companies/{companyId}/notification-settings", await client.GetAsync(b + "/notification-settings"), 200);
+        var notificationSettings = await client.GetAsync(b + "/notification-settings");
+        await v.Check("GET", "/api/baths/companies/{companyId}/notification-settings", notificationSettings, 200);
+        var notificationJson = await J(notificationSettings);
+        foreach (var field in new[] { "messengerAvailable", "messagingActive", "deliveryChoiceVisible", "priorityWarning" })
+            notificationJson.TryGetProperty(field, out _).Should().BeTrue($"ответ notification-settings «Бань» содержит поле цикла 40 {field}");
         await v.Check("PUT", "/api/baths/companies/{companyId}/notification-settings",
             await client.PutJsonAsync(b + "/notification-settings", new StaysNotificationSettingsInput(false, false, true, false, null, null)), 200);
         await v.Check("GET", "/api/baths/companies/{companyId}/revision", await client.GetAsync(b + "/revision"), 200);
