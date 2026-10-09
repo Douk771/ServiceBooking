@@ -34,6 +34,9 @@ public abstract class SlotCompanySettingsControllerBase(
     /// <summary>The company card of the vertical (<c>StaysCompanyManageDto</c> / <c>BathsCompanyManageDto</c>).</summary>
     protected abstract Task<ActionResult> ManageResultAsync(Company company, StaysMyRole role, CancellationToken ct);
 
+    /// <summary>The address of the company is a part of every link of the public catalog: the vertical drops what it cached.</summary>
+    protected virtual void OnCompanyAddressChanged() { }
+
     protected abstract string NormalizeSlug(string? slug);
 
     protected abstract Task<StaysConflictDto?> SlugRefusalAsync(string slug, Guid exceptCompanyId);
@@ -105,6 +108,7 @@ public abstract class SlotCompanySettingsControllerBase(
             company.Slug = slug;
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
+            OnCompanyAddressChanged();
         }
         return await ManageResultAsync(company, result.Role, ct);
     }

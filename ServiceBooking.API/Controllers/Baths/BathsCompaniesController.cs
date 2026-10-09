@@ -35,6 +35,8 @@ public class BathsCompaniesController(
 {
     protected override SlotVertical Vertical => SlotVerticals.Baths;
 
+    protected override void OnCompanyAddressChanged() => catalogCache.InvalidateBase();
+
     protected override async Task<ActionResult> ManageResultAsync(Company company, StaysMyRole role, CancellationToken ct) =>
         Ok(await baths.BuildManageAsync(company, role, ct));
 

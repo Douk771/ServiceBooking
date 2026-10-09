@@ -83,6 +83,7 @@ public abstract class SlotServicesCabinetControllerBase(
         if (ids.Count != list.Count || ids.Distinct().Count() != ids.Count || ids.Any(i => list.All(s => s.Id != i))) return BadRequest(ServiceTexts.ListMismatch);
         for (var i = 0; i < ids.Count; i++) list.First(s => s.Id == ids[i]).Position = i;
         await db.SaveChangesAsync(ct);
+        OnCatalogChanged();
         return Ok(await catalog.ListAsync(r.Company!, await companyService.LoadSettingsAsync(companyId, ct: ct), ct));
     }
 
@@ -129,7 +130,9 @@ public abstract class SlotServicesCabinetControllerBase(
             return Vertical.HasHouses
                 ? BadRequest("Адрес услуги — латиница, цифры и дефис, 2–50 символов")
                 : Conflict(new StaysServiceConflictDto(nameof(StaysServiceConflictCode.SlugInvalid), "Адрес ресурса — латиница, цифры и дефис, 2–50 символов; служебные слова заняты"));
-        if (input.Capacity is < 1 or > 30) return BadRequest("Вместимость — от 1 до 30 человек");
+        // a capacity belongs to the verticals that count guests (§42.2.7); for the others it is ignored, so that no order of theirs ever asks for a number of people
+        var capacity = Vertical.RequiresCapacityToPublish ? input.Capacity : null;
+        if (capacity is < 1 or > 30) return BadRequest("Вместимость — от 1 до 30 человек");
         if (input.MinHours is < 1 or > 12) return BadRequest("Минимум часов — от 1 до 12");
         if (input.MaxHours < input.MinHours || input.MaxHours > 12) return BadRequest("Максимум часов — от минимума до 12");
         if (input.StepMinutes is not (30 or 60)) return BadRequest("Шаг старта — 30 или 60 минут");
@@ -141,7 +144,7 @@ public abstract class SlotServicesCabinetControllerBase(
         if (input.CancellationBoundaryHours < range.Min || input.CancellationBoundaryHours > range.Max)
             return BadRequest($"Срок для полного возврата — от {range.Min} до {range.Max} часов до начала");
 
-        if (input.Capacity is null && service.IsPublished && Vertical.RequiresCapacityToPublish)
+        if (capacity is null && service.IsPublished && Vertical.RequiresCapacityToPublish)
             return Conflict(new StaysServiceConflictDto(nameof(StaysServiceConflictCode.ServiceNoCapacity), "Укажите вместимость — сколько человек может находиться одновременно"));
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -162,11 +165,12 @@ public abstract class SlotServicesCabinetControllerBase(
         service.CancellationPolicy = input.CancellationPolicy;
         service.CancellationBoundaryHours = input.CancellationBoundaryHours;
         service.AvailableForHouseBookings = Vertical.HasHouses && input.AvailableForHouseBookings;
-        service.Capacity = input.Capacity;
+        service.Capacity = capacity;
         service.UpdatedAtUtc = clock.UtcNow;
         await revision.BumpRevisionAsync(companyId);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        OnCatalogChanged();
         return Ok(await catalog.BuildManageAsync(r.Company!, service, await companyService.LoadSettingsAsync(companyId, ct: ct), ct));
     }
 
@@ -181,6 +185,7 @@ public abstract class SlotServicesCabinetControllerBase(
         service.Description = StaysSettingsRules.Trim(input.Description);
         service.UpdatedAtUtc = clock.UtcNow;
         await db.SaveChangesAsync(ct);
+        OnCatalogChanged();
         return Ok(await catalog.BuildManageAsync(r.Company!, service, await companyService.LoadSettingsAsync(companyId, ct: ct), ct));
     }
 
@@ -198,6 +203,8 @@ public abstract class SlotServicesCabinetControllerBase(
             // §42.4.3: the only addition to the order of the locks — billing-account is taken FIRST, before anything of the resource.
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             if (r.Company!.BillingAccountId is { } accountId) await AdvisoryLock.AcquireAsync(db, $"billing-account:{accountId}");
+            // the state was read before the lock: a parallel publish of the same resource may have finished meanwhile (a double click), re-read it
+            await db.Entry(service).ReloadAsync(ct);
             if (service.IsPublished) return Ok(await catalog.BuildManageAsync(r.Company!, service, settings, ct));
             if (await publishGate.CheckAsync(r.Company!, ct) is { } denied) return StatusCode(StatusCodes.Status402PaymentRequired, denied);
             service.IsPublished = true;
@@ -279,6 +286,7 @@ public abstract class SlotServicesCabinetControllerBase(
             storage.DeletePublic(thumbUrl);
             throw;
         }
+        OnCatalogChanged();
         return StatusCode(StatusCodes.Status201Created, ServiceCatalogService.PhotoDto(photo));
     }
 
@@ -296,6 +304,7 @@ public abstract class SlotServicesCabinetControllerBase(
         for (var i = 0; i < ids.Count; i++) photos.First(p => p.Id == ids[i]).Position = i;
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        OnCatalogChanged();
         return Ok(photos.OrderBy(p => p.Position).Select(ServiceCatalogService.PhotoDto).ToList());
     }
 
@@ -317,6 +326,7 @@ public abstract class SlotServicesCabinetControllerBase(
         await tx.CommitAsync(ct);
         storage.DeletePublic(photo.Url);
         storage.DeletePublic(photo.ThumbnailUrl);
+        OnCatalogChanged();
         return NoContent();
     }
 
@@ -360,6 +370,7 @@ public abstract class SlotServicesCabinetControllerBase(
         db.StayServicePriceRules.Remove(rule);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        OnCatalogChanged();
         return Ok(await catalog.PriceRulesAsync(service, ct));
     }
 
@@ -400,6 +411,7 @@ public abstract class SlotServicesCabinetControllerBase(
         }
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        OnCatalogChanged();
         var body = await catalog.PriceRulesAsync(service, ct);
         return created ? StatusCode(StatusCodes.Status201Created, body) : Ok(body);
     }
