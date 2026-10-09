@@ -94,6 +94,7 @@ public abstract class SlotServicesPublicControllerBase(
     /// <summary>The «to the stay» mode of the booking form: all three of house and both dates, or none (400 «Укажите дом и обе даты проживания»).</summary>
     private async Task<(StayRangeSpec? Stay, ActionResult? Error)> StayModeAsync(ServiceScope scope, Guid? houseId, string? checkIn, string? checkOut, CancellationToken ct)
     {
+        if (!Vertical.HasHouses) return (null, null); // «Бани»: no «to the stay» mode — the house parameters are ignored (API_CONTRACT_CYCLE42.md §42.20)
         if (houseId is null && string.IsNullOrWhiteSpace(checkIn) && string.IsNullOrWhiteSpace(checkOut)) return (null, null);
         if (houseId is null || !StaysCatalogService.TryDate(checkIn, out var ci) || !StaysCatalogService.TryDate(checkOut, out var co) || co <= ci)
             return (null, BadRequest("Укажите дом и обе даты проживания"));
