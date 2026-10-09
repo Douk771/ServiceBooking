@@ -1698,6 +1698,9 @@ public class Cycle18TrialMailingDeliveryTests(TestDatabaseFixture fixture) : Cyc
 
         var clientUser = await RegisterAsync();
         await GrantProviderDeliveryConsentAsync(clientUser.Token);
+        // Cycle 40 (§40.11.2): a booking made under a phone (guest path) reaches an account's consent only through a CONFIRMED phone — without the
+        // mark a guest is no recipient (NoProviderDeliveryConsent), which is the intended rule.
+        await MarkPhoneVerifiedAsync(clientUser.Phone, clientUser.UserId);
         var booking = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
             new ServiceBooking.API.DTOs.Bookings.CreateBookingDto(
                 company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, "Walk-in", clientUser.Phone, null, null));
@@ -1707,7 +1710,7 @@ public class Cycle18TrialMailingDeliveryTests(TestDatabaseFixture fixture) : Cyc
         var queued = await DbAsync(db => db.OutboundNotifications
             .FirstAsync(n => n.BookingId == bookingId && n.Type == NotificationType.BookingConfirmed));
         queued.Status.Should().Be(NotificationStatus.Pending,
-            "the row must actually be QUEUED, not Skipped/NotOnPaidPlan — that IS the bug this test targets");
+            "the row must actually be QUEUED, not Skipped/NotOnPaidPlan — that IS the bug this test targets (reason: " + queued.Reason + ")");
 
         var canonicalClientPhone = clientUser.Phone.TrimStart('+').Replace(" ", "");
         await using var dispatchFactory = new TrialDispatchFactory(ConnectionString);
@@ -1758,6 +1761,9 @@ public class Cycle18TrialMailingDeliveryTests(TestDatabaseFixture fixture) : Cyc
 
         var clientUser = await RegisterAsync();
         await GrantProviderDeliveryConsentAsync(clientUser.Token);
+        // Cycle 40 (§40.11.2): a booking made under a phone (guest path) reaches an account's consent only through a CONFIRMED phone — without the
+        // mark a guest is no recipient (NoProviderDeliveryConsent), which is the intended rule.
+        await MarkPhoneVerifiedAsync(clientUser.Phone, clientUser.UserId);
         var booking = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
             new ServiceBooking.API.DTOs.Bookings.CreateBookingDto(
                 company.Id, service.Id, master.UserId, date, new TimeOnly(11, 0), null, "Walk-in", clientUser.Phone, null, null));
@@ -1897,6 +1903,9 @@ public class Cycle18TrialMailingDeliveryTests(TestDatabaseFixture fixture) : Cyc
 
         var clientUser = await RegisterAsync();
         await GrantProviderDeliveryConsentAsync(clientUser.Token);
+        // Cycle 40 (§40.11.2): a booking made under a phone (guest path) reaches an account's consent only through a CONFIRMED phone — without the
+        // mark a guest is no recipient (NoProviderDeliveryConsent), which is the intended rule.
+        await MarkPhoneVerifiedAsync(clientUser.Phone, clientUser.UserId);
         var booking = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
             new ServiceBooking.API.DTOs.Bookings.CreateBookingDto(
                 company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, "Walk-in", clientUser.Phone, null, null));

@@ -182,8 +182,13 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
 
         // Staff manual booking (Q7): bypasses the working-hours grid, which this test doesn't set up for
         // "today" — the only thing under test is the cancel-vs-threshold gate, not slot availability.
+        // Cycle 40 (§40.11, Р40-Ю2): a staff booking without the client's mark reaches only an ACCOUNT with a current grant (found through its
+        // CONFIRMED phone) — a bare walk-in phone is no recipient. The threshold is what is under test, so the client is a real account.
+        var clientUser = await RegisterAsync();
+        await GrantProviderDeliveryConsentAsync(clientUser.Token);
+        await MarkPhoneVerifiedAsync(clientUser.Phone, clientUser.UserId);
         var createResponse = await AuthedClient(owner.Token).PostAsJsonAsync("/api/bookings",
-            new CreateBookingDto(company.Id, service.Id, master.UserId, date, start, null, "Walk-in", "+79990001234", null, null));
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, start, null, "Walk-in", clientUser.Phone, null, null));
         createResponse.EnsureSuccessStatusCode();
         var booking = (await createResponse.Content.ReadJsonAsync<BookingDto>())!;
 

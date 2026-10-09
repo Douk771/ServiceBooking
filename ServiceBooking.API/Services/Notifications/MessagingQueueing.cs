@@ -61,9 +61,9 @@ public sealed class MessengerConsentResolver(AppDbContext db, ConsentLedger cons
         var accountUserId = userId;
         if (accountUserId is null)
         {
-            // SUBJECT-PHONE-GATE: not-account-scoped — queueing-time check against the message's own recipient phone (already resolved upstream); only a CONFIRMED phone counts as that account's (ARCHITECTURE_CYCLE40.md §40.11.2, ARCHITECTURE_CYCLE16.md §245.3)
-            accountUserId = await db.Users.AsNoTracking()
-                .Where(u => u.PhoneNumber == recipientPhone && u.PhoneNumberConfirmed).Select(u => u.Id).FirstOrDefaultAsync(ct);
+            // Only a phone VERIFIED by an account counts as that account's (VerifiedPhones is the source of truth, never the PhoneNumberConfirmed mirror — ARCHITECTURE_CYCLE16.md §243.1, §245.3; ARCHITECTURE_CYCLE40.md §40.11.2).
+            accountUserId = await db.VerifiedPhones.AsNoTracking()
+                .Where(v => v.Phone == recipientPhone).Select(v => v.UserId).FirstOrDefaultAsync(ct);  // SUBJECT-PHONE-GATE: not-account-scoped — queueing-time check against the message's own recipient phone (already resolved upstream), matched only through the verified-phone table
         }
         if (accountUserId is null) return MessengerConsentRule.Evaluate(null, false, false);
 

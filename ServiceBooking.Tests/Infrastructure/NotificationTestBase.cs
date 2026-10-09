@@ -325,6 +325,19 @@ public abstract class NotificationTestBase : IClassFixture<TestDatabaseFixture>,
         var response = await client.PutAsJsonAsync("/api/admin/platform-settings",
             new { channelPricePerMonth = pricePerMonth, channelIdleDays = idleDays });
         response.EnsureSuccessStatusCode();
+
+        // Cycle 40 (§40.3, BE-40-1): the sale price of a number is the PRICE OF ITS OPTION now (the platform-settings field above is ignored by the
+        // new code). A null price means "not sellable", so the legacy helper keeps both messenger options in step with the requested price.
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await GetOrCreateWhatsAppOptionIdAsync(db);
+        foreach (var option in await db.SubscriptionOptions
+                     .Where(o => o.Code == ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode
+                                 || o.Code == ServiceBooking.API.Services.Notifications.Funding.ChannelOptionCodes.Max).ToListAsync())
+            option.PricePerMonth = pricePerMonth;
+        await db.SaveChangesAsync();
+        ServiceBooking.API.Services.Notifications.AccountMessagingReader.InvalidateCatalogCache(
+            scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>());
     }
 
     /// <summary>Full happy-path setup for a channel that's ready to receive queued notifications: owner
