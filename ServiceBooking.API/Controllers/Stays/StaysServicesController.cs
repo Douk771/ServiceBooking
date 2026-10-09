@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Stays;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Legal;
+using ServiceBooking.API.Services.Baths;
 using ServiceBooking.API.Services.Slots;
 using ServiceBooking.API.Services.Stays;
 using ServiceBooking.Core.Entities;
@@ -29,7 +30,7 @@ namespace ServiceBooking.API.Controllers.Stays;
 public class StaysServicesController(
     AppDbContext db, StaysAccessResolver access, ServiceCatalogService catalog, ServiceScheduleWriter schedule, ServiceSlotService slots, ServiceSessionWriter sessionWriter,
     StayBookingEventLog revision, StayActorResolver actors, ImageUploadService imageUploadService, FileStorage storage, IStaysClock clock, IOptions<StaysOptions> options,
-    StaysCompanyService companyService) : SlotServicesCabinetControllerBase(db, access, catalog, schedule, slots, sessionWriter, revision, actors, imageUploadService, storage, clock, options, companyService)
+    StaysCompanyService companyService, ServiceItemWriter itemWriter, BathsPublishGate publishGate) : SlotServicesCabinetControllerBase(db, access, catalog, schedule, slots, sessionWriter, revision, actors, imageUploadService, storage, clock, options, companyService, itemWriter, publishGate)
 {
     protected override SlotVertical Vertical => SlotVerticals.Stays;
 }

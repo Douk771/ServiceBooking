@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Stays;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Baths;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Slots;
 using ServiceBooking.API.Services.Stays;
@@ -25,7 +26,7 @@ namespace ServiceBooking.API.Controllers.Slots;
 public abstract class SlotServicesCabinetControllerBase(
     AppDbContext db, StaysAccessResolver access, ServiceCatalogService catalog, ServiceScheduleWriter schedule, ServiceSlotService slots, ServiceSessionWriter sessionWriter,
     StayBookingEventLog revision, StayActorResolver actors, ImageUploadService imageUploadService, FileStorage storage, IStaysClock clock, IOptions<StaysOptions> options,
-    StaysCompanyService companyService) : ControllerBase
+    StaysCompanyService companyService, ServiceItemWriter itemWriter, BathsPublishGate publishGate) : ControllerBase
 {
     protected abstract SlotVertical Vertical { get; }
 
@@ -60,6 +61,7 @@ public abstract class SlotServicesCabinetControllerBase(
         {
             Id = Guid.NewGuid(), CompanyId = companyId, Slug = slug, Name = name, Position = position,
             CancellationBoundaryHours = options.Value.Services.CancellationBoundaryHours.Default, CreatedAtUtc = now, UpdatedAtUtc = now,
+            AvailableForHouseBookings = Vertical.HasHouses,
         };
         db.StayServices.Add(service);
         await db.SaveChangesAsync(ct);
@@ -119,7 +121,11 @@ public abstract class SlotServicesCabinetControllerBase(
         var name = (input.Name ?? string.Empty).Trim();
         if (name.Length is < 1 or > 100) return BadRequest("Укажите название услуги");
         var slug = StaysSlugPolicy.Normalize(input.Slug);
-        if (!Vertical.IsValidResourceSlug(slug)) return BadRequest("Адрес услуги — латиница, цифры и дефис, 2–50 символов");
+        if (!Vertical.IsValidResourceSlug(slug))
+            return Vertical.HasHouses
+                ? BadRequest("Адрес услуги — латиница, цифры и дефис, 2–50 символов")
+                : Conflict(new StaysServiceConflictDto(nameof(StaysServiceConflictCode.SlugInvalid), "Адрес ресурса — латиница, цифры и дефис, 2–50 символов; служебные слова заняты"));
+        if (input.Capacity is < 1 or > 30) return BadRequest("Вместимость — от 1 до 30 человек");
         if (input.MinHours is < 1 or > 12) return BadRequest("Минимум часов — от 1 до 12");
         if (input.MaxHours < input.MinHours || input.MaxHours > 12) return BadRequest("Максимум часов — от минимума до 12");
         if (input.StepMinutes is not (30 or 60)) return BadRequest("Шаг старта — 30 или 60 минут");
@@ -148,7 +154,8 @@ public abstract class SlotServicesCabinetControllerBase(
         service.StandalonePrepayPercent = input.StandalonePrepayPercent;
         service.CancellationPolicy = input.CancellationPolicy;
         service.CancellationBoundaryHours = input.CancellationBoundaryHours;
-        service.AvailableForHouseBookings = input.AvailableForHouseBookings;
+        service.AvailableForHouseBookings = Vertical.HasHouses && input.AvailableForHouseBookings;
+        service.Capacity = input.Capacity;
         service.UpdatedAtUtc = clock.UtcNow;
         await revision.BumpRevisionAsync(companyId);
         await db.SaveChangesAsync(ct);
@@ -163,6 +170,7 @@ public abstract class SlotServicesCabinetControllerBase(
         var (r, service) = await LoadAsync(companyId, serviceId, StaysPermission.EditServiceContent, ct);
         if (service is null) return r.Error!;
         if (input.Description is { Length: > 2000 }) return BadRequest("Описание — не длиннее 2000 символов");
+        if (OwnerTextChecks.Check(input.Description).HasErrors) return BadRequest(OwnerTextChecks.ErrorText);
         service.Description = StaysSettingsRules.Trim(input.Description);
         service.UpdatedAtUtc = clock.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -178,9 +186,24 @@ public abstract class SlotServicesCabinetControllerBase(
         var settings = await companyService.LoadSettingsAsync(companyId, ct: ct);
         var problems = await catalog.PublishProblemsAsync(service, r.Company!, settings, ct);
         if (problems.Count > 0) return Conflict(new StaysServiceConflictDto(problems[0].ToString(), ServicePublishRules.Message(problems[0])));
-        service.IsPublished = true;
-        service.UpdatedAtUtc = clock.UtcNow;
-        await db.SaveChangesAsync(ct);
+        if (Vertical.PublishLimit)
+        {
+            // §42.4.3: the only addition to the order of the locks — billing-account is taken FIRST, before anything of the resource.
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            if (r.Company!.BillingAccountId is { } accountId) await AdvisoryLock.AcquireAsync(db, $"billing-account:{accountId}");
+            if (service.IsPublished) return Ok(await catalog.BuildManageAsync(r.Company!, service, settings, ct));
+            if (await publishGate.CheckAsync(r.Company!, ct) is { } denied) return StatusCode(StatusCodes.Status402PaymentRequired, denied);
+            service.IsPublished = true;
+            service.UpdatedAtUtc = clock.UtcNow;
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+        }
+        else
+        {
+            service.IsPublished = true;
+            service.UpdatedAtUtc = clock.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
         await revision.BumpRevisionAsync(companyId);
         return Ok(await catalog.BuildManageAsync(r.Company!, service, settings, ct));
     }
@@ -378,7 +401,7 @@ public abstract class SlotServicesCabinetControllerBase(
     {
         var (r, service) = await LoadAsync(companyId, serviceId, StaysPermission.ManageServices, ct, track: false);
         if (service is null) return r.Error!;
-        return Ok((await db.StayServiceItems.AsNoTracking().Where(i => i.ServiceId == serviceId).OrderBy(i => i.Position).ToListAsync(ct)).Select(ItemDto).ToList());
+        return Ok((await db.StayServiceItems.AsNoTracking().Where(i => i.ServiceId == serviceId).OrderBy(i => i.Position).ToListAsync(ct)).Select(ServiceItemWriter.ToDto).ToList());
     }
 
     [HttpPost("{serviceId:guid}/items")]
@@ -387,19 +410,10 @@ public abstract class SlotServicesCabinetControllerBase(
     {
         var (r, service) = await LoadAsync(companyId, serviceId, StaysPermission.ManageServices, ct, track: false);
         if (service is null) return r.Error!;
-        var error = ItemError(input, out var name);
-        if (error is not null) return BadRequest(error);
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-        await AdvisoryLock.AcquireAsync(db, $"service-items:{serviceId}");
-        var count = await db.StayServiceItems.CountAsync(i => i.ServiceId == serviceId, ct);
-        var max = options.Value.Services.MaxItemsPerService;
-        if (count >= max) return Conflict(new StaysServiceConflictDto(nameof(StaysServiceConflictCode.ItemLimitReached), $"У услуги может быть не больше {max} позиций"));
-        var position = (await db.StayServiceItems.Where(i => i.ServiceId == serviceId).MaxAsync(i => (int?)i.Position, ct) ?? -1) + 1;
-        var item = new StayServiceItem { Id = Guid.NewGuid(), ServiceId = serviceId, Name = name, PriceRub = input.PriceRub, MaxPerSession = input.MaxPerSession, IsActive = input.IsActive, Position = position };
-        db.StayServiceItems.Add(item);
-        await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
-        return StatusCode(StatusCodes.Status201Created, ItemDto(item));
+        var result = await itemWriter.AddAsync(service, input, await actors.ResolveStaffAsync(User, ct), HttpContext.Connection.RemoteIpAddress?.ToString(), ct);
+        if (result.BadRequest is not null) return BadRequest(result.BadRequest);
+        if (result.Conflict is not null) return Conflict(result.Conflict);
+        return StatusCode(StatusCodes.Status201Created, result.Item);
     }
 
     [HttpPut("{serviceId:guid}/items/order")]
@@ -413,7 +427,7 @@ public abstract class SlotServicesCabinetControllerBase(
         if (ids.Count != items.Count || ids.Distinct().Count() != ids.Count || ids.Any(i => items.All(x => x.Id != i))) return BadRequest("Передайте полный список позиций услуги");
         for (var i = 0; i < ids.Count; i++) items.First(x => x.Id == ids[i]).Position = i;
         await db.SaveChangesAsync(ct);
-        return Ok(items.OrderBy(i => i.Position).Select(ItemDto).ToList());
+        return Ok(items.OrderBy(i => i.Position).Select(ServiceItemWriter.ToDto).ToList());
     }
 
     [HttpPut("{serviceId:guid}/items/{itemId:guid}")]
@@ -422,16 +436,11 @@ public abstract class SlotServicesCabinetControllerBase(
     {
         var (r, service) = await LoadAsync(companyId, serviceId, StaysPermission.ManageServices, ct, track: false);
         if (service is null) return r.Error!;
-        var error = ItemError(input, out var name);
-        if (error is not null) return BadRequest(error);
-        var item = await db.StayServiceItems.FirstOrDefaultAsync(i => i.Id == itemId && i.ServiceId == serviceId, ct);
-        if (item is null) return NotFound();
-        item.Name = name;
-        item.PriceRub = input.PriceRub;
-        item.MaxPerSession = input.MaxPerSession;
-        item.IsActive = input.IsActive;
-        await db.SaveChangesAsync(ct);
-        return Ok(ItemDto(item));
+        var result = await itemWriter.UpdateAsync(service, itemId, input, await actors.ResolveStaffAsync(User, ct), HttpContext.Connection.RemoteIpAddress?.ToString(), ct);
+        if (result.NotFound) return NotFound();
+        if (result.BadRequest is not null) return BadRequest(result.BadRequest);
+        if (result.Conflict is not null) return Conflict(result.Conflict);
+        return Ok(result.Item);
     }
 
     [HttpDelete("{serviceId:guid}/items/{itemId:guid}")]
@@ -440,22 +449,7 @@ public abstract class SlotServicesCabinetControllerBase(
     {
         var (r, service) = await LoadAsync(companyId, serviceId, StaysPermission.ManageServices, ct, track: false);
         if (service is null) return r.Error!;
-        var item = await db.StayServiceItems.FirstOrDefaultAsync(i => i.Id == itemId && i.ServiceId == serviceId, ct);
-        if (item is null) return NotFound();
-        db.StayServiceItems.Remove(item); // always allowed: a session keeps the snapshot of its positions
-        await db.SaveChangesAsync(ct);
-        return NoContent();
-    }
-
-    private static ServiceItemDto ItemDto(StayServiceItem i) => new(i.Id, i.Name, i.PriceRub, i.MaxPerSession, i.IsActive, i.Position);
-
-    private static string? ItemError(ServiceItemInput input, out string name)
-    {
-        name = (input.Name ?? string.Empty).Trim();
-        if (name.Length is < 1 or > 100) return "Название позиции — от 1 до 100 символов";
-        if (input.PriceRub is < 0 or > 100_000) return "Цена — от 0 до 100 000 ₽";
-        if (input.MaxPerSession is < 1 or > 50) return "Максимум на сеанс — от 1 до 50";
-        return null;
+        return await itemWriter.DeleteAsync(serviceId, itemId, ct) ? NoContent() : NotFound();
     }
 
     // ── schedule ──
@@ -527,6 +521,7 @@ public abstract class SlotServicesCabinetControllerBase(
     {
         var baseSlug = ServiceBooking.API.Services.Shops.SlugTransliterator.ToBase(name, 50, 2, new HashSet<string>());
         var candidates = ServiceBooking.API.Services.Shops.SlugTransliterator.Candidates(baseSlug, () => Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(2)).ToLowerInvariant()).ToList();
+        if (!Vertical.HasHouses) candidates = candidates.Where(Vertical.IsValidResourceSlug).ToList();
         var taken = (await db.StayServices.AsNoTracking().Where(s => s.CompanyId == companyId && candidates.Contains(s.Slug)).Select(s => s.Slug).ToListAsync(ct)).ToHashSet();
         return candidates.FirstOrDefault(c => !taken.Contains(c)) ?? candidates[^1];
     }
