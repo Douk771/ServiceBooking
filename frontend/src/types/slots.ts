@@ -1,5 +1,6 @@
 import type { components as C37 } from '@/types/api-cycle37.generated'
 import type { components as C39 } from '@/types/api-cycle39.generated'
+import type { components as C42 } from '@/types/api-cycle42.generated'
 
 /**
  * Service («услуги») types shared by the dom and baths verticals, read straight off the generated schemas
@@ -7,6 +8,7 @@ import type { components as C39 } from '@/types/api-cycle39.generated'
  */
 type S37 = C37['schemas']
 type S39 = C39['schemas']
+type S42 = C42['schemas']
 
 // Shared by the services of both verticals (moved from dom/src/types.ts, 42.12.1).
 export type StayDisplayStatus = S37['StayDisplayStatus']
@@ -23,7 +25,9 @@ export type StayServiceRequestBasis = S39['StayServiceRequestBasis']
 export type ServiceRefundKind = S39['ServiceRefundKind']
 export type ServiceRefusalCode = S39['ServiceRefusalCode']
 export type ServiceGuestConflictCode = S39['ServiceGuestConflictCode']
-export type StaysServiceConflictCode = S39['StaysServiceConflictCode']
+export type StaysServiceConflictCode = S39['StaysServiceConflictCode'] | S42['StaysServiceConflictCode']
+/** Soft warnings about an owner's text (Т42-12): they never block saving. */
+export type OwnerTextWarning = S42['OwnerTextWarning']
 export type StartsReason = S39['StartsReason']
 export type ServiceSessionKind = S39['ServiceSessionKind']
 export type ServiceGuestAction = S39['ServiceGuestAction']
@@ -42,27 +46,27 @@ export type ProblemDto = S39['ProblemDto']
 export type ServiceRefusalDto = S39['ServiceRefusalDto']
 export type ServiceOrderGuestConflictDto = S39['ServiceOrderGuestConflictDto']
 export type ServiceStaffConflictDto = S39['ServiceStaffConflictDto']
-export type StaysServiceConflictDto = S39['StaysServiceConflictDto']
+export type StaysServiceConflictDto = S39['StaysServiceConflictDto'] & { markers?: string[] | null; noticeText?: string | null }
 export type PublicServiceSummaryDto = S39['PublicServiceSummaryDto']
 export type ServicePhotoDto = S39['ServicePhotoDto']
-export type PublicServiceDto = S39['PublicServiceDto']
+export type PublicServiceDto = S39['PublicServiceDto'] & { capacity?: number | null; cityName?: string; localTimeNote?: string }
 export type ServiceAvailabilityDto = S39['ServiceAvailabilityDto']
 export type AvailabilityDayDto = S39['AvailabilityDayDto']
 export type StartDto = S39['StartDto']
 export type ServiceStartsDto = S39['ServiceStartsDto']
 export type PublicServiceQuoteInput = S39['PublicServiceQuoteInput']
 export type ServiceQuoteDto = S39['ServiceQuoteDto']
-export type CreateServiceOrderInput = S39['CreateServiceOrderInput']
+export type CreateServiceOrderInput = S39['CreateServiceOrderInput'] & { guestsCount?: number | null }
 export type CreateServiceOrderResponse = S39['CreateServiceOrderResponse']
-export type PublicServiceOrderDto = S39['PublicServiceOrderDto']
+export type PublicServiceOrderDto = S39['PublicServiceOrderDto'] & { guestsCount?: number | null }
 export type ServiceListItemDto = S39['ServiceListItemDto']
-export type ServiceSetupInput = S39['ServiceSetupInput']
-export type ServiceManageDto = S39['ServiceManageDto']
+export type ServiceSetupInput = S39['ServiceSetupInput'] & { capacity?: number | null }
+export type ServiceManageDto = S39['ServiceManageDto'] & { capacity?: number | null; contentWarnings?: OwnerTextWarning[] }
 export type PriceRuleDto = S39['PriceRuleDto']
 export type PriceRuleInput = S39['PriceRuleInput']
 export type PriceRulesDto = S39['PriceRulesDto']
-export type ServiceItemDto = S39['ServiceItemDto']
-export type ServiceItemInput = S39['ServiceItemInput']
+export type ServiceItemDto = S39['ServiceItemDto'] & { warnings?: OwnerTextWarning[] }
+export type ServiceItemInput = S39['ServiceItemInput'] & { confirmRestricted?: boolean }
 export type WeeklyScheduleDto = S39['WeeklyScheduleDto']
 export type WeeklyScheduleInput = S39['WeeklyScheduleInput']
 export type ScheduleSaveResultDto = S39['ScheduleSaveResultDto']
@@ -73,9 +77,9 @@ export type ServiceDayDto = S39['ServiceDayDto']
 export type ServiceDayBarDto = S39['ServiceDayBarDto']
 export type StaffServiceSessionListItemDto = S39['StaffServiceSessionListItemDto']
 export type StaffServiceSessionPage = S39['StaffServiceSessionPage']
-export type StaffServiceSessionCardDto = S39['StaffServiceSessionCardDto']
+export type StaffServiceSessionCardDto = S39['StaffServiceSessionCardDto'] & { guestsCount?: number | null }
 export type StaffServiceQuoteInput = S39['StaffServiceQuoteInput']
-export type ManualServiceOrderInput = S39['ManualServiceOrderInput']
+export type ManualServiceOrderInput = S39['ManualServiceOrderInput'] & { guestsCount?: number | null }
 export type ProofRulesDto = S39['ProofRulesDto']
 export type WeeklyDayDto = S39['WeeklyDayDto']
 export type PriceMatrixRowDto = S39['PriceMatrixRowDto']

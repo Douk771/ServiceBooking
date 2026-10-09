@@ -16,6 +16,7 @@ export interface GuestFieldErrors {
   name?: string
   phone?: string
   comment?: string
+  guests?: string
   captcha?: string
 }
 
