@@ -733,8 +733,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<StayServiceItemConfirmation>(e =>
         {
             e.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
-            e.HasOne<StayService>().WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<StayService>().WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne<StayServiceItem>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(x => x.ServiceNameSnapshot).HasMaxLength(100);
             e.Property(x => x.ItemNameSnapshot).HasMaxLength(100);
             e.Property(x => x.MarkersHit).HasMaxLength(200);
             e.Property(x => x.NoticeKey).HasMaxLength(64);

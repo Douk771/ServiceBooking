@@ -77,7 +77,8 @@ namespace ServiceBooking.Infrastructure.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     CompanyId = table.Column<Guid>(type: "uuid", nullable: false),
-                    ServiceId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ServiceId = table.Column<Guid>(type: "uuid", nullable: true),
+                    ServiceNameSnapshot = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     ItemId = table.Column<Guid>(type: "uuid", nullable: true),
                     ItemNameSnapshot = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     MarkersHit = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
@@ -108,7 +109,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                         column: x => x.ServiceId,
                         principalTable: "StayServices",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.SetNull);
                 });
 
             migrationBuilder.AddCheckConstraint(

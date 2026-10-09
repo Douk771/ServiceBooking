@@ -127,7 +127,7 @@ public class ServiceItemWriter(AppDbContext db, LegalDocumentProvider legalProvi
     private void AddConfirmation(StayService service, StayServiceItem item, string[] markers, StayActor actor, string? ip) =>
         db.StayServiceItemConfirmations.Add(new StayServiceItemConfirmation
         {
-            Id = Guid.NewGuid(), CompanyId = service.CompanyId, ServiceId = service.Id, ItemId = item.Id, ItemNameSnapshot = item.Name,
+            Id = Guid.NewGuid(), CompanyId = service.CompanyId, ServiceId = service.Id, ServiceNameSnapshot = service.Name, ItemId = item.Id, ItemNameSnapshot = item.Name,
             MarkersHit = string.Join(", ", markers), NoticeKey = NoticeKey, NoticeVersion = NoticeVersion(),
             ConfirmedByUserId = actor.UserId ?? string.Empty, ConfirmedByNameSnapshot = actor.NameSnapshot ?? "Сотрудник",
             ConfirmedAtUtc = clock.UtcNow, IpAddress = ip is { Length: > 64 } ? ip[..64] : ip,

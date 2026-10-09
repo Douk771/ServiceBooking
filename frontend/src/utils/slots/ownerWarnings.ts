@@ -5,12 +5,12 @@ import type { OwnerTextWarning } from '@/types/slots'
  * text is saved and the owner is told what to look at. Unknown codes (an append-only enum) are ignored, not shown as a raw code.
  */
 export const OWNER_WARNING_TEXT: Record<OwnerTextWarning, string> = {
-  CancellationTermsInText: 'В тексте есть условия отмены. Условия отмены задаются на вкладке «Правила» — в описании они не действуют.',
-  MandatoryExtraCharge: 'В тексте упомянуты обязательные доплаты. Всё, что гость обязан оплатить, должно входить в цену, которую он видит.',
-  HealthClaim: 'В тексте есть обещание пользы для здоровья. Уберите его: платформа не проверяет такие утверждения.',
-  Passport: 'В тексте упомянут паспорт. Не просите у гостей паспортные данные через описание.',
-  PassportNumber: 'В тексте похоже на номер паспорта. Уберите его: это персональные данные.',
-  CardNumber: 'В тексте похоже на номер банковской карты. Уберите его: реквизиты для оплаты вносятся в настройках компании.',
+  CancellationTermsInText: 'Условия отмены задаёт выбранный шаблон — другие условия в описании не действуют',
+  MandatoryExtraCharge: 'Все обязательные платежи должны быть в цене часов — не требуйте доплат на месте',
+  HealthClaim: 'Не обещайте лечебного или оздоровительного эффекта',
+  Passport: 'Не просите гостя прислать фото паспорта',
+  PassportNumber: 'Похоже на паспортные данные — не публикуйте их',
+  CardNumber: 'Похоже на номер карты — не публикуйте данные карт',
 }
 
 /** The texts to show for the codes the server sent, in the server's order, without repeats. */
