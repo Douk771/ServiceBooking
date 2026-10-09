@@ -30,6 +30,9 @@ public abstract class SlotServicesCabinetControllerBase(
 {
     protected abstract SlotVertical Vertical { get; }
 
+    /// <summary>ARCHITECTURE_CYCLE42.md §42.10.2: a resource appeared in / left the public catalog (publish, unpublish, archive, delete) — a vertical with a cached catalog base drops it.</summary>
+    protected virtual void OnCatalogChanged() { }
+
     // ── list / create / order / get / delete ──
 
     [HttpGet]
@@ -106,6 +109,7 @@ public abstract class SlotServicesCabinetControllerBase(
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         foreach (var p in photos) { storage.DeletePublic(p.Url); storage.DeletePublic(p.ThumbnailUrl); }
+        OnCatalogChanged();
         await revision.BumpRevisionAsync(companyId);
         return NoContent();
     }
@@ -204,6 +208,7 @@ public abstract class SlotServicesCabinetControllerBase(
             service.UpdatedAtUtc = clock.UtcNow;
             await db.SaveChangesAsync(ct);
         }
+        OnCatalogChanged();
         await revision.BumpRevisionAsync(companyId);
         return Ok(await catalog.BuildManageAsync(r.Company!, service, settings, ct));
     }
@@ -217,6 +222,7 @@ public abstract class SlotServicesCabinetControllerBase(
         service.IsPublished = false;
         service.UpdatedAtUtc = clock.UtcNow;
         await db.SaveChangesAsync(ct);
+        OnCatalogChanged();
         await revision.BumpRevisionAsync(companyId);
         return Ok(await catalog.BuildManageAsync(r.Company!, service, await companyService.LoadSettingsAsync(companyId, ct: ct), ct));
     }
@@ -231,6 +237,7 @@ public abstract class SlotServicesCabinetControllerBase(
         service.ArchivedAtUtc ??= clock.UtcNow;
         service.UpdatedAtUtc = clock.UtcNow;
         await db.SaveChangesAsync(ct);
+        OnCatalogChanged();
         await revision.BumpRevisionAsync(companyId);
         return Ok(await catalog.BuildManageAsync(r.Company!, service, await companyService.LoadSettingsAsync(companyId, ct: ct), ct));
     }

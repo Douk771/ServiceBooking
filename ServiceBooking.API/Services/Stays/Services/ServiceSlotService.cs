@@ -144,6 +144,45 @@ public class ServiceSlotService(AppDbContext db, IOptions<StaysOptions> options,
             starts.Reason, starts.Starts.Count == 0 ? ServiceTexts.NoStartsText : null);
     }
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE42.md §42.10.2 — «which of these resources has at least one start on the business date», for the catalog's date filter: ONE batch of four queries
+    /// (weekly windows, manual dates, price rules, active sessions, each <c>WHERE ServiceId = ANY(@ids)</c>) and the same pure <see cref="ServiceSlotCalculator"/> as the
+    /// resource page, per resource in memory. Expired holds count as free (read path), exactly as <see cref="OccupiedAsync"/> with includeExpiredHolds = false.
+    /// </summary>
+    public async Task<HashSet<Guid>> HasStartsBatchAsync(IReadOnlyList<ServiceScope> scopes, DateOnly date, CancellationToken ct)
+    {
+        var result = new HashSet<Guid>();
+        if (scopes.Count == 0) return result;
+        var ids = scopes.Select(s => s.Service.Id).ToList();
+        var dayOfWeek = BusinessClock.DayOfWeekIso(date);
+        var weekly = (await db.StayServiceWeeklyWindows.AsNoTracking().Where(w => ids.Contains(w.ServiceId) && w.DayOfWeek == dayOfWeek).ToListAsync(ct))
+            .ToLookup(w => w.ServiceId, w => new WindowSpec(w.StartMinute, w.EndMinute));
+        var overrides = await db.StayServiceDateOverrides.AsNoTracking().Where(o => ids.Contains(o.ServiceId) && o.BusinessDate == date).ToDictionaryAsync(o => o.ServiceId, ct);
+        var rules = (await db.StayServicePriceRules.AsNoTracking().Where(r => ids.Contains(r.ServiceId)).ToListAsync(ct))
+            .ToLookup(r => r.ServiceId, r => new PriceRuleSpec(r.DaysMask, r.FromHour, r.ToHour, r.PriceRub));
+
+        var now = clock.UtcNow;
+        var fromUtc = scopes.Min(s => BusinessClock.ToUtc(s.Company.TimeZoneId, date, BusinessDayStart)).AddHours(-24);
+        var toUtc = scopes.Max(s => BusinessClock.ToUtc(s.Company.TimeZoneId, date, BusinessDayStart)).AddHours(48);
+        var sessions = (await db.StayServiceSessions.AsNoTracking()
+            .Where(s => ids.Contains(s.ServiceId) && s.ReleasedAtUtc == null && s.StartUtc < toUtc && s.OccupiedUntilUtc > fromUtc
+                && !db.StayServiceOrders.Any(o => o.Id == s.StayServiceOrderId && o.Status == StayBookingStatus.Held && o.HoldExpiresAtUtc <= now)
+                && !db.StayBookings.Any(b => b.Id == s.StayBookingId && b.Status == StayBookingStatus.Held && b.HoldExpiresAtUtc <= now))
+            .Select(s => new { s.ServiceId, s.StartUtc, s.OccupiedUntilUtc }).ToListAsync(ct))
+            .ToLookup(s => s.ServiceId, s => new OccupiedSpec(s.StartUtc, s.OccupiedUntilUtc));
+
+        foreach (var scope in scopes)
+        {
+            var id = scope.Service.Id;
+            var windows = overrides.TryGetValue(id, out var o)
+                ? (o.IsClosed ? [] : ServiceScheduleRules.Sorted(ServiceJson.ReadWindows(o.WindowsJson).Select(w => new WindowSpec(w.StartMinute, w.EndMinute))))
+                : ServiceScheduleRules.Sorted(weekly[id]);
+            var input = BuildInput(scope, date, staff: false, stay: null, windows, rules[id].ToList(), sessions[id].ToList());
+            if (ServiceSlotCalculator.Calculate(input).Starts.Count > 0) result.Add(id);
+        }
+        return result;
+    }
+
     /// <summary>The calendar of dates: <c>hasStarts</c> by date, four queries and one pure call per date (p95 &lt; 500 ms for 14 days).</summary>
     public async Task<List<AvailabilityDayDto>> AvailabilityAsync(
         ServiceScope scope, DateOnly from, int days, bool staff, StayRangeSpec? stay, CancellationToken ct)

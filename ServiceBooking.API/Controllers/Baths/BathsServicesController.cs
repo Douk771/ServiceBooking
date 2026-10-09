@@ -20,8 +20,10 @@ namespace ServiceBooking.API.Controllers.Baths;
 public class BathsServicesController(
     AppDbContext db, StaysAccessResolver access, ServiceCatalogService catalog, ServiceScheduleWriter schedule, ServiceSlotService slots, ServiceSessionWriter sessionWriter,
     StayBookingEventLog revision, StayActorResolver actors, ImageUploadService imageUploadService, FileStorage storage, IStaysClock clock, IOptions<StaysOptions> options,
-    StaysCompanyService companyService, ServiceItemWriter itemWriter, BathsPublishGate publishGate)
+    StaysCompanyService companyService, ServiceItemWriter itemWriter, BathsPublishGate publishGate, BathsCatalogService catalogCache)
     : SlotServicesCabinetControllerBase(db, access, catalog, schedule, slots, sessionWriter, revision, actors, imageUploadService, storage, clock, options, companyService, itemWriter, publishGate)
 {
     protected override SlotVertical Vertical => SlotVerticals.Baths;
+
+    protected override void OnCatalogChanged() => catalogCache.InvalidateBase();
 }
