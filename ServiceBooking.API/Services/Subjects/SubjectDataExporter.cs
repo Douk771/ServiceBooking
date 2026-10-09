@@ -290,7 +290,8 @@ public sealed class SubjectDataExporter(
                 ServiceBooking.API.Services.Stays.ServiceTimeFormat.Guest(s.BusinessDate, s.StartMinute, s.Hours), s.Hours, ServiceBooking.API.Services.Stays.ServiceDtoMapper.ItemsOf(s),
                 o.TotalRub, o.PrepayRub, o.Status.ToString(), o.GuestName, o.GuestPhone, o.Comment, o.StatusReason, stayLinks.ServiceOrderPageUrl(companyKinds.GetValueOrDefault(o.CompanyId, CompanyKind.Stays), o.PublicToken),
                 o.PaymentProofs.OrderBy(p => p.UploadedAtUtc).Select(p => new ExportStayPaymentProofDto(p.UploadedAtUtc, p.ContentType, p.SizeBytes, p.PurgedAtUtc != null || p.StorageKey == null)).ToList(),
-                svcOrderEvents[o.Id].Select(e => new ExportStayEventDto(e.OccurredAtUtc, ServiceBooking.API.Services.Slots.ServiceWording.For(companyKinds.GetValueOrDefault(o.CompanyId)).StaffEventText(e.Kind))).ToList());
+                svcOrderEvents[o.Id].Select(e => new ExportStayEventDto(e.OccurredAtUtc, ServiceBooking.API.Services.Slots.ServiceWording.For(companyKinds.GetValueOrDefault(o.CompanyId)).StaffEventText(e.Kind))).ToList(),
+                o.GuestsCount, ExportSite(companyKinds.GetValueOrDefault(o.CompanyId, CompanyKind.Stays)));
         }).ToList();
 
         var export = new ProfileExportDto(
@@ -308,6 +309,9 @@ public sealed class SubjectDataExporter(
 
         return export;
     }
+
+    /// <summary>ARCHITECTURE_CYCLE42.md §42.11.1: which site the order belongs to ("Baths" for the bath vertical, otherwise "Stays"; the push `site` spelling).</summary>
+    internal static string ExportSite(CompanyKind kind) => kind switch { CompanyKind.Baths => nameof(CompanyKind.Baths), _ => nameof(CompanyKind.Stays) };
 
     /// <summary>One consent-journal row as the export (and <c>GET /api/profile/consents</c>' history) shows
     /// it — shared by both, hence here rather than duplicated (§385).</summary>
