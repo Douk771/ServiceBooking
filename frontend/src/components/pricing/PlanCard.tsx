@@ -1,12 +1,16 @@
 import { Icon } from '../ui/Icon'
 import { formatMonthlyPrice } from '../../utils/pricingFormat'
 import type { PricingPlanView } from './pricingLine'
+import { MessengerAddonLines, type MessengerAddonDto, type MessengerAddonsNoteDto } from './MessengerAddonLines'
 
 interface Props {
   plan: PricingPlanView
+  /** Cycle 40 (Т40-L-11): серверные строки мессенджеров; показываются на всех карточках, опции докупаются отдельно от тарифа. */
+  messengerAddons?: MessengerAddonDto[] | null
+  messengerAddonsNote?: MessengerAddonsNoteDto | null
 }
 
-export function PlanCard({ plan }: Props) {
+export function PlanCard({ plan, messengerAddons, messengerAddonsNote }: Props) {
   return (
     <div
       className="flex flex-col min-w-0 rounded-[22px] p-7 xl:p-6 border bg-white text-ink border-line"
@@ -43,6 +47,8 @@ export function PlanCard({ plan }: Props) {
           </li>
         ))}
       </ul>
+
+      <MessengerAddonLines addons={messengerAddons} note={messengerAddonsNote} />
     </div>
   )
 }

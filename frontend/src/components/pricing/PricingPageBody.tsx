@@ -95,7 +95,7 @@ export function PricingPageBody({ line, documentTitle, cta }: Props) {
 
       <div className={`${gridClass(sortedPlans.length)} mb-16`}>
         {sortedPlans.map((plan) => (
-          <PlanCard key={plan.id} plan={plan} />
+          <PlanCard key={plan.id} plan={plan} messengerAddons={data.messengerAddons} messengerAddonsNote={data.messengerAddonsNote} />
         ))}
       </div>
 
