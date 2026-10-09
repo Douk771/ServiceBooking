@@ -22,7 +22,6 @@ namespace ServiceBooking.Tests.Tests;
 public class Cycle42NotificationsTests(TestDatabaseFixture fixture) : Cycle42TestBase(fixture)
 {
     private const string GuestName = "Секретная Гостья";
-    private const string GuestPhone = "+79054441122";
 
     private sealed record Team(BathCtx Company, ResCtx Resource, string ManagerToken, string HousekeeperToken, string ManagerUserId, string HousekeeperUserId);
 
@@ -61,13 +60,13 @@ public class Cycle42NotificationsTests(TestDatabaseFixture fixture) : Cycle42Tes
     }
 
     private async Task<Booked> BookAsync(StaysTestFactory host, ResCtx res, DateOnly date, int start = 720, bool subscribe = true, bool messenger = false, string name = GuestName,
-        string phone = GuestPhone, HttpClient? client = null)
+        string? phone = null, HttpClient? client = null)
     {
         client ??= host.Client();
         var quote = await J(await BathQuoteAsync(res.Id, date, start, 2, client));
         var body = new
         {
-            businessDate = date, startMinute = start, hours = 2, items = Array.Empty<object>(), guestsCount = 3, guestName = name, guestPhone = phone, comment = (string?)null,
+            businessDate = date, startMinute = start, hours = 2, items = Array.Empty<object>(), guestsCount = 3, guestName = name, guestPhone = phone ?? UniquePhone(), comment = (string?)null,
             notifyByMessenger = messenger, expectedTotalRub = quote.GetProperty("totalRub").GetInt32(), idempotencyKey = Guid.NewGuid(), captchaToken = (string?)null
         };
         var r = await client.PostJsonAsync($"/api/baths/public/services/{res.Id}/orders", body);
@@ -168,7 +167,7 @@ public class Cycle42NotificationsTests(TestDatabaseFixture fixture) : Cycle42Tes
         await host.RunTaskAsync("stays-scheduled-messages");
 
         // другая бронь: подтверждена и отменена компанией
-        var second = await BookAsync(host, t.Resource, InDays(11), phone: "+79054441123");
+        var second = await BookAsync(host, t.Resource, InDays(11), phone: UniquePhone());
         (await host.Client().PostAsync($"/api/baths/service-orders/public/{second.Token}/payment-proofs", FileContent(TestImages.SolidJpeg(60, 40), "image/jpeg", "c.jpg")))
             .StatusCode.Should().Be(HttpStatusCode.Created);
         (await StaffActionAsync(host, t, second.SessionId, "confirm-payment")).StatusCode.Should().Be(HttpStatusCode.OK);

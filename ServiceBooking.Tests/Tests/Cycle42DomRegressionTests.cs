@@ -252,7 +252,7 @@ public class Cycle42DomRegressionTests(TestDatabaseFixture fixture) : Cycle42Tes
             new { endpoint = $"https://push.example.test/cy42-dom/{Guid.NewGuid():N}", keys = new { p256dh = "p256dh-key", auth = "auth-key" }, deviceLabel = "Chrome", site = "Stays" });
         sub.IsSuccessStatusCode.Should().BeTrue(await sub.Content.ReadAsStringAsync());
 
-        var o = await OrderOkAsync(svc.Id, InDays(10), 720, 2, client: host.Client(), phone: "+79054441122", name: "Секретная Гостья");
+        var o = await OrderOkAsync(svc.Id, InDays(10), 720, 2, client: host.Client(), phone: UniquePhone(), name: "Секретная Гостья");
         var orderId = await OrderIdAsync(o.Token);
         var sessionId = await SessionIdOfOrderAsync(o.Token);
         (await host.Client().PostJsonAsync($"/api/stays/service-orders/public/{o.Token}/push-subscription",
@@ -271,7 +271,7 @@ public class Cycle42DomRegressionTests(TestDatabaseFixture fixture) : Cycle42Tes
         Regex.IsMatch(JsonDocument.Parse(cancel.Payload).RootElement.GetProperty("body").GetString()!, @"^Гость отменил сеанс · Баня, " + StaffTime + "$").Should().BeTrue();
 
         // гостю: заголовок «ezbook · Дома», «заказа» (не «брони»), ссылка относительная
-        var other = await OrderOkAsync(svc.Id, InDays(11), 720, 2, client: host.Client(), phone: "+79054441123");
+        var other = await OrderOkAsync(svc.Id, InDays(11), 720, 2, client: host.Client(), phone: UniquePhone());
         (await host.Client().PostJsonAsync($"/api/stays/service-orders/public/{other.Token}/push-subscription",
             new PushSubscriptionInput($"https://push.example.test/cy42-dom-guest/{Guid.NewGuid():N}", new PushKeysInput("k1", "k2"), null))).StatusCode.Should().Be(HttpStatusCode.NoContent);
         await AttachOrderProofAsync(other.Token, host.Client());
