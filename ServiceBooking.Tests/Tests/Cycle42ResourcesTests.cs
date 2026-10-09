@@ -485,7 +485,7 @@ public class Cycle42ResourcesTests(TestDatabaseFixture fixture) : Cycle42TestBas
     /// BUG-C42-QA-2 (НЕ ВЫПОЛНЯЕТСЯ): основы «иммунитет», «полезно при», «невозврат» (без «-н») названы в контракте §42.30.2, но реализация
     /// (<c>OwnerTextChecks.Soft</c>) их не ловит — описание сохраняется без предупреждения. Снять Skip после правки регулярных выражений.
     /// </summary>
-    [Theory(Skip = "BUG-C42-QA-2: мягкие основы «иммунитет», «полезно при», «невозврат» не дают предупреждения"), TestCase("CY42-39")]
+    [Theory, TestCase("CY42-39")]
     [InlineData("Укрепляет иммунитет", "HealthClaim")]
     [InlineData("Полезно при простуде", "HealthClaim")]
     [InlineData("Недорого, невозврат средств", "CancellationTermsInText")]
