@@ -21,7 +21,7 @@ export function checkOwnerText(text: string): { errors: OwnerTextCode[]; warning
   const t = norm(text)
   const errors: OwnerTextCode[] = /задат|невозвратн|депозит/.test(t) ? ['ForbiddenWords'] : []
   const warnings: OwnerTextCode[] = []
-  if (/штраф|неустойк|неявк|не\s+возвращ|невозврат|условия\s+отмены|отмен\w*\s+(?:за|менее|позже)/.test(t)) warnings.push('CancellationTermsInText')
+  if (/штраф|неустойк|неявк|не\s+возвращ|невозврат(?!н)|условия\s+отмены|отмен\w*\s+(?:за|менее|позже)/.test(t)) warnings.push('CancellationTermsInText')
   if (/(?<!\p{L})доплат/u.test(t)) warnings.push('MandatoryExtraCharge')
   if (/лечебн|оздоровит|детокс|исцел|иммунитет|лечени|лечит|целебн|противопоказани|полезно\s+при/.test(t)) warnings.push('HealthClaim')
   if (PASSPORT_NUMBER.test(t)) warnings.push('PassportNumber')

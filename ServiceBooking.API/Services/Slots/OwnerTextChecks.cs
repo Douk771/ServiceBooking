@@ -30,7 +30,7 @@ public static class OwnerTextChecks
     // Order of the list is the order of the warnings in the answer.
     private static readonly (string Code, Regex Pattern)[] Soft =
     {
-        ("CancellationTermsInText", new(@"штраф|неустойк|неявк|не\s+возвращ|невозврат|условия\s+отмены|отмен\w*\s+(?:за|менее|позже)", Opts)),
+        ("CancellationTermsInText", new(@"штраф|неустойк|неявк|не\s+возвращ|невозврат(?!н)|условия\s+отмены|отмен\w*\s+(?:за|менее|позже)", Opts)),
         ("MandatoryExtraCharge", new(@"(?<!\p{L})доплат|(?<!\p{L})сверх|обязательн\w*\s+(?:платеж|оплат|взнос)|оплат\w*\s+на\s+месте", Opts)),
         ("HealthClaim", new(@"лечебн|лечени|лечит|оздоровит|целебн|исцел|детокс|противопоказани|иммунитет|полезно\s+при", Opts)),
         ("Passport", new(@"паспорт", Opts)),
