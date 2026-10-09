@@ -42,6 +42,8 @@ public class StaysSettings
     public bool HousekeeperSeesGuestComment { get; set; }
     public bool GuestWebPushEnabled { get; set; } = true;
     public bool GuestMessengerEnabled { get; set; }
+    /// <summary>ARCHITECTURE_CYCLE42.md §42.2.3: reminder before a session N hours ahead (1..24); NULL = off.</summary>
+    public int? ServiceReminderHours { get; set; }
     public bool StaffMaxEnabled { get; set; } = true;
 
     public StayProviderStatus? ProviderStatus { get; set; }

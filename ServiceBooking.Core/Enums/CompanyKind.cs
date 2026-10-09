@@ -15,6 +15,6 @@ public enum CompanyKind
     /// <summary>ARCHITECTURE_CYCLE37.md §37.3 — a company renting houses by the night on dom.ezbook.ru.</summary>
     Stays = 2,
 
-    /// <summary>ARCHITECTURE_CYCLE42.md A42-1 — a company renting bath/sauna resources by the hour on bani.ezbook.ru. (Local stub of BE-42-M; the merge keeps one.)</summary>
+    /// <summary>ARCHITECTURE_CYCLE42.md §42.2.1 — a company renting baths by the hour on bani.ezbook.ru.</summary>
     Baths = 3
 }

@@ -115,8 +115,10 @@ public class ShowcaseOwnershipCoverageTests
         // Cycle 39 (ARCHITECTURE_CYCLE39.md §39.2.6): the 11 tables of the time-slot services are declared never written too.
         string[] services = ["StayServices", "StayServicePhotos", "StayServiceWeeklyWindows", "StayServiceDateOverrides", "StayServiceScheduleEvents",
             "StayServicePriceRules", "StayServiceItems", "StayServiceSessions", "StayServiceOrders", "StayServiceOrderEvents", "StaysReminderTemplateChanges"];
-        ShowcaseOwnership.NeverWritten.Keys.Where(k => k != "NotificationChannels").Should().BeEquivalentTo(stays.Concat(services));
-        ShowcaseOwnership.NeverWritten.Keys.Should().Contain("NotificationChannels").And.HaveCount(27);
+        // Cycle 42 (ARCHITECTURE_CYCLE42.md §42.2.6): the 2 tables of the «Бани» vertical.
+        string[] baths = ["BathsSubscriptions", "StayServiceItemConfirmations"];
+        ShowcaseOwnership.NeverWritten.Keys.Where(k => k != "NotificationChannels").Should().BeEquivalentTo(stays.Concat(services).Concat(baths));
+        ShowcaseOwnership.NeverWritten.Keys.Should().Contain("NotificationChannels").And.HaveCount(29);
     }
 
     [Fact]

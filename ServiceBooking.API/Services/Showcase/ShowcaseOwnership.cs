@@ -119,6 +119,8 @@ public static class ShowcaseOwnership
         ["StayPaymentProofs"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
         ["StayGuestPushSubscriptions"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
         ["StayGuestPushNotifications"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
+        ["BathsSubscriptions"] = "cycle 42: the \"Бани\" vertical has no showcase (ARCHITECTURE_CYCLE42.md §42.2.6)",
+        ["StayServiceItemConfirmations"] = "cycle 42: the \"Бани\" vertical has no showcase (ARCHITECTURE_CYCLE42.md §42.2.6)",
         ["StaysSubscriptions"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
         ["StayServices"] = "cycle 39: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE39.md §39.2.6)",
         ["StayServicePhotos"] = "cycle 39: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE39.md §39.2.6)",

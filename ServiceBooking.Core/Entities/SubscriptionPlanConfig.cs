@@ -68,6 +68,9 @@ public class SubscriptionPlanConfig
     /// <summary>ARCHITECTURE_CYCLE37.md §37.2.1: published houses per billing account (Line = Stays only; null = unlimited).</summary>
     public int? MaxHouses { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE42.md §42.2.3: published resources per billing account (Line = Baths only; null = unlimited).</summary>
+    public int? MaxResources { get; set; }
+
     /// <summary>Orders per calendar month per ACCOUNT; null = unlimited.</summary>
     public int? MaxOrdersPerMonth { get; set; }
 
