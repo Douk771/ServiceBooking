@@ -199,6 +199,9 @@ public class ServiceOrderCreationService(
         var scope = await slots.FindOfCompanyAsync(kind, companyId, dto.ServiceId.Value, ct);
         if (scope is null || scope.Service.ArchivedAtUtc is not null) return new ServiceOrderCreateResult(new NotFoundResult());
         var (service, company, _) = scope;
+        // API_CONTRACT_CYCLE42.md §42.32: the number of guests is optional for the staff, but when given it is judged by the same rules (1…capacity); a resource without a capacity ignores it.
+        var guests = dto.GuestsCount is null ? new GuestsCountResult(true, null, null) : GuestsCountRules.Validate(dto.GuestsCount, service.Capacity);
+        if (!guests.Ok) return Bad(guests.Error!);
         var existing = await db.StayServiceOrders.AsNoTracking().FirstOrDefaultAsync(o => o.CompanyId == companyId && o.IdempotencyKey == dto.IdempotencyKey, ct);
         if (existing is not null) return new ServiceOrderCreateResult(null, existing, Created: false);
 
@@ -218,6 +221,7 @@ public class ServiceOrderCreationService(
         order.GuestPhone = phone;
         order.Comment = comment;
         order.RequestBasis = dto.RequestBasis;
+        order.GuestsCount = guests.Stored;
         // No messenger consent snapshot exists for a guest the staff typed in (Т37-12: the tick is the guest's own) — so no messenger notices, as for a manual booking.
         order.NotifyByMessenger = false;
         ApplyVersions(order, company.Kind, StayActorKind.Staff, now);

@@ -221,7 +221,8 @@ public record StaffServiceSessionCardDto(
     string PreparedUntilLabel, StayServiceSessionState State, StayBookingStatus? OrderStatus, string? DisplayStatus, string StatusText, DateTime? HoldExpiresAtUtc,
     SessionBookingRefDto? Booking, string? GuestName, string? GuestPhone, string? Comment, SessionAddedByDto AddedBy, StayServiceCancellationPolicy? CancellationPolicy,
     string? OwnerCancelRefundText, List<PaymentProofDto> PaymentProofs, PaymentConfirmedDto? PaymentConfirmed, DateTime? PaymentProofsPurgedAtUtc, string? StatusReason,
-    bool IsManual, List<string> AvailableActions, List<StayBookingEventDto> Events);
+    bool IsManual, List<string> AvailableActions, List<StayBookingEventDto> Events,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? GuestsCount = null);
 
 public record StaffServiceQuoteInput(Guid? ServiceId, DateOnly? BusinessDate, int? StartMinute, int? Hours, List<ItemSelectionInput>? Items, Guid? BookingId);
 
@@ -230,7 +231,7 @@ public record StaffAddSessionInput(
 
 public record ManualServiceOrderInput(
     Guid? ServiceId, DateOnly? BusinessDate, int? StartMinute, int? Hours, List<ItemSelectionInput>? Items, string? GuestName, string? GuestPhone, string? Comment,
-    StayServiceRequestBasis? RequestBasis, Guid? IdempotencyKey);
+    StayServiceRequestBasis? RequestBasis, Guid? IdempotencyKey, int? GuestsCount = null);
 
 public record StaffBookingSessionDto(
     Guid Id, int Version, string ServiceName, ServiceTimeDto Time, List<SessionItemDto> Items, int TotalRub, StayServiceSessionState State, string StateText,

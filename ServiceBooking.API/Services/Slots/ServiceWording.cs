@@ -83,6 +83,7 @@ public sealed record ServiceWording(
         StayServiceOrderEventKind.CancelledByGuest => "Гость отменил бронь",
         StayServiceOrderEventKind.CancelledByOwner => "Компания отменила бронь",
         StayServiceOrderEventKind.PaymentProofsPurged => "Подтверждения оплаты удалены по сроку хранения",
+        StayServiceOrderEventKind.SessionReminderSent => "Отправлено напоминание",
         _ => "Персональные данные удалены"
     };
 

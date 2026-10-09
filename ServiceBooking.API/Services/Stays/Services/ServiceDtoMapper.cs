@@ -190,6 +190,7 @@ public class ServiceDtoMapper(
 
         var ownerRefund = order is null || StayStateMachine.IsTerminal(order.Status) || order.PrepayRub == 0 || order.Status == StayBookingStatus.Held
             ? null : ServiceTexts.OwnerCancelRefund(order.PrepayRub);
+        var isBaths = company.Kind == CompanyKind.Baths;
         var addedBy = new SessionAddedByDto(s.AddedByKind.ToString() is "SuperAdmin" ? "Staff" : s.AddedByKind.ToString(), s.AddedByNameSnapshot, s.RequestBasis, AddedByText(s));
 
         return new StaffServiceSessionCardDto(
@@ -202,7 +203,8 @@ public class ServiceDtoMapper(
             order?.GuestName ?? booking?.GuestName, order?.GuestPhone ?? booking?.GuestPhone, order?.Comment ?? booking?.Comment, addedBy, order?.CancellationPolicySnapshot,
             ownerRefund, proofs.Select(StayDtoMapper.ToProof).ToList(),
             order?.PaymentConfirmedAtUtc is { } at ? new PaymentConfirmedDto(at, order.PaymentConfirmedByNameSnapshot ?? string.Empty) : null,
-            order?.PaymentProofsPurgedAtUtc, order?.StatusReason ?? s.StatusReason, order?.IsManual ?? false, actions, events);
+            order?.PaymentProofsPurgedAtUtc, order?.StatusReason ?? s.StatusReason, order?.IsManual ?? false, actions, events,
+            isBaths ? order?.GuestsCount : null);
     }
 
     public static string ActorText(StayActorKind kind, string? name) => kind switch
