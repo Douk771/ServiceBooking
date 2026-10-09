@@ -311,7 +311,7 @@ public sealed class SubjectDataExporter(
     }
 
     /// <summary>ARCHITECTURE_CYCLE42.md §42.11.1: which site the order belongs to ("Baths" for the bath vertical, otherwise "Stays"; the push `site` spelling).</summary>
-    internal static string ExportSite(CompanyKind kind) => kind == CompanyKind.Baths ? nameof(CompanyKind.Baths) : nameof(CompanyKind.Stays);
+    internal static string ExportSite(CompanyKind kind) => kind switch { CompanyKind.Baths => nameof(CompanyKind.Baths), _ => nameof(CompanyKind.Stays) };
 
     /// <summary>One consent-journal row as the export (and <c>GET /api/profile/consents</c>' history) shows
     /// it — shared by both, hence here rather than duplicated (§385).</summary>
