@@ -112,6 +112,8 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaysGuestPushDispatchTask>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysBoardService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysScheduleService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Baths.BathsCompanyService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Baths.BathsScheduleService>();
     // Cycle 39 (ARCHITECTURE_CYCLE39.md §39.16): time-slot services of «Дома».
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceSlotService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceSessionWriter>();
