@@ -83,7 +83,7 @@ public class StayNotificationPlanner(
         var settings = await db.StaysSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == order.CompanyId, ct) ?? new StaysSettings { CompanyId = order.CompanyId };
         var facts = ServiceFacts(company, session, null, order.StatusReason, order, settings, paid);
         await DeliverCoreAsync(StayNotificationSubject.Of(order), company, settings, order.NotifyByMessenger, order.GuestPhone, order.GuestName, order.GuestUserId,
-            order.PersonalDataErased, marker, entries, session.Id, facts, links.StayServiceOrderPageUrl(order.PublicToken), $"/s/{order.PublicToken}", order.Id, forOrder: true, ct);
+            order.PersonalDataErased, marker, entries, session.Id, facts, links.ServiceOrderPageUrl(company.Kind, order.PublicToken), links.ServiceOrderRelativePath(company.Kind, order.PublicToken), order.Id, forOrder: true, ct);
     }
 
     private async Task DeliverCoreAsync(
@@ -101,7 +101,7 @@ public class StayNotificationPlanner(
             var type = entry.Type;
             if (entry.Audience == StayAudience.Staff)
             {
-                var url = links.StaysCabinetServiceSessionUrl(company.Id, sessionId);
+                var url = links.CabinetServiceSessionUrl(company.Kind, company.Id, sessionId);
                 if (staffPushOn) await staffPush.QueueAsync(subject, ParseId(marker), type, ServiceNotificationTexts.StaffPush(type, facts, sessionId, url, wording), ct);
                 if (maxOn) await staffMax.QueueAsync(subject, ParseId(marker), type, ServiceNotificationTexts.StaffMax(type, facts, sessionId, url, wording), ct);
                 continue;

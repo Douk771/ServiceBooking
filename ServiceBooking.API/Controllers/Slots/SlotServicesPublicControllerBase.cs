@@ -87,7 +87,7 @@ public abstract class SlotServicesPublicControllerBase(
         var result = await orders.CreateAsync(Vertical.Kind, serviceId, input, User, HttpContext.Connection.RemoteIpAddress?.ToString(), ct);
         if (result.Error is not null) return result.Error;
         var order = result.Order!;
-        var body = new CreateServiceOrderResponse(order.PublicToken, links.StayServiceOrderPageUrl(order.PublicToken), await mapper.ToPublicOrderAsync(order, ct));
+        var body = new CreateServiceOrderResponse(order.PublicToken, links.ServiceOrderPageUrl(Vertical.Kind, order.PublicToken), await mapper.ToPublicOrderAsync(order, ct));
         return result.Created ? StatusCode(StatusCodes.Status201Created, body) : Ok(body);
     }
 

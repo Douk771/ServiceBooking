@@ -288,7 +288,7 @@ public sealed class SubjectDataExporter(
             var s = svcOrderSessions[o.Id];
             return new ExportStayServiceOrderDto(companyNames.GetValueOrDefault(o.CompanyId, string.Empty), s.ServiceNameSnapshot,
                 ServiceBooking.API.Services.Stays.ServiceTimeFormat.Guest(s.BusinessDate, s.StartMinute, s.Hours), s.Hours, ServiceBooking.API.Services.Stays.ServiceDtoMapper.ItemsOf(s),
-                o.TotalRub, o.PrepayRub, o.Status.ToString(), o.GuestName, o.GuestPhone, o.Comment, o.StatusReason, stayLinks.StayServiceOrderPageUrl(o.PublicToken),
+                o.TotalRub, o.PrepayRub, o.Status.ToString(), o.GuestName, o.GuestPhone, o.Comment, o.StatusReason, stayLinks.ServiceOrderPageUrl(companyKinds.GetValueOrDefault(o.CompanyId, CompanyKind.Stays), o.PublicToken),
                 o.PaymentProofs.OrderBy(p => p.UploadedAtUtc).Select(p => new ExportStayPaymentProofDto(p.UploadedAtUtc, p.ContentType, p.SizeBytes, p.PurgedAtUtc != null || p.StorageKey == null)).ToList(),
                 svcOrderEvents[o.Id].Select(e => new ExportStayEventDto(e.OccurredAtUtc, ServiceBooking.API.Services.Slots.ServiceWording.For(companyKinds.GetValueOrDefault(o.CompanyId)).StaffEventText(e.Kind))).ToList());
         }).ToList();
