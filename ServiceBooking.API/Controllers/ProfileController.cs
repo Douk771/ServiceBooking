@@ -446,7 +446,8 @@ public record ExportStaySessionDto(string ServiceName, string TimeLabel, List<Se
 
 public record ExportStayServiceOrderDto(
     string CompanyName, string ServiceName, string TimeLabel, int Hours, List<ServiceBooking.API.DTOs.Stays.SessionItemDto> Items, int TotalRub, int PrepayRub, string Status,
-    string? GuestName, string? GuestPhone, string? Comment, string? StatusReason, string OrderUrl, List<ExportStayPaymentProofDto> PaymentProofs, List<ExportStayEventDto> Events);
+    string? GuestName, string? GuestPhone, string? Comment, string? StatusReason, string OrderUrl, List<ExportStayPaymentProofDto> PaymentProofs, List<ExportStayEventDto> Events,
+    int? GuestsCount = null, string Site = "Stays");
 
 public record ExportStaffMaxLinkDto(string Status, DateTime LinkedAtUtc, DateTime? StoppedAtUtc);
 
