@@ -17,9 +17,6 @@ public sealed record ShopChannelView(NotificationChannel Channel, ChannelFunding
 /// number paid" is decided, so the shop screen, the dispatcher and the salon settings agree). <c>messengerAvailable</c> = a transport
 /// is routable (paid, first number, not suspended, bound at least once) and the service is on.
 /// </summary>
-/// <remarks>Deviation from §40.4.2 #4: <see cref="IsMessengerAvailableAsync"/> stays until BE-40-5 introduces
-/// <c>CustomerMessagingOffer</c> (the cached public offer) and moves its three consumers (<c>StorefrontController</c>,
-/// <c>OrderCreationService</c>, <c>StayBookingCreationService</c>) to it; only its body changed to the account model.</remarks>
 public sealed class ShopChannelReader(AccountMessagingReader messagingReader, ChannelFundingReader fundingReader)
 {
     public async Task<List<ShopChannelView>> LoadAsync(Guid shopId, CancellationToken ct = default)
@@ -30,11 +27,5 @@ public sealed class ShopChannelReader(AccountMessagingReader messagingReader, Ch
         var funding = await fundingReader.LoadAsync(channels, ct);
         return channels.Select(c => new ShopChannelView(
             c, funding.GetValueOrDefault(c.Id) ?? new ChannelFundingInfo(ChannelFundingState.NotPaid, string.Empty, null))).ToList();
-    }
-
-    public async Task<bool> IsMessengerAvailableAsync(Guid shopId, CancellationToken ct = default)
-    {
-        var messaging = await messagingReader.ForCompanyAsync(shopId, ct: ct);
-        return messaging.PlatformEnabled && messaging.AnyRoutable;
     }
 }

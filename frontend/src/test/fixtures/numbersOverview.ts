@@ -33,9 +33,10 @@ export function maxTransport(overrides: Partial<TransportNumbersDto> = {}): Tran
     canRequestPayment: true,
     termsAccepted: false,
     wizardStep: 'Payment',
-    displayStatus: 'ActionRequired',
-    displayText: 'Не оплачено',
-    action: 'Pay',
+    // A transport WITHOUT a number carries no row-level status or action in the server's answer (contract example, §40.23): the entry into the wizard is wizardStep.
+    displayStatus: null,
+    displayText: null,
+    action: null,
     channel: null,
     extraChannels: [],
     connectionNotice: 'Для авторизации по QR в MAX нужно отключить пароль входа в мессенджере.',

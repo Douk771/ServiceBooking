@@ -36,7 +36,7 @@ public sealed record TrialGrantResult(bool Granted, string? RefusalCode, string?
 public class TrialActivationService(
     AppDbContext db, PlatformSettings platformSettings, IOptions<TrialOptions> trialOptions,
     IPhoneVerificationMethodRegistry phoneVerificationRegistry,
-    IGlitchTipSignalService signals, ILogger<TrialActivationService> logger)
+    IGlitchTipSignalService signals, ILogger<TrialActivationService> logger, ServiceBooking.API.Services.Legal.LegalDocumentProvider legalDocuments)
 {
     public async Task<TrialGrantResult> GrantAsync(TrialGrantRequest request, CancellationToken ct = default)
     {
@@ -241,7 +241,10 @@ public class TrialActivationService(
         foreach (var optionCode in ChannelOptionCodes.All)
         {
             var transport = AccountMessagingReader.TransportOf(optionCode)!.Value;
-            if (TrialOptionGrantRule.Decide(await platformSettings.IsOptionOpenAsync(transport, ct), rowExists: false, rowGrantedByTrial: false)
+            // Т40-L-01 (review of cycle 40): an option whose offer (TermsOwner) is not published is not granted either — the «Условия» step would take the owner's
+            // consent to a DRAFT and the messages would start before the offer exists. Open ≠ sellable: the price is not asked of a free trial, the published offer is.
+            var offerPublished = LegalOptionGuards.IsPubliclySellable(optionCode, legalDocuments.Current);
+            if (!offerPublished || TrialOptionGrantRule.Decide(await platformSettings.IsOptionOpenAsync(transport, ct), rowExists: false, rowGrantedByTrial: false)
                 == TrialOptionGrantAction.SkipClosed)
             {
                 logger.LogInformation(

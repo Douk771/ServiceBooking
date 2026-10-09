@@ -250,7 +250,9 @@ describe('NotificationsAdminTab — the table, «Подтвердить опла
     expect(toggle).toHaveAttribute('aria-checked', 'false')
     expect(screen.getByRole('switch', { name: 'MAX — открыто для владельцев' })).toHaveAttribute('aria-checked', 'true')
     await user.click(toggle)
-    await waitFor(() => expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ whatsAppOptionOpen: true, maxOptionOpen: true })))
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      whatsAppOptionOpen: true, trialDurationDays: null, trialMailingWindowDays: null, trialWarningThresholdsDays: null,
+    })))
   })
 
   it('no longer offers a price field for the «channel» option', async () => {

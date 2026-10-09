@@ -42,8 +42,8 @@ public class AdminBillingController(
     /// <summary>An untouched trial line of a channel option: the row was granted by the trial, still has no paid-until date of its
     /// own, is not ending, and the submitted quantity is the stored one. The admin screen sends such a row back as it was read, so
     /// it must neither be refused for the missing date nor be turned into a bought row without a date.</summary>
-    public static bool IsUnchangedTrialLine(AccountSubscriptionOption? row, AssignOptionInput line) =>
-        row is { GrantedByTrial: true, PaidUntilUtc: null, EndsAtUtc: null } && line.PaidUntil is null && row.Quantity == line.Quantity;
+    public static bool IsUnchangedChannelOptionLine(AccountSubscriptionOption? row, AssignOptionInput line) =>
+        row is { EndsAtUtc: null } && line.PaidUntil is null && row.Quantity == line.Quantity;
 
     /// <summary>
     /// ARCHITECTURE_CYCLE40.md §40.13 (API_CONTRACT_CYCLE40.md §40.31.6) — the lines of the two channel options (<c>notifications.whatsapp</c>,
@@ -61,12 +61,12 @@ public class AdminBillingController(
         var existing = await db.AccountSubscriptionOptions.AsNoTracking()
             .Where(o => o.BillingAccountId == accountId && lineOptionIds.Contains(o.OptionId)).ToListAsync();
 
-        if (channelLines.Any(l => l.PaidUntil is null && !IsUnchangedTrialLine(existing.FirstOrDefault(o => o.OptionId == l.OptionId), l)))
+        if (channelLines.Any(l => l.PaidUntil is null && !IsUnchangedChannelOptionLine(existing.FirstOrDefault(o => o.OptionId == l.OptionId), l)))
             return BadRequest("Для опций WhatsApp и MAX укажите дату окончания оплаты");
 
         foreach (var line in channelLines)
         {
-            if (IsUnchangedTrialLine(existing.FirstOrDefault(o => o.OptionId == line.OptionId), line)) continue;
+            if (IsUnchangedChannelOptionLine(existing.FirstOrDefault(o => o.OptionId == line.OptionId), line)) continue;
             var transport = AccountMessagingReader.TransportOf(options.First(o => o.Id == line.OptionId).Code)!.Value;
             var row = existing.FirstOrDefault(o => o.OptionId == line.OptionId);
             var verdict = ChannelOptionAssignmentRules.Evaluate(
@@ -425,7 +425,7 @@ public class AdminBillingController(
         {
             var row = existingOptions.FirstOrDefault(o => o.OptionId == line.OptionId);
             var optionCode = options.First(o => o.Id == line.OptionId).Code;
-            if (ChannelOptionLog.IsChannelOption(optionCode) && IsUnchangedTrialLine(row, line)) continue;
+            if (ChannelOptionLog.IsChannelOption(optionCode) && IsUnchangedChannelOptionLine(row, line)) continue;
             if (row is null)
             {
                 db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
@@ -469,7 +469,7 @@ public class AdminBillingController(
         // and is treated the same as the option staying at its previous quantity until removed outright,
         // see the cycle-07 backend report) end at the close of the current paid period rather than
         // disappearing immediately (contract: "действует до конца оплаченного периода").
-        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null))
+        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null && !ChannelOptionLog.IsChannelOption(r.Option.Code))) // the messenger options live their own life (confirm-payment, trial); a form that does not list them leaves them alone
         {
             row.EndsAtUtc = sub.PaidUntil ?? now;
             ChannelOptionLog.Write(db, accountId, row.Option.Code, ChannelOptionChangeSource.AdminOptionEnded,
@@ -659,7 +659,7 @@ public class AdminBillingController(
         {
             var row = existingOptions.FirstOrDefault(o => o.OptionId == line.OptionId);
             var optionCode = options.First(o => o.Id == line.OptionId).Code;
-            if (ChannelOptionLog.IsChannelOption(optionCode) && IsUnchangedTrialLine(row, line)) continue;
+            if (ChannelOptionLog.IsChannelOption(optionCode) && IsUnchangedChannelOptionLine(row, line)) continue;
             if (row is null)
             {
                 db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
@@ -687,7 +687,7 @@ public class AdminBillingController(
                         oldOptionPaidUntil, row.PaidUntilUtc, oldOptionEndsAt, row.EndsAtUtc, changedByUserId, now, comment: dto.Comment);
             }
         }
-        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null))
+        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null && !ChannelOptionLog.IsChannelOption(r.Option.Code))) // the messenger options live their own life (confirm-payment, trial); a form that does not list them leaves them alone
         {
             row.EndsAtUtc = newPaidUntil ?? now;
             ChannelOptionLog.Write(db, accountId, row.Option.Code, ChannelOptionChangeSource.AdminOptionEnded,

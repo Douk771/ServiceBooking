@@ -22,7 +22,7 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/storefront/{slug}")]
 public class StorefrontController(
     AppDbContext db, StockLedger stockLedger, PublicSiteLinks links, OrderCreationService orderCreation, ShopGateLoader gates,
-    DailyMenuService menus, ShopChannelReader shopChannels, CustomerOrderNotificationsBuilder notificationsBuilder,
+    DailyMenuService menus, CustomerOrderNotificationsBuilder notificationsBuilder,
     ServiceBooking.API.Services.Notifications.CustomerMessagingOfferService messagingOffer) : ControllerBase
 {
     /// <summary>

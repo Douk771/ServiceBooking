@@ -21,7 +21,7 @@ export const MENU_UNBIND = 'Отвязать номер'
 export const MENU_LABEL = 'Действия с номером'
 
 export const CONFIRM_REPLACE_TEXT = 'Старый номер будет отвязан, новый нужно будет привязать по QR-коду. Оплаченный период сохранится.'
-export const CONFIRM_UNBIND_TEXT = 'Номер перестанет отправлять сообщения. Привязать его заново можно в этом же блоке.'
+export const CONFIRM_UNBIND_TEXT = 'Номер перестанет отправлять сообщения, а ожидающие сообщения будут отменены. Привязать номер заново можно в этом же блоке.'
 
 export const WIZARD_TITLES: Record<WizardStep, (m: string) => string> = {
   Payment: (m) => `Подключение ${m}`,

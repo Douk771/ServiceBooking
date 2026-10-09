@@ -379,7 +379,8 @@ public sealed class BookingCreationService(
         // mark is proved by the record itself and is not entered in the journal). Only when there is no current grant already.
         try
         {
-            if (consentOrigin == MessengerConsentOrigin.Customer && dto.NotifyByMessenger == true)
+            // Only when the recipient is the account itself: a booking made for ANOTHER person (or under another phone) is a tick about THEIR phone, which the account cannot give.
+            if (consentOrigin == MessengerConsentOrigin.Customer && dto.NotifyByMessenger == true && !booking.BookedForOther && string.IsNullOrEmpty(booking.GuestPhone))
                 await MessengerOptInLedger.GrantForCustomerAsync(
                     consentLedger, legalProvider, userId!, ConsentSource.MessengerOptInBooking, remoteIp, requestAborted);
         }

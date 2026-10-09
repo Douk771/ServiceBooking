@@ -205,7 +205,13 @@ public class CompaniesController(
         var cover = photos.Count > 0 ? (photos[0].Url, photos[0].ThumbnailUrl) : ((string, string)?)null;
         // Reachable anonymously (no [Authorize]) — same §46.2 treatment as GetAll: no usage computed.
         return Ok(companyDtoAssembler.MapToDto(c, plan, averageRating, reviewCount, city, employeeCount: 0, usage: null,
-            cover, photos) with { CustomerMessaging = await messagingOffer.ForCompanyAsync(c, ct: ct) });
+            cover, photos) with
+        {
+            // Only a salon asks its customers for the tick on THIS page; a shop / «Дома» company has its own page and its own answer (API_CONTRACT_CYCLE40.md §40.30.1).
+            CustomerMessaging = c.Kind == CompanyKind.Services
+                ? await messagingOffer.ForCompanyAsync(c, ct: ct)
+                : new ServiceBooking.API.Services.Notifications.CustomerMessagingOfferDto(false, [], null),
+        });
     }
 
     // Public: list masters for a company, optionally filtered by serviceId

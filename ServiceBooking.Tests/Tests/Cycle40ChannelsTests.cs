@@ -186,6 +186,51 @@ public class Cycle40ChannelsTests(TestDatabaseFixture fixture) : NotificationTes
         (await admin.GetAsync($"/api/admin/notification-channels/{Guid.NewGuid()}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Fact, TestCase("CY40-ADM-06")]
+    public async Task AssigningASubscription_DoesNotEndOrRefuseAConfirmedMessengerOption()
+    {
+        var (owner, channelId) = await OwnerWithRequestedChannelAsync();
+        var admin = AuthedClient((await LoginAsSuperAdminAsync()).Token);
+        (await admin.PostAsJsonAsync($"/api/admin/notification-channels/{channelId}/confirm-payment", new { months = 6 })).EnsureSuccessStatusCode();
+
+        var (accountId, optionId, planId) = await DbAsync(async db => (
+            await db.BillingAccounts.Where(a => a.OwnerUserId == owner.UserId).Select(a => a.Id).FirstAsync(),
+            await db.SubscriptionOptions.Where(o => o.Code == "notifications.max").Select(o => o.Id).FirstAsync(),
+            await db.SubscriptionPlanConfigs.Where(p => p.IsActive).Select(p => p.Id).FirstAsync()));
+        var paidUntil = (await DbAsync(db => db.AccountSubscriptionOptions.AsNoTracking().FirstAsync(o => o.BillingAccountId == accountId && o.OptionId == optionId))).PaidUntilUtc;
+
+        // the form sends the row back as it read it (quantity 1, no date) — or does not list it at all; neither may be a 400 or end the paid period
+        foreach (var options in new object[] { new[] { new { optionId, quantity = 1, paidUntil = (DateOnly?)null } }, Array.Empty<object>() })
+        {
+            var response = await admin.PutAsJsonAsync($"/api/admin/billing-accounts/{accountId}/subscription", new
+            {
+                planId, isActive = true, paidUntil = DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(1)), options,
+                reasonCode = "OperatorErrorCorrection", reasonDetails = "Проверка цикла 40",
+            });
+            response.StatusCode.Should().NotBe(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+
+            var row = await DbAsync(db => db.AccountSubscriptionOptions.AsNoTracking().FirstAsync(o => o.BillingAccountId == accountId && o.OptionId == optionId));
+            row.EndsAtUtc.Should().BeNull("a confirmed messenger option is not ended by a subscription assignment that does not mention it");
+            row.PaidUntilUtc.Should().Be(paidUntil);
+        }
+    }
+
+    [Fact, TestCase("CY40-ADM-07")]
+    public async Task ConfirmPayment_TwoAtOnce_ExtendTwice_NotOnce()
+    {
+        var (_, channelId) = await OwnerWithRequestedChannelAsync();
+        var admin = AuthedClient((await LoginAsSuperAdminAsync()).Token);
+        var url = $"/api/admin/notification-channels/{channelId}/confirm-payment";
+
+        var responses = await Task.WhenAll(admin.PostAsJsonAsync(url, new { months = 1 }), AuthedClient((await LoginAsSuperAdminAsync()).Token).PostAsJsonAsync(url, new { months = 1 }));
+        responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.OK, "no 500 from the unique index, no lost extension");
+
+        var accountId = (await DbAsync(db => db.NotificationChannels.AsNoTracking().Where(c => c.Id == channelId).Select(c => c.BillingAccountId).FirstAsync()))!.Value;
+        var until = (await DbAsync(db => db.AccountSubscriptionOptions.AsNoTracking().Where(o => o.BillingAccountId == accountId && o.Option.Code == "notifications.max").Select(o => o.PaidUntilUtc).FirstAsync()))!.Value;
+        until.Should().BeCloseTo(DateTime.UtcNow.AddMonths(2), TimeSpan.FromDays(2), "two confirmations of one month each = two months");
+        (await DbAsync(db => db.ChannelPaymentLogs.CountAsync(l => l.ChannelId == channelId && l.Comment!.StartsWith("payment confirmed")))).Should().Be(2);
+    }
+
     [Fact, TestCase("CY40-CTR-01")]
     public async Task Responses_MatchTheCycle40Contract()
     {

@@ -97,7 +97,6 @@ public class AdminChannelsController(AppDbContext db, ChannelFundingReader fundi
         var result = await adminChannels.ConfirmPaymentAsync(channel, input.Months, input.Comment, User.FindFirstValue(ClaimTypes.NameIdentifier)!, ct);
         if (!result.Ok) return StatusCode(result.Status!.Value, result.Text);
 
-        await db.SaveChangesAsync(ct);
         return Ok(await adminChannels.BuildCardAsync(id, ct));
     }
 

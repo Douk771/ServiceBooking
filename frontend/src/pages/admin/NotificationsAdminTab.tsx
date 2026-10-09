@@ -282,7 +282,18 @@ function MessengersCard() {
   const { data, isLoading } = useQuery({ queryKey: ['admin-platform-settings'], queryFn: adminNotificationsApi.getSettings })
   const mut = useMutation({
     mutationFn: (patch: { whatsAppOptionOpen?: boolean; maxOptionOpen?: boolean; customerMessagingEnabled?: boolean }) =>
-      adminNotificationsApi.updateSettings({ ...(data as NonNullable<typeof data>), ...patch }),
+      // Only the switch (null = "do not change" for everything else): sending the trial fields back would make the server re-check them against the current terms text
+      // — and the stop-cock of messaging must not fail on an unrelated validation during an incident.
+      adminNotificationsApi.updateSettings({
+        channelPricePerMonth: data?.channelPricePerMonth ?? null,
+        channelIdleDays: data?.channelIdleDays ?? 3,
+        pricingPublicEnabled: data?.pricingPublicEnabled ?? false,
+        pricingPublicBlockedReason: null,
+        trialDurationDays: null,
+        trialMailingWindowDays: null,
+        trialWarningThresholdsDays: null,
+        ...patch,
+      }),
     onSuccess: (res) => {
       qc.setQueryData(['admin-platform-settings'], res)
       void qc.invalidateQueries({ queryKey: ['admin-channels'] })

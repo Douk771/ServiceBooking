@@ -27,7 +27,7 @@ namespace ServiceBooking.API.Controllers.Stays;
 [Authorize]
 public class StaysCompaniesController(
     AppDbContext db, CompanyCreationService companyCreation, StaysAccessResolver access, StaysCompanyService companyService,
-    PublicSiteLinks links, StaysTrialService trial, BillingAccountProvisioner accounts, ShopChannelReader channelReader,
+    PublicSiteLinks links, StaysTrialService trial, BillingAccountProvisioner accounts,
     IStaysClock clock, ArrivalReminderService reminder, StayActorResolver actors, Microsoft.Extensions.Options.IOptions<StaysOptions> staysOptions,
     ServiceBooking.API.Services.Notifications.AccountMessagingReader messagingReader) : ControllerBase
 {

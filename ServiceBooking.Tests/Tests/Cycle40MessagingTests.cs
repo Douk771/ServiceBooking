@@ -127,4 +127,31 @@ public class Cycle40MessagingTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         (await DbAsync(db => db.ConsentRecords.AsNoTracking()
             .AnyAsync(c => c.UserId == customer.UserId && c.DocumentKey == "PdnConsent" && c.Purpose == ConsentPurpose.ProviderDelivery && c.RevokedAtUtc == null))).Should().BeTrue();
     }
+
+    [Fact, TestCase("CY40-MSG-05")]
+    public async Task RevokingTheProviderDeliveryConsent_SwitchesOffTheTickOfTheCustomersUpcomingBookings()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        await SeedConnectedAssignedChannelAsync(owner.UserId, company.Id);
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 30);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var customer = await RegisterAsync();
+        var client = AuthedClient(customer.Token);
+        var created = await client.PostAsJsonAsync("/api/bookings", new
+        {
+            companyId = company.Id, serviceId = service.Id, masterId = master.UserId, date, startTime = "09:00:00", notifyByMessenger = true,
+        });
+        created.EnsureSuccessStatusCode();
+        var booking = (await created.Content.ReadJsonAsync<ServiceBooking.API.DTOs.Bookings.BookingDto>())!;
+        (await DbAsync(db => db.Bookings.AsNoTracking().FirstAsync(b => b.Id == booking.Id))).NotifyByMessenger.Should().BeTrue();
+
+        // withdrawing the consent: the tick that was sent without a second look at the journal must go too, or a rescheduled booking would still write to the person
+        var revoke = await client.PostAsJsonAsync("/api/profile/consents/revoke", new { documentKey = "PdnConsent", purpose = "ProviderDelivery", reason = "не хочу" });
+        revoke.StatusCode.Should().Be(HttpStatusCode.OK, await revoke.Content.ReadAsStringAsync());
+
+        (await DbAsync(db => db.Bookings.AsNoTracking().FirstAsync(b => b.Id == booking.Id))).NotifyByMessenger.Should().BeFalse();
+    }
 }

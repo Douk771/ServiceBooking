@@ -52,11 +52,12 @@ describe('NumbersBlock', () => {
     overview.mockRejectedValueOnce(new Error('x')).mockResolvedValue(numbersOverview([maxTransport()]))
     renderBlock()
     await userEvent.click(await screen.findByRole('button', { name: 'Повторить' }))
-    expect(await screen.findByText('Не оплачено')).toBeInTheDocument()
+    // after the retry the block is back; a transport without a number shows its price and the entry button of the wizard step (no status text of its own)
+    expect(await screen.findByRole('button', { name: 'Отправить заявку' })).toBeInTheDocument()
   })
 
   it('триал: мастер открывается на «Условия», кнопка активна лишь с обеими отметками, paymentRequest=false', async () => {
-    overview.mockResolvedValue(numbersOverview([maxTrialOnTermsStep({ action: 'AcceptTerms', displayStatus: 'ActionRequired', displayText: 'Примите условия подключения MAX' })]))
+    overview.mockResolvedValue(numbersOverview([maxTrialOnTermsStep()]))
     request.mockResolvedValue({ id: 'ch1' })
     connect.mockResolvedValue({ state: 'Connecting', refreshAfterSeconds: 3 })
     getQr.mockResolvedValue({ state: 'Connecting', qrBase64: null, refreshAfterSeconds: 60, expiresInSeconds: 0 })

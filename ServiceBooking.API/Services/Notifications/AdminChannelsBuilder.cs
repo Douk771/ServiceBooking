@@ -17,7 +17,7 @@ public enum AdminChannelPaymentFilter { Paid, NotPaid, Requested, Suspended, Tri
 /// text comes from the same pure rules the owner sees (<see cref="ChannelPresentation"/>), computed from the facts of <see cref="NumbersOverviewBuilder"/> — the admin
 /// and the owner never disagree about what a number is doing.
 /// </summary>
-public sealed class AdminChannelsBuilder(AppDbContext db, NumbersOverviewBuilder numbers, AccountMessagingReader messagingReader, PlatformSettings platformSettings)
+public sealed class AdminChannelsBuilder(AppDbContext db, NumbersOverviewBuilder numbers, PlatformSettings platformSettings)
 {
     public sealed record Row(NotificationChannel Channel, AdminChannelDto Dto, AdminChannelPaymentFilter Payment, ChannelDisplayFacts Facts);
 
@@ -139,7 +139,7 @@ public sealed class AdminChannelsBuilder(AppDbContext db, NumbersOverviewBuilder
             NumbersOverviewBuilder.TermsAccepted(channel, ctx), channel.CreatedAt, channel.ConnectedAtUtc, channel.LastStateCheckAtUtc,
             channel.IdleSinceUtc, row.Facts.IdleDeadlineUtc, channel.ProviderServerCountry, lastTest,
             new AdminChannelPaymentDto(payment.Paid, payment.PaidUntil, payment.IsTrial, row.Facts.RequestNewerThanPayment, payment.LastPaymentAt),
-            transport.Option.Open, channel.ReplacedByChannelId, replacesId, companies, stateEvents, paymentEvents, row.Dto.AvailableActions);
+            transport.Option.Open, channel.ReplacedByChannelId, replacesId, companies, stateEvents, paymentEvents, row.Dto.AvailableActions ?? []);
     }
 
     public sealed record ConfirmResult(int? Status, string? Text, bool Ok)
@@ -149,7 +149,7 @@ public sealed class AdminChannelsBuilder(AppDbContext db, NumbersOverviewBuilder
     }
 
     /// <summary>«Подтвердить оплату» (§40.13): the paid period of the account's option for the number's transport is extended from max(now, current end) by
-    /// <paramref name="months"/>; journals: <see cref="ChannelPaymentLog"/> and <see cref="ChannelOptionChangeLog"/>. The caller saves.</summary>
+    /// <paramref name="months"/>; journals: <see cref="ChannelPaymentLog"/> and <see cref="ChannelOptionChangeLog"/>. Saves (inside its own transaction under the account's lock).</summary>
     public async Task<ConfirmResult> ConfirmPaymentAsync(NotificationChannel channel, int months, string? comment, string adminUserId, CancellationToken ct)
     {
         if (channel.State == ChannelState.Replaced) return ConfirmResult.Fail(StatusCodes.Status409Conflict, ReplacedConflict);
@@ -163,10 +163,18 @@ public sealed class AdminChannelsBuilder(AppDbContext db, NumbersOverviewBuilder
         if (!await platformSettings.IsOptionOpenAsync(transport, ct))
             return ConfirmResult.Fail(StatusCodes.Status409Conflict, $"Опция {display} закрыта для подключения. Откройте её в блоке „Подключение мессенджеров“");
 
+        // One confirmation at a time per billing account — the SAME lock the admin billing screens take: two admins (or a repeated request) must not both read one
+        // paid-until and both write "+N months" over each other, nor race to create the row (unique index (BillingAccountId, OptionId)).
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await AdvisoryLock.AcquireAsync(db, $"billing-account:{accountId}");
+
         var now = DateTime.UtcNow;
         var row = await db.AccountSubscriptionOptions.FirstOrDefaultAsync(o => o.BillingAccountId == accountId && o.OptionId == option.Id, ct);
         var oldPaidUntil = row?.PaidUntilUtc;
-        var baseDate = oldPaidUntil is { } current && current > now ? current : now;
+        // A row without a date of its own (granted by the trial, or an old row) rides the account's subscription period: the extension starts from there, not from "now".
+        var effectiveEnd = oldPaidUntil ?? (row is null ? null
+            : await db.AccountSubscriptions.AsNoTracking().Where(s => s.BillingAccountId == accountId).Select(s => s.PaidUntil).FirstOrDefaultAsync(ct));
+        var baseDate = effectiveEnd is { } current && current > now ? current : now;
         var newPaidUntil = baseDate.AddMonths(months);
         var (oldEndsAt, newEndsAt) = (row?.EndsAtUtc, (DateTime?)null);
 
@@ -198,6 +206,8 @@ public sealed class AdminChannelsBuilder(AppDbContext db, NumbersOverviewBuilder
             Id = Guid.NewGuid(), ChannelId = channel.Id, ChangedByUserId = adminUserId, OldPaidUntil = oldPaidUntil, NewPaidUntil = newPaidUntil,
             Comment = string.IsNullOrWhiteSpace(comment) ? $"payment confirmed: {months} мес." : $"payment confirmed: {comment}", ChangedAtUtc = now,
         });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return ConfirmResult.Success;
     }
 

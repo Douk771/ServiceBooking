@@ -33,7 +33,7 @@ public class OrderCreationService(
     OrderPhoneThrottle throttle, StockLedger stockLedger, OrderNumberAllocator numberAllocator, OrderEventLog eventLog,
     OrderDtoMapper mapper, PublicSiteLinks links, LegalDocumentProvider legalProvider, IOptions<OrdersOptions> options,
     ShopGateLoader gates, DailyMenuService menus, OrderMonthlyCounter monthlyCounter, OrderLimitWarner limitWarner,
-    CustomerOrderNotificationsBuilder notificationsBuilder, ShopChannelReader shopChannels,
+    CustomerOrderNotificationsBuilder notificationsBuilder,
     CustomerMessagingOfferService messagingOffer, ConsentLedger consentLedger, ILogger<OrderCreationService> logger)
 {
     private const string IdempotencyIndex = "IX_Orders_CompanyId_IdempotencyKey";

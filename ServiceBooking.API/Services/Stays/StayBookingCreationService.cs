@@ -36,7 +36,7 @@ public sealed record StayCreateResult(ActionResult? Error, StayBooking? Booking 
 public class StayBookingCreationService(
     AppDbContext db, CaptchaService captcha, HouseOccupancyWriter occupancy, StayPhoneThrottle throttle,
     StayBookingEventLog eventLog, StayHoldExpirer expirer, LegalDocumentProvider legalProvider, IStaysClock clock,
-    StaysCompanyService companyService, ShopChannelReader channelReader, StayActorResolver actors, CheckInInfoReleaser checkInInfo,
+    StaysCompanyService companyService, StayActorResolver actors, CheckInInfoReleaser checkInInfo,
     ServiceSlotService slots, ServiceSessionWriter sessionWriter, ServiceHoldReleaser holdReleaser, IOptions<StaysOptions> options,
     CustomerMessagingOfferService messagingOffer, ConsentLedger consentLedger, ILogger<StayBookingCreationService> logger)
 {

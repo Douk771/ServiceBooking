@@ -83,15 +83,9 @@ public class CompanyNotificationsController(
 
         // ARCHITECTURE_CYCLE9.md §104.5/§114.4 (US-125): both optional — "не прислали — не меняем".
         if (dto.DeliveryMode.HasValue) settings.DeliveryMode = dto.DeliveryMode.Value;
-        if (dto.PriorityTransport.HasValue)
-        {
-            // §114.4/B4 + §40.5.1: priorityTransport must be a ROUTABLE transport of the account (paid, first number, not suspended,
-            // bound at least once) — the same definition routing uses at queue time. ChannelState is deliberately not required to be
-            // Connected: gating this WRITE on it would reject saving unrelated settings while a number is briefly reconnecting.
-            if (!messaging.For(dto.PriorityTransport.Value).Routable)
-                return BadRequest("Приоритетный канал должен быть среди оплаченных транспортов компании");
-            settings.PriorityTransport = dto.PriorityTransport.Value;
-        }
+        // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.6.4): the former 400 "priority must be among the paid transports" is gone — the priority is a preference of the delivery mode,
+        // saved as sent; routing and the screen's priorityWarning deal with a priority that does not work (the shop and «Дома» dropped the check already).
+        if (dto.PriorityTransport.HasValue) settings.PriorityTransport = dto.PriorityTransport.Value;
 
         settings.UpdatedAt = DateTime.UtcNow;
         settings.UpdatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);

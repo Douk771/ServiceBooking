@@ -24,7 +24,7 @@ public sealed record ServiceOrderCreateResult(ActionResult? Error, StayServiceOr
 public class ServiceOrderCreationService(
     AppDbContext db, CaptchaService captcha, ServiceSlotService slots, ServiceSessionWriter sessionWriter, ServiceOrderThrottle throttle,
     StayServiceOrderEventLog eventLog, ServiceHoldReleaser holdReleaser, LegalDocumentProvider legalProvider, IStaysClock clock,
-    StaysCompanyService companyService, ShopChannelReader channelReader, StayActorResolver actors,
+    StaysCompanyService companyService, StayActorResolver actors,
     CustomerMessagingOfferService messagingOffer, ConsentLedger consentLedger, ILogger<ServiceOrderCreationService> logger)
 {
     private const string IdempotencyIndex = "IX_StayServiceOrders_CompanyId_IdempotencyKey";

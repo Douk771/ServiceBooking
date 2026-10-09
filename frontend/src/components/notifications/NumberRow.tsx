@@ -61,7 +61,12 @@ export function NumberRow({ transport, extraChannel, onOpenWizard }: Props) {
 
   const status = extraChannel ? extraChannel.displayStatus : (channel?.displayStatus ?? transport.displayStatus)
   const text = extraChannel ? extraChannel.displayText : (channel?.displayText ?? transport.displayText)
-  const action = extraChannel ? extraChannel.action : (channel?.action ?? transport.action)
+  // A transport without a live number has no row-level action in the answer (the server shows nothing to "work on" yet): the entry into the wizard is the step
+  // the server names — «Оплата» (an application, only when it can be sold) or «Условия» (a paid/trial transport that has not accepted them).
+  const entryAction = !extraChannel && !channel
+    ? transport.wizardStep === 'Payment' ? 'Pay' : transport.wizardStep === 'Terms' ? 'AcceptTerms' : null
+    : null
+  const action = extraChannel ? extraChannel.action : (channel?.action ?? transport.action ?? entryAction)
   const canReplace = !!channel && channel.canReplace
   const canUnbind = !!channel && channel.state !== 'Replaced'
 
