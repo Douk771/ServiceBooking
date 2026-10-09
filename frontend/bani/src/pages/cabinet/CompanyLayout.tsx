@@ -7,6 +7,7 @@ import { bathsCabinetApi } from '../../api/bathsCabinet'
 import { cabinetTabs, businessTodayIn, defaultCabinetTab, roleLabel } from '../../cabinet/cabinetTabs'
 import { useBathsCompany, type CabinetOutletContext } from '../../cabinet/cabinetVertical'
 import { useBookingsRevision } from '../../cabinet/useBookingsRevision'
+import { CHECKLIST_TARGETS, checklistPath, checklistTitle, ownerStrip } from '../../cabinet/checklist'
 import { can } from '@/utils/slots/slotPermissions'
 import { ErrorState, LoadingList } from '@/components/slots/ui/StatePanels'
 import { NotFoundPage } from '../NotFoundPage'
@@ -15,8 +16,9 @@ const COMPANY_POLL_MS = 60_000
 
 /**
  * `/cabinet/:companyId/*` — the shell of one «Бани» company: loads `GET /api/baths/companies/{id}` once, builds the menu from
- * `myPermissions` (never from the role name) and polls the revision of the bookings. MINIMAL: FE-42-5 owns the full shell (checklist,
- * gate and plan banners) and replaces this file; the contract with the screens of FE-42-6 is the outlet context `{ company, refresh }`.
+ * `myPermissions` (never from the role name), polls the revision of the bookings and, for whoever manages the company, shows what keeps the guests
+ * from booking: the gate, the plan and the checklist. The contract with the screens under it is the outlet context `{ company, refresh }`.
+ * 404 = not a member (indistinguishable from «no such company»), 403 = a member without the right to see the cabinet.
  */
 export function CompanyLayout() {
   const { companyId = '' } = useParams()
@@ -57,6 +59,7 @@ export function CompanyLayout() {
   const ctx: CabinetOutletContext = { company, refresh }
   const tabs = cabinetTabs(company.myPermissions)
   const today = businessTodayIn(company.timeZoneId)
+  const strip = ownerStrip(company, can(company.myPermissions, 'ManageCompany'))
 
   return (
     <div>
@@ -113,6 +116,41 @@ export function CompanyLayout() {
           </nav>
         </div>
       </div>
+      {strip.visible && (
+        <div className="mx-auto max-w-[1180px] px-4 pt-5 sm:px-8">
+          <div className="flex flex-col gap-3">
+            {strip.gate && (
+              <p role="status" className="rounded-2xl bg-warning-bg px-5 py-3 text-sm text-warning" data-testid="gate-banner">
+                <span className="font-semibold">Гости пока не могут бронировать.</span> {strip.gate}
+              </p>
+            )}
+            {strip.plan && (
+              <p role="status" className={`rounded-2xl px-5 py-3 text-sm ${strip.plan.tone === 'danger' ? 'bg-danger-bg text-danger' : 'bg-warning-bg text-warning'}`} data-testid="plan-banner">
+                {strip.plan.text}{' '}
+                <Link to="/cabinet/subscription" className="font-semibold underline">
+                  Тариф
+                </Link>
+              </p>
+            )}
+            {strip.pending.length > 0 && (
+              <section aria-label="Что осталось настроить" className="rounded-2xl border border-line bg-white px-5 py-4" data-testid="checklist">
+                <p className="mb-2 text-sm font-semibold text-ink">{checklistTitle(company.gate.accepting)}</p>
+                <ul className="flex flex-col gap-1.5">
+                  {strip.pending.map((c) => (
+                    <li key={c.code} className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-soft">
+                      <span>{c.text}</span>
+                      <Link to={checklistPath(company.id, c.code)} className="min-h-[32px] font-semibold text-gold-dark hover:underline">
+                        {CHECKLIST_TARGETS[c.code].label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+        </div>
+      )}
+
       <Outlet context={ctx} />
     </div>
   )
