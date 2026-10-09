@@ -29,9 +29,10 @@ namespace ServiceBooking.API.Controllers.Stays;
 [Authorize]
 public class StaysCompaniesController(
     AppDbContext dbArg, CompanyCreationService companyCreationArg, StaysAccessResolver accessArg, StaysCompanyService companyServiceArg,
-    PublicSiteLinks linksArg, StaysTrialService trial, BillingAccountProvisioner accounts, ShopChannelReader channelReaderArg,
+    PublicSiteLinks linksArg, StaysTrialService trial, BillingAccountProvisioner accounts,
+    ServiceBooking.API.Services.Notifications.AccountMessagingReader messagingReaderArg,
     IStaysClock clockArg, ArrivalReminderService reminder, StayActorResolver actors, Microsoft.Extensions.Options.IOptions<StaysOptions> staysOptions)
-    : SlotCompanySettingsControllerBase(dbArg, companyCreationArg, accessArg, companyServiceArg, linksArg, channelReaderArg, clockArg)
+    : SlotCompanySettingsControllerBase(dbArg, companyCreationArg, accessArg, companyServiceArg, linksArg, messagingReaderArg, clockArg)
 {
     protected override SlotVertical Vertical => SlotVerticals.Stays;
 

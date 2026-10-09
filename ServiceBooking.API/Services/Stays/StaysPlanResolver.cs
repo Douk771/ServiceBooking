@@ -11,12 +11,12 @@ namespace ServiceBooking.API.Services.Stays;
 /// <see cref="MaxHouses"/> is set for "Дома", <see cref="MaxResources"/> for «Бани»; <see cref="MaxUnits"/> is whichever the line uses (null = unlimited).
 /// </summary>
 public sealed record StaysPlan(
-    Guid? PlanId, string? PlanName, bool HasActivePlan, bool IsTrial, DateTime? PaidUntilUtc, int? MaxHouses, bool AllowNotificationChannel, bool WasEverSubscribed,
+    Guid? PlanId, string? PlanName, bool HasActivePlan, bool IsTrial, DateTime? PaidUntilUtc, int? MaxHouses, bool WasEverSubscribed,
     int? MaxResources = null)
 {
     public int? MaxUnits => MaxHouses ?? MaxResources;
 
-    public static StaysPlan None { get; } = new(null, null, false, false, null, null, false, false);
+    public static StaysPlan None { get; } = new(null, null, false, false, null, null, false);
 }
 
 /// <summary>
@@ -39,7 +39,7 @@ public class StaysPlanResolver(AppDbContext db)
         var live = row.IsActive && (row.PaidUntil is null || row.PaidUntil >= nowUtc) && plan.IsActive && plan.Line == vertical.Kind;
         var isStays = vertical.Kind == CompanyKind.Stays;
         return new StaysPlan(plan.Id, plan.Name, live, plan.Id == vertical.TrialPlanId, row.PaidUntil, isStays ? plan.MaxHouses : null,
-            plan.AllowNotificationChannel, WasEverSubscribed: true, MaxResources: isStays ? null : plan.MaxResources);
+            WasEverSubscribed: true, MaxResources: isStays ? null : plan.MaxResources);
     }
 
     public async Task<StaysPlan> GetForAccountAsync(Guid accountId, DateTime? nowUtc = null, CancellationToken ct = default) =>

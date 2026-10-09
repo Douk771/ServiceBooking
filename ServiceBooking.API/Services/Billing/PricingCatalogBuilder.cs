@@ -84,7 +84,9 @@ public static class PricingCatalogBuilder
             // storefront, no matter its IsActive/IsPublic/PricePerMonth combination.
             .Where(o => o.IsActive && o.IsPublic && o.PricePerMonth is not null
                         && LegalOptionGuards.IsPubliclySellable(o.Code, legalSnapshot)
-                        && !RetiredLimitOptions.IsRetired(o))
+                        && !RetiredLimitOptions.IsRetired(o)
+                        // Cycle 40 (§40.14): the messenger options are drawn as their own price lines (MessengerAddonsProvider), never as a generic option.
+                        && !Notifications.Funding.ChannelOptionCodes.All.Contains(o.Code))
             .OrderBy(o => o.SortOrder)
             .ThenBy(o => o.PricePerMonth)
             .Select(ToOptionDto)

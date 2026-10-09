@@ -172,7 +172,7 @@ Up — **только добавления**: 2 таблицы, 5 столбцо
 `SubscriptionPlanConfigs` тарифов `0c42ba70-…`), обе таблицы и пять столбцов. **Компании `Kind = 3`, устройства `Site = 3`,
 строки журналов с `Line = 3` и брони/ресурсы этих компаний в общих таблицах `Down()` не трогает** (как C37-6): после отката
 кода без них приложение упадёт на первом `switch` по виду (`UnreachableException`). Поэтому откат при наличии банных компаний
-— только с `pg_dump` и после ручного удаления/деактивации компаний `Kind = 3` (строка в `DEPLOY.md` §31). Накат → откат →
+— только с `pg_dump` и после ручного удаления/деактивации компаний `Kind = 3` (строка в `DEPLOY.md` §32). Накат → откат →
 накат на пустых данных проверяет `CY42-140` (отдельная база, как CY39-140).
 
 **R42-10:** если цикл 40 (iCal) вольётся раньше, миграция `Cycle42Baths` пересоздаётся поверх его миграции (Designer-снимок и
@@ -729,7 +729,7 @@ bani.ezbook.ru» в кабинете ezbook по `kinds-summary` (P2), `types/in
   обязателен, `https://bani.ezbook.ru/` и `/api/health/ready` через локальный nginx — 200, иначе деплой падает; если не
   установлен — предупреждение и пропуск. `rollback.sh` — проверить, что переключение `current` не требует правки (все сайты
   в одном релизе).
-- `DEPLOY.md` **§31** (следующий свободный; если цикл 40 займёт его раньше — следующий, R42-10): DNS `A bani.ezbook.ru`;
+- `DEPLOY.md` **§32** (§31 занят циклом 40, R42-10): DNS `A bani.ezbook.ru`;
   установка vhost (копирование поверх **сносит 443-блок certbot** → сразу `certbot --nginx -d bani.ezbook.ru`); `nginx -t`;
   SmartCaptcha — домен в консоли Яндекса; `PublicSites__BathsBaseUrl` — не нужен (значение по умолчанию), задавать только для
   стенда с другим адресом; миграция `Cycle42Baths` (только добавления) и её откат (только с `pg_dump` и после удаления компаний
@@ -790,7 +790,7 @@ frontend/   src/components/slots/** , src/utils/slots/** , src/hooks/slots/** , 
 contracts/cycle42/  openapi.yaml, openapi.json (генерат), bani-routes.json, bani-vectors.json
 deploy/     nginx/bani.ezbook.conf, nginx/test-bani-masking.sh, nginx/{ezbook,dom.ezbook,demo.visit.ezbook}.conf, nginx/test-dom-masking.sh,
             deploy-remote.sh, ci/smoke-frontend.sh (профиль bani)
-.github/workflows/ci.yml, DEPLOY.md §31, .env.dev.example, .env.production.example
+.github/workflows/ci.yml, DEPLOY.md §32, .env.dev.example, .env.production.example
 ```
 
 `Cycle22RouteTable.golden.txt` — **+68 строк** `api/baths/*`, ни одной изменённой (§42.39 контракта).
@@ -843,7 +843,7 @@ deploy/     nginx/bani.ezbook.conf, nginx/test-bani-masking.sh, nginx/{ezbook,do
 | DO-42-02 | Сборка четвёртого приложения (§42.13.2): vite/tsconfig/tailwind, скрипты `package.json`, `build:release` + аргумент `bani` у `merge-site-dist.mjs`, `shared-sources.js`, ESLint, vitest, `.env.dev.example`, `.claude/launch.json`, `test-areas.json`; **каркас** `frontend/bani` (index.html с noindex, заглушка `main.tsx`, `public/` — манифест «EZBOOK Бани», `sw.js`, иконки) | сразу (день 1, до FE-42-0/2) |
 | DO-42-03 | CI (§42.13.3): lint/types/json `cycle42`, `contracts-to-json.mjs` + генерат `contracts/cycle42/openapi.json`, type-check bani, `sw.js` bani, смоук сборки bani (`smoke-frontend.sh` профиль `bani`), маскирование bani; `contracts/redocly.yaml` (комментарий) | сразу |
 | DO-42-04 | `deploy/deploy-remote.sh` — смоук bani (`BANI_HOST`/`BANI_SMOKE`/`BANI_VHOST`), проверка `rollback.sh`; `.env.production.example` (`PublicSites__BathsBaseUrl` закомментирован) | после DO-42-02 |
-| DO-42-05 | `DEPLOY.md` §31 «bani.ezbook.ru — четвёртый сайт» (§42.13.4): DNS, certbot, vhost, SmartCaptcha, миграция и откат, «реальные бани не приглашать», цены тарифов, `M42-*` | сразу (дополнить после BE-42-M) |
+| DO-42-05 | `DEPLOY.md` §32 «bani.ezbook.ru — четвёртый сайт» (§42.13.4): DNS, certbot, vhost, SmartCaptcha, миграция и откат, «реальные бани не приглашать», цены тарифов, `M42-*` | сразу (дополнить после BE-42-M) |
 | DO-42-06 | Выкат на стенд (по готовности QA): деплой `develop`/ветки по кнопке, инструкция заказчику по ручным шагам, проверка `bani.access.log` на маскирование (`M42-04`) | в конце |
 | DO-42-07 (P2) | `tools/bench/cycle42/` — замер p95 каталога bani с фильтром даты на 150 ресурсах (засев через HTTP API локального стенда) | после BE-42-4 |
 

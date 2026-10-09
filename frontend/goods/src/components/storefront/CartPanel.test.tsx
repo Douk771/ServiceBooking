@@ -22,6 +22,8 @@ vi.mock('../../api/legalNotice', () => ({
   legalNoticeApi: { orderCheckout: () => notFound() },
   orderLegalTextsApi: { messengerConsent: () => notFound(), preorderNotice: () => notFound() },
 }))
+// Cycle 40: the shared MessengerOptIn reads the lawyer's text through the shared client; 404 = the verbatim fallback.
+vi.mock('@/api/client', () => ({ api: { get: () => notFound() } }))
 vi.mock('@/api/profile', () => ({ profileApi: { get: () => Promise.resolve({ phoneVerified: false }) } }))
 vi.mock('@/api/phoneVerification', () => ({ phoneVerificationApi: { getConfig: () => Promise.resolve({ enabled: false, healthy: false }) } }))
 // The real widget needs a live script; with VITE_SMARTCAPTCHA_SITEKEY in a developer's local .env it would demand a
@@ -222,8 +224,9 @@ describe('CartPanel — pick-up time (cycle 24)', () => {
   })
 })
 
-describe('CartPanel — messenger consent (cycle 24, L9)', () => {
-  const withMessenger = () => shop({ customerNotifications: { webPushOffered: false, messengerOffered: true } })
+describe('CartPanel — messenger consent (cycle 24 L9, cycle 40)', () => {
+  const withMessenger = () =>
+    shop({ customerNotifications: { webPushOffered: false, messengerOffered: true, messengerTransports: ['Max'], messengerLabel: 'Получать уведомления о заказе в MAX' } } as Partial<StorefrontDto>)
 
   it('shows no checkbox when the shop does not offer messages', async () => {
     seedCart()
@@ -232,14 +235,15 @@ describe('CartPanel — messenger consent (cycle 24, L9)', () => {
     expect(screen.queryByRole('checkbox')).toBeNull()
   })
 
-  it('offers an UNCHECKED box with the masked-number fallback and sends notifyByMessenger only when ticked', async () => {
+  it('offers an UNCHECKED box with the server label and sends notifyByMessenger only when ticked', async () => {
     seedCart()
     createOrder.mockResolvedValue(created)
     const user = userEvent.setup()
     renderPanel(withMessenger())
     await fillGuest(user)
-    const box = await screen.findByRole('checkbox', { name: /Присылать статус заказа в MAX\/WhatsApp на номер \+7 \(9\*\*\) \*\*\*-\*\*-67/ })
+    const box = await screen.findByRole('checkbox', { name: 'Получать уведомления о заказе в MAX' })
     expect(box).not.toBeChecked()
+    expect(screen.getByText(/Текст согласия/)).toBeInTheDocument() // запасной текст §6.2
     await user.click(box)
     await user.click(await screen.findByRole('button', { name: /Заказать/ }))
     await screen.findByText('Страница заказа')

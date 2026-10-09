@@ -99,6 +99,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<ChannelCompanyAssignment> ChannelCompanyAssignments => Set<ChannelCompanyAssignment>();
     public DbSet<ChannelStateEvent> ChannelStateEvents => Set<ChannelStateEvent>();
     public DbSet<ChannelPaymentLog> ChannelPaymentLogs => Set<ChannelPaymentLog>();
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.2.3).
+    public DbSet<ChannelOptionChangeLog> ChannelOptionChangeLogs => Set<ChannelOptionChangeLog>();
     public DbSet<OutboundNotification> OutboundNotifications => Set<OutboundNotification>();
     public DbSet<CompanyNotificationSettings> CompanyNotificationSettings => Set<CompanyNotificationSettings>();
     public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
@@ -955,6 +957,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<Booking>(e =>
         {
+            e.Property(b => b.MessengerConsentVersion).HasMaxLength(80); // Cycle 40 (§40.2.1)
             e.Property(b => b.Price).HasColumnType("decimal(10,2)");
             e.Property(b => b.CommissionPercent).HasColumnType("decimal(18,2)");
             // ARCHITECTURE.md §5.2: a legal document version snapshot, same 64-char cap the manifest
@@ -1221,6 +1224,19 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(c => c.State);
             e.HasOne(c => c.ReplacedByChannel).WithMany()
                 .HasForeignKey(c => c.ReplacedByChannelId).OnDelete(DeleteBehavior.Restrict);
+            // Cycle 40 (§40.2.1, §40.7.4).
+            e.Property(c => c.AutoTestInstanceId).HasMaxLength(100);
+            e.Property(c => c.ProviderServerCountry).HasMaxLength(32);
+            e.HasIndex(c => c.Id).HasDatabaseName("IX_NotificationChannels_TestPending")
+                .HasFilter("\"LastTestResult\" IN (0, 1)");
+        });
+
+        builder.Entity<ChannelOptionChangeLog>(e =>
+        {
+            e.HasOne(l => l.BillingAccount).WithMany().HasForeignKey(l => l.BillingAccountId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(l => l.OptionCode).HasMaxLength(64).IsRequired();
+            e.Property(l => l.Comment).HasMaxLength(500);
+            e.HasIndex(l => new { l.BillingAccountId, l.OptionCode, l.ChangedAtUtc });
         });
 
         builder.Entity<ChannelCompanyAssignment>(e =>

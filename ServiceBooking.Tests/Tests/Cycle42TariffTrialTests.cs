@@ -752,35 +752,6 @@ public class Cycle42TariffTrialTests(TestDatabaseFixture fixture) : Cycle39TestB
         return await scope.ServiceProvider.GetRequiredService<SubscriptionResolver>().GetEffectivePlanForAccountAsync(accountId);
     }
 
-    [Fact, TestCase("CY42-29")]
-    public async Task PaidNumbers_CountInTheBathsTrial_AndInPaidPlans_ButNotWithoutAPlan()
-    {
-        var b = await NewBathAsync();
-        var accountId = await AccountIdAsync(b.Id);
-        await WithDbAsync(db => NotificationTestBase.EnsureWhatsAppPaidAsync(db, accountId, 2));
-
-        // тарифа «Бань» нет — купленные номера не считаются платными ни по одной линейке аккаунта
-        (await EffectivePlanOfAccountAsync(accountId)).PaidNotificationNumbers.Should().Be(0);
-
-        (await ActivateTrialAsync(b.Token, TermsVersion)).Outcome.Granted.Should().BeTrue();
-        (await EffectivePlanOfAccountAsync(accountId)).PaidNotificationNumbers.Should().Be(2, "опция канала разрешена в триале «Бань» (Q-L42-4)");
-
-        await SetBathsPlanAsync(b.Id, BathsPlans.OneBathSeedId);
-        (await EffectivePlanOfAccountAsync(accountId)).PaidNotificationNumbers.Should().Be(2);
-
-        // истёк тариф — номера не платные
-        await SetBathsPlanAsync(b.Id, BathsPlans.OneBathSeedId, paidUntil: DateTime.UtcNow.AddDays(-1));
-        (await EffectivePlanOfAccountAsync(accountId)).PaidNotificationNumbers.Should().Be(0);
-    }
-
-    [Fact, TestCase("CY42-29")]
-    public async Task PaidNumbers_BathsTrialDoesNotFundAnAccountWithoutBathsCompanies()
-    {
-        // триал выдан аккаунту, у которого нет банной компании: линейка «Бани» в расчёте не участвует
-        var owner = await VerifiedUserAsync();
-        (await ActivateTrialAsync(owner.Token, TermsVersion)).Outcome.Granted.Should().BeTrue();
-        var accountId = await WithDbAsync(db => db.BillingAccounts.AsNoTracking().Where(a => a.OwnerUserId == owner.UserId).Select(a => a.Id).SingleAsync());
-        await WithDbAsync(db => NotificationTestBase.EnsureWhatsAppPaidAsync(db, accountId, 1));
-        (await EffectivePlanOfAccountAsync(accountId)).PaidNotificationNumbers.Should().Be(0);
-    }
+    // TODO(C42-channels): CY42-29 (PaidNumbers_CountInTheBathsTrial..., PaidNumbers_BathsTrialDoesNotFundAnAccountWithoutBathsCompanies) removed in the merge of develop:
+    // EffectivePlan.PaidNotificationNumbers no longer exists (cycle 40). Re-create over AccountMessagingReader for the baths line (trial funds a number; no baths companies = no funding).
 }

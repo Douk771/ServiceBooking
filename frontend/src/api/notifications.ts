@@ -1,5 +1,6 @@
 import { api } from './client'
 import type {
+  NotificationPreferences,
   NotificationSettings,
   NotificationTemplatesResponse,
   NotificationTemplate,
@@ -66,7 +67,7 @@ export const notificationsApi = {
       .get<NotificationLogSummary>(`/companies/${companyId}/notifications/summary`, { params: { days } })
       .then((r) => r.data),
 
-  getPreferences: () => api.get<{ enabled: boolean }>('/notifications/preferences').then((r) => r.data),
+  getPreferences: () => api.get<NotificationPreferences>('/notifications/preferences').then((r) => r.data),
   updatePreferences: (enabled: boolean) => api.put<void>('/notifications/preferences', { enabled }),
 
   getUnsubscribeInfo: (token: string) =>

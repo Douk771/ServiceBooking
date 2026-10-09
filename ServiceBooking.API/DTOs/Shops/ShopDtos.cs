@@ -107,4 +107,6 @@ public record WorkingHoursSummaryLineDto(string DayLabel, string Text);
 
 public record StorefrontWorkingHoursDto(List<WorkingHoursSummaryLineDto> Lines);
 
-public record StorefrontCustomerNotificationsDto(bool WebPushOffered, bool MessengerOffered);
+// Cycle 40 (§40.10): MessengerOffered comes from the shared offer rule; the transports and the ready label are appended.
+public record StorefrontCustomerNotificationsDto(bool WebPushOffered, bool MessengerOffered,
+    IReadOnlyList<ServiceBooking.Core.Enums.NotificationTransport>? MessengerTransports = null, string? MessengerLabel = null);

@@ -192,7 +192,7 @@ namespace ServiceBooking.Infrastructure.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             // §42.2.6 — data of the line 3 goes first. Companies Kind = 3, devices Site = 3, journal rows with Line = 3 and their bookings are NOT touched
-            // (as C37-6): roll back only with a pg_dump and after those companies were removed by hand (DEPLOY.md §31).
+            // (as C37-6): roll back only with a pg_dump and after those companies were removed by hand (DEPLOY.md §32).
             migrationBuilder.Sql(
                 """
                 DELETE FROM "TrialGrants" WHERE "Line" = 3;

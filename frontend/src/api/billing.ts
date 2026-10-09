@@ -5,6 +5,7 @@ import type { components as Cycle19Schemas } from '../types/api-cycle19.generate
 import type { components as Cycle20Schemas } from '../types/api-cycle20.generated'
 import type { components as Cycle24Schemas } from '../types/api-cycle24.generated'
 import type { components as Cycle37Schemas } from '../types/api-cycle37.generated'
+import type { components as Cycle40Schemas } from '../types/api-cycle40.generated'
 
 /**
  * Owner "Ваша подписка" screen (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41,
@@ -66,10 +67,13 @@ export interface BathsSubscriptionBlockDto {
 export type AvailablePlanDto = Cycle24['AvailablePlanDto'] & { maxResources?: number | null }
 export type OwnerSubscriptionDtoCycle24Patch = Pick<Cycle24['OwnerSubscriptionDtoCycle24'], 'line' | 'orders' | 'availablePlans'> & { stays?: StaysSubscriptionBlockDto | null; baths?: BathsSubscriptionBlockDto | null }
 
+/** Cycle 40 (§40.32): серверные строки мессенджеров в подписке (additive). */
+export type OwnerSubscriptionCycle40Patch = Pick<Cycle40Schemas['schemas']['OwnerSubscriptionCycle40Part'], 'messengerAddons' | 'messengerAddonsNote'>
+
 export const billingApi = {
   /** GET /api/billing/subscription. 404 means the caller owns no company (not an error state). */
-  getSubscription: (line?: BillingLine): Promise<OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch>> => {
-    type Body = OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch>
+  getSubscription: (line?: BillingLine): Promise<OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch> & OwnerSubscriptionCycle40Patch> => {
+    type Body = OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch> & OwnerSubscriptionCycle40Patch
     // ezbook never sends `line` (server default `Services`): that request is exactly the pre-cycle-24 one, no config object.
     const request = line && line !== 'Services' ? api.get<Body>('/billing/subscription', { params: { line } }) : api.get<Body>('/billing/subscription')
     return request.then((r) => r.data)

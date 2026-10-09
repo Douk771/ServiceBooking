@@ -50,7 +50,7 @@ export default tseslint.config(
   {
     // ARCHITECTURE_CYCLE23.md §399.4 — import boundaries between the two frontends in one package.
     // goods may reuse shared modules from src/, but not ezbook's app shell or its own pages (except the
-    // shared ones — cycle 24 adds BillingPage and owner/NotificationsSection); ezbook must never reach into goods/.
+    // shared ones — cycle 24 adds BillingPage); ezbook must never reach into goods/.
     files: ['goods/src/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [

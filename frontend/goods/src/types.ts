@@ -124,7 +124,12 @@ export type DailyMenuDayDto = N['DailyMenuDayDto']
 export type DailyMenuDto = N['DailyMenuDto']
 export type DailyMenuProductDto = N['DailyMenuProductDto']
 export type DailyMenuInput = N['DailyMenuInput']
-export type ShopNotificationSettingsDto = M['ShopNotificationSettingsDto']
+// Cycle 40 (API_CONTRACT_CYCLE40.md §40.29): messagingActive / deliveryChoiceVisible / priorityWarning are appended by the server (cycle25 schema is frozen).
+export type ShopNotificationSettingsDto = M['ShopNotificationSettingsDto'] & {
+  messagingActive?: boolean
+  deliveryChoiceVisible?: boolean
+  priorityWarning?: string | null
+}
 export type ShopNotificationSettingsInput = M['ShopNotificationSettingsInput']
 export type ShopChannelStatusDto = N['ShopChannelStatusDto']
 export type ScheduleConflictOrderDto = N['ScheduleConflictOrderDto']

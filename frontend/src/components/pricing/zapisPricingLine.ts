@@ -22,6 +22,8 @@ export function toZapisGridView(dto: PublicPricingDto): PricingGridView {
     options: dto.options,
     notice: dto.notice,
     legalNotice: dto.legalNotice ?? null,
+    messengerAddons: dto.messengerAddons,
+    messengerAddonsNote: dto.messengerAddonsNote,
   }
 }
 

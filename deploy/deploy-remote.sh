@@ -361,7 +361,7 @@ fi
 if [ "$BANI_SMOKE" = "0" ]; then
   echo "==> bani smoke skipped (BANI_SMOKE=0)"
 elif [ ! -e "$BANI_VHOST" ]; then
-  echo "WARNING: bani vhost not installed ($BANI_VHOST), smoke skipped (DEPLOY.md §31)" >&2
+  echo "WARNING: bani vhost not installed ($BANI_VHOST), smoke skipped (DEPLOY.md §32)" >&2
 else
   echo "==> bani smoke: https://$BANI_HOST/ and /api/health/ready via local nginx"
   [ -f "$CURRENT_LINK/__bani/index.html" ] || {
@@ -370,7 +370,7 @@ else
     exit 1
   }
   bani_index=$(curl -sf --max-time 10 --resolve "$BANI_HOST:443:127.0.0.1" "https://$BANI_HOST/") || {
-    echo "ERROR: https://$BANI_HOST/ did not answer 200 via local nginx — is the bani vhost installed and does it have a certificate? (DEPLOY.md §31)" >&2
+    echo "ERROR: https://$BANI_HOST/ did not answer 200 via local nginx — is the bani vhost installed and does it have a certificate? (DEPLOY.md §32)" >&2
     rollback_hint
     exit 1
   }

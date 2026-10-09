@@ -23,7 +23,8 @@ namespace ServiceBooking.API.Services.Billing;
 /// precondition isn't met. The hot path doesn't get more expensive — it's a read of an already-loaded
 /// in-memory field, not a new query.
 /// </summary>
-public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache, LegalDocumentProvider legalDocuments, IOptions<OrdersOptions> ordersOptions)
+public sealed class PricingCatalogCache(
+    AppDbContext db, IMemoryCache cache, LegalDocumentProvider legalDocuments, IOptions<OrdersOptions> ordersOptions, MessengerAddonsProvider messengerAddons)
 {
     public const string PublicEnabledSettingKey = "pricing.public-enabled";
 
@@ -83,6 +84,9 @@ public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache, Leg
         var legalNotice = await GetRawSettingAsync("pricing.legal-notice", ct);
 
         var dto = PricingCatalogBuilder.Build(version: "pending", plans, options, legalNotice, legalSnapshot: legalDocuments.Current);
+        // Cycle 40 (§40.14): the messenger lines come from their own provider (the two options are not repeated in the generic option list — the builder skips them).
+        var (addons, addonsNote) = await messengerAddons.BuildAsync(dto.Notice, ct);
+        dto = dto with { MessengerAddons = addons, MessengerAddonsNote = addonsNote };
         var etag = ComputeETag(dto);
         // version mirrors the ETag per contract ("Совпадает со значением внутри ETag") — rebuild once
         // with the real value rather than trying to compute the hash and embed it in the same payload.

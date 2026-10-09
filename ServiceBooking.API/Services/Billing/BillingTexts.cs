@@ -144,47 +144,4 @@ public static class BillingTexts
             _ => "компаний",
         };
     }
-
-    /// <summary>
-    /// §47.1's four required texts. <paramref name="workingPhoneMasked"/> is the earliest-created
-    /// funded channel's masked phone — required (not just nice-to-have) for <c>Unfunded</c>, since the
-    /// acceptance criterion is "names the working number", not just "explains the count".
-    /// </summary>
-    public static string FundingText(ChannelFundingState state, int paidNumbers, int liveCount, string? workingPhoneMasked)
-    {
-        switch (state)
-        {
-            case ChannelFundingState.NotPaid:
-                return "Рассылки не отправляются: опция «Рассылки в WhatsApp» не оплачена. " +
-                       "Чтобы включить, подключите её в разделе «Ваша подписка».";
-
-            case ChannelFundingState.Funded when liveCount <= paidNumbers:
-                return "Номер оплачен и работает.";
-
-            case ChannelFundingState.Funded:
-                return $"Номер работает: оплачен {paidNumbers} {NumbersWord(paidNumbers)} из {liveCount} заведённых, " +
-                       "и он подключён раньше остальных.";
-
-            case ChannelFundingState.Unfunded:
-                var workingNote = workingPhoneMasked is null ? "другой, подключённый раньше" : workingPhoneMasked;
-                return $"Этот номер не отправляет сообщения: у вас оплачен {paidNumbers} {NumbersWord(paidNumbers)}, " +
-                       $"а заведено {liveCount}. Работает тот, что подключён раньше ({workingNote}). " +
-                       "Чтобы включить и этот, подключите ещё одну «Рассылку в WhatsApp» — или удалите лишний номер.";
-
-            default:
-                throw new ArgumentOutOfRangeException(nameof(state), state, null);
-        }
-    }
-
-    private static string NumbersWord(int n)
-    {
-        var lastTwo = n % 100;
-        if (lastTwo is >= 11 and <= 14) return "номеров";
-        return (n % 10) switch
-        {
-            1 => "номер",
-            2 or 3 or 4 => "номера",
-            _ => "номеров",
-        };
-    }
 }

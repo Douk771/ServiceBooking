@@ -94,6 +94,11 @@ public static class LegalTextKey
     public const string BathPaymentProofNotice = "BathPaymentProofNotice";
     public const string BathPaymentRequisitesOwnerNotice = "BathPaymentRequisitesOwnerNotice";
     public const string BathOwnerCancelNotice = "BathOwnerCancelNotice";
+    // ARCHITECTURE_CYCLE40.md §40.11.1 (LEGAL_REVIEW_CYCLE40.md §5.3, §7.3) — the booking-form messenger tick and the staff "client agreed" tick.
+    // DELIBERATELY NOT in All (the deploy must not wait for legal-counsel): the frontend reads GET /api/legal/texts/<key> and shows its fallback on 404;
+    // while there is no text, the server stores `fallback:<sha256 of the key>` as the consent version.
+    public const string BookingMessengerConsent = "BookingMessengerConsent";
+    public const string StaffBookingMessengerConsentHint = "StaffBookingMessengerConsentHint";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {

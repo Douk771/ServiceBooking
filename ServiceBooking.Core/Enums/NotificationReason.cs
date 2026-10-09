@@ -138,4 +138,13 @@ public enum NotificationReason
 
     /// <summary>§37.12.3 — messenger messages to guests were switched off (company setting or revoked consent) after the row was queued.</summary>
     StayMessengerDisabled,
+
+    /// <summary>ARCHITECTURE_CYCLE40.md §40.2.2 — the client did not consent to messenger messages.</summary>
+    ClientDeclinedMessenger = 34,
+
+    /// <summary>§40.12 — the platform-wide messaging switch is off.</summary>
+    PlatformMessagingDisabled = 35,
+
+    /// <summary>§40.4 — the channel belongs to another billing account than the company.</summary>
+    ChannelAccountMismatch = 36,
 }

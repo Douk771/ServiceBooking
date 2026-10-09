@@ -15,7 +15,7 @@ public class ChannelIdleCalculatorTests
     public void Recompute_ActiveCompanyAndFunded_ReturnsNull()
     {
         var result = ChannelIdleCalculator.Recompute(
-            existingIdleSinceUtc: Now.AddDays(-2), activeCompanyCount: 1, isFunded: true,
+            existingIdleSinceUtc: Now.AddDays(-2), hasDemand: true, isFunded: true,
             isSuspendedByAdmin: false, nowUtc: Now);
 
         result.Should().BeNull();
@@ -25,7 +25,7 @@ public class ChannelIdleCalculatorTests
     public void Recompute_NoActiveCompany_StartsIdleNow_WhenNotAlreadyIdle()
     {
         var result = ChannelIdleCalculator.Recompute(
-            existingIdleSinceUtc: null, activeCompanyCount: 0, isFunded: true,
+            existingIdleSinceUtc: null, hasDemand: false, isFunded: true,
             isSuspendedByAdmin: false, nowUtc: Now);
 
         result.Should().Be(Now);
@@ -36,7 +36,7 @@ public class ChannelIdleCalculatorTests
     {
         var idleSince = Now.AddDays(-5);
         var result = ChannelIdleCalculator.Recompute(
-            existingIdleSinceUtc: idleSince, activeCompanyCount: 0, isFunded: false,
+            existingIdleSinceUtc: idleSince, hasDemand: false, isFunded: false,
             isSuspendedByAdmin: false, nowUtc: Now);
 
         result.Should().Be(idleSince);
@@ -46,7 +46,7 @@ public class ChannelIdleCalculatorTests
     public void Recompute_NotFunded_IsIdle_EvenWithActiveCompany()
     {
         var result = ChannelIdleCalculator.Recompute(
-            existingIdleSinceUtc: null, activeCompanyCount: 1, isFunded: false,
+            existingIdleSinceUtc: null, hasDemand: true, isFunded: false,
             isSuspendedByAdmin: false, nowUtc: Now);
 
         result.Should().Be(Now);
@@ -56,7 +56,7 @@ public class ChannelIdleCalculatorTests
     public void Recompute_SuspendedByAdmin_IsIdle_EvenWhenFundedWithActiveCompany()
     {
         var result = ChannelIdleCalculator.Recompute(
-            existingIdleSinceUtc: null, activeCompanyCount: 1, isFunded: true,
+            existingIdleSinceUtc: null, hasDemand: true, isFunded: true,
             isSuspendedByAdmin: true, nowUtc: Now);
 
         result.Should().Be(Now);
@@ -66,7 +66,7 @@ public class ChannelIdleCalculatorTests
     public void Recompute_NotFundedAndNoActiveCompany_IsIdle()
     {
         var result = ChannelIdleCalculator.Recompute(
-            existingIdleSinceUtc: null, activeCompanyCount: 0, isFunded: false,
+            existingIdleSinceUtc: null, hasDemand: false, isFunded: false,
             isSuspendedByAdmin: false, nowUtc: Now);
 
         result.Should().Be(Now);
@@ -76,7 +76,7 @@ public class ChannelIdleCalculatorTests
     public void Recompute_RecoversFromIdle_WhenBothCausesResolveTogether()
     {
         var result = ChannelIdleCalculator.Recompute(
-            existingIdleSinceUtc: Now.AddDays(-4), activeCompanyCount: 1, isFunded: true,
+            existingIdleSinceUtc: Now.AddDays(-4), hasDemand: true, isFunded: true,
             isSuspendedByAdmin: false, nowUtc: Now);
 
         result.Should().BeNull();

@@ -6,6 +6,7 @@ using Npgsql;
 using ServiceBooking.API.DTOs.Orders;
 using ServiceBooking.API.DTOs.Shops;
 using ServiceBooking.API.Services.Legal;
+using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.PublicSites;
 using ServiceBooking.API.Services.Shops;
 using ServiceBooking.API.Services.Subjects;
@@ -32,7 +33,8 @@ public class OrderCreationService(
     OrderPhoneThrottle throttle, StockLedger stockLedger, OrderNumberAllocator numberAllocator, OrderEventLog eventLog,
     OrderDtoMapper mapper, PublicSiteLinks links, LegalDocumentProvider legalProvider, IOptions<OrdersOptions> options,
     ShopGateLoader gates, DailyMenuService menus, OrderMonthlyCounter monthlyCounter, OrderLimitWarner limitWarner,
-    CustomerOrderNotificationsBuilder notificationsBuilder, ShopChannelReader shopChannels)
+    CustomerOrderNotificationsBuilder notificationsBuilder,
+    CustomerMessagingOfferService messagingOffer, ConsentLedger consentLedger, ILogger<OrderCreationService> logger)
 {
     private const string IdempotencyIndex = "IX_Orders_CompanyId_IdempotencyKey";
 
@@ -170,7 +172,7 @@ public class OrderCreationService(
             return new OrderCreationResult(new ObjectResult("Слишком много заказов на этот номер — дождитесь выдачи текущих или позвоните в магазин") { StatusCode = 429 });
 
         // [legal L9] The messenger choice counts only if the shop really offers it (a switched-on flag AND a funded number); otherwise it is silently off.
-        var notifyByMessenger = dto.NotifyByMessenger && settings.CustomerMessengerEnabled && await shopChannels.IsMessengerAvailableAsync(shop.Id, ct);
+        var notifyByMessenger = dto.NotifyByMessenger && settings.CustomerMessengerEnabled && (await messagingOffer.EvaluateAsync(shop, ct)).Offered;
 
         // 9–10. One transaction. With stock tracking the shop's stock lock is held for the whole of it.
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -280,6 +282,13 @@ public class OrderCreationService(
             var winner = await LoadOrderAsync(o => o.CompanyId == shop.Id && o.IdempotencyKey == dto.IdempotencyKey, ct);
             if (winner is null) throw;
             return new OrderCreationResult(null, await BuildResponseAsync(winner, shop, null, ct), Created: false);
+        }
+
+        // Т40-L-07 (§40.11.3): a signed-in customer's tick is the provider-delivery consent — entered in the journal once the order is committed.
+        if (customerKind == OrderActorKind.Customer && notifyByMessenger && order.CustomerUserId is { } optInUserId)
+        {
+            try { await MessengerOptInLedger.GrantForCustomerAsync(consentLedger, legalProvider, optInUserId, ConsentSource.MessengerOptInOrder, remoteIp, ct); }
+            catch (Exception ex) { logger.LogError(ex, "Failed to record the provider-delivery consent for order {OrderId}", order.Id); }
         }
 
         return new OrderCreationResult(null, await BuildResponseAsync(order, shop, settings, ct), Created: true);

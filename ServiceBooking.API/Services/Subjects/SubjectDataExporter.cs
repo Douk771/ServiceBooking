@@ -68,7 +68,7 @@ public sealed class SubjectDataExporter(
             .Select(b => new ExportBookingDto(
                 b.Id, b.Date, b.StartTime, b.EndTime, b.Company.Name, b.Service.Name,
                 b.Master.FirstName + " " + b.Master.LastName, b.Status.ToString(), b.PaymentStatus.ToString(),
-                b.Price, b.CancellationReason))
+                b.Price, b.CancellationReason, b.NotifyByMessenger, b.MessengerConsentVersion, b.MessengerConsentAtUtc, b.MessengerConsentByUserId != null))
             .ToListAsync(ct);
 
         var reviews = await db.Reviews

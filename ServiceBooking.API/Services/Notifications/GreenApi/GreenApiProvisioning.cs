@@ -49,9 +49,9 @@ public sealed class GreenApiProvisioning(
         // way: InstanceCreationEnabled defaults to false, so no real call carries this field until an
         // operator deliberately turns instance creation on — at which point DEPLOY.md must record
         // whether the provider actually honors it, and this field name updated if not.
-        var requestBody = string.IsNullOrEmpty(opts.GreenApi.ServerCountry)
+        var requestBody = string.IsNullOrEmpty(opts.GreenApi.ExpectedServerCountry(Core.Enums.NotificationTransport.WhatsApp))
             ? null
-            : (object)new { country = opts.GreenApi.ServerCountry };
+            : (object)new { country = opts.GreenApi.ExpectedServerCountry(Core.Enums.NotificationTransport.WhatsApp) };
         var (body, _) = await SendAsync(HttpMethod.Post, uri, safeLabel, ct, requestBody);
 
         var idInstance = ReadString(body, "idInstance") ?? ReadNumberAsString(body, "idInstance");

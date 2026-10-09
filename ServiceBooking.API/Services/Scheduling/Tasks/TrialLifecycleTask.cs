@@ -432,7 +432,7 @@ public sealed class TrialLifecycleTask(
             // assigned before the account ever went on trial (same OptionId, EndsAtUtc == null) would be
             // dated out here too and never revived automatically — an irreversible side effect of the
             // trial→Free transition, which §337.3 forbids outright.
-            var trialOptions = await db.AccountSubscriptionOptions
+            var trialOptions = await db.AccountSubscriptionOptions.Include(o => o.Option)
                 .Where(o => accountIds.Contains(o.BillingAccountId) && o.EndsAtUtc == null && o.GrantedByTrial)
                 .ToListAsync(ct);
 
@@ -507,7 +507,12 @@ public sealed class TrialLifecycleTask(
                     accountSub.UpdatedAt = now;
 
                     foreach (var option in trialOptions.Where(o => o.BillingAccountId == account.Id))
+                    {
                         option.EndsAtUtc = now;
+                        // ARCHITECTURE_CYCLE40.md §40.13: the journal of the two channel options (TrialExpiry).
+                        ChannelOptionLog.Write(db, account.Id, option.Option.Code, ChannelOptionChangeSource.TrialExpiry,
+                            option.PaidUntilUtc, option.PaidUntilUtc, null, now, TrialActors.System, now);
+                    }
 
                     account.TrialExpiredHandledAtUtc = now; // Т3: 30-day notice lifetime counts from here
 

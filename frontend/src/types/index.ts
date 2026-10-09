@@ -5,6 +5,7 @@ import type { components as Cycle31Components } from './api-cycle31.generated'
 import type { components as Cycle33Components } from './api-cycle33.generated'
 import type { components as Cycle37Components } from './api-cycle37.generated'
 import type { components as Cycle25Components } from './api-cycle25.generated'
+import type { components as Cycle40Components } from './api-cycle40.generated'
 
 // ── Cycle 19 (ARCHITECTURE_CYCLE19.md §388.5, API_CONTRACT_CYCLE19.md §413): automatic address checking removed,
 // only the notice-acknowledgement result survives from cycle 13's address types. Read straight off
@@ -54,10 +55,21 @@ export type PhoneVerificationRef = Cycle14Components['schemas']['PhoneVerificati
 // ── Cycle 23 (API_CONTRACT_CYCLE23.md §408.1): companies now come in two kinds. Read off the generated schema.
 export type CompanyKindsSummary = Cycle37Components['schemas']['CompanyKindsSummaryDto']
 
+/** API_CONTRACT_CYCLE40.md §40.22.3 — «Рассылки работают» для клиента; наружу только булево, транспорты и подпись. */
+/** `GET /api/notifications/preferences` (§40.30.6): `providerDeliveryConsent` — active PdnConsent/ProviderDelivery; absent on older servers. */
+export interface NotificationPreferences {
+  enabled: boolean
+  providerDeliveryConsent?: boolean
+}
+
+export type CustomerMessagingOffer = Cycle40Components['schemas']['CustomerMessagingOfferDto']
+
 export interface Company {
   id: string
   name: string
   slug: string
+  /** Cycle 40 (§40.30.1) — only `GET /api/companies/{slug}`; `null`/absent in lists and on older servers = not offered. */
+  customerMessaging?: CustomerMessagingOffer | null
   /** Cycle 23 — `Services` (salon) or `Orders` (goods.ezbook.ru shop). Absent on older servers = `Services`. */
   kind?: CompanyKind
   /** Cycle 23 — canonical public address of this company on its own site; ezbook redirects `Orders` here. */
@@ -282,6 +294,13 @@ export interface NotificationSettings {
   /** Read-only. false → "priority channel isn't working" banner (§104.5) — there is deliberately no
    *  silent fallback to another transport. */
   priorityChannelHealthy: boolean
+  /** Cycle 40 (API_CONTRACT_CYCLE40.md §40.29): do messages go out at all, what to tell the owner when not, the working messengers, and whether the
+   *  delivery choice is worth showing (two working, or a saved priority that stopped working). All decided by the server. */
+  messagingActive?: boolean
+  inactiveText?: string | null
+  deliveryChoiceVisible?: boolean
+  priorityWarning?: string | null
+  workingTransports?: NotificationTransport[]
 }
 
 export interface NotificationPlaceholder {
@@ -396,6 +415,11 @@ export interface PlatformSettings {
   trialDurationDays: number | null
   trialMailingWindowDays: number | null
   trialWarningThresholdsDays: number[] | null
+  /** Cycle 40 (API_CONTRACT_CYCLE40.md §40.35): the availability switches of the two messenger options and the stop-cock of customer messaging.
+   *  GET: always a value. PUT: absent/null = do not change. */
+  customerMessagingEnabled?: boolean | null
+  whatsAppOptionOpen?: boolean | null
+  maxOptionOpen?: boolean | null
 }
 
 // Body of PUT /api/admin/platform-settings → 409 (API_CONTRACT_CYCLE11.md §114.2).
@@ -599,6 +623,10 @@ export type LegalTextKey =
   | 'ShowcaseNotice'
   | 'ShowcaseBookingClosed'
   | 'DemoBanner'
+  /** API_CONTRACT_CYCLE40.md §40.33.13 — cycle 40 keys OUTSIDE `LegalTextKey.All`: 404 until the lawyer's text is published,
+   *  the frontend then shows its verbatim fallback (`utils/messengerOptIn.ts`, LEGAL_REVIEW_CYCLE40.md §5.3, §7.3). */
+  | 'BookingMessengerConsent'
+  | 'StaffBookingMessengerConsentHint'
 export type ConsentPurpose = 'ProviderDelivery' | 'WorkPhotos' | 'HealthData' | 'ChannelOffer'
 type ConsentAct = 'Acknowledged' | 'Accepted' | 'Consented' | 'Confirmed'
 export type ConsentSource =

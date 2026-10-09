@@ -1,8 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
-using ServiceBooking.Infrastructure.Data;
+using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.Services.Shops;
 
@@ -13,22 +12,20 @@ public sealed record ShopChannelView(NotificationChannel Channel, ChannelFunding
 }
 
 /// <summary>
-/// ARCHITECTURE_CYCLE24.md §457.3 — the numbers assigned to a shop and whether they are paid (<see cref="ChannelFundingReader"/> — the ONE place
-/// "is this number paid" is decided, so the shop screen, the dispatcher and the salon settings agree). <c>messengerAvailable</c> = an assigned,
-/// paid number exists.
+/// ARCHITECTURE_CYCLE24.md §457.3, cycle 40 (§40.4): the numbers of a shop (or a "Дома" company) are those of its BILLING ACCOUNT —
+/// one number serves every company of the account — with their funding (<see cref="ChannelFundingReader"/> — the ONE place "is this
+/// number paid" is decided, so the shop screen, the dispatcher and the salon settings agree). <c>messengerAvailable</c> = a transport
+/// is routable (paid, first number, not suspended, bound at least once) and the service is on.
 /// </summary>
-public sealed class ShopChannelReader(AppDbContext db, ChannelFundingReader fundingReader)
+public sealed class ShopChannelReader(AccountMessagingReader messagingReader, ChannelFundingReader fundingReader)
 {
     public async Task<List<ShopChannelView>> LoadAsync(Guid shopId, CancellationToken ct = default)
     {
-        var channels = await db.ChannelCompanyAssignments.AsNoTracking().Include(a => a.Channel)
-            .Where(a => a.CompanyId == shopId).OrderBy(a => a.Transport).Select(a => a.Channel).ToListAsync(ct);
+        var messaging = await messagingReader.ForCompanyAsync(shopId, ct: ct);
+        var channels = messaging.Channels.Where(c => c.State != ChannelState.Replaced).OrderBy(c => c.Transport).ThenBy(c => c.CreatedAt).ToList();
         if (channels.Count == 0) return [];
         var funding = await fundingReader.LoadAsync(channels, ct);
         return channels.Select(c => new ShopChannelView(
             c, funding.GetValueOrDefault(c.Id) ?? new ChannelFundingInfo(ChannelFundingState.NotPaid, string.Empty, null))).ToList();
     }
-
-    public async Task<bool> IsMessengerAvailableAsync(Guid shopId, CancellationToken ct = default) =>
-        (await LoadAsync(shopId, ct)).Any(v => v.IsFunded);
 }

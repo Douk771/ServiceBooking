@@ -440,6 +440,20 @@ public class ProfileConsentsController(
                 foreach (var o in serviceOrders) o.NotifyByMessenger = false;
                 await db.SaveChangesAsync();
             }
+
+            // ARCHITECTURE_CYCLE40.md §40.11 (review of cycle 40): a record that carries the customer's tick (`NotifyByMessenger = true`) is sent without a second look at the journal,
+            // so the revocation must switch the tick off itself — for the account's upcoming salon bookings and live shop orders, as it already does for «Дома». Without it
+            // a rescheduled booking / a ready order would still write to the person after they withdrew the consent (152-ФЗ ст. 9).
+            var today = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
+            var bookings = await db.Bookings.Where(bk => bk.ClientId == userId && bk.NotifyByMessenger == true && bk.Status != BookingStatus.Cancelled && bk.Date >= today).ToListAsync();
+            var liveOrderStatuses = new[] { OrderStatus.New, OrderStatus.Accepted, OrderStatus.Ready };
+            var orders = await db.Orders.Where(o => o.CustomerUserId == userId && o.NotifyByMessenger && liveOrderStatuses.Contains(o.Status)).ToListAsync();
+            if (apply && (bookings.Count > 0 || orders.Count > 0))
+            {
+                foreach (var bk in bookings) bk.NotifyByMessenger = false;
+                foreach (var o in orders) o.NotifyByMessenger = false;
+                await db.SaveChangesAsync();
+            }
         }
 
         if (wholeDocument)

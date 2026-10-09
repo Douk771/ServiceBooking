@@ -79,6 +79,9 @@ public static class TestHostSettings
 
         builder.UseEnvironment("Testing");
         builder.UseSetting("ConnectionStrings:DefaultConnection", connectionString);
+        // Cycle 40 (§40.0a, Р40-Ю1): production keeps WhatsApp closed until the lawyer's conclusion; the test hosts keep selling both
+        // messengers (the legacy NTF/CY tests are WhatsApp-based). Tests of the closed state set the platform key explicitly.
+        builder.UseSetting("Notifications:OptionAvailability:WhatsApp", "true");
         builder.UseSetting("Jwt:Key", "TEST_ONLY_SECRET_KEY_AT_LEAST_32_CHARACTERS_LONG");
         builder.UseSetting("Jwt:Issuer", "ServiceBooking");
         builder.UseSetting("Jwt:Audience", "ServiceBookingClient");

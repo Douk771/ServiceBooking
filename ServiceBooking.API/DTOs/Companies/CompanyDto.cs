@@ -114,7 +114,10 @@ public record CompanyDto(
     // anonymous ones included. IsShowcase: a fictional "example" company created by the showcase generator (always false for real ones).
     // ShowcaseBookingOpen: such a company takes online booking (D-1); false = slots and calendar work, the confirmation is refused (409 ShowcaseBookingClosed).
     bool IsShowcase = false,
-    bool ShowcaseBookingOpen = false
+    bool ShowcaseBookingOpen = false,
+    // ARCHITECTURE_CYCLE40.md §40.10 — filled ONLY on GET /api/companies/{slug} (the public page and the widget): do messenger messages work for
+    // this company's customers. Null on every list. Never carries a number, a state or a payment.
+    ServiceBooking.API.Services.Notifications.CustomerMessagingOfferDto? CustomerMessaging = null
 );
 
 // ARCHITECTURE_CYCLE5.md §42.1 — the acceptance of TermsOwner (D3) that gates company creation. Checked

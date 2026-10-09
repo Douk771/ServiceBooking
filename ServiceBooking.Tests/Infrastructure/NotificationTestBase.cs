@@ -271,17 +271,25 @@ public abstract class NotificationTestBase : IClassFixture<TestDatabaseFixture>,
     /// catalog row on first use (idempotent per test database) and one <c>AccountSubscriptionOption</c>
     /// row for the account.
     /// </summary>
-    public static async Task EnsureWhatsAppPaidAsync(AppDbContext db, Guid billingAccountId, int quantity = 1)
+    public static Task EnsureWhatsAppPaidAsync(AppDbContext db, Guid billingAccountId, int quantity = 1) =>
+        EnsureOptionPaidAsync(db, billingAccountId, ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode, "Рассылки в WhatsApp", quantity);
+
+    /// <summary>Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3): payment is per transport — the MAX transport is paid by its own
+    /// <c>notifications.max</c> row (seeded by the Cycle40ChannelOptions migration; created here if a database lacks it). Like
+    /// <see cref="EnsureWhatsAppPaidAsync"/> the row has no own date, so it rides the account's subscription period.</summary>
+    public static Task EnsureMaxPaidAsync(AppDbContext db, Guid billingAccountId, int quantity = 1) =>
+        EnsureOptionPaidAsync(db, billingAccountId, ServiceBooking.API.Services.Notifications.Funding.ChannelOptionCodes.Max, "MAX", quantity);
+
+    private static async Task EnsureOptionPaidAsync(AppDbContext db, Guid billingAccountId, string optionCode, string optionName, int quantity)
     {
-        var option = await db.SubscriptionOptions.FirstOrDefaultAsync(
-            o => o.Code == ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode);
+        var option = await db.SubscriptionOptions.FirstOrDefaultAsync(o => o.Code == optionCode);
         if (option is null)
         {
             option = new SubscriptionOption
             {
                 Id = Guid.NewGuid(),
-                Code = ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode,
-                Name = "Рассылки в WhatsApp",
+                Code = optionCode,
+                Name = optionName,
                 Kind = OptionKind.Quantity,
                 UnitName = "номер",
                 IsActive = true,
@@ -317,6 +325,19 @@ public abstract class NotificationTestBase : IClassFixture<TestDatabaseFixture>,
         var response = await client.PutAsJsonAsync("/api/admin/platform-settings",
             new { channelPricePerMonth = pricePerMonth, channelIdleDays = idleDays });
         response.EnsureSuccessStatusCode();
+
+        // Cycle 40 (§40.3, BE-40-1): the sale price of a number is the PRICE OF ITS OPTION now (the platform-settings field above is ignored by the
+        // new code). A null price means "not sellable", so the legacy helper keeps both messenger options in step with the requested price.
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await GetOrCreateWhatsAppOptionIdAsync(db);
+        foreach (var option in await db.SubscriptionOptions
+                     .Where(o => o.Code == ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode
+                                 || o.Code == ServiceBooking.API.Services.Notifications.Funding.ChannelOptionCodes.Max).ToListAsync())
+            option.PricePerMonth = pricePerMonth;
+        await db.SaveChangesAsync();
+        ServiceBooking.API.Services.Notifications.AccountMessagingReader.InvalidateCatalogCache(
+            scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>());
     }
 
     /// <summary>Full happy-path setup for a channel that's ready to receive queued notifications: owner

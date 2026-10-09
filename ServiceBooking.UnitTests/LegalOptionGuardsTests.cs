@@ -54,4 +54,13 @@ public class LegalOptionGuardsTests
 
         LegalOptionGuards.IsPubliclySellable("NOTIFICATIONS.WHATSAPP", snapshot).Should().BeTrue();
     }
+
+    // ARCHITECTURE_CYCLE40.md §40.7.1 (Т40-L-04): MAX is sold on the same offer as WhatsApp.
+    [Fact]
+    public void Max_IsGuardedByTermsOwner_LikeWhatsApp()
+    {
+        LegalOptionGuards.IsPubliclySellable("notifications.max", snapshot: null).Should().BeFalse();
+        LegalOptionGuards.IsPubliclySellable("notifications.max", SnapshotWith(Document(LegalDocumentType.TermsOwner, isDraft: true))).Should().BeFalse();
+        LegalOptionGuards.IsPubliclySellable("notifications.max", SnapshotWith(Document(LegalDocumentType.TermsOwner, isDraft: false))).Should().BeTrue();
+    }
 }

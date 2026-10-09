@@ -73,42 +73,8 @@ public class BathsPlanTests
         StaysPlanResolver.Warning(plan, 3, Now, GateUnit.House).Should().Be(StaysPlanResolver.Warning(plan, 3, Now));
     }
 
-    [Fact]
-    public void A_number_is_paid_through_the_baths_line_only_when_the_account_has_baths_and_its_tariff_allows()
-    {
-        LineChannelGrant Baths(bool has, bool usable, OptionAvailability? rule) => new(CompanyKind.Baths, has, usable, rule);
-        int Paid(params LineChannelGrant[] lines) => SubscriptionResolver.PaidNumbers(1, null, false, null, Now, lines);
-        Paid(Baths(true, true, OptionAvailability.Included)).Should().Be(1);
-        Paid(Baths(true, true, OptionAvailability.Extra)).Should().Be(1);
-        Paid(Baths(false, true, OptionAvailability.Included)).Should().Be(0);
-        Paid(Baths(true, false, OptionAvailability.Included)).Should().Be(0);
-        Paid(Baths(true, true, OptionAvailability.Unavailable)).Should().Be(0);
-        Paid(Baths(true, true, null)).Should().Be(0);
-        Paid().Should().Be(0);
-    }
-
-    [Fact]
-    public void The_option_row_own_period_still_applies_to_the_baths_line()
-    {
-        var lines = new[] { new LineChannelGrant(CompanyKind.Baths, true, true, OptionAvailability.Included) };
-        SubscriptionResolver.PaidNumbers(2, Now.AddDays(-1), false, null, Now, lines).Should().Be(0);
-        SubscriptionResolver.PaidNumbers(2, Now.AddDays(1), false, null, Now, lines).Should().Be(2);
-    }
-
-    [Fact]
-    public void The_legacy_overload_equals_the_list_form_for_every_combination()
-    {
-        bool[] flags = [false, true];
-        OptionAvailability?[] rules = [null, OptionAvailability.Unavailable, OptionAvailability.Extra];
-        foreach (var servicesUsable in flags) foreach (var hasShops in flags) foreach (var ordersUsable in flags)
-        foreach (var hasStays in flags) foreach (var staysUsable in flags) foreach (var rule in rules)
-        {
-            var legacy = SubscriptionResolver.PaidNumbers(3, null, servicesUsable, rule, hasShops, ordersUsable, rule, Now, hasStays, staysUsable, rule);
-            var list = SubscriptionResolver.PaidNumbers(3, null, servicesUsable, rule, Now,
-                [new LineChannelGrant(CompanyKind.Orders, hasShops, ordersUsable, rule), new LineChannelGrant(CompanyKind.Stays, hasStays, staysUsable, rule)]);
-            legacy.Should().Be(list);
-        }
-    }
+    // TODO(C42-channels): tests of SubscriptionResolver.PaidNumbers / LineChannelGrant (the baths line funds a number) removed in the merge of develop:
+    // cycle 40 deleted the mechanism (payment per transport through AccountMessagingReader / ChannelOptionFunding). Re-create for the baths line there.
 
     [Fact]
     public void Each_vertical_owns_its_trial_plan_and_terms()

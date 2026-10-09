@@ -37,6 +37,10 @@ public static class NotificationTemplateRenderer
             .Replace("{НоваяДата}", ctx.NewDate ?? string.Empty)
             .Replace("{НовоеВремя}", ctx.NewTime ?? string.Empty);
 
+    /// <summary>ARCHITECTURE_CYCLE40.md §40.11a (Т40-L-05): one number serves every company of an account, so the first line of every salon
+    /// message names the sender — «{Company}:» — whatever the template says. The templates themselves are not changed.</summary>
+    public static string WithSender(string companyName, string renderedBody) => $"{companyName.Trim()}:\n{renderedBody}";
+
     /// <summary>Appends the non-removable unsubscribe line AFTER the rendered body (US-33 p.4, §31.4).
     /// Building the line itself (token, URL) is <c>UnsubscribeTokens</c>' job, not this one's — this is
     /// only the "the line goes last, separated by a blank line" rule, kept in one place.</summary>

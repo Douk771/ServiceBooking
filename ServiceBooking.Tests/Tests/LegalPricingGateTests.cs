@@ -238,16 +238,20 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
         var optionName = await MakeWhatsAppOptionPubliclySellableAsync();
 
         var draftPreview = await Authed(token).GetFromJsonAsync<PublicPricingDto>("/api/admin/pricing/preview");
-        draftPreview!.Options.Should().NotContain(o => o.Name == optionName,
+        // Cycle 40 (§40.14): INTENTIONAL change — the messenger options are drawn as their own price lines (messengerAddons), no longer as a generic option.
+        draftPreview!.Options.Should().NotContain(o => o.Name == optionName, "the messenger option is never a generic option any more");
+        (draftPreview.MessengerAddons ?? []).Should().NotContain(a => a.Label == "WhatsApp",
             "US-11-11/Q11: an option gated on TermsOwner must not be offered for sale while that document is a draft");
+        draftPreview.MessengerAddonsNote.Should().BeNull("no price line — no note");
 
         _factory.WriteManifest("v2-draft", isDraft: true, changeKind: "Material", termsOwnerIsDraft: false);
         await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
         token = await AcceptCurrentLegalAsync(token);
 
         var publishedPreview = await Authed(token).GetFromJsonAsync<PublicPricingDto>("/api/admin/pricing/preview");
-        publishedPreview!.Options.Should().Contain(o => o.Name == optionName,
+        publishedPreview!.MessengerAddons.Should().Contain(a => a.Label == "WhatsApp",
             "once TermsOwner is published, the same option must reappear without any other admin action");
+        publishedPreview.MessengerAddonsNote.Should().NotBeNull();
     }
 
     // ── US-11-07: the readiness endpoint reflects the actual draft/published state of the snapshot it reads ──

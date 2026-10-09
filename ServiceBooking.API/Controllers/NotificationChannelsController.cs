@@ -16,10 +16,11 @@ using ServiceBooking.Infrastructure.Data;
 namespace ServiceBooking.API.Controllers;
 
 /// <summary>
-/// A platform owner's WhatsApp channels: list, request, QR binding, risk acceptance, test message,
-/// unbinding, and company assignment (API_CONTRACT_CYCLE4.md §20–§26, T4-B4/T4-B6). SuperAdmin has NO
+/// A platform owner's messenger numbers: the wizard's overview, list, payment request / terms, QR binding, risk acceptance, test message,
+/// unbinding and replacement (API_CONTRACT_CYCLE4.md §20–§26; reworked by API_CONTRACT_CYCLE40.md §40.23–§40.28). SuperAdmin has NO
 /// access here at all (§19.3) — the admin-facing surface is a separate, read-mostly view under
-/// <c>AdminController</c>.
+/// <c>AdminController</c>. Cycle 40: one number serves every company of the account, so the company-assignment routes only answer
+/// 410 / 204 and nothing here reads the assignments.
 /// </summary>
 [ApiController]
 [Route("api/notification-channels")]
@@ -30,17 +31,17 @@ public class NotificationChannelsController(
     INotificationTransportRegistry transportRegistry,
     IMemoryCache cache,
     IOptions<NotificationOptions> options,
-    SubscriptionResolver subscriptionResolver,
     BillingAccountProvisioner billingAccountProvisioner,
     PlatformSettings platformSettings,
     LegalDocumentProvider legalProvider,
     ConsentLedger ledger,
     ChannelFundingReader fundingReader,
-    ChannelEligibility eligibility,
+    AccountMessagingReader messagingReader,
+    NumbersOverviewBuilder overviewBuilder,
+    PendingRebinder pendingRebinder,
     ILogger<NotificationChannelsController> logger) : ControllerBase
 {
-    private const string TestMessageText =
-        "Проверка канала уведомлений ezbook.ru: если вы видите это сообщение, канал работает.";
+    private const string DocumentsUnavailableText = "Правовые документы временно недоступны.";
 
     [HttpGet]
     public async Task<ActionResult<ChannelListDto>> GetAll(CancellationToken ct)
@@ -53,14 +54,24 @@ public class NotificationChannelsController(
             return Forbid();
 
         var channels = await db.NotificationChannels.AsNoTracking()
-            .Include(c => c.Assignments).ThenInclude(a => a.Company)
             .Where(c => c.OwnerUserId == userId)
             .OrderByDescending(c => c.CreatedAt)
             .ToListAsync(ct);
 
-        var idleDays = await PlatformIdleDaysAsync();
-        var funding = await fundingReader.LoadAsync(channels, ct);
-        return Ok(new ChannelListDto(channels.Select(c => MapToDto(c, idleDays, funding)).ToList()));
+        var ctx = await overviewBuilder.LoadAsync(channels.Select(c => c.BillingAccountId ?? Guid.Empty), userId, ct);
+        return Ok(new ChannelListDto(channels.Select(c => NumbersOverviewBuilder.BuildChannel(c, ctx)).ToList()));
+    }
+
+    /// <summary>API_CONTRACT_CYCLE40.md §40.23 — everything the "Numbers" block and its wizard need in one answer.</summary>
+    [HttpGet("overview")]
+    public async Task<ActionResult<NumbersOverviewDto>> GetOverview(CancellationToken ct)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        if (!await IsAnyCompanyOwnerAsync(userId) && !await db.NotificationChannels.AnyAsync(c => c.OwnerUserId == userId, ct))
+            return Forbid();
+
+        var overview = await overviewBuilder.BuildAsync(userId, ct);
+        return overview is null ? StatusCode(StatusCodes.Status503ServiceUnavailable, DocumentsUnavailableText) : Ok(overview);
     }
 
     [HttpGet("offer")]
@@ -69,119 +80,131 @@ public class NotificationChannelsController(
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await IsAnyCompanyOwnerAsync(userId)) return Forbid();
 
-        var accountId = await BillingAccountProvisioner.FindAccountIdAsync(db, userId);
-        var plan = accountId.HasValue
-            ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
-            : EffectivePlan.Free;
-        var price = await platformSettings.GetChannelPricePerMonthAsync(ct);
-
         // B12 (§104.8): riskText/riskVersion now come from the SAME ChannelRiskNotice legal document the
         // /channel-risk public page and accept-risk's own version check read — one noticeholder, not
         // three copies of "roughly the same paragraph" drifting apart.
         var riskDoc = legalProvider.Current?.Get(LegalDocumentType.ChannelRiskNotice);
         if (riskDoc is null)
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, DocumentsUnavailableText);
 
-        var available = price is not null;
-        var transports = new List<TransportOfferDto>
+        // Cycle 40 (§40.28.2): only the transports that can be sold are offered; the price of the old top-level field is WhatsApp's.
+        var accountId = await BillingAccountProvisioner.FindAccountIdAsync(db, userId);
+        var account = await messagingReader.ForAccountAsync(accountId ?? Guid.Empty, ct: ct);
+        var transports = new List<TransportOfferDto>();
+        decimal? whatsAppPrice = null;
+        foreach (var t in account!.Transports.Where(t => t.Option.Sellable))
         {
-            new(NotificationTransport.WhatsApp, ChannelPresentation.TransportDisplayName(NotificationTransport.WhatsApp),
-                available, ChannelPresentation.TransportConnectionNotice(NotificationTransport.WhatsApp)),
-            new(NotificationTransport.Max, ChannelPresentation.TransportDisplayName(NotificationTransport.Max),
-                available, ChannelPresentation.TransportConnectionNotice(NotificationTransport.Max)),
-        };
+            var price = t.Option.PricePerMonth;
+            if (t.Transport == NotificationTransport.WhatsApp) whatsAppPrice = price;
+            transports.Add(new TransportOfferDto(
+                t.Transport, ChannelPresentation.TransportDisplayName(t.Transport), account.PlatformEnabled,
+                ChannelPresentation.TransportConnectionNotice(t.Transport), price, price is { } p ? MessengerTexts.PriceText(p) : null));
+        }
 
         return Ok(new ChannelOfferDto(
-            PricePerMonth: price, AllowedByPlan: await eligibility.IsAllowedAsync(accountId, plan, ct),
+            PricePerMonth: whatsAppPrice, AllowedByPlan: true,
             RiskText: riskDoc.ContentHtml, RiskVersion: riskDoc.Version, Transports: transports));
     }
 
+    /// <summary>API_CONTRACT_CYCLE40.md §40.24 — the "Payment" step (<c>paymentRequest: true</c>) and the "Terms" step
+    /// (<c>paymentRequest: false</c>) of the wizard. The order of the refusals is the contract's order.</summary>
     [HttpPost]
     [RequiresOwnerTerms]
-    public async Task<ActionResult<ChannelDto>> Create([FromBody] CreateChannelRequestDto dto)
+    public async Task<ActionResult<ChannelDto>> Create([FromBody] CreateChannelRequestDto dto, CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await IsAnyCompanyOwnerAsync(userId)) return Forbid();
 
-        // T5-B4 (ARCHITECTURE_CYCLE5.md §43.2, API_CONTRACT_CYCLE5.md §50.1, BREAKING № 7): the request
-        // body used to be ignored entirely (API_CONTRACT_CYCLE4.md §22) — this cycle requires the legal
-        // entity form, a formally-valid ИНН, and acceptance of D9 (the channel offer, an appendix to
-        // TermsOwner, §43.2) before a request can even be created. Checked by hand, same reasoning as
-        // RegisterDto.Legal.
+        // T5-B4: form, a formally-valid ИНН and acceptance of D9 (the channel offer, an appendix to TermsOwner, §43.2) are checked by hand.
         if (dto.LegalEntityForm is null || string.IsNullOrWhiteSpace(dto.OfferAccepted?.Version))
             return BadRequest("Укажите форму юридического лица и примите условия оферты.");
         if (!InnValidator.IsValid(dto.Inn))
             return BadRequest("ИНН указан неверно, проверьте цифры");
 
         var offerDoc = legalProvider.Current?.Get(LegalDocumentType.TermsOwner);
-        if (offerDoc is null)
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+        var riskDoc = legalProvider.Current?.Get(LegalDocumentType.ChannelRiskNotice);
+        if (offerDoc is null || (dto.RiskAccepted is not null && riskDoc is null))
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, DocumentsUnavailableText);
         if (dto.OfferAccepted.Version != offerDoc.Version)
             return Conflict("Соглашение владельца было обновлено ещё раз — перечитайте и примите новую редакцию.");
+        if (dto.RiskAccepted is not null && dto.RiskAccepted.Version != riskDoc!.Version)
+            return BadRequest(MessengerTexts.RiskTextChanged);
+
+        // ARCHITECTURE_CYCLE9.md §104.2: absent → WhatsApp.
+        var requestedTransport = dto.Transport ?? NotificationTransport.WhatsApp;
+        var display = MessengerTexts.DisplayName(requestedTransport);
 
         var accountId = await BillingAccountProvisioner.FindAccountIdAsync(db, userId);
-        var plan = accountId.HasValue
-            ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
-            : EffectivePlan.Free;
-        if (!await eligibility.IsAllowedAsync(accountId, plan))
-            return StatusCode(402, "Подключение канала недоступно на вашем тарифе");
+        var account = (await messagingReader.ForAccountAsync(accountId ?? Guid.Empty, ct: ct))!;
+        if (!account.PlatformEnabled)
+            return Conflict("Подключение временно недоступно");
+        var transport = account.For(requestedTransport);
 
-        // N21, §59/§47.3: `notifications.channel.price-per-month` no longer controls anything — the
-        // channel is priced through the `notifications.whatsapp` subscription option now, not this
-        // platform setting (which is being removed from the admin screen for the same reason). Gating
-        // the request on it being non-null blocked every request the moment nobody had bothered to keep
-        // a now-decorative setting non-null, with no way for an owner to tell why.
-
-        // ARCHITECTURE_CYCLE9.md §104.2/§114.2 (US-119): absent → WhatsApp, computed here (not only at
-        // BuildRow time below) so the N8 duplicate-transport check right after has a concrete value to
-        // compare against.
-        var requestedTransport = dto.Transport ?? NotificationTransport.WhatsApp;
-
-        // accountId is guaranteed here — GetOffer/AllowNotificationChannel above already required a
-        // usable plan, and a usable plan requires an AccountSubscription, which requires an account
-        // (BillingAccountProvisioner.EnsureAccountAsync is idempotent if one already exists).
-        var ownerAccountId = accountId ?? await billingAccountProvisioner.EnsureAccountAsync(userId);
-
-        // §114.2 (N8): "у аккаунта уже есть канал этого транспорта в живом состоянии" → 409. "Живое"
-        // means State != Replaced — the SAME definition LoadFundingAsync already uses to pick the
-        // account's working channel per transport (this endpoint's own doc comment on that method).
-        // Without this check an owner could request unlimited pending/NotConnected channels of the same
-        // transport for one account.
-        var hasLiveChannelOfTransport = await db.NotificationChannels.AsNoTracking().AnyAsync(c =>
-            c.BillingAccountId == ownerAccountId && c.Transport == requestedTransport && c.State != ChannelState.Replaced);
-        if (hasLiveChannelOfTransport)
-            return Conflict($"У аккаунта уже есть канал транспорта «{ChannelPresentation.TransportDisplayName(requestedTransport)}» в живом состоянии");
-
-        var channel = new NotificationChannel
+        if (dto.PaymentRequest)
         {
-            Id = Guid.NewGuid(),
-            OwnerUserId = userId,
-            BillingAccountId = ownerAccountId,
-            // ARCHITECTURE_CYCLE9.md §104.2/§114.2 (US-119): absent → WhatsApp, so a pre-cycle-9 caller
-            // that never sends this field keeps requesting exactly what it always requested. An
-            // unparseable string in the JSON body never reaches here at all — [ApiController]'s own model
-            // binding already 400s a value that doesn't match NotificationTransport before this action runs.
-            Transport = requestedTransport,
-            State = ChannelState.NotConnected,
-            RequestedAtUtc = DateTime.UtcNow,
-            LegalEntityForm = dto.LegalEntityForm,
-            Inn = dto.Inn,
-        };
-        db.NotificationChannels.Add(channel);
-        await db.SaveChangesAsync();
+            if (!transport.Option.Sellable) return Conflict(MessengerTexts.Unavailable(requestedTransport));
+            if (transport.Primary is not null && transport.Paid && !transport.Payment.IsTrial)
+                return Conflict(MessengerTexts.AlreadyHaveNumber(requestedTransport));
+        }
+        else if (!transport.Paid)
+        {
+            return Conflict(MessengerTexts.PayFirst(requestedTransport));
+        }
 
-        // D9 is an APPENDIX to TermsOwner, not a sixth document type (§43.2) — the same DocumentKey as
-        // company creation's acceptance, distinguished only by Purpose. Both rows carry the SAME version:
-        // "владелец видел существенные условия платной опции в редакции от такой-то даты" is provable
-        // either way.
+        // EnsureAccountAsync is idempotent if the account already exists.
+        var ownerAccountId = accountId ?? await billingAccountProvisioner.EnsureAccountAsync(userId);
+        var now = DateTime.UtcNow;
+        NotificationChannel channel;
+        bool created;
+
+        // One request at a time per account and transport: two clicks must not create two rows of one number.
+        await using (var transaction = await db.Database.BeginTransactionAsync(ct))
+        {
+            await AdvisoryLock.AcquireAsync(db, $"channel-request:{ownerAccountId}:{requestedTransport}");
+
+            var live = await db.NotificationChannels
+                .Where(c => c.BillingAccountId == ownerAccountId && c.Transport == requestedTransport && c.State != ChannelState.Replaced)
+                .OrderBy(c => c.CreatedAt).ThenBy(c => c.Id)
+                .FirstOrDefaultAsync(ct);
+
+            if (dto.PaymentRequest && live is not null && transport.Paid && !transport.Payment.IsTrial)
+                return Conflict(MessengerTexts.AlreadyHaveNumber(requestedTransport));
+
+            created = live is null;
+            channel = live ?? new NotificationChannel
+            {
+                Id = Guid.NewGuid(),
+                OwnerUserId = userId,
+                BillingAccountId = ownerAccountId,
+                Transport = requestedTransport,
+                State = ChannelState.NotConnected,
+            };
+            channel.LegalEntityForm = dto.LegalEntityForm;
+            channel.Inn = dto.Inn;
+            if (dto.RiskAccepted is not null)
+            {
+                channel.RiskAcceptedAtUtc = now;
+                channel.RiskAcceptedVersion = dto.RiskAccepted.Version;
+            }
+            // The payment request (re)starts "Оплата на проверке"; the Terms step never touches it (Т40-L-03).
+            if (dto.PaymentRequest) channel.RequestedAtUtc = now;
+            if (created) db.NotificationChannels.Add(channel);
+
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+
+        // D9 is an APPENDIX to TermsOwner, not a sixth document type (§43.2) — the same DocumentKey as company creation's
+        // acceptance, distinguished only by Purpose.
         await ledger.GrantAsync(new ConsentGrant(
             ConsentSubject.ForUser(userId), LegalDocumentType.TermsOwner.ToString(), offerDoc.Version, offerDoc.ContentHash,
             Purpose: ConsentPurpose.ChannelOffer, ConsentAct.Accepted, ConsentSource.ChannelRequest,
-            IpAddress: HttpContext.Connection.RemoteIpAddress?.ToString(), UserAgent: Request.Headers.UserAgent.ToString()));
+            IpAddress: HttpContext.Connection.RemoteIpAddress?.ToString(), UserAgent: Request.Headers.UserAgent.ToString()), ct);
 
-        var idleDays = await platformSettings.GetChannelIdleDaysAsync();
-        var funding = await fundingReader.LoadAsync([channel]);
-        return CreatedAtAction(nameof(GetById), new { id = channel.Id }, MapToDto(channel, idleDays, funding));
+        var result = await overviewBuilder.BuildChannelAsync(channel, userId, ct);
+        logger.LogInformation("Number {Transport} {Step} for channel {ChannelId} ({Outcome})",
+            display, dto.PaymentRequest ? "payment request" : "terms", channel.Id, created ? "created" : "updated");
+        return created ? CreatedAtAction(nameof(GetById), new { id = channel.Id }, result) : Ok(result);
     }
 
     [HttpGet("{id:guid}")]
@@ -190,9 +213,7 @@ public class NotificationChannelsController(
         var channel = await LoadOwnedChannelAsync(id);
         if (channel is null) return NotFound();
 
-        var idleDays = await PlatformIdleDaysAsync();
-        var funding = await fundingReader.LoadAsync([channel], ct);
-        return Ok(MapToDto(channel, idleDays, funding));
+        return Ok(await overviewBuilder.BuildChannelAsync(channel, channel.OwnerUserId, ct));
     }
 
     [HttpPost("{id:guid}/accept-risk")]
@@ -217,132 +238,146 @@ public class NotificationChannelsController(
         return NoContent();
     }
 
+    /// <summary>API_CONTRACT_CYCLE40.md §40.25 — the start of the wizard's "QR" step. The order of the refusals is the contract's order.</summary>
     [HttpPost("{id:guid}/connect")]
     [RequiresOwnerTerms]
-    public async Task<IActionResult> Connect(Guid id)
+    public async Task<IActionResult> Connect(Guid id, CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var channel = await LoadOwnedChannelAsync(id, forUpdate: true);
         if (channel is null) return NotFound();
 
-        // Reviewer note / SPEC US-31 п. 7: the plan could have downgraded since the channel was
-        // purchased (channel and AccountSubscription are billed independently, §33) — Connect must not
-        // let a since-downgraded owner keep reconnecting a channel their current plan no longer allows.
-        var accountId = await BillingAccountProvisioner.FindAccountIdAsync(db, userId);
-        var plan = accountId.HasValue
-            ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
-            : EffectivePlan.Free;
-        if (!await eligibility.IsAllowedAsync(accountId, plan))
-            return StatusCode(402, "Подключение канала недоступно на вашем тарифе");
+        if (!await platformSettings.IsCustomerMessagingEnabledAsync(ct))
+            return Conflict(MessengerTexts.PlatformDisabled);
+        if (channel.IsSuspendedByAdmin)
+            return Conflict("Номер приостановлен администратором");
 
-        var nowUtc = DateTime.UtcNow;
-        // §47.3: Connect can only bind a FUNDED number — ChannelFunding.Rank over the account's own
-        // live channels (the channel row has no paid period of its own).
-        var funded = await fundingReader.IsFundedAsync(channel, plan);
-        var paymentState = funded ? ChannelPaymentStatus.Paid : ChannelPaymentStatus.NotPaid;
-        if (!funded)
-            return StatusCode(402, "Канал не оплачен");
+        // §40.3: Connect can only bind a FUNDED number — the first live number of a paid transport. Whether the option is still
+        // open for sale is not asked here: what was bought (or granted by the trial) keeps working.
+        if (!await fundingReader.IsFundedAsync(channel, ct))
+            return StatusCode(402, "Номер не оплачен");
 
-        if (channel.RiskAcceptedAtUtc is null)
-            return Conflict("Сначала подтвердите условия подключения");
+        // Т40-L-03: the terms of the CURRENT edition (risk version, status and ИНН, offer) — a new edition sends every number through the Terms step.
+        if (!await overviewBuilder.IsTermsAcceptedAsync(channel, userId, ct))
+            return Conflict(MessengerTexts.TermsChangedConflict);
 
-        var canConnect = ChannelPresentation.CanConnect(channel.State, paymentState, riskAccepted: true);
-        if (!canConnect || channel.ProviderInstanceId is not null)
-            return Conflict("Номер уже подключается");
+        var refusal = ConnectRefusal(channel);
+        if (refusal is not null) return refusal;
+        if (channel.State == ChannelState.Connecting)
+            return Accepted(new ConnectResponseDto(ChannelState.Connecting, RefreshAfterSeconds: 3));
 
-        // T5-B13 (ARCHITECTURE_CYCLE5.md §52.1, API_CONTRACT_CYCLE5.md §50.3): a deliberate stop, not a
-        // provider call that would silently create an instance in an unknown region. State is untouched —
-        // this is a platform-wide pause, not something specific to this channel.
+        // T5-B13 (ARCHITECTURE_CYCLE5.md §52.1): a deliberate stop, not a provider call that would silently create an instance in an
+        // unknown region. State is untouched — this is a platform-wide pause, not something specific to this channel.
         if (!options.Value.GreenApi.InstanceCreationEnabled)
             return Conflict("Создание каналов приостановлено платформой");
 
         var encryptionKey = options.Value.EncryptionKey;
         if (string.IsNullOrEmpty(encryptionKey))
         {
-            // Defensive only — DeploymentSafetyChecks.ValidateNotificationSecrets already refuses to
-            // start the app with a real provider configured and no key outside Development (I4: gated on
-            // Provider, not the removed Notifications:Enabled), so this branch is reachable only in a
-            // dev/test process on the "logging" provider, where Connect shouldn't realistically be
-            // exercised in the first place.
+            // Defensive only — DeploymentSafetyChecks.ValidateNotificationSecrets already refuses to start the app with a real provider
+            // configured and no key outside Development.
             logger.LogError("Notifications:EncryptionKey is not configured; cannot store the provider secret for channel {ChannelId}", channel.Id);
             return StatusCode(503, "Сервис подключения временно недоступен, попробуйте позже");
         }
 
-        // I3: a double-click (or a retried request racing the original) must not create two paid
-        // instances — the SECOND SaveChanges below used to be the only guard, and it just silently
-        // overwrote the first request's ProviderInstanceId, orphaning that instance forever (nothing
-        // left pointing at it to ever clean it up). Fixed by recording intent — State flips to
-        // Connecting — BEFORE the network call, inside its own short transaction serialized by an
-        // advisory lock keyed on this channel: the second request blocks until the first commits, then
-        // re-reads State as Connecting and is rejected by the SAME canConnect/409 check above, instead of
-        // racing it.
-        await using (var lockTransaction = await db.Database.BeginTransactionAsync())
+        // I3: a double-click (or a retried request racing the original) must not create two paid instances — recording intent (State flips
+        // to Connecting) happens BEFORE the network call, inside its own short transaction serialized by an advisory lock keyed on this
+        // channel: the second request blocks until the first commits, then re-reads State as Connecting and is answered 202 without a new instance.
+        var sourceState = channel.State;
+        var sourceReason = channel.LastStateReason;
+        string? oldInstanceId;
+        ChannelCredentials? oldCredentials = null;
+        await using (var lockTransaction = await db.Database.BeginTransactionAsync(ct))
         {
             await AdvisoryLock.AcquireAsync(db, $"channel-connect:{id}");
+            await db.Entry(channel).ReloadAsync(ct);
 
-            var currentState = await db.NotificationChannels.Where(c => c.Id == id)
-                .Select(c => new { c.State, c.ProviderInstanceId }).FirstAsync();
-            if (!ChannelPresentation.CanConnect(currentState.State, paymentState, riskAccepted: true) || currentState.ProviderInstanceId is not null)
+            refusal = ConnectRefusal(channel);
+            if (refusal is not null)
             {
-                await lockTransaction.RollbackAsync();
-                return Conflict("Номер уже подключается");
+                await lockTransaction.RollbackAsync(ct);
+                return refusal;
+            }
+            if (channel.State == ChannelState.Connecting)
+            {
+                await lockTransaction.RollbackAsync(ct);
+                return Accepted(new ConnectResponseDto(ChannelState.Connecting, RefreshAfterSeconds: 3));
+            }
+
+            sourceState = channel.State;
+            sourceReason = channel.LastStateReason;
+            oldInstanceId = channel.ProviderInstanceId;
+            if (oldInstanceId is not null) oldCredentials = TryDecryptCredentials(channel);
+
+            // A rebinding (Disconnected, or any state that still holds an instance): the old instance is queued for deletion
+            // (database first, §30.4) and its secret dropped; the new instance starts from a clean slate.
+            string? strandedOrphan = null;
+            if (oldInstanceId is not null)
+            {
+                if (channel.OrphanedInstanceId is { } earlier && earlier != oldInstanceId) strandedOrphan = earlier;
+                channel.OrphanedInstanceId = oldInstanceId;
+                channel.ProviderInstanceId = null;
+                channel.ProviderSecretCiphertext = null;
+                channel.ProviderSecretKeyId = null;
+                db.ChannelStateEvents.Add(new ChannelStateEvent
+                {
+                    Id = Guid.NewGuid(), ChannelId = channel.Id, FromState = channel.State, ToState = ChannelState.Connecting,
+                    Reason = ChannelStateReason.RebindStarted,
+                });
             }
 
             channel.State = ChannelState.Connecting;
-            channel.InstanceCreatedAtUtc = nowUtc;
-            await db.SaveChangesAsync();
-            await lockTransaction.CommitAsync();
+            channel.InstanceCreatedAtUtc = DateTime.UtcNow;
+            // Found defect (§40.7.3 item 4): ConnectedAtUtc of the previous binding must not survive into the new one.
+            channel.ConnectedAtUtc = null;
+            await db.SaveChangesAsync(ct);
+            await lockTransaction.CommitAsync(ct);
+
+            if (strandedOrphan is not null)
+                await TryDeleteInstanceAsync(channel.Transport, strandedOrphan);
         }
 
         ProvisionedInstance instance;
         try
         {
-            // N4: deliberately NOT HttpContext.RequestAborted — an owner closing the tab must not race
-            // (and possibly win against) the provider having already created a BILLED instance. If the
-            // browser cancels, this call keeps running to completion server-side regardless (nothing
-            // downstream is awaiting RequestAborted either); the only remaining boundary is
-            // HttpClient.Timeout (§28.1's "green-api" named client), same as every other necessary-but-
-            // irreversible provider call in this cycle.
+            // N4: deliberately NOT HttpContext.RequestAborted — an owner closing the tab must not race (and possibly win against) the
+            // provider having already created a BILLED instance.
             instance = await provisioningRegistry.For(channel.Transport).CreateInstanceAsync(CancellationToken.None);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to create a provider instance for channel {ChannelId}", channel.Id);
-            // Revert the intent marker — otherwise the channel is stuck in Connecting with no instance
-            // to ever clean up (ChannelHealthTask's stuck-in-Connecting timeout only acts on a channel
-            // that HAS a ProviderInstanceId) and the owner can never retry.
-            channel.State = ChannelState.NotConnected;
+            // Revert the intent marker — otherwise the channel is stuck in Connecting with no instance and the owner can never retry.
+            channel.State = sourceState == ChannelState.Connecting ? ChannelState.NotConnected : sourceState;
+            channel.LastStateReason = sourceReason;
             channel.InstanceCreatedAtUtc = null;
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(CancellationToken.None);
             return StatusCode(503, "Сервис подключения временно недоступен, попробуйте позже");
         }
 
-        // T5-B13 (ARCHITECTURE_CYCLE5.md §52.2): the provider reported a server country that doesn't
-        // match what we expected — the instance is never wired up (no ProviderInstanceId/secret
-        // persisted). This is a PLATFORM-side incident, not a transient failure: the channel goes to
-        // Disconnected (not back to NotConnected, and not left in Connecting) so ChannelPresentation
-        // shows "требуется вмешательство платформы" and CanConnect keeps the retry button hidden — an
-        // owner clicking Connect again would just reproduce the same mismatch.
-        if (instance.ServerCountry is { Length: > 0 } reportedCountry &&
-            !string.Equals(reportedCountry, options.Value.GreenApi.ServerCountry, StringComparison.OrdinalIgnoreCase))
-        {
-            // Only the country values and the channel id — never the token, the full response body, or
-            // the request URL (ARCHITECTURE_CYCLE4.md §24.3's three rungs, unchanged by this cycle).
-            logger.LogError(
-                "GREEN-API server country mismatch for channel {ChannelId}: expected {ExpectedCountry}, provider reported {ReportedCountry}",
-                channel.Id, options.Value.GreenApi.ServerCountry, reportedCountry);
+        // The old instance (if any) is already queued as OrphanedInstanceId; delete it now, the channel-health sweep retries on failure.
+        if (oldInstanceId is not null)
+            await DeleteOldInstanceAsync(channel, oldInstanceId, oldCredentials);
 
-            // Code review В7: the instance already exists at the provider (created, billed) by the
-            // CreateInstanceAsync call above — discarding `instance.InstanceId` here, as an earlier
-            // version did, would leak it: nothing would ever reference it again, so it would go on
-            // living, billing, and sitting in the wrong jurisdiction with no way to shut it down. §30.4's
-            // established "database first" orphan pattern applies exactly here, the same as
-            // ChannelHealthTask.DeleteInstanceAsync uses for every other forced decommission: record
-            // OrphanedInstanceId now (so the id itself, and the fact that it needs cleanup, survive this
-            // request even if the process crashes right after), and let ChannelHealthTask's existing
-            // orphan-retry sweep (RetryOrphanDeletionForAsync) delete it at the provider on its next
-            // pass — reusing tested infrastructure instead of a second, ad hoc deletion call here that
-            // would have no retry if it failed.
+        // Cycle 40 (§40.7.4): what the provider reported is recorded on the channel (null when it reported nothing) and compared with the
+        // country expected FOR THIS TRANSPORT.
+        var expectedCountry = options.Value.GreenApi.ExpectedServerCountry(channel.Transport);
+        channel.ProviderServerCountry = instance.ServerCountry is { Length: > 0 } reported ? reported : null;
+
+        // T5-B13 (§52.2): a platform-side incident, not a transient failure: the instance is never wired up, the channel goes to Disconnected
+        // (retry hidden), and the created instance is queued for deletion (code review В7, §30.4 "database first").
+        if (instance.ServerCountry is { Length: > 0 } reportedCountry &&
+            !string.Equals(reportedCountry, expectedCountry, StringComparison.OrdinalIgnoreCase))
+        {
+            // Only the country values and the channel id — never the token, the full response body, or the request URL.
+            logger.LogError(
+                "GREEN-API server country mismatch for channel {ChannelId} ({Transport}): expected {ExpectedCountry}, provider reported {ReportedCountry}",
+                channel.Id, channel.Transport, expectedCountry, reportedCountry);
+
+            // An older orphan (the previous binding's instance whose deletion did not confirm) must not be overwritten by the new one.
+            if (channel.OrphanedInstanceId is { } olderOrphan && olderOrphan != instance.InstanceId)
+                await TryDeleteInstanceAsync(channel.Transport, olderOrphan);
+
             channel.State = ChannelState.Disconnected;
             channel.LastStateReason = ChannelStateReason.ServerCountryMismatch;
             channel.InstanceCreatedAtUtc = null;
@@ -352,33 +387,20 @@ public class NotificationChannelsController(
                 Id = Guid.NewGuid(), ChannelId = channel.Id,
                 FromState = ChannelState.Connecting, ToState = ChannelState.Disconnected,
                 Reason = ChannelStateReason.ServerCountryMismatch,
-                Detail = $"expected={options.Value.GreenApi.ServerCountry} reported={reportedCountry} orphanedInstanceId={instance.InstanceId}",
+                Detail = $"expected={expectedCountry} reported={reportedCountry} orphanedInstanceId={instance.InstanceId}",
             });
-            await db.SaveChangesAsync();
-            return StatusCode(503, "Требуется вмешательство платформы для восстановления канала.");
+            await db.SaveChangesAsync(CancellationToken.None);
+            return StatusCode(503, "Требуется вмешательство платформы для восстановления канала");
         }
 
         channel.ProviderInstanceId = instance.InstanceId;
         channel.ProviderSecretCiphertext = SecretProtector.Encrypt(instance.Token, encryptionKey, channel.Id);
         channel.ProviderSecretKeyId = SecretProtector.ComputeKeyId(SecretProtector.DecodeKey(encryptionKey));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(CancellationToken.None);
 
-        // N5: ONE setSettings call for the antiban send delay (§29.1 step 2) AND the webhook (I2, §32) —
-        // GREEN-API restarts the instance on every settings change, so two separate calls meant the owner
-        // watched it restart twice, back-to-back, right before the QR code was shown. Best effort as a
-        // whole: a failure here must not undo a binding that already succeeded at the provider. webhookUrl
-        // is left null (webhook fields omitted from the body entirely) when no webhook token is configured
-        // (dev/test with the logging provider, or Production before T4-D2 wires the .env variable) rather
-        // than registering a callback URL nobody can authenticate against. Deliberately NOT
-        // HttpContext.RequestAborted, same reasoning as CreateInstanceAsync above — this call still
-        // mutates the SAME billed instance, and a closed tab must not race it either.
-        // ARCHITECTURE_CYCLE9.md §104.7: the ORIGINAL provider-webhook/{token} route stays WhatsApp-only
-        // (it may already be configured at a live instance) — a WhatsApp channel keeps using it exactly
-        // as before this cycle. A MAX channel is configured against the NEW provider-webhook/{transport}/
-        // {token} route instead, so its delivery-status/state events reach GreenApiMaxWebhookParser (via
-        // the transport-keyed registry) rather than the WhatsApp-only parser at the old route — the two
-        // parsers agree on field NAMES but not on which NotificationReason a "noAccount"/"failed" status
-        // means, so a MAX channel pointed at the wrong route would log the wrong reason for every failure.
+        // N5: ONE setSettings call for the antiban send delay (§29.1 step 2) AND the webhook (I2, §32). Best effort as a whole: a failure here
+        // must not undo a binding that already succeeded at the provider. Deliberately NOT HttpContext.RequestAborted (same reasoning as above).
+        // ARCHITECTURE_CYCLE9.md §104.7: the ORIGINAL provider-webhook/{token} route stays WhatsApp-only; MAX uses provider-webhook/{transport}/{token}.
         var webhookUrl = string.IsNullOrEmpty(options.Value.WebhookToken)
             ? null
             : channel.Transport == NotificationTransport.WhatsApp
@@ -398,6 +420,18 @@ public class NotificationChannelsController(
         return Accepted(new ConnectResponseDto(ChannelState.Connecting, RefreshAfterSeconds: 3));
     }
 
+    /// <summary>§40.25 item 7 (and the states that cannot start a binding): the refusal for the channel's CURRENT state, or <see langword="null"/>
+    /// when it may proceed (<c>Connecting</c> is answered 202 by the caller, the four source states start a binding).</summary>
+    private ObjectResult? ConnectRefusal(NotificationChannel channel) => channel.State switch
+    {
+        ChannelState.Connected => Conflict("Номер уже подключён"),
+        ChannelState.Blocked => Conflict("Номер заблокирован — замените его"),
+        ChannelState.Replaced => Conflict("Номер заменён"),
+        ChannelState.Disconnected when channel.LastStateReason == ChannelStateReason.ServerCountryMismatch =>
+            Conflict("Требуется вмешательство платформы для восстановления канала"),
+        _ => null,
+    };
+
     [HttpGet("{id:guid}/qr")]
     public async Task<ActionResult<QrResponseDto>> GetQr(Guid id)
     {
@@ -410,7 +444,10 @@ public class NotificationChannelsController(
         if (channel.State == ChannelState.Connected)
             return Ok(new QrResponseDto(ChannelState.Connected, null, RefreshAfterSeconds: 3, ExpiresInSeconds: 0));
 
-        if (channel.ProviderInstanceId is null || channel.ProviderSecretCiphertext is null)
+        // §40.26: between "Connecting" being recorded and the instance being created there is nothing to poll yet — not an error.
+        if (channel.ProviderInstanceId is null)
+            return Ok(new QrResponseDto(ChannelState.Connecting, null, RefreshAfterSeconds: 2, ExpiresInSeconds: 0));
+        if (channel.ProviderSecretCiphertext is null)
             return Conflict("Канал не в процессе подключения");
 
         var cacheKey = $"channel-qr:{channel.Id}";
@@ -433,15 +470,22 @@ public class NotificationChannelsController(
 
         if (snapshot.Authorized)
         {
-            // The provider only learns which number scanned the QR at this moment, so this is the one
-            // place the channel can find out its own number; null means the lookup failed, not "no number".
-            if (snapshot.PhoneNumber is not null)
-                channel.PhoneNumber = snapshot.PhoneNumber;
-            // Shared with NotificationsController's webhook path and the scheduled tasks (§336 risk
-            // A1) so the trial mailing-window-start hook lives in exactly one place.
-            await ChannelStateTransition.Apply(
-                db, channel, ChannelState.Connected, ChannelStateReason.Authorized, null, DateTime.UtcNow);
-            await db.SaveChangesAsync();
+            // Two tabs polling the same QR must not both write the transition: the move to Connected happens under the channel's connect lock
+            // and is written once (the automatic check message is marked inside ChannelStateTransition.Apply, once per instance).
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            await AdvisoryLock.AcquireAsync(db, $"channel-connect:{id}");
+            await db.Entry(channel).ReloadAsync();
+            if (channel.State == ChannelState.Connecting)
+            {
+                // The provider only learns which number scanned the QR at this moment, so this is the one place the channel can find out its
+                // own number; null means the lookup failed, not "no number".
+                if (snapshot.PhoneNumber is not null)
+                    channel.PhoneNumber = snapshot.PhoneNumber;
+                await ChannelStateTransition.Apply(
+                    db, channel, ChannelState.Connected, ChannelStateReason.Authorized, null, DateTime.UtcNow);
+                await db.SaveChangesAsync();
+            }
+            await transaction.CommitAsync();
             cache.Remove(cacheKey);
 
             return Ok(new QrResponseDto(ChannelState.Connected, null, snapshot.RefreshAfterSeconds, ExpiresInSeconds: 0));
@@ -450,11 +494,15 @@ public class NotificationChannelsController(
         return Ok(new QrResponseDto(ChannelState.Connecting, snapshot.Base64Png, snapshot.RefreshAfterSeconds, ExpiresInSeconds: 20));
     }
 
+    /// <summary>API_CONTRACT_CYCLE40.md §40.27 — the manual check message. The result also lands in <c>lastTest</c> and the channel's journal.</summary>
     [HttpPost("{id:guid}/test-message")]
-    public async Task<ActionResult<TestMessageResponseDto>> SendTestMessage(Guid id)
+    public async Task<ActionResult<TestMessageResponseDto>> SendTestMessage(Guid id, CancellationToken ct)
     {
         var channel = await LoadOwnedChannelAsync(id, forUpdate: true);
         if (channel is null) return NotFound();
+
+        if (!await platformSettings.IsCustomerMessagingEnabledAsync(ct))
+            return Conflict(MessengerTexts.PlatformDisabled);
 
         if (channel.State != ChannelState.Connected)
             return Conflict("Канал не подключён");
@@ -464,9 +512,13 @@ public class NotificationChannelsController(
             return StatusCode(429, "Проверять канал можно не чаще одного раза в 5 минут");
 
         var ownerPhone = await db.Users.AsNoTracking()
-            .Where(u => u.Id == channel.OwnerUserId).Select(u => u.PhoneNumber).FirstOrDefaultAsync();
-        if (string.IsNullOrEmpty(ownerPhone))
+            .Where(u => u.Id == channel.OwnerUserId).Select(u => u.PhoneNumber).FirstOrDefaultAsync(ct);
+        if (!PhoneNormalizer.TryNormalize(ownerPhone, out var recipient))
             return Conflict("У вашего аккаунта не указан номер телефона");
+
+        if (ChannelTestMessageRule.Decide(true, false, ownerPhone, channel.PhoneNumber, options.Value.TestMessage.AllowSameNumber)
+            == ChannelTestDecision.SkipSameNumber)
+            return Conflict("Номер канала совпадает с телефоном вашего аккаунта — проверочное сообщение на него не отправляем");
 
         ChannelCredentials credentials;
         try
@@ -478,15 +530,24 @@ public class NotificationChannelsController(
             return Conflict("Канал не подключён");
         }
 
-        channel.LastTestMessageAtUtc = DateTime.UtcNow;
-        var outcome = await transportRegistry.For(channel.Transport).SendAsync(credentials, ownerPhone, TestMessageText, HttpContext.RequestAborted);
+        var now = DateTime.UtcNow;
+        channel.LastTestMessageAtUtc = now;
+        var outcome = await transportRegistry.For(channel.Transport)
+            .SendAsync(credentials, recipient, MessengerTexts.TestMessageBody(channel.Transport), HttpContext.RequestAborted);
+        var delivered = outcome is SendOutcome.Sent;
+        channel.LastTestResult = delivered ? ChannelTestResult.Sent : ChannelTestResult.Failed;
+        channel.LastTestResultAtUtc = now;
+        db.ChannelStateEvents.Add(new ChannelStateEvent
+        {
+            Id = Guid.NewGuid(), ChannelId = channel.Id, FromState = channel.State, ToState = channel.State,
+            Reason = delivered ? ChannelStateReason.TestMessageSent : ChannelStateReason.TestMessageFailed,
+            Detail = delivered ? null : ChannelTestFailure.SendFailed, OccurredAtUtc = now,
+        });
         await db.SaveChangesAsync();
 
-        return outcome switch
-        {
-            SendOutcome.Sent => Ok(new TestMessageResponseDto(true, "Сообщение отправлено на ваш номер")),
-            _ => Ok(new TestMessageResponseDto(false, "Не удалось отправить сообщение, попробуйте позже")),
-        };
+        return delivered
+            ? Ok(new TestMessageResponseDto(true, "Сообщение отправлено на ваш номер"))
+            : Ok(new TestMessageResponseDto(false, "Не удалось отправить сообщение, попробуйте позже"));
     }
 
     [HttpDelete("{id:guid}")]
@@ -495,225 +556,124 @@ public class NotificationChannelsController(
         var channel = await LoadOwnedChannelAsync(id, forUpdate: true);
         if (channel is null) return NotFound();
 
-        // I10: pending-row cancellation now happens INSIDE DecommissionInstanceAsync's own DB-first
-        // SaveChanges (§30.4 step 1) — previously a second, separate SaveChanges after it returned,
-        // which meant a crash between the two left the channel decommissioned but its queue still full
-        // of Pending rows for a channel that will never send them.
+        // I10: pending-row cancellation happens INSIDE the DB-first step's own SaveChanges (§30.4 step 1).
         await DecommissionInstanceAsync(channel, ChannelState.DisabledByOwner, ChannelStateReason.DisconnectedByOwner);
 
         return NoContent();
     }
 
-    /// <summary>B8 / API_CONTRACT_CYCLE4.md §27, US-63 — replacing a banned number. No re-payment: the
-    /// paid period belongs to the billing account (cycle 22, §379) and stays with it; company assignments
-    /// move to a fresh channel row; the old one becomes terminal
-    /// (<see cref="ChannelState.Replaced"/>) with a pointer forward. The owner then goes through the
-    /// ordinary accept-risk/connect/QR flow (§24) on the new channel — this endpoint only does the move.</summary>
+    /// <summary>API_CONTRACT_CYCLE40.md §40.28.3 — replacing a number (a banned one, or any bound one the owner wants to change). No re-payment: the
+    /// paid period belongs to the transport of the billing account and stays with it. The new row copies the form, ИНН, risk and the payment
+    /// request; waiting messages follow the number to the new row; the old row becomes terminal (<see cref="ChannelState.Replaced"/>) with a
+    /// pointer forward and its provider instance is released. The owner then goes through the Terms/QR steps for the new number.</summary>
     [HttpPost("{id:guid}/replace")]
-    public async Task<ActionResult<ReplaceChannelResponseDto>> Replace(Guid id)
+    public async Task<ActionResult<ReplaceChannelResponseDto>> Replace(Guid id, CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var channel = await LoadOwnedChannelAsync(id, forUpdate: true);
         if (channel is null) return NotFound();
 
-        if (!ChannelPresentation.CanReplace(channel.State))
-            return Conflict("Канал не заблокирован");
+        if (channel.State == ChannelState.Replaced) return Conflict("Номер уже заменён");
+        if (channel.State == ChannelState.NotConnected) return Conflict("Заменить можно только привязанный номер");
 
-        await using var transaction = await db.Database.BeginTransactionAsync();
-        await AdvisoryLock.AcquireAsync(db, $"channel-assignment:{id}");
-
-        var newChannel = new NotificationChannel
+        NotificationChannel newChannel;
+        DecommissionPlan plan;
+        await using (var transaction = await db.Database.BeginTransactionAsync(ct))
         {
-            Id = Guid.NewGuid(),
-            OwnerUserId = userId,
-            // §47.1's stability guarantee is about ranking, not about the row itself losing its
-            // account — a replaced-after-ban number still belongs to the SAME account it always did.
-            BillingAccountId = channel.BillingAccountId,
-            // ARCHITECTURE_CYCLE9.md §104.3: a replacement is a same-transport swap — copied explicitly
-            // rather than left at NotificationChannel.Transport's own WhatsApp default, or a banned MAX
-            // channel would silently "replace" into a WhatsApp one, and every moved assignment below
-            // would then fail the composite FK (assignment.Transport still says Max, newChannel.Transport
-            // would say WhatsApp).
-            Transport = channel.Transport,
-            State = ChannelState.NotConnected,
-            RequestedAtUtc = DateTime.UtcNow,
-        };
-        db.NotificationChannels.Add(newChannel);
+            await AdvisoryLock.AcquireAsync(db, $"channel-replace:{id}");
+            await db.Entry(channel).ReloadAsync(ct);
+            if (channel.State == ChannelState.Replaced) return Conflict("Номер уже заменён");
+            if (channel.State == ChannelState.NotConnected) return Conflict("Заменить можно только привязанный номер");
 
-        // Company assignments move wholesale — the unique index on CompanyId means these rows are
-        // updated in place, not deleted+recreated, so AssignedByUserId/history on the assignment itself
-        // survives the swap.
-        var assignments = await db.ChannelCompanyAssignments.Where(a => a.ChannelId == id).ToListAsync();
-        foreach (var assignment in assignments)
-            assignment.ChannelId = newChannel.Id;
-
-        // Pending queue rows re-bind to the new channel (§27: "Expired не воскрешаются" — this WHERE only
-        // ever touches Pending, so an already-Expired/Failed/Sent row is untouched by construction).
-        var pending = await db.OutboundNotifications
-            .Where(n => n.ChannelId == id && n.Status == NotificationStatus.Pending)
-            .ToListAsync();
-        foreach (var row in pending)
-            row.ChannelId = newChannel.Id;
-
-        channel.ReplacedByChannelId = newChannel.Id;
-        channel.State = ChannelState.Replaced;
-        channel.LastStateReason = ChannelStateReason.ReplacedAfterBan;
-        // N6 / cycle 22 (§379, Р2): nothing to move or clear for the paid period — it belongs to the
-        // billing account (its WhatsApp option / subscription), not to the channel row. The terminal row
-        // is never funded (ChannelFunding.Rank skips Replaced), so nothing counts it twice.
-        db.ChannelStateEvents.Add(new ChannelStateEvent
-        {
-            Id = Guid.NewGuid(), ChannelId = channel.Id,
-            FromState = ChannelState.Blocked, ToState = ChannelState.Replaced, Reason = ChannelStateReason.ReplacedAfterBan,
-        });
-
-        await db.SaveChangesAsync();
-        await transaction.CommitAsync();
-
-        // The account's paid period as the owner's list shows it for the new channel (ChannelFundingReader).
-        var funding = await fundingReader.LoadAsync([newChannel]);
-        return StatusCode(201, new ReplaceChannelResponseDto(
-            newChannel.Id, funding.GetValueOrDefault(newChannel.Id)?.PaidUntil, assignments.Count));
-    }
-
-    [HttpPost("{id:guid}/companies")]
-    [RequiresOwnerTerms]
-    public async Task<ActionResult<ChannelDto>> AssignCompany(Guid id, [FromBody] AssignCompanyDto dto)
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var channel = await LoadOwnedChannelAsync(id, forUpdate: true);
-        if (channel is null) return NotFound();
-
-        var company = await db.Companies.FindAsync(dto.CompanyId);
-        if (company is null || company.OwnerUserId != userId) return Forbid();
-
-        // ARCHITECTURE_CYCLE7.md §43.6/§56 last bullet — "a number doesn't serve a company from a
-        // different account". Checked here for a clean 403 with a message; the composite FK on
-        // ChannelCompanyAssignment (stage 6) also makes this impossible at the database level, so this
-        // check and that constraint can never disagree. OwnerUserId matching above is a rights check,
-        // not a money check — this is the money check.
-        if (channel.BillingAccountId.HasValue && company.BillingAccountId.HasValue &&
-            channel.BillingAccountId != company.BillingAccountId)
-            return Forbid();
-        if (channel.BillingAccountId is null || company.BillingAccountId is null)
-            return Forbid();
-
-        // ARCHITECTURE_CYCLE24.md §457.3 (A10): the number can now serve a SHOP too — the cycle-23 refusal is gone (the isolation matrix loses this row).
-
-        await using var transaction = await db.Database.BeginTransactionAsync();
-        await AdvisoryLock.AcquireAsync(db, $"channel-assignment:{id}");
-
-        // ARCHITECTURE_CYCLE9.md §104.3/§114.3 (US-119): the invariant widened from "one channel ever" to
-        // "one channel PER TRANSPORT" — the uniqueness this lookup guards is now (CompanyId, Transport),
-        // matching the database's own unique index exactly. A company already on a WhatsApp channel is
-        // still a perfectly valid candidate for a MAX channel (a DIFFERENT transport's existing
-        // assignment simply doesn't match this WHERE and falls through to a normal new assignment below).
-        var existingAssignment = await db.ChannelCompanyAssignments
-            .FirstOrDefaultAsync(a => a.CompanyId == dto.CompanyId && a.Transport == channel.Transport);
-
-        if (existingAssignment is not null)
-        {
-            if (existingAssignment.ChannelId == id)
+            newChannel = new NotificationChannel
             {
-                // Idempotent re-assignment of the same company to the same channel — no-op 201.
-                var idleDaysSame = await PlatformIdleDaysAsync();
-                await transaction.CommitAsync();
-                return await BuildAssignedResponseAsync(channel, idleDaysSame);
-            }
-            return Conflict(company.Kind switch
-            {
-                CompanyKind.Orders => "Магазин уже привязан к другому номеру этого мессенджера",
-                CompanyKind.Stays or CompanyKind.Baths => "Компания уже привязана к другому номеру этого мессенджера",
-                _ => "Салон уже привязан к другому номеру этого мессенджера"
-            });
+                Id = Guid.NewGuid(),
+                OwnerUserId = userId,
+                // §47.1's stability guarantee is about ranking, not about the row itself losing its account.
+                BillingAccountId = channel.BillingAccountId,
+                // ARCHITECTURE_CYCLE9.md §104.3: a replacement is a same-transport swap.
+                Transport = channel.Transport,
+                State = ChannelState.NotConnected,
+                // Form, ИНН, risk and the payment request come along: the owner's declaration and the open request do not start over.
+                RequestedAtUtc = channel.RequestedAtUtc,
+                LegalEntityForm = channel.LegalEntityForm,
+                Inn = channel.Inn,
+                RiskAcceptedAtUtc = channel.RiskAcceptedAtUtc,
+                RiskAcceptedVersion = channel.RiskAcceptedVersion,
+            };
+            db.NotificationChannels.Add(newChannel);
+
+            // Waiting messages follow the number to the new row of the same transport (§27: only Pending rows move; Expired/Failed/Sent stay).
+            await pendingRebinder.OnReplaceAsync(channel, newChannel, ct);
+
+            channel.ReplacedByChannelId = newChannel.Id;
+            var reason = channel.State == ChannelState.Blocked ? ChannelStateReason.ReplacedAfterBan : ChannelStateReason.ReplacedByOwner;
+            plan = BeginDecommission(channel, ChannelState.Replaced, reason);
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
         }
 
-        var otherCompanyCount = await db.ChannelCompanyAssignments.CountAsync(a => a.ChannelId == id);
-        if (otherCompanyCount > 0 && !dto.WarningAcknowledged)
-            return Conflict("Требуется подтверждение: несколько салонов на одном номере");
+        await FinishDecommissionAsync(channel, plan);
 
-        db.ChannelCompanyAssignments.Add(new ChannelCompanyAssignment
-        {
-            Id = Guid.NewGuid(),
-            ChannelId = id,
-            CompanyId = dto.CompanyId,
-            BillingAccountId = channel.BillingAccountId!.Value,
-            // ARCHITECTURE_CYCLE9.md §104.3: the denormalized copy the composite FK pins to — MUST match
-            // channel.Transport exactly, or the FK on (ChannelId, BillingAccountId, Transport) rejects
-            // the insert outright.
-            Transport = channel.Transport,
-            AssignedByUserId = userId,
-        });
-        await db.SaveChangesAsync();
-        await transaction.CommitAsync();
-
-        var idleDays = await PlatformIdleDaysAsync();
-        return await BuildAssignedResponseAsync(channel, idleDays);
+        var account = await messagingReader.ForAccountAsync(channel.BillingAccountId ?? Guid.Empty, ct: ct);
+        var companiesMoved = channel.BillingAccountId is { } accountId
+            ? await db.Companies.AsNoTracking().CountAsync(c => c.BillingAccountId == accountId, ct)
+            : 0;
+        return StatusCode(201, new ReplaceChannelResponseDto(newChannel.Id, account?.For(channel.Transport).Payment.PaidUntil, companiesMoved));
     }
 
+    /// <summary>API_CONTRACT_CYCLE40.md §40.28.5 — an old route: a number serves every company of the account, nothing is assigned any more.</summary>
+    [HttpPost("{id:guid}/companies")]
+    public async Task<IActionResult> AssignCompany(Guid id)
+    {
+        var channel = await LoadOwnedChannelAsync(id);
+        if (channel is null) return NotFound();
+
+        return StatusCode(StatusCodes.Status410Gone, "Назначать компании больше не нужно: номер работает для всех ваших компаний");
+    }
+
+    /// <summary>API_CONTRACT_CYCLE40.md §40.28.5 — an old route: data is not changed.</summary>
     [HttpDelete("{id:guid}/companies/{companyId:guid}")]
     public async Task<IActionResult> UnassignCompany(Guid id, Guid companyId)
     {
-        var channel = await LoadOwnedChannelAsync(id, forUpdate: true);
+        var channel = await LoadOwnedChannelAsync(id);
         if (channel is null) return NotFound();
 
-        var assignment = await db.ChannelCompanyAssignments
-            .FirstOrDefaultAsync(a => a.ChannelId == id && a.CompanyId == companyId);
-        if (assignment is null) return NoContent(); // already gone — DELETE is idempotent
-
-        db.ChannelCompanyAssignments.Remove(assignment);
-
-        var pending = await db.OutboundNotifications
-            .Where(n => n.ChannelId == id && n.CompanyId == companyId && n.Status == NotificationStatus.Pending)
-            .ToListAsync();
-        foreach (var row in pending)
-        {
-            row.Status = NotificationStatus.Cancelled;
-            row.Reason = NotificationReason.BookingOrAssignmentCancelled;
-        }
-
-        await db.SaveChangesAsync();
         return NoContent();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
-    private async Task<ActionResult<ChannelDto>> BuildAssignedResponseAsync(NotificationChannel channel, int idleDays)
-    {
-        // §375 F13: the assignments and their companies in one query, not one Company load per row.
-        await db.Entry(channel).Collection(c => c.Assignments).Query().Include(a => a.Company).LoadAsync();
-        var funding = await fundingReader.LoadAsync([channel]);
-        return StatusCode(201, MapToDto(channel, idleDays, funding));
-    }
+    /// <summary>What the provider-side half of a decommission still has to do once the database half is committed.</summary>
+    private sealed record DecommissionPlan(string? InstanceId, ChannelCredentials? Credentials, ChannelStateReason Reason, string? StrandedOrphanId = null);
 
     private async Task DecommissionInstanceAsync(NotificationChannel channel, ChannelState targetState, ChannelStateReason reason)
     {
-        // ARCHITECTURE_CYCLE4.md §30.4: database first, then provider, retry from the database. An
-        // instance is only actually deleted here when one exists — a channel that never got past
-        // NotConnected/Connecting-without-an-instance has nothing to decommission at the provider.
+        var plan = BeginDecommission(channel, targetState, reason);
+        // I10: cancelling Pending rows is part of the DB-first step — one transaction, not two.
+        // Cycle 40 (§40.9, Р40-Ю3): the Pending rows are cancelled; moved to the other messenger only when the configuration flag says so.
+        await pendingRebinder.OnUnbindAsync(channel);
+        await db.SaveChangesAsync();
+        await FinishDecommissionAsync(channel, plan);
+    }
+
+    /// <summary>The database half of releasing a number's provider instance (ARCHITECTURE_CYCLE4.md §30.4: database first, then provider, retry from the
+    /// database): the instance goes to <c>OrphanedInstanceId</c>, the secret is blanked, the state change is written with its journal row. Does NOT save.</summary>
+    private DecommissionPlan BeginDecommission(NotificationChannel channel, ChannelState targetState, ChannelStateReason reason)
+    {
         var instanceId = channel.ProviderInstanceId;
         var fromState = channel.State;
 
-        // I10: best-effort logout with the CHANNEL's own (still valid at the provider) credentials,
-        // captured BEFORE they're blanked below — same reasoning and same swallow-independently-of-the-
-        // delete pattern as ChannelHealthTask.DeleteInstanceAsync. A decrypt failure here must never
-        // block the decommission itself.
+        // I10: best-effort logout with the CHANNEL's own (still valid at the provider) credentials, captured BEFORE they're blanked below.
         ChannelCredentials? credentials = null;
-        if (instanceId is not null && channel.ProviderSecretCiphertext is { } ciphertextForLogout)
-        {
-            try
-            {
-                var encryptionKey = options.Value.EncryptionKey ?? string.Empty;
-                var token = SecretProtector.Decrypt(ciphertextForLogout, encryptionKey, channel.Id);
-                credentials = new ChannelCredentials(instanceId, token);
-            }
-            catch (Exception ex) when (ex is ChannelSecretUnavailableException or ArgumentException)
-            {
-                logger.LogDebug(ex, "Could not decrypt channel secret for a best-effort logout before decommission, skipping logout: channelId={ChannelId}", channel.Id);
-            }
-        }
+        if (instanceId is not null && channel.ProviderSecretCiphertext is not null)
+            credentials = TryDecryptCredentials(channel);
 
-        channel.OrphanedInstanceId = instanceId;
+        // An earlier orphan still waiting for deletion must not be overwritten (it would leak a billed instance): it is deleted right
+        // away, best effort, by the provider half of the decommission.
+        var strandedOrphan = channel.OrphanedInstanceId is { } earlier && instanceId is not null && earlier != instanceId ? earlier : null;
+
+        channel.OrphanedInstanceId = instanceId ?? channel.OrphanedInstanceId;
         channel.ProviderInstanceId = null;
         channel.ProviderSecretCiphertext = null;
         channel.ProviderSecretKeyId = null;
@@ -723,26 +683,19 @@ public class NotificationChannelsController(
         {
             Id = Guid.NewGuid(), ChannelId = channel.Id, FromState = fromState, ToState = targetState, Reason = reason,
         });
+        return new DecommissionPlan(instanceId, credentials, reason, strandedOrphan);
+    }
 
-        // I10: cancelling Pending rows moved INTO this DB-first step (was a second, separate SaveChanges
-        // after this method returned) — one transaction, not two, so a crash in between can't leave a
-        // decommissioned channel with a queue still full of rows it will never send.
-        var pending = await db.OutboundNotifications
-            .Where(n => n.ChannelId == channel.Id && n.Status == NotificationStatus.Pending)
-            .ToListAsync();
-        foreach (var row in pending)
-        {
-            row.Status = NotificationStatus.Cancelled;
-            row.Reason = NotificationReason.BookingOrAssignmentCancelled;
-        }
+    private async Task FinishDecommissionAsync(NotificationChannel channel, DecommissionPlan plan)
+    {
+        if (plan.StrandedOrphanId is not null)
+            await TryDeleteInstanceAsync(channel.Transport, plan.StrandedOrphanId);
 
-        await db.SaveChangesAsync();
-
-        if (credentials is not null)
+        if (plan.Credentials is not null)
         {
             try
             {
-                await provisioningRegistry.For(channel.Transport).LogoutAsync(credentials, HttpContext.RequestAborted);
+                await provisioningRegistry.For(channel.Transport).LogoutAsync(plan.Credentials, HttpContext.RequestAborted);
             }
             catch (Exception ex)
             {
@@ -750,37 +703,78 @@ public class NotificationChannelsController(
             }
         }
 
-        if (instanceId is null) return;
+        if (plan.InstanceId is null) return;
 
         InstanceDeletion deletion;
         try
         {
-            deletion = await provisioningRegistry.For(channel.Transport).DeleteInstanceAsync(instanceId, HttpContext.RequestAborted);
+            deletion = await provisioningRegistry.For(channel.Transport).DeleteInstanceAsync(plan.InstanceId, HttpContext.RequestAborted);
         }
         catch (Exception ex)
         {
-            // Left as OrphanedInstanceId for ChannelHealthTask to retry (§30.4) — not this developer's
-            // background task, but the field it drains is shared schema, so failing loudly here (rather
-            // than swallowing silently) keeps the failure visible without duplicating the retry logic.
+            // Left as OrphanedInstanceId for ChannelHealthTask to retry (§30.4).
             logger.LogError(ex, "Failed to delete provider instance {InstanceId} for channel {ChannelId}; left orphaned for retry",
-                instanceId, channel.Id);
+                plan.InstanceId, channel.Id);
             return;
         }
 
-        // B6: DeleteInstanceAsync can fail WITHOUT throwing (InstanceDeletion.Success == false) — that
-        // result was previously ignored, so a failed deletion got logged and billed as if it had
-        // succeeded, and OrphanedInstanceId (the only thing that makes ChannelHealthTask retry it) was
-        // cleared with nothing left to retry.
+        // B6: DeleteInstanceAsync can fail WITHOUT throwing (InstanceDeletion.Success == false).
         if (!deletion.Success)
         {
             logger.LogError("Provider instance deletion did not confirm success for {InstanceId} on channel {ChannelId}; left orphaned for retry",
-                instanceId, channel.Id);
+                plan.InstanceId, channel.Id);
             return;
         }
 
-        channel.OrphanedInstanceId = null;
+        if (channel.OrphanedInstanceId == plan.InstanceId) channel.OrphanedInstanceId = null;
         await db.SaveChangesAsync();
-        logger.LogWarning("Deleted provider instance {InstanceId} for channel {ChannelId} ({Reason})", instanceId, channel.Id, reason);
+        logger.LogWarning("Deleted provider instance {InstanceId} for channel {ChannelId} ({Reason})", plan.InstanceId, channel.Id, plan.Reason);
+    }
+
+    /// <summary>Deletes the instance a rebinding left behind, now that the new one exists. A failure leaves <c>OrphanedInstanceId</c> for the
+    /// channel-health sweep to retry.</summary>
+    private async Task DeleteOldInstanceAsync(NotificationChannel channel, string instanceId, ChannelCredentials? credentials)
+    {
+        if (credentials is not null)
+        {
+            try { await provisioningRegistry.For(channel.Transport).LogoutAsync(credentials, CancellationToken.None); }
+            catch (Exception ex) { logger.LogDebug(ex, "Best-effort logout of the replaced instance failed: channelId={ChannelId}", channel.Id); }
+        }
+        if (!await TryDeleteInstanceAsync(channel.Transport, instanceId)) return;
+        if (channel.OrphanedInstanceId == instanceId)
+        {
+            channel.OrphanedInstanceId = null;
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+    }
+
+    private async Task<bool> TryDeleteInstanceAsync(NotificationTransport transport, string instanceId)
+    {
+        try
+        {
+            var deletion = await provisioningRegistry.For(transport).DeleteInstanceAsync(instanceId, CancellationToken.None);
+            if (!deletion.Success)
+                logger.LogError("Provider instance deletion did not confirm success for {InstanceId}; left for retry", instanceId);
+            return deletion.Success;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to delete provider instance {InstanceId}; left for retry", instanceId);
+            return false;
+        }
+    }
+
+    private ChannelCredentials? TryDecryptCredentials(NotificationChannel channel)
+    {
+        try
+        {
+            return DecryptCredentials(channel);
+        }
+        catch (Exception ex) when (ex is ChannelSecretUnavailableException or ArgumentException)
+        {
+            logger.LogDebug(ex, "Could not decrypt channel secret for a best-effort logout, skipping logout: channelId={ChannelId}", channel.Id);
+            return null;
+        }
     }
 
     private ChannelCredentials DecryptCredentials(NotificationChannel channel)
@@ -797,52 +791,14 @@ public class NotificationChannelsController(
         await db.CompanyMembers.AnyAsync(cm => cm.UserId == userId && cm.Role == UserRole.CompanyOwner);
 
     /// <summary>Channel ownership mismatch is 404, not 403 (API_CONTRACT_CYCLE4.md §19.2: "чужой канал
-    /// неотличим от несуществующего") — unlike company ownership in <see cref="AssignCompany"/>, which
-    /// the contract calls out as an explicit 403 (§25.1).</summary>
+    /// неотличим от несуществующего").</summary>
     private async Task<NotificationChannel?> LoadOwnedChannelAsync(Guid id, bool forUpdate = false)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var query = db.NotificationChannels.Include(c => c.Assignments).ThenInclude(a => a.Company).AsQueryable();
+        var query = db.NotificationChannels.AsQueryable();
         if (!forUpdate) query = query.AsNoTracking();
 
         var channel = await query.FirstOrDefaultAsync(c => c.Id == id);
         return channel is not null && channel.OwnerUserId == userId ? channel : null;
-    }
-
-    private Task<int> PlatformIdleDaysAsync() => platformSettings.GetChannelIdleDaysAsync();
-
-    // §47.3: PaymentState/PaidUntil keep their FORM but their SOURCE is `funding` (the account's
-    // subscription-driven ranking). Cycle 22 (§379/§380, Р2/Р6): the channel's own PaidFromUtc/PaidUntilUtc
-    // columns are dropped, and so is the always-null PaidFrom field.
-    private static ChannelDto MapToDto(
-        NotificationChannel channel, int idleDays, IReadOnlyDictionary<Guid, ChannelFundingInfo> funding)
-    {
-        var (fundingState, fundingText, subscriptionPaidUntil) = funding.TryGetValue(channel.Id, out var f)
-            ? f
-            : new ChannelFundingInfo(ChannelFundingState.NotPaid, BillingTexts.FundingText(ChannelFundingState.NotPaid, 0, 1, null), null);
-        var paymentState = fundingState switch
-        {
-            ChannelFundingState.Funded => ChannelPaymentStatus.Paid,
-            _ when channel.IsSuspendedByAdmin => ChannelPaymentStatus.Suspended,
-            _ => ChannelPaymentStatus.NotPaid,
-        };
-        var phoneMasked = channel.PhoneNumber is null ? null : PhoneDisplayMask.Mask(channel.PhoneNumber);
-        // N6, §47.3: StateText/ChannelDto.paidUntil both read the funding's paid-until (the WhatsApp
-        // option's, else the subscription's) — the channel row has no paid period of its own.
-        var stateText = ChannelPresentation.StateText(channel.State, phoneMasked, idleDays, subscriptionPaidUntil, channel.LastStateReason);
-        var riskAccepted = channel.RiskAcceptedAtUtc is not null;
-
-        return new ChannelDto(
-            channel.Id, channel.Transport, channel.State, stateText, phoneMasked, paymentState,
-            subscriptionPaidUntil, channel.RequestedAtUtc, channel.ConnectedAtUtc,
-            channel.RiskAcceptedAtUtc, channel.IdleSinceUtc,
-            channel.IdleSinceUtc is not null ? channel.IdleSinceUtc.Value.AddDays(idleDays) : null,
-            channel.ReplacedByChannelId,
-            channel.Assignments.Select(a => new ChannelCompanyDto(a.CompanyId, a.Company.Name, a.Company.IsActive)).ToList(),
-            CanConnect: ChannelPresentation.CanConnect(channel.State, paymentState, riskAccepted),
-            CanReplace: ChannelPresentation.CanReplace(channel.State),
-            FundingState: fundingState,
-            FundingText: fundingText,
-            Inn: channel.Inn, LegalEntityForm: channel.LegalEntityForm);
     }
 }

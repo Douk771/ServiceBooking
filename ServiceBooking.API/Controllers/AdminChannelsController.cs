@@ -19,7 +19,7 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/admin")]
 [Authorize(Roles = "SuperAdmin")]
-public class AdminChannelsController(AppDbContext db, ChannelFundingReader fundingReader) : ControllerBase
+public class AdminChannelsController(AppDbContext db, ChannelFundingReader fundingReader, AdminChannelsBuilder adminChannels) : ControllerBase
 {
     // ── Notification channels (ARCHITECTURE_CYCLE4.md §34, T4-B11) ───────────────
 
@@ -27,60 +27,30 @@ public class AdminChannelsController(AppDbContext db, ChannelFundingReader fundi
     public async Task<ActionResult<PagedResult<AdminChannelDto>>> GetNotificationChannels(
         [FromQuery] ChannelState? state, [FromQuery] ChannelPaymentStatus? paymentState,
         [FromQuery] NotificationTransport? transport,
+        [FromQuery] ChannelDisplayStatus? displayStatus, [FromQuery] AdminChannelPaymentFilter? payment, [FromQuery] bool includeReplaced,
         [FromQuery] int? page, [FromQuery] int? pageSize,
         CancellationToken ct)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
-        var query = db.NotificationChannels.AsNoTracking().Include(c => c.Assignments).AsQueryable();
+        var query = db.NotificationChannels.AsNoTracking().AsQueryable();
         if (state.HasValue) query = query.Where(c => c.State == state);
         // ARCHITECTURE_CYCLE9.md §114.3 (US-121) — ?transport= filter, additive.
         if (transport.HasValue) query = query.Where(c => c.Transport == transport);
+        // Cycle 40 (§40.13): replaced numbers are history — hidden unless asked for (or asked for by state).
+        if (!includeReplaced && state != ChannelState.Replaced) query = query.Where(c => c.State != ChannelState.Replaced);
 
-        // Payment state is computed, not stored (ChannelPaymentState.Of) — filtering by it means
-        // pulling candidates in state-shaped buckets rather than a single indexed WHERE. At this row
-        // count (one row per channel, not per message) a full materialize-then-filter is acceptable; see
-        // ChannelPaymentState's own doc comment for why this can never become a stored column.
-        // Cycle 22 (§379, Р2): its source is the channel's funding, read in one batch for all candidates.
-        int total;
-        List<NotificationChannel> page1;
-        Dictionary<Guid, ChannelFundingInfo> funding;
-        if (paymentState.HasValue)
-        {
-            var all = await query.ToListAsync(ct);
-            funding = await fundingReader.LoadAsync(all, ct);
-            var filtered = all
-                .Where(c => ChannelPaymentState.Of(c, funding.GetValueOrDefault(c.Id)) == paymentState.Value).ToList();
-            total = filtered.Count;
-            page1 = filtered.OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id)
-                .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToList();
-        }
-        else
-        {
-            // §375 F12: without the computed payment filter, count and page in SQL — same order
-            // (CreatedAt DESC, then Id: uuid order in Postgres equals Guid.CompareTo order).
-            total = await query.CountAsync(ct);
-            page1 = await query.OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id)
-                .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync(ct);
-            funding = await fundingReader.LoadAsync(page1, ct);
-        }
+        // The status, the payment texts and the filters on them are computed (the same rules the owner sees), not stored: at this row count (one row per
+        // number, not per message) a full materialize-then-filter is acceptable — the cycle-22 design of this endpoint, kept.
+        var all = await query.OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id).ToListAsync(ct);
+        var rows = await adminChannels.BuildRowsAsync(all, ct);
+        var filtered = rows.AsEnumerable();
+        if (paymentState.HasValue) filtered = filtered.Where(r => r.Dto.PaymentState == paymentState.Value);
+        if (displayStatus.HasValue) filtered = filtered.Where(r => r.Dto.DisplayStatus == displayStatus.Value);
+        if (payment.HasValue) filtered = filtered.Where(r => r.Payment == payment.Value);
+        var list = filtered.ToList();
 
-        var ownerIds = page1.Select(c => c.OwnerUserId).Distinct().ToList();
-        var owners = await db.Users.AsNoTracking().Where(u => ownerIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => u, ct);
-
-        var items = page1.Select(c =>
-        {
-            var owner = owners.GetValueOrDefault(c.OwnerUserId);
-            var f = funding.GetValueOrDefault(c.Id);
-            return new AdminChannelDto(
-                c.Id, c.Transport, c.State, ChannelPaymentState.Of(c, f),
-                owner is null ? "" : $"{owner.FirstName} {owner.LastName}",
-                owner?.PhoneNumber is null ? null : PhoneDisplayMask.Mask(owner.PhoneNumber),
-                f?.PaidUntil, c.Assignments.Count, c.IdleSinceUtc, c.RequestedAtUtc,
-                c.Inn, c.LegalEntityForm);
-        }).ToList();
-
-        return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
+        var items = list.Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).Select(r => r.Dto).ToList();
+        return Ok(Pagination.Create(items, currentPage, currentPageSize, list.Count));
     }
 
     [HttpGet("notification-channels/summary")]
@@ -90,18 +60,9 @@ public class AdminChannelsController(AppDbContext db, ChannelFundingReader fundi
         var nowUtc = DateTime.UtcNow;
         var in7Days = nowUtc.AddDays(7);
 
-        // Cycle 22 (§379, Р2): both payment counters read the channel's FUNDING (one batch for every
-        // channel), not the dropped NotificationChannel.PaidUntilUtc column:
-        //  - ExpiringIn7Days — the channel is funded and its funding's paid-until (the WhatsApp option's
-        //    PaidUntilUtc, else the subscription period) falls within [now, now + 7 days];
-        //  - PendingRequests — the owner requested the channel (RequestedAtUtc set) and it is NOT funded
-        //    (was: "RequestedAtUtc set and PaidUntilUtc null"). A Replaced row is terminal history, not a
-        //    request — it is never funded (ChannelFunding.Rank skips it), so it is excluded explicitly,
-        //    or every replacement would count once more per ban.
-        var funding = await fundingReader.LoadAsync(channels, ct);
-        bool IsFunded(NotificationChannel c) =>
-            funding.TryGetValue(c.Id, out var f) && f.State == ChannelFundingState.Funded;
-
+        // Cycle 40 (§40.13): the counters read the SAME facts as the table — pendingRequests = a request newer than the last payment (not yet paid),
+        // expiringIn7Days = by the paid period of the number's transport; working/actionRequired/off = the three-state presentation of live numbers.
+        var rows = await adminChannels.BuildRowsAsync(channels.Where(c => c.State != ChannelState.Replaced).ToList(), ct);
         return Ok(new AdminChannelSummaryDto(
             Connected: channels.Count(c => c.State == ChannelState.Connected),
             Connecting: channels.Count(c => c.State == ChannelState.Connecting),
@@ -109,9 +70,34 @@ public class AdminChannelsController(AppDbContext db, ChannelFundingReader fundi
             Blocked: channels.Count(c => c.State == ChannelState.Blocked),
             NeedsReconnect: channels.Count(c => c.State == ChannelState.NeedsReconnect),
             Idle: channels.Count(c => c.IdleSinceUtc is not null),
-            ExpiringIn7Days: channels.Count(c => IsFunded(c)
-                && funding[c.Id].PaidUntil is { } paidUntil && paidUntil >= nowUtc && paidUntil <= in7Days),
-            PendingRequests: channels.Count(c => c.RequestedAtUtc is not null && c.State != ChannelState.Replaced && !IsFunded(c))));
+            ExpiringIn7Days: rows.Count(r => r.Facts.Paid && r.Facts.PaidUntil is { } paidUntil && paidUntil >= nowUtc && paidUntil <= in7Days),
+            PendingRequests: rows.Count(r => !r.Facts.Paid && r.Facts.RequestNewerThanPayment),
+            Working: rows.Count(r => r.Dto.DisplayStatus == ChannelDisplayStatus.Working),
+            ActionRequired: rows.Count(r => r.Dto.DisplayStatus == ChannelDisplayStatus.ActionRequired),
+            Off: rows.Count(r => r.Dto.DisplayStatus == ChannelDisplayStatus.Off)));
+    }
+
+    [HttpGet("notification-channels/{id:guid}")]
+    public async Task<ActionResult<AdminChannelCardDto>> GetNotificationChannelCard(Guid id, CancellationToken ct)
+    {
+        var card = await adminChannels.BuildCardAsync(id, ct);
+        return card is null ? NotFound() : Ok(card);
+    }
+
+    /// <summary>API_CONTRACT_CYCLE40.md §40.37 — the manual confirmation of a payment (the «Оплата» step of the owner's wizard is an application the SuperAdmin confirms).
+    /// Order of refusals: 404; months not 1..12 → 400; comment &gt; 500 → 400; replaced → 409; no option in the catalog → 409; option closed → 409.</summary>
+    [HttpPost("notification-channels/{id:guid}/confirm-payment")]
+    public async Task<ActionResult<AdminChannelCardDto>> ConfirmNotificationChannelPayment(Guid id, [FromBody] ConfirmChannelPaymentInput input, CancellationToken ct)
+    {
+        var channel = await db.NotificationChannels.FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (channel is null) return NotFound();
+        if (input.Months is < 1 or > 12) return BadRequest("Срок — от 1 до 12 месяцев");
+        if (input.Comment is { Length: > 500 }) return BadRequest("Комментарий — не длиннее 500 символов");
+
+        var result = await adminChannels.ConfirmPaymentAsync(channel, input.Months, input.Comment, User.FindFirstValue(ClaimTypes.NameIdentifier)!, ct);
+        if (!result.Ok) return StatusCode(result.Status!.Value, result.Text);
+
+        return Ok(await adminChannels.BuildCardAsync(id, ct));
     }
 
     [HttpPost("notification-channels/{id:guid}/suspend")]
@@ -155,14 +141,36 @@ public class AdminChannelsController(AppDbContext db, ChannelFundingReader fundi
 // every other field keeps its name and position.
 // Cycle 22 (ARCHITECTURE_CYCLE22.md §380, Р6): PaidFrom (always null since cycle 7) removed; PaidUntil is
 // the channel's funding paid-until (ChannelFundingReader), no longer the dropped channel column.
+// Cycle 40 (ARCHITECTURE_CYCLE40.md §40.13, API_CONTRACT_CYCLE40.md §40.36): DisplayStatus..AvailableActions appended — the SAME three-state presentation the owner sees.
 public record AdminChannelDto(
     Guid Id, NotificationTransport Transport, ChannelState State, ChannelPaymentStatus PaymentState,
     string OwnerName, string? OwnerPhoneMasked,
     DateTime? PaidUntil, int CompanyCount, DateTime? IdleSince, DateTime? RequestedAt,
-    string? Inn = null, LegalEntityForm? LegalEntityForm = null);
+    string? Inn = null, LegalEntityForm? LegalEntityForm = null,
+    ChannelDisplayStatus? DisplayStatus = null, string? DisplayText = null, string StateText = "", string? PhoneMasked = null,
+    string PaymentText = "", bool IsSuspended = false, DateTime CreatedAt = default, IReadOnlyList<string>? AvailableActions = null);
 
 public record AdminChannelSummaryDto(
     int Connected, int Connecting, int Disconnected, int Blocked,
-    int NeedsReconnect, int Idle, int ExpiringIn7Days, int PendingRequests);
+    int NeedsReconnect, int Idle, int ExpiringIn7Days, int PendingRequests,
+    int Working = 0, int ActionRequired = 0, int Off = 0);
+
+public record AdminChannelStateEventDto(
+    DateTime OccurredAtUtc, ChannelState? FromState, ChannelState ToState, ChannelStateReason Reason, string ReasonText, string? Detail);
+
+public record AdminChannelPaymentEventDto(
+    DateTime OccurredAtUtc, string Kind, ChannelOptionChangeSource? Source, string? ChangedByName, DateTime? OldPaidUntil, DateTime? NewPaidUntil, string? Comment);
+
+public record AdminChannelPaymentDto(bool Paid, DateTime? PaidUntil, bool IsTrial, bool Requested, DateTime? LastPaymentAt);
+
+public record AdminChannelCardDto(
+    AdminChannelDto Channel, Guid BillingAccountId, string OwnerUserId, ChannelState State, ChannelStateReason? LastStateReason, string? LastStateReasonText,
+    LegalEntityForm? LegalEntityForm, string? Inn, DateTime? RequestedAt, DateTime? RiskAcceptedAt, string? RiskAcceptedVersion, bool TermsAccepted,
+    DateTime? InstanceCreatedAt, DateTime? ConnectedAt, DateTime? LastStateCheckAt, DateTime? IdleSince, DateTime? IdleDeadline, string? ProviderServerCountry,
+    ServiceBooking.API.DTOs.Notifications.ChannelTestDto? LastTest, AdminChannelPaymentDto Payment, bool OptionOpen, Guid? ReplacedByChannelId, Guid? ReplacesChannelId,
+    IReadOnlyList<ServiceBooking.API.DTOs.Notifications.ChannelCompanyDto> Companies, IReadOnlyList<AdminChannelStateEventDto> StateEvents,
+    IReadOnlyList<AdminChannelPaymentEventDto> PaymentEvents, IReadOnlyList<string> AvailableActions);
+
+public record ConfirmChannelPaymentInput(int Months, string? Comment);
 
 public record AdminChannelSuspendDto(string? Comment);

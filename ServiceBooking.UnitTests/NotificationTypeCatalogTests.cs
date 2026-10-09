@@ -60,24 +60,27 @@ public class NotificationTypeCatalogTests
 
     // ── the gate: the salon mask concerns booking types only ────────────────────────────────────────
 
-    private static NotificationGateResult Gate(NotificationType type, int mask) => NotificationGate.Evaluate(
-        EffectivePlan.Free with { AllowNotificationChannel = true, PaidNotificationNumbers = 1 }, type, true, new NotificationChannel(),
-        new CompanyNotificationSettings { EnabledTypeMask = mask }, false, Now, Now.AddHours(2), channelIsFunded: true);
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.5.3): the gate takes the account's availability instead of a plan/channel/assignment; the
+    // expectations (the salon mask concerns booking types only, the lead-time threshold concerns reminders only) are unchanged.
+    private static readonly MessagingAvailability Available = new(PlatformEnabled: true, AnyTransportPaid: true, AnyTransportRoutable: true);
+
+    private static MessagingGateResult Gate(NotificationType type, int mask) => NotificationGate.Evaluate(
+        type, Available, new CompanyNotificationSettings { EnabledTypeMask = mask }, false, MessengerConsentDecision.Allowed, Now, Now.AddHours(2));
 
     [Fact]
     public void Gate_OrderType_IgnoresTheSalonMask_EvenAnEmptyOne()
     {
         // A salon form saved with no type ticked (mask 0) must not silently switch off the messages of a shop.
         foreach (var type in NotificationTypeCatalog.OrderTypes)
-            Gate(type, mask: 0).Outcome.Should().Be(NotificationGateOutcome.Allowed, type.ToString());
+            Gate(type, mask: 0).IsAllowed.Should().BeTrue(type.ToString());
     }
 
     [Fact]
     public void Gate_BookingType_StillHonorsTheMask()
     {
-        Gate(NotificationType.BookingConfirmed, mask: 0).Reason.Should().Be(NotificationReason.TypeDisabledByCompany);
-        Gate(NotificationType.BookingConfirmed, mask: 1).Outcome.Should().Be(NotificationGateOutcome.Allowed);
-        Gate(NotificationType.Reminder, mask: ~(1 << (int)NotificationType.Reminder)).Reason.Should().Be(NotificationReason.TypeDisabledByCompany);
+        Gate(NotificationType.BookingConfirmed, mask: 0).Reason.Should().Be(MessagingBlockReason.TypeDisabledByCompany);
+        Gate(NotificationType.BookingConfirmed, mask: 1).IsAllowed.Should().BeTrue();
+        Gate(NotificationType.Reminder, mask: ~(1 << (int)NotificationType.Reminder)).Reason.Should().Be(MessagingBlockReason.TypeDisabledByCompany);
     }
 
     [Fact]
@@ -85,17 +88,17 @@ public class NotificationTypeCatalogTests
     {
         // MinLeadMinutes (default 120) concerns reminders only; an order message queued a minute before its "deadline" still goes.
         var result = NotificationGate.Evaluate(
-            EffectivePlan.Free with { AllowNotificationChannel = true, PaidNotificationNumbers = 1 }, NotificationType.OrderReady, true,
-            new NotificationChannel(), new CompanyNotificationSettings { MinLeadMinutes = 720 }, false, Now, Now.AddMinutes(1), channelIsFunded: true);
-        result.Outcome.Should().Be(NotificationGateOutcome.Allowed);
+            NotificationType.OrderReady, Available, new CompanyNotificationSettings { MinLeadMinutes = 720 }, false,
+            MessengerConsentDecision.Allowed, Now, Now.AddMinutes(1));
+        result.IsAllowed.Should().BeTrue();
     }
 
     [Fact]
     public void Gate_OrderType_StillBlockedByOptOutAndByNoPaidNumber()
     {
-        NotificationGate.Evaluate(EffectivePlan.Free with { PaidNotificationNumbers = 1 }, NotificationType.OrderReady, true, new NotificationChannel(),
-            null, recipientOptedOut: true, Now, Now.AddHours(2), true).Reason.Should().Be(NotificationReason.RecipientOptedOut);
-        NotificationGate.Evaluate(EffectivePlan.Free, NotificationType.OrderReady, true, new NotificationChannel(),
-            null, false, Now, Now.AddHours(2), true).Reason.Should().Be(NotificationReason.NotOnPaidPlan);
+        NotificationGate.Evaluate(NotificationType.OrderReady, Available, null, recipientOptedOut: true, MessengerConsentDecision.Allowed, Now, Now.AddHours(2))
+            .Reason.Should().Be(MessagingBlockReason.RecipientOptedOut);
+        NotificationGate.Evaluate(NotificationType.OrderReady, Available with { AnyTransportPaid = false }, null, false, MessengerConsentDecision.Allowed, Now, Now.AddHours(2))
+            .Reason.Should().Be(MessagingBlockReason.NotOnPaidPlan);
     }
 }

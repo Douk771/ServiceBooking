@@ -58,6 +58,9 @@ public sealed class NotificationOptions
 
     public DispatchOptions Dispatch { get; set; } = new();
 
+    /// <summary>ARCHITECTURE_CYCLE40.md §40.8 — the automatic check message after a number is bound.</summary>
+    public TestMessageOptions TestMessage { get; set; } = new();
+
     /// <summary>Random spread (±minutes) applied to a reminder's due time so many reminders due at the
     /// same lead time do not all become due in the same instant (§34.1). Deterministic per row, from the
     /// row's id — see <c>NotificationTiming</c>.</summary>
@@ -82,7 +85,14 @@ public sealed class NotificationOptions
     /// <see cref="DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode"/> (an unrecognized value
     /// fails loud, same convention as <see cref="Provider"/>). Default matches the customer's decision
     /// (§52.3.1) — "AccountsOnly" is not a placeholder, it is the value this cycle actually ships with.</summary>
+    /// <remarks>Cycle 40 (ARCHITECTURE_CYCLE40.md §40.11.2): no longer influences the decision to send — <see cref="MessengerConsentRule"/>
+    /// decides; the key stays (and is still validated) so that a rollback to the previous release finds its configuration intact.</remarks>
     public string ProviderDeliveryConsent { get; set; } = "AccountsOnly";
+
+    /// <summary>ARCHITECTURE_CYCLE40.md §40.9 (Р40-Ю3): when the owner unbinds the number of one messenger, move its <c>Pending</c>
+    /// messages to the other messenger if that one is routable. Off by default — the client consented while seeing a label naming a
+    /// specific messenger, so the messages are cancelled instead. Turned on by configuration after the lawyer's answer, no release.</summary>
+    public bool RebindPendingToOtherTransport { get; set; } = false;
 
     public sealed class GreenApiOptions
     {
@@ -96,6 +106,17 @@ public sealed class NotificationOptions
         /// <see cref="InstanceCreationEnabled"/> is true and this is empty, rather than letting the
         /// provider pick silently.</summary>
         public string ServerCountry { get; set; } = "";
+
+        /// <summary>ARCHITECTURE_CYCLE40.md §40.7.4 — expected server country per transport
+        /// (<c>ServerCountryByTransport:WhatsApp|Max</c>); a transport without an entry falls back to <see cref="ServerCountry"/>.</summary>
+        public Dictionary<string, string> ServerCountryByTransport { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The server country expected for <paramref name="transport"/>: its own entry, else <see cref="ServerCountry"/>
+        /// (empty = nothing configured).</summary>
+        public string ExpectedServerCountry(Core.Enums.NotificationTransport transport) =>
+            ServerCountryByTransport.TryGetValue(transport.ToString(), out var own) && !string.IsNullOrWhiteSpace(own)
+                ? own.Trim()
+                : ServerCountry ?? "";
 
         /// <summary>ARCHITECTURE_CYCLE5.md §52.1 — ПЛ1 (does the partner API even expose a country
         /// parameter) was not confirmed at the time this flag was wired in; real instance creation stays
@@ -126,6 +147,13 @@ public sealed class NotificationOptions
         /// product/account (§104.1/§104.9). Same "must be empty outside Production" rule as
         /// <see cref="PartnerToken"/>, enforced by <c>DeploymentSafetyChecks.ValidateNotificationSecrets</c>.</summary>
         public string? PartnerToken { get; set; }
+    }
+
+    public sealed class TestMessageOptions
+    {
+        /// <summary>Send the check message even when the bound number is the owner's own phone. Off by default (a message from
+        /// a number to itself proves nothing and is not delivered); switched on after the real MAX number is checked (M40-02).</summary>
+        public bool AllowSameNumber { get; set; }
     }
 
     public sealed class DispatchOptions

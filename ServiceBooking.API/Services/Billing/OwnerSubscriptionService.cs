@@ -2,6 +2,8 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Billing;
+using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.API.Services.Notifications.Funding;
 using ServiceBooking.API.Services.Orders;
 using ServiceBooking.API.Services.Shops;
 using ServiceBooking.Core.Entities;
@@ -15,7 +17,8 @@ namespace ServiceBooking.API.Services.Billing;
 /// request. Every text is assembled here (§41 п. 8) — the frontend prints strings as-is.</summary>
 public class OwnerSubscriptionService(
     AppDbContext db, SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
-    TrialStateReader trialStateReader, IOptions<OrdersOptions> ordersOptions, Stays.StaysPlanResolver slotPlans)
+    TrialStateReader trialStateReader, IOptions<OrdersOptions> ordersOptions, AccountMessagingReader messagingReader,
+    MessengerAddonsProvider messengerAddons, Stays.StaysPlanResolver slotPlans)
 {
     public async Task<BillingAccount?> FindAccountForOwnerAsync(string ownerUserId) =>
         await db.BillingAccounts.Include(a => a.RequestedPlan).FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId);
@@ -66,9 +69,7 @@ public class OwnerSubscriptionService(
         var companies = await db.Companies.Where(c => c.BillingAccountId == account.Id).ToListAsync();
         var companyIds = companies.Select(c => c.Id).ToList();
         var seatsByCompany = await usageReader.GetCompanySeatsAsync(companyIds);
-        var assignedCompanyIds = (await db.ChannelCompanyAssignments
-            .Where(a => companyIds.Contains(a.CompanyId))
-            .Select(a => a.CompanyId).ToListAsync()).ToHashSet();
+        var hasNumber = await AccountHasWorkingNumberAsync(account.Id);
 
         var status = SubscriptionStatusFor(sub, now);
         var statusText = StatusTextFor(status, sub?.PaidUntil);
@@ -76,10 +77,9 @@ public class OwnerSubscriptionService(
         var isExpiringSoon = sub?.PlanConfig is not null &&
             BillingCalculator.IsExpiringSoon(sub.PaidUntil, sub.PlanConfig.NotifyDaysBefore, now);
 
-        var whatsapp = subscribedOptions.FirstOrDefault(o => o.Option.Code == SubscriptionResolver.WhatsAppOptionCode);
         var numbersRegistered = await db.NotificationChannels
             .CountAsync(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced);
-        var numbersText = BuildNumbersText(plan.PaidNotificationNumbers, numbersRegistered);
+        var (numbersPaid, numbersText) = await NumbersAsync(account.Id);
 
         // Cycle 18, API_CONTRACT_CYCLE18.md §365 (Д3) — "деградация = заморозка": going over a limit
         // (e.g. a trial ending and the account falling back to the Free plan's tighter limits) never
@@ -100,11 +100,11 @@ public class OwnerSubscriptionService(
         var usageDto = new SubscriptionUsageDto(
             usage.CompaniesUsed, plan.AccountMaxCompanies, usage.SeatsUsed, plan.AccountMaxEmployees,
             EmployeesTextFor(usage.SeatsUsed, plan.AccountMaxEmployees), CompaniesTextFor(usage.CompaniesUsed, plan.AccountMaxCompanies),
-            plan.PaidNotificationNumbers, numbersRegistered, numbersText,
+            numbersPaid, numbersRegistered, numbersText,
             overLimitCompanies, overLimitEmployees, overLimitText);
 
         var coveredCompanies = companies.Select(c => new CoveredCompanyDto(
-            c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), assignedCompanyIds.Contains(c.Id))).ToList();
+            c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), hasNumber)).ToList();
 
         var planDto = new SubscribedPlanDto(
             sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Бесплатный", sub?.PlanConfig?.Description, sub?.PlanConfig?.PricePerMonth ?? 0m,
@@ -128,7 +128,7 @@ public class OwnerSubscriptionService(
         // can never ask to buy MORE of something they already have (e.g. one more WhatsApp number).
         // The current quantity, if any, is already visible in `optionDtos` (Options[]) by OptionId;
         // this list only ever answers "can I request this option at all right now".
-        var allOptions = await db.SubscriptionOptions.WhereNotRetired().Where(o => o.IsActive && o.PricePerMonth != null).ToListAsync();
+        var allOptions = await db.SubscriptionOptions.WhereNotRetired().Where(o => o.IsActive && o.PricePerMonth != null && o.Code != ChannelOptionCodes.WhatsApp && o.Code != ChannelOptionCodes.Max).ToListAsync(); // §40.13: the channel options are bought in the numbers wizard, not offered here
         var availableOptions = allOptions
             .Select(o => ToAvailableOptionDto(o, planRules))
             .ToList(); // Unavailable options ARE shown too (§70 п.2) — no filter beyond IsActive/priced above.
@@ -151,11 +151,13 @@ public class OwnerSubscriptionService(
         // instead of GetAsync (which would reload them and re-resolve the effective plan), removing
         // ~5 avoidable round-trips from the owner's most-visited screen.
         var trial = await trialStateReader.BuildAsync(account, sub, plan);
+        var (addons, addonsNote) = await messengerAddons.BuildAsync(PricingCatalogBuilder.DefaultNotice);
 
         return new OwnerSubscriptionDto(
             "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays, isExpiringSoon,
             usageDto, coveredCompanies, warning, availableOptions, pendingRequest, CanRequestChanges: true,
-            LastRejectedRequest: lastRejectedRequest, Trial: trial);
+            LastRejectedRequest: lastRejectedRequest, Trial: trial,
+            MessengerAddons: addons, MessengerAddonsNote: addonsNote);
     }
 
     /// <summary>"Free" (no subscription of the line), "Expired" (not active / past its date), "Active" — the same three words as the "Записи" line.</summary>
@@ -186,16 +188,14 @@ public class OwnerSubscriptionService(
         var shops = await db.Companies.AsNoTracking().Where(c => c.BillingAccountId == account.Id && c.Kind == CompanyKind.Orders).ToListAsync();
         var usage = (await usageReader.GetAsync([account.Id], CompanyKind.Orders)).GetValueOrDefault(account.Id) ?? new AccountUsage(account.Id, 0, 0);
         var seatsByCompany = await usageReader.GetCompanySeatsAsync(shops.Select(c => c.Id).ToList());
-        var assignedIds = (await db.ChannelCompanyAssignments.Where(a => shops.Select(s => s.Id).Contains(a.CompanyId))
-            .Select(a => a.CompanyId).ToListAsync()).ToHashSet();
+        var hasNumber = await AccountHasWorkingNumberAsync(account.Id);
 
         var status = OrdersStatusFor(sub, now);
         var expiresInDays = BillingCalculator.ExpiresInDays(sub?.PaidUntil, now);
         var isExpiringSoon = sub?.PlanConfig is not null && BillingCalculator.IsExpiringSoon(sub.PaidUntil, sub.PlanConfig.NotifyDaysBefore, now);
 
         var numbersRegistered = await db.NotificationChannels.CountAsync(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced);
-        var servicesPlan = await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
-        var numbersText = BuildNumbersText(servicesPlan.PaidNotificationNumbers, numbersRegistered);
+        var (numbersPaid, numbersText) = await NumbersAsync(account.Id);
 
         // "Frozen degradation" (Д3): being over the limits after a downgrade forbids ADDING, nothing is switched off. Counted within the line.
         var overShops = plan.IsFreeTier && plan.MaxShops is { } maxShops ? Math.Max(0, usage.CompaniesUsed - maxShops) : 0;
@@ -203,9 +203,9 @@ public class OwnerSubscriptionService(
         var usageDto = new SubscriptionUsageDto(
             usage.CompaniesUsed, plan.MaxShops, usage.SeatsUsed, plan.MaxSeats,
             BillingTexts.ShopSeatsUsedText(usage.SeatsUsed, plan.MaxSeats), BillingTexts.ShopsUsedText(usage.CompaniesUsed, plan.MaxShops),
-            servicesPlan.PaidNotificationNumbers, numbersRegistered, numbersText, overShops, overSeats, null);
+            numbersPaid, numbersRegistered, numbersText, overShops, overSeats, null);
 
-        var coveredShops = shops.Select(c => new CoveredCompanyDto(c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), assignedIds.Contains(c.Id))).ToList();
+        var coveredShops = shops.Select(c => new CoveredCompanyDto(c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), hasNumber)).ToList();
         var planDto = new SubscribedPlanDto(
             plan.IsFreeTier ? null : plan.PlanId, plan.PlanName, planConfig?.Description, planConfig?.PricePerMonth ?? 0m, OrdersPlanIncludes(plan));
         var totalMonthlyPrice = BillingCalculator.TotalMonthlyPrice(planDto.PricePerMonth, optionDtos.Select(o => o.PricePerMonth));
@@ -219,7 +219,7 @@ public class OwnerSubscriptionService(
         else if (isExpiringSoon && expiresInDays is >= 0)
             warning = new SubscriptionWarningDto("Expiring", $"Подписка истекает через {expiresInDays} дн. — продлите её, чтобы не потерять возможности тарифа.", []);
 
-        var allOptions = await db.SubscriptionOptions.WhereNotRetired().Where(o => o.IsActive && o.PricePerMonth != null).ToListAsync();
+        var allOptions = await db.SubscriptionOptions.WhereNotRetired().Where(o => o.IsActive && o.PricePerMonth != null && o.Code != ChannelOptionCodes.WhatsApp && o.Code != ChannelOptionCodes.Max).ToListAsync(); // §40.13: the channel options are bought in the numbers wizard, not offered here
         var availableOptions = allOptions.Select(o => ToAvailableOptionDto(o, planRules)).ToList();
 
         // One pending request per ACCOUNT: this screen shows it only when it is a request for THIS line.
@@ -278,23 +278,23 @@ public class OwnerSubscriptionService(
         var companies = await db.Companies.AsNoTracking().Where(c => c.BillingAccountId == account.Id && c.Kind == kind).ToListAsync();
         var companyIds = companies.Select(c => c.Id).ToList();
         var seatsByCompany = await usageReader.GetCompanySeatsAsync(companyIds);
-        var assignedIds = (await db.ChannelCompanyAssignments.Where(a => companyIds.Contains(a.CompanyId)).Select(a => a.CompanyId).ToListAsync()).ToHashSet();
+        var hasNumber = await AccountHasWorkingNumberAsync(account.Id);
         var staff = seatsByCompany.Values.Sum();
         var numbersRegistered = await db.NotificationChannels.CountAsync(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced);
-        var servicesPlan = await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
+        var (numbersPaid, numbersText) = await NumbersAsync(account.Id);
         var usageDto = new SubscriptionUsageDto(
             companies.Count, null, staff, null, $"Сотрудников: {staff}", $"Компаний: {companies.Count}",
-            servicesPlan.PaidNotificationNumbers, numbersRegistered, BuildNumbersText(servicesPlan.PaidNotificationNumbers, numbersRegistered));
+            numbersPaid, numbersRegistered, numbersText);
 
         var status = !plan.WasEverSubscribed ? "NoPlan" : plan.HasActivePlan ? "Active" : "Expired";
         var statusText = status == "NoPlan" ? "Тариф не выбран" : StatusTextFor(status, plan.PaidUntilUtc);
-        var planDto = new SubscribedPlanDto(plan.PlanId, plan.PlanName ?? "Тариф не выбран", planConfig?.Description, planConfig?.PricePerMonth ?? 0m,
-            plan.AllowNotificationChannel ? ["Сообщения гостям в MAX и WhatsApp"] : []);
+        // ARCHITECTURE_CYCLE40.md §40.3.4: no "messages to guests in MAX and WhatsApp" line — messengers are paid per transport and shown as price lines (§40.14).
+        var planDto = new SubscribedPlanDto(plan.PlanId, plan.PlanName ?? "Тариф не выбран", planConfig?.Description, planConfig?.PricePerMonth ?? 0m, []);
         var totalMonthlyPrice = BillingCalculator.TotalMonthlyPrice(planDto.PricePerMonth, optionDtos.Select(o => o.PricePerMonth));
         var expiresInDays = BillingCalculator.ExpiresInDays(plan.PaidUntilUtc, now);
 
         SubscriptionWarningDto? warning = level == "None" ? null : new SubscriptionWarningDto(level, text ?? string.Empty, []);
-        var allOptions = await db.SubscriptionOptions.WhereNotRetired().Where(o => o.IsActive && o.PricePerMonth != null).ToListAsync();
+        var allOptions = await db.SubscriptionOptions.WhereNotRetired().Where(o => o.IsActive && o.PricePerMonth != null && o.Code != ChannelOptionCodes.WhatsApp && o.Code != ChannelOptionCodes.Max).ToListAsync(); // §40.13: the channel options are bought in the numbers wizard, not offered here
         var availableOptions = allOptions.Select(o => ToAvailableOptionDto(o, planRules)).ToList();
         var pendingRequest = account.RequestedLine == kind
             ? BuildPendingRequestDto(account, await db.SubscriptionOptions.ToListAsync(), planDto.PricePerMonth, false, plan.PlanId) : null;
@@ -313,7 +313,7 @@ public class OwnerSubscriptionService(
         return new OwnerSubscriptionDto(
             "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, plan.PaidUntilUtc, expiresInDays,
             plan.IsTrial && level is "TrialEnding3d" or "TrialEnding1d", usageDto,
-            companies.Select(c => new CoveredCompanyDto(c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), assignedIds.Contains(c.Id))).ToList(),
+            companies.Select(c => new CoveredCompanyDto(c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), hasNumber)).ToList(),
             warning, availableOptions, pendingRequest, CanRequestChanges: true, LastRejectedRequest: lastRejected, Trial: null,
             Line: kind.ToString(), Orders: null, AvailablePlans: availablePlans,
             Stays: isBaths ? null : new StaysSubscriptionBlockDto(published, plan.MaxHouses, plan.IsTrial, plan.IsTrial ? plan.PaidUntilUtc : null, level, text),
@@ -333,7 +333,6 @@ public class OwnerSubscriptionService(
     {
         var list = new List<string>();
         if (plan.AllowOrders) list.Add("Приём заказов");
-        if (plan.AllowNotificationChannel) list.Add("Сообщения покупателям в MAX и WhatsApp");
         return list;
     }
 
@@ -400,7 +399,7 @@ public class OwnerSubscriptionService(
 
     /// <summary>Also used by <c>AdminBillingController</c>'s billing-account DTOs (merge-review
     /// finding: admin surfaces for options/funding already print server-assembled text — see
-    /// <see cref="BillingTexts.FundingText"/> and <c>SubscribedOptionDto.StatusText</c> — while the
+    /// <c>MessengerTexts.FundingText</c> and <c>SubscribedOptionDto.StatusText</c> — while the
     /// account-level status was left as a bare enum, forcing the frontend to keep its own
     /// translation dictionary). Same wording either audience sees.</summary>
     public static string StatusTextFor(string status, DateTime? paidUntil) => status switch
@@ -430,12 +429,21 @@ public class OwnerSubscriptionService(
     private static string CompaniesTextFor(int used, int? limit) =>
         limit is null ? $"Компаний: {used} (без ограничения)" : $"Открыто {used} из {limit} точек, доступных на тарифе.";
 
-    private static string BuildNumbersText(int paid, int registered)
+    /// <summary>ARCHITECTURE_CYCLE40.md §40.31 / §40.33.8 — <c>usage.numbersPaid</c> = the number of paid transports (0…2); <c>usage.numbersText</c> = one
+    /// entry per SHOWN transport (it is sold, or the account has its number or its payment), joined by "; ".</summary>
+    /// <summary>Cycle 40 (§40.4.2 #9): a number serves EVERY company of the account, so <c>hasNumber</c> of a company is "the account has a
+    /// working number" (a routable transport whose first number is connected, the service on), not "this company was assigned".</summary>
+    private async Task<bool> AccountHasWorkingNumberAsync(Guid accountId) =>
+        (await messagingReader.ForAccountAsync(accountId)) is { } state && state.Transports.Any(t => t.Working);
+
+    private async Task<(int Paid, string Text)> NumbersAsync(Guid accountId)
     {
-        if (registered == 0) return "Номеров для рассылок не заведено.";
-        if (paid <= 0) return $"Заведено {registered}, но не оплачено ни одного номера — рассылки не отправляются.";
-        if (paid >= registered) return $"Оплачено {paid} из {registered} — все номера работают.";
-        return $"Оплачено {paid} из {registered} заведённых номеров. Чтобы включить остальные, подключите ещё одну «Рассылку в WhatsApp».";
+        var state = await messagingReader.ForAccountAsync(accountId);
+        if (state is null) return (0, string.Empty);
+        var shown = state.Transports
+            .Where(t => t.Option.Sellable || t.Primary is not null || t.Payment.Paid)
+            .Select(t => (t.Transport, t.Payment.Paid, t.Payment.IsTrial, t.Payment.PaidUntil));
+        return (state.PaidTransportCount, MessengerTexts.NumbersText(shown));
     }
 
     private SubscribedOptionDto ToSubscribedOptionDto(AccountSubscriptionOption row, List<PlanOptionRule> planRules)
@@ -445,8 +453,13 @@ public class OwnerSubscriptionService(
         // display path shouldn't normally hit a missing rule for an already-subscribed option, but the
         // default must still be the safe one, not the billable one.
         var availability = rule?.Availability ?? OptionAvailability.Unavailable;
+        var includedQuantity = rule?.IncludedQuantity;
+        // ARCHITECTURE_CYCLE40.md §40.13: the tariff's option rule is not read for the two channel options — they are paid per
+        // transport. A trial-granted row is free (like a rule of Included), a bought row costs its price.
+        if (ChannelOptionLog.IsChannelOption(row.Option.Code))
+            (availability, includedQuantity) = row.GrantedByTrial ? (OptionAvailability.Included, row.Quantity) : (OptionAvailability.Extra, (int?)null);
         var pricePerUnit = row.Option.PricePerMonth ?? 0m;
-        var monthly = BillingCalculator.MonthlyPriceFor(availability, row.Quantity, pricePerUnit, rule?.IncludedQuantity);
+        var monthly = BillingCalculator.MonthlyPriceFor(availability, row.Quantity, pricePerUnit, includedQuantity);
 
         // N5, §38.5: four statuses, not two. Unavailable (rule says so, N13/N14) wins over everything
         // else — the tariff no longer allows it, regardless of what EndsAtUtc/RequestedQuantity say.

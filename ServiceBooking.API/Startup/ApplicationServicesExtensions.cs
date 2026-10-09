@@ -58,7 +58,18 @@ internal static class ApplicationServicesExtensions
     // this developer's file this cycle.
     builder.Services.AddScoped<ServiceBooking.API.Services.NotificationScheduler>();
     // Cycle 22 (ARCHITECTURE_CYCLE22.md §375 F14, §379): channel funding, batched across billing accounts.
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.3.3): the one reader of "paid / open / working" per account; ChannelFundingReader is its façade.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.AccountMessagingReader>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.ChannelFundingReader>();
+    // Cycle 40 (§40.8): the automatic check message after a number is bound, and the owner's "Numbers" screen.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.ChannelTestMessageService>();
+    builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.ChannelTestMessageTask>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.NumbersOverviewBuilder>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.MessengerConsentResolver>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.CustomerMessagingOfferService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.AdminChannelsBuilder>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Billing.MessengerAddonsProvider>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.PendingRebinder>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingEventLog>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingActorResolver>();
     // Cycle 22 P5 (ARCHITECTURE_CYCLE22.md §378): the body of POST /api/bookings, moved out of
@@ -155,7 +166,6 @@ internal static class ApplicationServicesExtensions
 
     // ARCHITECTURE_CYCLE24.md §464 — time, availability, notifications and tariffs of shops.
     builder.Services.AddScoped<ServiceBooking.API.Services.Billing.OrdersPlanResolver>();
-    builder.Services.AddScoped<ServiceBooking.API.Services.Billing.ChannelEligibility>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopGateLoader>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.DailyMenuService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopChannelReader>();
@@ -240,7 +250,7 @@ internal static class ApplicationServicesExtensions
     {
     // ── Подтверждение телефона через MAX (ARCHITECTURE_CYCLE14.md §140-§158) ──────────────────────────────
     // R5/§144.1: a PLATFORM subsystem, deliberately with NO reference anywhere in this block to
-    // Notifications:*/NotificationChannel/ChannelCompanyAssignment/LegalOptionGuards — own top-level config
+    // Notifications:*/NotificationChannel/LegalOptionGuards — own top-level config
     // section, own secrets, own registry, its own named HttpClient.
     builder.Services.Configure<ServiceBooking.API.Services.PhoneVerification.PhoneVerificationOptions>(
         builder.Configuration.GetSection(ServiceBooking.API.Services.PhoneVerification.PhoneVerificationOptions.SectionName));

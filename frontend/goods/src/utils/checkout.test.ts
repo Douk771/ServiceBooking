@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { checkoutGate, loginUrlForCheckout, maskPhone, messengerConsentFallback, validateCheckout } from './checkout'
+import { checkoutGate, loginUrlForCheckout, maskPhone, storefrontMessengerOffer, validateCheckout } from './checkout'
 
 const ru = (p: string) => /^7\d{10}$/.test(p)
 
@@ -63,8 +63,14 @@ describe('messenger consent line (cycle 24, L9)', () => {
     expect(maskPhone('7900')).toBe('')
     expect(maskPhone(undefined)).toBe('')
   })
-  it('builds the SPEC fallback with the mask, or a neutral wording before the guest typed a number', () => {
-    expect(messengerConsentFallback('79001234567')).toBe('Присылать статус заказа в MAX/WhatsApp на номер +7 (9**) ***-**-67')
-    expect(messengerConsentFallback('')).toBe('Присылать статус заказа в MAX/WhatsApp на номер из этого заказа')
+  it('cycle 40: offer comes from the server flags only; not offered clears transports and label', () => {
+    expect(storefrontMessengerOffer({ customerNotifications: { messengerOffered: false, messengerTransports: ['Max'], messengerLabel: 'x' } })).toEqual({ offered: false, transports: [], checkboxLabel: null })
+    expect(storefrontMessengerOffer({})).toEqual({ offered: false, transports: [], checkboxLabel: null })
+    expect(storefrontMessengerOffer({ customerNotifications: { messengerOffered: true, messengerTransports: ['WhatsApp', 'Max'], messengerLabel: 'Получать уведомления о заказе в WhatsApp и MAX' } })).toEqual({
+      offered: true,
+      transports: ['WhatsApp', 'Max'],
+      checkboxLabel: 'Получать уведомления о заказе в WhatsApp и MAX',
+    })
+    expect(storefrontMessengerOffer({ customerNotifications: { messengerOffered: true } }).checkboxLabel).toBeNull()
   })
 })

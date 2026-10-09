@@ -84,29 +84,27 @@ public class ChannelPresentationTests
         ChannelPresentation.CanConnect(state, paymentState, riskAccepted).Should().Be(expected);
     }
 
+    // Cycle 40 (API_CONTRACT_CYCLE40.md §40.22.1): a number can be replaced from any state except "never bound" and "already replaced"
+    // (before the cycle only a banned one could) — an intentional change of the expectation.
     [Theory]
     [InlineData(ChannelState.Blocked, true)]
-    [InlineData(ChannelState.Connected, false)]
+    [InlineData(ChannelState.Connected, true)]
+    [InlineData(ChannelState.Connecting, true)]
+    [InlineData(ChannelState.Disconnected, true)]
+    [InlineData(ChannelState.NeedsReconnect, true)]
+    [InlineData(ChannelState.DisabledByOwner, true)]
     [InlineData(ChannelState.NotConnected, false)]
-    public void CanReplace_OnlyTrueForBlocked(ChannelState state, bool expected)
+    [InlineData(ChannelState.Replaced, false)]
+    public void CanReplace_AnyBoundStateExceptReplaced(ChannelState state, bool expected)
     {
         ChannelPresentation.CanReplace(state).Should().Be(expected);
     }
 
     [Fact]
-    public void SettingsBlockedReason_PlanDeniedTakesPriorityOverEverythingElse()
+    public void SettingsBlockedReason_NoAssignment()
     {
         var reason = ChannelPresentation.SettingsBlockedReason(
-            planAllowsChannel: false, companyHasAssignment: true, paymentState: ChannelPaymentStatus.Paid, channelState: ChannelState.Connected);
-
-        reason.Should().Be("Недоступно на вашем тарифе");
-    }
-
-    [Fact]
-    public void SettingsBlockedReason_NoAssignment_WhenPlanAllows()
-    {
-        var reason = ChannelPresentation.SettingsBlockedReason(
-            planAllowsChannel: true, companyHasAssignment: false, paymentState: null, channelState: null);
+            companyHasAssignment: false, paymentState: null, channelState: null);
 
         reason.Should().Be("Салон не привязан к каналу");
     }
@@ -115,7 +113,7 @@ public class ChannelPresentationTests
     public void SettingsBlockedReason_NotPaid()
     {
         var reason = ChannelPresentation.SettingsBlockedReason(
-            planAllowsChannel: true, companyHasAssignment: true, paymentState: ChannelPaymentStatus.NotPaid, channelState: ChannelState.NotConnected);
+            companyHasAssignment: true, paymentState: ChannelPaymentStatus.NotPaid, channelState: ChannelState.NotConnected);
 
         reason.Should().Be("Канал не оплачен");
     }
@@ -124,7 +122,7 @@ public class ChannelPresentationTests
     public void SettingsBlockedReason_PaidButNotConnected()
     {
         var reason = ChannelPresentation.SettingsBlockedReason(
-            planAllowsChannel: true, companyHasAssignment: true, paymentState: ChannelPaymentStatus.Paid, channelState: ChannelState.Disconnected);
+            companyHasAssignment: true, paymentState: ChannelPaymentStatus.Paid, channelState: ChannelState.Disconnected);
 
         reason.Should().Be("Канал отвалился");
     }
@@ -133,7 +131,7 @@ public class ChannelPresentationTests
     public void SettingsBlockedReason_EverythingOk_ReturnsNull()
     {
         var reason = ChannelPresentation.SettingsBlockedReason(
-            planAllowsChannel: true, companyHasAssignment: true, paymentState: ChannelPaymentStatus.Paid, channelState: ChannelState.Connected);
+            companyHasAssignment: true, paymentState: ChannelPaymentStatus.Paid, channelState: ChannelState.Connected);
 
         reason.Should().BeNull();
     }

@@ -93,7 +93,9 @@ public record ShopNotificationSettingsDto(
     NotificationTransport PriorityTransport, bool MessengerAvailable, string? MessengerUnavailableText, bool PlatformPushEnabled,
     List<ShopChannelStatusDto> Channels,
     // Cycle 25 (API_CONTRACT_CYCLE25.md §524): the shop's "Сообщения сотрудникам в MAX" flag and whether the platform has the feature on.
-    bool StaffMaxEnabled = true, bool StaffMaxAvailable = false, string? StaffMaxUnavailableText = null);
+    bool StaffMaxEnabled = true, bool StaffMaxAvailable = false, string? StaffMaxUnavailableText = null,
+    // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.6.4): do customer messages go out at all, is the delivery choice worth showing, and the broken-priority warning.
+    bool MessagingActive = false, bool DeliveryChoiceVisible = false, string? PriorityWarning = null);
 
 public record ShopNotificationSettingsInput(
     bool StaffPushEnabled, bool CustomerWebPushEnabled, bool CustomerMessengerEnabled, NotificationDeliveryMode? DeliveryMode,

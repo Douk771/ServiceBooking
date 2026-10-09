@@ -281,7 +281,9 @@ public class PricingCatalogBuilderTests
 
         var result = PricingCatalogBuilder.Build("v1", [], [whatsapp], legalNotice: null, legalSnapshot: publishedSnapshot);
 
-        result.Options.Should().ContainSingle();
+        // Cycle 40 (§40.14): INTENTIONAL change. The legal guard still holds (MessengerAddonsProvider applies LegalOptionGuards, checked in LegalPricingGateTests), but a
+        // messenger option is drawn as its own price line (messengerAddons) and never as a generic option, even when its document is published.
+        result.Options.Should().BeEmpty();
     }
 
     // ARCHITECTURE_CYCLE19.md §391.1 (PricingCatalogBuilderTests) — a retired limit option never

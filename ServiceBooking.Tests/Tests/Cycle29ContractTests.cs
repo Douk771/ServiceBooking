@@ -54,7 +54,12 @@ public class Cycle29ContractTests(TestDatabaseFixture fixture) : Cycle25TestBase
     {
         var (shop, _) = await SeedAsync();
         var body = await JsonAsync(await AnonymousClient().GetAsync($"/api/storefront/{shop.Slug}"));
-        C26.AssertResponse("GET", "/api/storefront/{slug}", 200, body);
+        // Цикл 40 дописал в customerNotifications messengerTransports и messengerLabel (contracts/cycle40/openapi.yaml, StorefrontCustomerNotificationsDto);
+        // контракт cycle26 заморожен — принимаются только эти два добавления, всё остальное строго.
+        var errors = C26.Collect("GET", "/api/storefront/{slug}", 200, body)
+            .Where(e => !System.Text.RegularExpressions.Regex.IsMatch(e, @"^\$\.customerNotifications\.(messengerTransports|messengerLabel): property is not described by the schema$"))
+            .ToList();
+        errors.Should().BeEmpty("the response of GET /api/storefront/{slug} -> 200 must conform to the contract");
     }
 
     [Fact, TestCase("CY29-31")]

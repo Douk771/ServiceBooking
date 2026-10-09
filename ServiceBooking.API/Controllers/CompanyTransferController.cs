@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Demo;
+using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -20,7 +21,8 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/admin/companies")]
 [Authorize(Roles = "SuperAdmin")]
-public class CompanyTransferController(AppDbContext db, CompanyTransferService transferService, AccountUsageReader usageReader) : ControllerBase
+public class CompanyTransferController(AppDbContext db, CompanyTransferService transferService, AccountUsageReader usageReader,
+    PendingRebinder pendingRebinder) : ControllerBase
 {
     [HttpGet("{companyId:guid}/transfer/preview")]
     public async Task<IActionResult> Preview(Guid companyId, [FromQuery] Guid targetBillingAccountId, [FromQuery] string? newOwnerUserId, CancellationToken ct)
@@ -71,9 +73,11 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
             ownerUnchangedNotice = $"Ответственный не меняется: компанией продолжит управлять {currentOwnerName}.";
         }
 
-        var willDetach = await db.ChannelCompanyAssignments.AnyAsync(a => a.CompanyId == companyId, ct);
-        var willCancel = await db.OutboundNotifications.CountAsync(n =>
-            n.CompanyId == companyId && n.Status == NotificationStatus.Pending, ct);
+        // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.34): the number belongs to the account — the company detaches from it when the source
+        // account has a live number; Pending rows are re-bound to the same transport of the target, only the rest are cancelled.
+        var willDetach = company.BillingAccountId is { } sourceAccountId &&
+            await db.NotificationChannels.AnyAsync(c => c.BillingAccountId == sourceAccountId && c.State != ChannelState.Replaced, ct);
+        var willCancel = await pendingRebinder.CountCancelledOnTransferAsync(companyId, targetBillingAccountId, ct);
 
         var dto = new CompanyTransferPreviewDto(
             company.Id, company.Name, seatsOfCompany, sourceSide, targetSide,

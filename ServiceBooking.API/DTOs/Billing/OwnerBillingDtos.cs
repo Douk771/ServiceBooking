@@ -35,6 +35,9 @@ public record OwnerSubscriptionDto(
     IReadOnlyList<AvailablePlanDto>? AvailablePlans = null,
     // Cycle 37 (API_CONTRACT_CYCLE37.md §37.21.4) — the «Дома» block; set only when Line = Stays.
     StaysSubscriptionBlockDto? Stays = null,
+    // Cycle 40 (§40.14): the price lines of the messenger options, as on the public price list.
+    IReadOnlyList<MessengerAddonDto>? MessengerAddons = null,
+    MessengerAddonsNoteDto? MessengerAddonsNote = null,
     // Cycle 42 (API_CONTRACT_CYCLE42.md §42.5.5) — the «Бани» block; set only when Line = Baths.
     BathsSubscriptionBlockDto? Baths = null);
 

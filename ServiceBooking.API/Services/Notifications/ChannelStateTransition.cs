@@ -48,6 +48,16 @@ public static class ChannelStateTransition
             channel.ConnectedAtUtc ??= nowUtc;
             channel.ConsecutiveSendFailures = 0;
             await TrialMailingWindowStarter.OnChannelBecameConnectedAsync(db, channel, nowUtc, ct);
+
+            // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.8): one provider instance = one binding = one automatic check message. The mark is
+            // the instance id, so two browser tabs (or the poll and the QR flow) writing the same transition write the same value.
+            if (reason == ChannelStateReason.Authorized && channel.ProviderInstanceId is { } instanceId &&
+                channel.AutoTestInstanceId != instanceId)
+            {
+                channel.AutoTestInstanceId = instanceId;
+                channel.LastTestResult = ChannelTestResult.Pending;
+                channel.LastTestResultAtUtc = nowUtc;
+            }
         }
     }
 

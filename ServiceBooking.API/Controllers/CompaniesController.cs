@@ -23,7 +23,8 @@ public class CompaniesController(
     ServiceBooking.API.Services.Billing.AccountUsageReader accountUsageReader,
     ImageUploadService imageUploadService, FileStorage storage,
     CompanyDtoAssembler companyDtoAssembler, CompanyStatsService companyStatsService,
-    ServiceBooking.API.Services.PublicSites.PublicSiteLinks siteLinks, CompanyCreationService companyCreation) : ControllerBase
+    ServiceBooking.API.Services.PublicSites.PublicSiteLinks siteLinks, CompanyCreationService companyCreation,
+    ServiceBooking.API.Services.Notifications.CustomerMessagingOfferService messagingOffer) : ControllerBase
 {
     // Cycle 22 P5 (§378): the member endpoints moved to CompanyMembersController, the DTO assembly to
     // CompanyDtoAssembler and the stats body to CompanyStatsService — all unchanged.
@@ -207,7 +208,13 @@ public class CompaniesController(
         var cover = photos.Count > 0 ? (photos[0].Url, photos[0].ThumbnailUrl) : ((string, string)?)null;
         // Reachable anonymously (no [Authorize]) — same §46.2 treatment as GetAll: no usage computed.
         return Ok(companyDtoAssembler.MapToDto(c, plan, averageRating, reviewCount, city, employeeCount: 0, usage: null,
-            cover, photos));
+            cover, photos) with
+        {
+            // Only a salon asks its customers for the tick on THIS page; a shop / «Дома» company has its own page and its own answer (API_CONTRACT_CYCLE40.md §40.30.1).
+            CustomerMessaging = c.Kind == CompanyKind.Services
+                ? await messagingOffer.ForCompanyAsync(c, ct: ct)
+                : new ServiceBooking.API.Services.Notifications.CustomerMessagingOfferDto(false, [], null),
+        });
     }
 
     // Public: list masters for a company, optionally filtered by serviceId

@@ -29,9 +29,9 @@ namespace ServiceBooking.API.Controllers.Baths;
 [Authorize]
 public class BathsCompaniesController(
     AppDbContext dbArg, CompanyCreationService companyCreationArg, StaysAccessResolver accessArg, StaysCompanyService companyServiceArg,
-    PublicSiteLinks linksArg, ShopChannelReader channelReaderArg, IStaysClock clockArg, BathsCompanyService baths, BathsScheduleService schedule,
+    PublicSiteLinks linksArg, ServiceBooking.API.Services.Notifications.AccountMessagingReader messagingReaderArg, IStaysClock clockArg, BathsCompanyService baths, BathsScheduleService schedule,
     StaysTrialService trial, BathsCatalogService catalogCache)
-    : SlotCompanySettingsControllerBase(dbArg, companyCreationArg, accessArg, companyServiceArg, linksArg, channelReaderArg, clockArg)
+    : SlotCompanySettingsControllerBase(dbArg, companyCreationArg, accessArg, companyServiceArg, linksArg, messagingReaderArg, clockArg)
 {
     protected override SlotVertical Vertical => SlotVerticals.Baths;
 
