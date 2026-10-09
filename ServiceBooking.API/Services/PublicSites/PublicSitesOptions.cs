@@ -17,4 +17,7 @@ public sealed class PublicSitesOptions
 
     /// <summary>dom.ezbook.ru — "Дома" (ARCHITECTURE_CYCLE37.md §37.15.3), without a trailing slash. A committed default: no new mandatory variable.</summary>
     public string StaysBaseUrl { get; set; } = "https://dom.ezbook.ru";
+
+    /// <summary>bani.ezbook.ru — «Бани» (ARCHITECTURE_CYCLE42.md §42.4.5), without a trailing slash. A committed default: no new mandatory variable.</summary>
+    public string BathsBaseUrl { get; set; } = "https://bani.ezbook.ru";
 }
