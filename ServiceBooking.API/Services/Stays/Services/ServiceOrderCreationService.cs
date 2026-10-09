@@ -61,10 +61,14 @@ public class ServiceOrderCreationService(
         var scope = await slots.FindPublicAsync(kind, serviceId, ct);
         if (scope is null) return new ServiceOrderCreateResult(new NotFoundResult());
         var (service, company, settings) = scope;
+        // The number of guests belongs to the form (a 400 sentence) but needs the capacity of the resource, so it is judged as soon as the resource is known.
+        // A resource without a capacity (a service of «Дома») ignores the value (ARCHITECTURE_CYCLE42.md §42.7).
+        var guests = GuestsCountRules.Validate(dto.GuestsCount, service.Capacity);
+        if (!guests.Ok) return Bad(guests.Error!);
         if (!company.IsActive) return Refuse(ServiceRefusalCode.NotAcceptingBookings, ServiceTexts.NotAcceptingGuest, NotAcceptingReason.CompanyBlocked);
 
-        // 3. A stand-alone order is switched off by default.
-        if (!settings.AcceptServiceOrdersWithoutStay) return Refuse(ServiceRefusalCode.ServiceOrdersDisabled, ServiceTexts.OrdersDisabled);
+        // 3. A stand-alone order is switched off by default («Бани» have it always on).
+        if (!settings.AcceptServiceOrdersWithoutStay && !SlotVerticals.Get(company.Kind).StandaloneOrdersAlwaysOn) return Refuse(ServiceRefusalCode.ServiceOrdersDisabled, ServiceTexts.OrdersDisabled);
 
         // 4. Idempotency — BEFORE the captcha and the limits.
         var existing = await db.StayServiceOrders.AsNoTracking().FirstOrDefaultAsync(o => o.CompanyId == company.Id && o.IdempotencyKey == idempotencyKey, ct);
@@ -136,11 +140,12 @@ public class ServiceOrderCreationService(
         order.GuestPhone = canonicalPhone;
         order.Comment = comment;
         order.NotifyByMessenger = notifyByMessenger;
+        order.GuestsCount = guests.Stored;
         order.MessengerConsentVersion = notifyByMessenger ? legalProvider.Current?.GetText(LegalTextKey.StayMessengerConsent)?.Version : null;
         order.MessengerConsentAtUtc = notifyByMessenger ? now : null;
         order.PaymentDetailsSnapshot = held ? settings.PaymentDetails : null;
         order.PaymentPurposeSnapshot = held ? settings.PaymentPurpose : null;
-        ApplyVersions(order, guestKind, now);
+        ApplyVersions(order, company.Kind, guestKind, now);
 
         db.StayServiceOrders.Add(order);
         var actor = await actors.ResolveGuestAsync(user, guestName, ct);
@@ -215,7 +220,7 @@ public class ServiceOrderCreationService(
         order.RequestBasis = dto.RequestBasis;
         // No messenger consent snapshot exists for a guest the staff typed in (Т37-12: the tick is the guest's own) — so no messenger notices, as for a manual booking.
         order.NotifyByMessenger = false;
-        ApplyVersions(order, StayActorKind.Staff, now);
+        ApplyVersions(order, company.Kind, StayActorKind.Staff, now);
         db.StayServiceOrders.Add(order);
         sessionWriter.Add(new NewServiceSession(company.Id, service, null, order.Id, evaluation, actor.Kind, actor.UserId, actor.NameSnapshot, dto.RequestBasis, null, null), now);
         await eventLog.AppendAsync(order, StayServiceOrderEventKind.Created, actor, null, order.Status);
@@ -248,12 +253,14 @@ public class ServiceOrderCreationService(
         };
     }
 
-    private void ApplyVersions(StayServiceOrder order, StayActorKind guestKind, DateTime now)
+    /// <summary>The snapshot of the versions of the texts of the company's VERTICAL (<see cref="SlotVertical.LegalKeys"/>: notice, terms, cancellation terms). A key absent from the manifest gives null.</summary>
+    private void ApplyVersions(StayServiceOrder order, CompanyKind kind, StayActorKind guestKind, DateTime now)
     {
         var snapshot = legalProvider.Current;
-        order.BookingNoticeVersion = snapshot?.GetText(LegalTextKey.StayServiceBookingNotice)?.Version;
-        order.BookingTermsVersion = snapshot?.GetText(LegalTextKey.StayServiceBookingTerms)?.Version;
-        order.CancellationTermsVersion = snapshot?.GetText(LegalTextKey.StayServiceCancellationTerms)?.Version;
+        var keys = SlotVerticals.Get(kind).LegalKeys;
+        order.BookingNoticeVersion = snapshot?.GetText(keys[0])?.Version;
+        order.BookingTermsVersion = snapshot?.GetText(keys[1])?.Version;
+        order.CancellationTermsVersion = snapshot?.GetText(keys[2])?.Version;
         // A guest's consent snapshot exactly like a house booking: the versions in force right now, from the server.
         if (guestKind != StayActorKind.Guest) return;
         var privacy = snapshot?.Get(LegalDocumentType.Privacy);

@@ -30,7 +30,7 @@ namespace ServiceBooking.API.Controllers.Baths;
 public class BathsCompaniesController(
     AppDbContext dbArg, CompanyCreationService companyCreationArg, StaysAccessResolver accessArg, StaysCompanyService companyServiceArg,
     PublicSiteLinks linksArg, ShopChannelReader channelReaderArg, IStaysClock clockArg, BathsCompanyService baths, BathsScheduleService schedule,
-    StaysTrialService trial)
+    StaysTrialService trial, BathsCatalogService catalogCache)
     : SlotCompanySettingsControllerBase(dbArg, companyCreationArg, accessArg, companyServiceArg, linksArg, channelReaderArg, clockArg)
 {
     protected override SlotVertical Vertical => SlotVerticals.Baths;
@@ -104,6 +104,8 @@ public class BathsCompaniesController(
         BathsCompanyService.ApplySettings(settings, result.Company!, input);
         Touch(settings);
         await Db.SaveChangesAsync(ct);
+        // ARCHITECTURE_CYCLE42.md §42.10.2: «Показывать в каталоге» changes the catalog at once, not after the cache TTL.
+        catalogCache.InvalidateBase();
         return Ok(await baths.BuildManageAsync(result.Company!, result.Role, ct));
     }
 

@@ -26,7 +26,8 @@ public class AdminController(
     CompanyTransferService companyTransferService, ILogger<AdminController> logger,
     ServiceBooking.API.Services.PublicSites.PublicSiteLinks siteLinks,
     // ARCHITECTURE_CYCLE37.md §37.11.2 — a blocked «Дома» company leaves the catalog at once (the base is cached for 30 s).
-    ServiceBooking.API.Services.Stays.StaysCatalogService staysCatalog) : ControllerBase
+    ServiceBooking.API.Services.Stays.StaysCatalogService staysCatalog,
+    ServiceBooking.API.Services.Baths.BathsCatalogService bathsCatalog) : ControllerBase
 {
     // ── Stats ──────────────────────────────────────────────────────────────────
 
@@ -550,6 +551,8 @@ public class AdminController(
         await db.SaveChangesAsync();
         // API_CONTRACT_CYCLE37.md §37.21.2: a blocked «Дома» company disappears from the catalog at once, not after the 30-second cache of its base.
         if (company.Kind == CompanyKind.Stays) staysCatalog.InvalidateBase();
+        // ARCHITECTURE_CYCLE42.md §42.10.2: the same for a blocked «Бани» company.
+        else if (company.Kind == CompanyKind.Baths) bathsCatalog.InvalidateBase();
         return NoContent();
     }
 

@@ -43,7 +43,8 @@ public class ServiceDtoMapper(
     public static string DisplayStatusOf(StayServiceOrder o, DateTime endUtc, DateTime nowUtc) =>
         o.Status == StayBookingStatus.Confirmed && nowUtc >= endUtc ? "Completed" : o.Status.ToString();
 
-    public string ServiceUrl(Company company, string serviceSlug) => $"/{company.Slug}/uslugi/{serviceSlug}";
+    public string ServiceUrl(Company company, string serviceSlug) =>
+        (SlotVerticals.Find(company.Kind) ?? SlotVerticals.Stays).ResourcePagePath(company.Slug, serviceSlug);
 
     // ── the order for the guest ──
 
@@ -68,6 +69,8 @@ public class ServiceDtoMapper(
         var holdExpired = o.Status == StayBookingStatus.Held && o.HoldExpiresAtUtc <= now;
 
         var wording = ServiceWording.For(company.Kind);
+        var isBaths = company.Kind == CompanyKind.Baths;
+        var cityName = isBaths && company.CityId is { } cityId ? await db.Cities.AsNoTracking().Where(c => c.Id == cityId).Select(c => c.Name).FirstOrDefaultAsync(ct) ?? string.Empty : null;
         var refund = RefundFor(o, session, now, byOwner: false, company.Kind);
         var pushOn = settings.GuestWebPushEnabled && string.Equals(webPush.Value.Provider, "web-push", StringComparison.OrdinalIgnoreCase) && active;
         var phone = company.Phone;
@@ -84,7 +87,8 @@ public class ServiceDtoMapper(
                 refund, !canCancel && active ? (holdExpired ? wording.HoldExpired(phone) : ServiceTexts.AlreadyStarted(phone)) : null),
             o.GuestName, StayPhone.Mask(o.GuestPhone), o.Comment, o.StatusReason,
             StayStateMachine.IsTerminal(o.Status) ? (wording.OutcomeText(o.Status, o.StatusReason, phone, o.PaymentConfirmedAtUtc != null || proofs.Count > 0) is { Length: > 0 } t ? t : null) : null,
-            new OrderNotificationsDto(new WebPushInfoDto(pushOn, pushOn ? webPush.Value.VapidPublicKey : null), o.NotifyByMessenger), actions);
+            new OrderNotificationsDto(new WebPushInfoDto(pushOn, pushOn ? webPush.Value.VapidPublicKey : null), o.NotifyByMessenger), actions,
+            isBaths ? o.GuestsCount : null, cityName, isBaths ? ServiceWording.LocalTimeNote(cityName) : null, null, isBaths ? $"/{company.Slug}" : null);
     }
 
     public ServiceRefundViewDto RefundFor(StayServiceOrder o, StayServiceSession s, DateTime nowUtc, bool byOwner, CompanyKind kind = CompanyKind.Stays)

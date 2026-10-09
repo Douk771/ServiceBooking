@@ -87,7 +87,7 @@ public class ServiceCatalogService(AppDbContext db, ServiceSlotService slots, St
 
     public async Task<PublicServiceDto?> PageAsync(CompanyKind kind, string companySlug, string serviceSlug, CancellationToken ct)
     {
-        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Slug == companySlug && c.Kind == kind, ct);
+        var company = await db.Companies.AsNoTracking().Include(c => c.City).FirstOrDefaultAsync(c => c.Slug == companySlug && c.Kind == kind, ct);
         if (company is null) return null;
         var s = await db.StayServices.AsNoTracking().FirstOrDefaultAsync(x => x.CompanyId == company.Id && x.Slug == serviceSlug, ct);
         if (s is null || (!s.IsPublished && s.ArchivedAtUtc == null)) return null;
@@ -99,14 +99,18 @@ public class ServiceCatalogService(AppDbContext db, ServiceSlotService slots, St
         var rules = await db.StayServicePriceRules.AsNoTracking().Where(r => r.ServiceId == s.Id).OrderBy(r => r.DaysMask).ThenBy(r => r.FromHour).ToListAsync(ct);
         var items = await db.StayServiceItems.AsNoTracking().Where(i => i.ServiceId == s.Id && i.IsActive).OrderBy(i => i.Position).ToListAsync(ct);
         var prepay = s.StandalonePrepayPercent;
-        var ordering = settings.AcceptServiceOrdersWithoutStay;
+        var vertical = Slots.SlotVerticals.Find(kind);
+        var ordering = settings.AcceptServiceOrdersWithoutStay || vertical is { StandaloneOrdersAlwaysOn: true };
+        var isBaths = kind == CompanyKind.Baths;
+        var cityName = company.City?.Name ?? string.Empty;
         var standalone = new PublicServiceStandaloneDto(ordering, prepay, prepay is null ? null : s.CancellationPolicy, prepay is null ? null : s.CancellationBoundaryHours,
             prepay is null ? null : ServiceTexts.CancellationSummary(s.CancellationPolicy, s.CancellationBoundaryHours), settings.HoldMinutes, ordering ? null : ServiceTexts.NotOrderingText);
         return new PublicServiceDto(s.Id, s.Slug, s.Name, s.Description, photos.Select(PhotoDto).ToList(), s.MinHours, s.MaxHours, s.StepMinutes,
             rules.Select(r => new PriceTableRowDto(ServiceTimeFormat.RuleGuest(r.DaysMask, r.FromHour, r.ToHour), r.PriceRub)).ToList(),
             items.Select(i => new ServiceItemPublicDto(i.Id, i.Name, i.PriceRub, i.MaxPerSession)).ToList(), s.ShowBufferToGuests ? s.BufferMinutes : null, standalone,
             new PublicServiceCompanyDto(company.Slug, company.Name, company.Phone, company.LogoUrl, $"/{company.Slug}"), StaysCompanyService.ProviderPublic(settings),
-            gate.Accepting, gate.Accepting ? null : ServiceTexts.NotAcceptingGuest, available, available ? null : ServiceTexts.NotAvailable, slots.TodayOf(company), company.TimeZoneId);
+            gate.Accepting, gate.Accepting ? null : ServiceTexts.NotAcceptingGuest, available, available ? null : ServiceTexts.NotAvailable, slots.TodayOf(company), company.TimeZoneId,
+            s.Capacity, isBaths ? cityName : null, isBaths ? Slots.ServiceWording.LocalTimeNote(cityName) : null);
     }
 
     public async Task<List<PublicServiceSummaryDto>> SummariesAsync(Company company, StaysSettings settings, GateResult gate, CancellationToken ct)
