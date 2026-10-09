@@ -139,7 +139,7 @@ public record ServiceCreateInput(string? Name);
 
 public record ServiceSetupInput(
     string? Name, string? Slug, int MinHours, int MaxHours, int StepMinutes, int BufferMinutes, bool ShowBufferToGuests, int MinLeadMinutes, int? StandalonePrepayPercent,
-    StayServiceCancellationPolicy CancellationPolicy, int CancellationBoundaryHours, bool AvailableForHouseBookings);
+    StayServiceCancellationPolicy CancellationPolicy, int CancellationBoundaryHours, bool AvailableForHouseBookings, int? Capacity = null);
 
 public record ServiceContentInput(string? Description);
 
@@ -149,7 +149,7 @@ public record ServiceManageDto(
     Guid Id, string Slug, string Name, string? Description, int MinHours, int MaxHours, int StepMinutes, int BufferMinutes, bool ShowBufferToGuests,
     int MinLeadMinutes, int? StandalonePrepayPercent, StayServiceCancellationPolicy CancellationPolicy, int CancellationBoundaryHours,
     BoundaryRangeDto CancellationBoundaryRange, bool AvailableForHouseBookings, bool IsPublished, bool IsArchived, int Position, List<ServicePhotoDto> Photos,
-    string PublicUrl, List<string> PublishProblems, bool HasSessions);
+    string PublicUrl, List<string> PublishProblems, bool HasSessions, int? Capacity = null, List<string>? ContentWarnings = null);
 
 public record PriceRuleDto(Guid Id, int DaysMask, int FromHour, int ToHour, int PriceRub, string Label);
 
@@ -161,9 +161,9 @@ public record PriceMatrixRowDto(int DayOfWeek, string Label, List<PriceMatrixCel
 
 public record PriceRulesDto(List<PriceRuleDto> Rules, List<PriceMatrixRowDto> Matrix);
 
-public record ServiceItemDto(Guid Id, string Name, int PriceRub, int MaxPerSession, bool IsActive, int Position);
+public record ServiceItemDto(Guid Id, string Name, int PriceRub, int MaxPerSession, bool IsActive, int Position, List<string>? Warnings = null);
 
-public record ServiceItemInput(string? Name, int PriceRub, int MaxPerSession, bool IsActive);
+public record ServiceItemInput(string? Name, int PriceRub, int MaxPerSession, bool IsActive, bool? ConfirmRestricted = null);
 
 // ── the cabinet: schedule ──
 public record WeeklyDayDto(int DayOfWeek, string Label, List<ServiceWindowDto> Windows);
