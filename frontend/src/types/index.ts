@@ -292,6 +292,13 @@ export interface NotificationSettings {
   /** Read-only. false → "priority channel isn't working" banner (§104.5) — there is deliberately no
    *  silent fallback to another transport. */
   priorityChannelHealthy: boolean
+  /** Cycle 40 (API_CONTRACT_CYCLE40.md §40.29): do messages go out at all, what to tell the owner when not, the working messengers, and whether the
+   *  delivery choice is worth showing (two working, or a saved priority that stopped working). All decided by the server. */
+  messagingActive?: boolean
+  inactiveText?: string | null
+  deliveryChoiceVisible?: boolean
+  priorityWarning?: string | null
+  workingTransports?: NotificationTransport[]
 }
 
 export interface NotificationPlaceholder {
