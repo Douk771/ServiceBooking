@@ -1,4 +1,4 @@
-import type { StaysMyRole, StaysPermission } from './types'
+import type { BathsStaffPosition, StaysMyRole, StaysPermission } from './types'
 
 export interface CabinetTab {
   id: 'day' | 'orders' | 'resources' | 'schedule' | 'settings' | 'staff' | 'notifications' | 'link'
@@ -35,6 +35,9 @@ const ROLE_LABELS: Record<StaysMyRole, string> = {
   Housekeeper: 'Банщик',
   SuperAdmin: 'Администратор платформы',
 }
+/** The positions the owner gives to staff (`Master` + position): «Администратор» and «Банщик». */
+export const POSITION_LABELS: Record<BathsStaffPosition, string> = { Manager: 'Администратор', Housekeeper: 'Банщик' }
+
 export const roleLabel = (role: StaysMyRole): string => ROLE_LABELS[role]
 
 const pad = (n: number) => String(n).padStart(2, '0')

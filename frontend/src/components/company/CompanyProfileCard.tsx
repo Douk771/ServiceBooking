@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { companiesApi } from '../../api/companies'
 import { companyAddressApi } from '../../api/companyAddress'
@@ -74,6 +74,8 @@ export interface CompanyProfileCardProps {
   manualTimeZone?: boolean
   /** Salon only: hint when the stored phone is not canonical 7XXXXXXXXXX (§32.7). */
   legacyPhoneHint?: boolean
+  /** bani (Т42-04): a notice between the contacts and the address block — the phone and the address become public. */
+  contactsNotice?: ReactNode
 }
 
 type FieldKey = 'name' | 'city' | 'address' | 'yandexMapsUrl' | 'twoGisUrl' | 'timeZone'
@@ -122,6 +124,7 @@ export function CompanyProfileCard({
   timeZoneLock,
   manualTimeZone = false,
   legacyPhoneHint = false,
+  contactsNotice,
 }: CompanyProfileCardProps) {
   const ids = useId()
   const [values, setValues] = useState<Values>(() => initialValues(company))
@@ -410,6 +413,8 @@ export function CompanyProfileCard({
             </p>
           </div>
         </div>
+
+        {contactsNotice}
 
         <fieldset className="flex flex-col gap-4 border-t border-line pt-5">
           <legend className="text-[13px] font-semibold text-ink pr-2">Адрес и карты</legend>
