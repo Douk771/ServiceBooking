@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Baths;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Bookings;
 using ServiceBooking.API.Services.Companies;
@@ -414,6 +415,21 @@ public class CompaniesController(
                 requestedTimeZoneId: dto.TimeZoneId.Value,
                 currentTimeZoneId: company.TimeZoneId,
                 currentIsManual: company.TimeZoneIsManual);
+
+            // I-2 (ARCHITECTURE_CYCLE42.md §42.3.4): «Бани» with future bookings keep their city and zone. Held, AwaitingPaymentCheck and Confirmed count.
+            if (company.Kind == CompanyKind.Baths && (cityChanged || timeZoneId != company.TimeZoneId))
+            {
+                var nowUtc = DateTime.UtcNow;
+                var hasFutureBookings = await (from s in db.StayServiceSessions
+                                               join o in db.StayServiceOrders on s.StayServiceOrderId equals o.Id
+                                               where s.CompanyId == id && s.ReleasedAtUtc == null && s.EndUtc > nowUtc &&
+                                                     (o.Status == StayBookingStatus.AwaitingPaymentCheck || o.Status == StayBookingStatus.Confirmed ||
+                                                      (o.Status == StayBookingStatus.Held && (o.HoldExpiresAtUtc == null || o.HoldExpiresAtUtc > nowUtc)))
+                                               select s.Id).AnyAsync();
+                if (!BathsLocationChangePolicy.IsAllowed(cityChanged, company.TimeZoneId, timeZoneId, hasFutureBookings))
+                    return Conflict(BathsLocationChangePolicy.LockedText);
+            }
+
             company.TimeZoneId = timeZoneId;
             company.TimeZoneIsManual = timeZoneIsManual;
         }

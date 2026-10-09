@@ -345,6 +345,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Профиль компании — для «Бань» смена города или часового пояса запрещена при будущих бронях (I-2).
+         * @description Форма запроса и ответа прежняя (контракт цикла 26, `UpdateCompanyProfileInput` и `CompanyDto`). Изменение цикла 42 — только для `Kind = Baths`:
+         *     смена города или часового пояса при наличии будущих броней (Held, AwaitingPaymentCheck, Confirmed; сеанс не окончен) → 409, голая строка
+         *     «Нельзя сменить город или часовой пояс, пока есть будущие брони — …». Без броней, с прошедшими и отменёнными — как раньше. Запрос атомарен.
+         *     «Дома» и остальные виды не меняются.
+         */
+        put: operations["updateCompanyProfileBaths"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/baths/companies/{companyId}/settings": {
         parameters: {
             query?: never;
@@ -1452,7 +1475,7 @@ export interface components {
             phone: string;
             description?: string | null;
             ownerTermsVersion: string;
-            /** @description Версия условий пробного периода «Бань» (baths-2026-10-09) — если владелец согласился активировать триал. */
+            /** @description Версия условий пробного периода «Бань» (baths-2026-10-10) — если владелец согласился активировать триал. */
             trialTermsVersion?: string | null;
         };
         TrialOutcomeDto: {
@@ -1571,6 +1594,7 @@ export interface components {
             acceptingBookings: boolean;
             awaitingPaymentCount?: number | null;
         };
+        /** @description Тот же ответ, что у «Домов» (StaysNotificationSettingsDto цикла 40): messengerAvailable = у аккаунта оплачен хотя бы один транспорт; messagingActive, deliveryChoiceVisible, priorityWarning добавлены циклом 40. */
         NotificationSettingsDto: {
             staffPushEnabled: boolean;
             staffMaxEnabled: boolean;
@@ -1579,6 +1603,12 @@ export interface components {
             messengerAvailable: boolean;
             deliveryMode?: string | null;
             priorityTransport?: string | null;
+            /** @description Сообщения гостям реально уходят (платформа включена, есть работающий маршрутизируемый транспорт). */
+            messagingActive: boolean;
+            /** @description Есть смысл показывать выбор способа доставки (два маршрутизируемых транспорта). */
+            deliveryChoiceVisible: boolean;
+            /** @description Предупреждение, если выбранный приоритетный транспорт не работает. */
+            priorityWarning?: string | null;
         };
         NotificationSettingsInput: {
             staffPushEnabled: boolean;
@@ -2596,6 +2626,50 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    updateCompanyProfileBaths: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id компании (для 409 — «Бани»). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Компания после сохранения (CompanyDto цикла 26). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            400: components["responses"]["PlainTextError"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description У «Бани» есть будущие брони — город и пояс менять нельзя. Строка по-русски. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
         };
     };
     bathsUpdateSettings: {
