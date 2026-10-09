@@ -29,7 +29,7 @@
 триал 14 дней, без бесплатного уровня; (а) один заказ — одна услуга; (б) число гостей без доплаты; Q42-6…16 — по
 рекомендациям §0.2 SPEC. **LEGAL_REVIEW_CYCLE42.md** принят: Q-L42-1 (а) — запрет в D3 + мягкий фильтр названий позиций с
 подтверждением; Q-L42-2 — товарный знак «EZBOOK» вне цикла; Q-L42-3 — одна редакция D1–D4 на все вертикали (не код);
-Q-L42-4 — канал мессенджера в триале «Бань» есть; Q-L42-5 — слово для гостя «бронь».
+Q-L42-4 — отменён 09.10.2026: мессенджера в триале «Бань» нет (только платный тариф, опция аккаунта цикла 40); Q-L42-5 — слово для гостя «бронь».
 
 | Т42 | Требование | Где закрыто |
 |---|---|---|
@@ -158,7 +158,7 @@ varchar(64) NULL`. Индекс `(ServiceId, ConfirmedAtUtc)`. Пишет тол
   `0c42ba70-6a3d-4a5e-9b1f-2d4c7e8a9b01` «Одна баня» 200 ₽, `MaxResources = 1`; `…9b02` «До 3 бань» 500 ₽, 3; `…9b03` «Без
   ограничения» 1000 ₽, NULL; `…9b04` «Пробный период «Бани»» 0 ₽, NULL, `IsSystemTrial = false` (индекс `IX_SubscriptionPlanConfigs_IsSystemTrial` уникален по таблице и занят триалом «Записи»; триал «Бань» ищется по `BathsPlans.TrialSeedId`, как триал «Дома»). У всех `IsPublic = false`,
   `IsActive = true`, `AllowNotificationChannel = true`. Цены — начальные, по образцу «Домов» (§42.17 п. 1).
-- `PlanOptionRules` опции `notifications.whatsapp` для всех четырёх (включая триал — Q-L42-4) с той же доступностью, что у
+- `PlanOptionRules` опции `notifications.whatsapp` для всех четырёх (строка триала — мёртвые данные: после Q-L42-4 от 09.10.2026 триал мессенджер не включает, а по §40 правила тарифа канал не читаются) с той же доступностью, что у
   платных «Домов».
 - Город: новых строк нет (справочник 91 + Шерегеш; R42-11).
 
@@ -236,7 +236,7 @@ Up — **только добавления**: 2 таблицы, 5 столбцо
 |---|---|---|
 | `Kind`, `ApiPrefix` | `Stays`, `api/stays` | `Baths`, `api/baths` |
 | `Unit` (единица лимита тарифа) | `House` (дома, `MaxHouses`) | `Resource` (опубликованные `StayServices` компаний `Baths` аккаунта, `MaxResources`) |
-| `TrialPlanId`, `TrialTerms` (версия, текст, хеш), `TrialDaysOption` | `StaysPlans.TrialSeedId`, `StaysTrialTerms`, `Stays:TrialDays` | `BathsPlans.TrialSeedId`, `BathsTrialTerms` (`baths-2026-10-09`), `Baths:TrialDays` (14) |
+| `TrialPlanId`, `TrialTerms` (версия, текст, хеш), `TrialDaysOption` | `StaysPlans.TrialSeedId`, `StaysTrialTerms`, `Stays:TrialDays` | `BathsPlans.TrialSeedId`, `BathsTrialTerms` (`baths-2026-10-10`), `Baths:TrialDays` (14) |
 | `HasHouses` (режим «к проживанию», `AvailableForHouseBookings`, сеансы в брони дома) | ✓ | — (флаг ресурса всегда `false`) |
 | `StandaloneOrdersAlwaysOn` | — (настройка компании) | ✓ (`AcceptServiceOrdersWithoutStay = true` с создания, маршрута смены нет) |
 | `RequiresCapacityToPublish` | — | ✓ |
@@ -261,6 +261,7 @@ grep'ом по `CompanyKind.Stays` на ветке; исполнитель по�
 | `CompaniesController.GetBySlug` | любой вид | `VisibleOnSalonPublicPage = false` → 404 |
 | `CompaniesController.GetKindsSummary` | 3 вида | + `baths` |
 | `CompaniesController.Update` (город «Домов») | `Kind == Stays` | без изменений (у бани город меняется) |
+| `CompaniesController.Update` (смена города/пояса «Бань», I-2) | — | **409**, если есть будущие брони (`StayServiceOrder` в Held/AwaitingPaymentCheck/Confirmed с неосвобождённым сеансом, конец которого позже «сейчас»; просроченная заявка Held не считается): `BathsLocationChangePolicy`; без броней, прошлые и отменённые — можно. Текст: «Нельзя сменить город или часовой пояс, пока есть будущие брони — …» |
 | `CompanyPhotosController` (4 места), `CompaniesController:475` | отказ `Stays` | по `HasCompanyGallery` |
 | `CompanyPhotoTexts` | `switch` | + «компании «Бани»» |
 | `CompanyMembersController` (156, 201, 208, 289, 315) | `Kind == Stays` | по `UsesStaffPositions`; тексты по виду; лимит мест салона — по `HasSalonSeatLimit` |
@@ -398,8 +399,8 @@ grep'ом по `CompanyKind.Stays` на ветке; исполнитель по�
 ### §42.5.4 Триал
 
 `StaysTrialService` → методы с вертикалью (`TrialGrants.Line`, `TrialPhoneRegistrations.Line`, `TrialPlanId`, условия).
-`BathsTrialTerms` (`Services/Baths/BathsTrialTerms.cs`): версия `baths-2026-10-09`, текст — черновик §11.7 обзора с `{N}` и
-фразой Q-L42-4 «Сообщения гостям через подключённый канал WhatsApp или MAX доступны весь пробный период.», хеш SHA-256,
+`BathsTrialTerms` (`Services/Baths/BathsTrialTerms.cs`): версия `baths-2026-10-10`, текст — черновик §11.7 обзора с `{N}` и
+фразой «Сообщения гостям в WhatsApp или MAX в пробный период не включаются: они доступны на платном тарифе» (решение 09.10.2026), хеш SHA-256,
 пометка «DRAFT until a lawyer reads it». `TrialGrant.TermsVersion/TermsTextSha256/TermsShownAtUtc/TermsAcknowledgedAtUtc` —
 как у «Домов» (Т42-10). `MailingWindowDays = 0` (механика окна рассылок — салонная). Однократность — в линейке:
 `TrialGrants (BillingAccountId, Line)` и `TrialPhoneRegistrations (Line, PhoneKeyHash)` — уникальные индексы уже с линейкой

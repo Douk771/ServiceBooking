@@ -791,7 +791,7 @@ components:
         trialTermsVersion:
           type: string
           nullable: true
-          description: Версия условий пробного периода «Бань» (baths-2026-10-09) — если владелец согласился активировать триал.
+          description: Версия условий пробного периода «Бань» (baths-2026-10-10) — если владелец согласился активировать триал.
     TrialOutcomeDto:
       type: object
       required: [granted]
@@ -1755,6 +1755,39 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/companies/{id}:
+    put:
+      tags: [baths-companies]
+      operationId: updateCompanyProfileBaths
+      summary: Профиль компании — для «Бань» смена города или часового пояса запрещена при будущих бронях (I-2).
+      description: |
+        Форма запроса и ответа прежняя (контракт цикла 26, `UpdateCompanyProfileInput` и `CompanyDto`). Изменение цикла 42 — только для `Kind = Baths`:
+        смена города или часового пояса при наличии будущих броней (Held, AwaitingPaymentCheck, Confirmed; сеанс не окончен) → 409, голая строка
+        «Нельзя сменить город или часовой пояс, пока есть будущие брони — …». Без броней, с прошедшими и отменёнными — как раньше. Запрос атомарен.
+        «Дома» и остальные виды не меняются.
+      parameters:
+        - { name: id, in: path, required: true, description: Id компании (для 409 — «Бани»)., schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Компания после сохранения (CompanyDto цикла 26).
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: У «Бани» есть будущие брони — город и пояс менять нельзя. Строка по-русски.
+          content:
+            text/plain:
+              schema: { type: string }
 
   /api/baths/companies/{companyId}/settings:
     put:
