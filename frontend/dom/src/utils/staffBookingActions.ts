@@ -1,14 +1,7 @@
 import type { StaffStayAction, StaffStayBookingCardDto, StayStaffConflictDto } from '../types'
 import { readConflict } from './stayError'
 
-/** Owner actions on a booking (API_CONTRACT_CYCLE37.md §37.30.3). The reason is shown to the GUEST — hence the wording. */
-export const REASON_MAX = 300
-export const REASON_REQUIRED_TEXT = 'Укажите причину — гость её увидит'
-
-export function reasonProblem(reason: string): string | null {
-  const r = reason.trim()
-  return r.length >= 1 && r.length <= REASON_MAX ? null : REASON_REQUIRED_TEXT
-}
+export { REASON_MAX, REASON_REQUIRED_TEXT, reasonProblem } from '@/utils/slots/slotReason'
 
 export const ACTION_LABELS: Record<StaffStayAction, string> = {
   ConfirmPayment: 'Подтвердить оплату',

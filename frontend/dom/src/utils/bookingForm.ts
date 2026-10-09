@@ -1,6 +1,6 @@
 import type { CreateStayBookingInput, PublicHouseDto, StayQuoteInput } from '../types'
 import { checkGuests } from './stayMoney'
-import type { GuestFields, GuestFieldErrors } from '@/utils/slots/guestFields'
+import type { GuestFields } from '@/utils/slots/guestFields'
 
 /** The booking form of the house page: guest counts, local checks (the server re-checks all of them), request bodies. */
 
@@ -80,20 +80,5 @@ export function toCreateInput(args: {
   }
 }
 
-/**
- * A 400 of the booking form is a bare string; this finds the field it belongs to so the text appears under that field
- * (API_CONTRACT_CYCLE37.md §37.36: «фронт показывает дословно у поля»). Unknown text stays a form-level error.
- */
-export function fieldOfBookingError(text: string): keyof GuestFieldErrors | 'arrival' | 'dates' | 'guests' | null {
-  if (/^Укажите имя|^Имя — /.test(text)) return 'name'
-  if (/номер телефона/.test(text)) return 'phone'
-  if (/^Комментарий/.test(text)) return 'comment'
-  if (/не робот/.test(text)) return 'captcha'
-  if (/^Время прибытия/.test(text)) return 'arrival'
-  if (/дат[ыа] (заезда|выезда)|формат даты|^Укажите даты/.test(text)) return 'dates'
-  if (/^(Взрослых|Детей|Собак) — /.test(text)) return 'guests'
-  return null
-}
-
-export { COMMENT_MAX, NAME_MAX, validateGuestFields } from '@/utils/slots/guestFields'
+export { COMMENT_MAX, NAME_MAX, validateGuestFields, fieldOfBookingError } from '@/utils/slots/guestFields'
 export type { GuestFields, GuestFieldErrors } from '@/utils/slots/guestFields'

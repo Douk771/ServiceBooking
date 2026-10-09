@@ -20,6 +20,17 @@ export function validateOrderFields(
   return validateGuestFields({ ...f, arrivalTime: '' }, opts)
 }
 
+/**
+ * «Сколько человек придёт, включая детей» (Т42-06) of a place with a capacity: a whole number 1…capacity, no default. Nothing else is
+ * asked (no ages, no adults/children split). null — the field is fine.
+ */
+export function guestsCountProblem(raw: string, capacity: number): string | null {
+  const text = raw.trim()
+  if (!/^\d+$/.test(text)) return `Укажите число гостей — от 1 до ${capacity}`
+  const n = Number(text)
+  return n >= 1 && n <= capacity ? null : `Укажите число гостей — от 1 до ${capacity}`
+}
+
 export function toServiceQuoteInput(pick: SessionPick, order: readonly string[]): PublicServiceQuoteInput {
   return toSelectionInput(pick, order)
 }
@@ -32,6 +43,8 @@ export function toCreateOrderInput(args: {
   quote: ServiceQuoteDto
   idempotencyKey: string
   captchaToken: string
+  /** Only for a place with a capacity (bani); a service of dom has none and the field is not sent. */
+  guestsCount?: number | null
 }): CreateServiceOrderInput {
   const { guest } = args
   return {
@@ -44,5 +57,6 @@ export function toCreateOrderInput(args: {
     expectedTotalRub: args.quote.totalRub,
     idempotencyKey: args.idempotencyKey,
     captchaToken: args.anonymous && args.captchaToken ? args.captchaToken : null,
+    ...(args.guestsCount != null ? { guestsCount: args.guestsCount } : {}),
   }
 }
