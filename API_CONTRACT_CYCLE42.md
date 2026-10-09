@@ -51,7 +51,7 @@
 | `/api/stays/*` | компания `Baths` → 404 (как и раньше для не-«Домов»; добавлен тест матрицы) |
 | `GET /api/companies/kinds-summary` | в конец: `baths: {count, siteUrl}` |
 | `GET /api/push/config`, `GET /api/push/subscriptions`, `POST /api/push/subscribe` | параметр/поле `site` принимает `Baths`; `siteUrls` получает `baths` (`https://bani.ezbook.ru`); лимит устройств — на пару (пользователь × сайт), как прежде |
-| `PUT /api/companies/{id}` (профиль компании) | у `Baths` город и пояс **меняются** (как у салона: город — из справочника, пояс — по городу или вручную). Запрет смены города — только у `Stays`, как прежде |
+| `PUT /api/companies/{id}` (профиль компании) | у `Baths` город и пояс **меняются** (как у салона: город — из справочника, пояс — по городу или вручную). Запрет смены города — у `Stays`, как прежде. **У `Baths`: 409**, пока есть будущие брони (Held, AwaitingPaymentCheck, Confirmed): «Нельзя сменить город или часовой пояс, пока есть будущие брони — …» (I-2) |
 | `GET|POST|PUT|DELETE /api/companies/{id}/photos*` (галерея компании) | `Baths` **разрешена** (фото комплекса, до 10, `CompanyPhotosSection`); `Stays` — как прежде отказ `GalleryRefusalText` |
 | `POST /api/companies/{id}/members`, `PUT …/members/{memberId}/position` | у `Baths` — только роль `Master` с должностью `Manager` («Администратор») или `Housekeeper` («Банщик»); тексты 400: «В компанию «Бани» можно добавить только сотрудника.», «Укажите должность: администратор или банщик.»; потолок — `Stays:MaxStaffPerCompany` (30), тарифного лимита мест нет |
 | `GET /api/billing/subscription?line=Baths` | новая линейка: `line = "Baths"`, блок `baths` (`resourcesPublished`, `maxResources`, `isTrial`, `trialEndsAtUtc`, `warningLevel`, `text`), `availablePlans` — активные тарифы линейки без триала, у каждого `maxResources` (у других линеек поля нет). Блок `baths` у других линеек отсутствует (`WhenWritingNull`). 404 — у пользователя нет компаний (как прежде) |
@@ -201,7 +201,7 @@
 
 Как `GET|POST /api/stays/trial` (§37.27), линейка `Baths`: тариф «Пробный период «Бани»» (фиксированный Id, §42.34.1),
 `TrialGrants.Line = Baths`, `TrialPhoneRegistrations.Line = Baths`; однократно на аккаунт и на подтверждённый номер **в
-линейке**; триалы «Записи», «Заказов», «Домов» на него не влияют. Условия — `BathsTrialTerms` (версия `baths-2026-10-09`,
+линейке**; триалы «Записи», «Заказов», «Домов» на него не влияют. Условия — `BathsTrialTerms` (версия `baths-2026-10-10`,
 текст — `LEGAL_REVIEW_CYCLE42.md` §11.7 + фраза о канале сообщений, §42.34.2), хеш и время показа/принятия — в `TrialGrant`.
 Коды отказов и тексты — как у «Домов», с линейкой «Бани»: `TrialNotOffered`, `TrialAlreadyActive`, `AlreadyOnPaidPlan`,
 `TrialAlreadyUsed`, `PhoneNotVerified`, `PhoneVerificationUnavailable`, `TrialUniquenessCheckUnavailable`,
@@ -344,11 +344,11 @@
 | `0c42ba70-6a3d-4a5e-9b1f-2d4c7e8a9b04` | «Пробный период «Бани»» | 0 ₽ | null | нет | **да**, 14 дней (`Baths:TrialDays`) |
 
 Цены — **начальные значения по образцу «Домов»**; окончательные называет заказчик (`ARCHITECTURE_CYCLE42.md` §42.17 п. 1).
-`IsPublic = false` у всех: `/api/pricing` линейку не отдаёт (Т42-14). Опция канала `notifications.whatsapp` разрешена **всем
-четырём**, включая триал (Q-L42-4).
+`IsPublic = false` у всех: `/api/pricing` линейку не отдаёт (Т42-14). Опция канала `notifications.whatsapp` разрешена строками всех
+четырёх планов, но триал мессенджер **не включает** (решение 09.10.2026, Q-L42-4 отменён; строка триала — мёртвые данные).
 
 ### §42.34.2 Пробный период — §42.27.4. Текст условий (`BathsTrialTerms.Text(days)`) — черновик юриста §11.7 + фраза
-«Сообщения гостям через подключённый канал WhatsApp или MAX доступны весь пробный период.» (Q-L42-4). Помечен в коде
+«Сообщения гостям в WhatsApp или MAX в пробный период не включаются: они доступны на платном тарифе.» (решение 09.10.2026). Помечен в коде
 «DRAFT until a lawyer reads it».
 
 ### §42.34.3 Гейт приёма броней «Бани»
