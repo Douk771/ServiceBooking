@@ -141,9 +141,9 @@ public class Cycle42TariffTrialTests(TestDatabaseFixture fixture) : Cycle39TestB
         open.Eligible.Should().BeTrue();
         open.RefusalCode.Should().BeNull();
         open.DurationDays.Should().Be(14);
-        open.TermsVersion.Should().Be("baths-2026-10-09", "у «Бань» своя редакция условий, не «Домов»");
+        open.TermsVersion.Should().Be("baths-2026-10-10", "у «Бань» своя редакция условий, не «Домов»");
         open.TermsVersion.Should().NotBe(StaysTrialTerms.Version);
-        open.TermsText.Should().Contain("«Бани»").And.Contain("14 дней").And.Contain("Сообщения гостям через подключённый канал WhatsApp или MAX доступны весь пробный период.");
+        open.TermsText.Should().Contain("«Бани»").And.Contain("14 дней").And.Contain("в пробный период не включаются").And.NotContain("доступны весь пробный период");
 
         (await AnonymousClient().GetAsync("/api/baths/trial")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }

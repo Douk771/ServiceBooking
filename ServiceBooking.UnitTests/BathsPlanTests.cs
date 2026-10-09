@@ -127,11 +127,11 @@ public class BathsPlanTests
     }
 
     [Fact]
-    public void Baths_trial_terms_name_the_line_the_days_and_the_messenger_channel()
+    public void Baths_trial_terms_name_the_line_the_days_and_exclude_the_messenger()
     {
         var text = BathsTrialTerms.Text(14);
         text.Should().Contain("линейки «Бани» — 14 дней");
-        text.Should().Contain("Сообщения гостям через подключённый канал WhatsApp или MAX доступны весь пробный период.");
+        text.Should().Contain("в пробный период не включаются").And.NotContain("доступны весь пробный период");
         text.Should().NotContain("«Дома»").And.NotContain("ваши дома");
         BathsTrialTerms.Sha256.Should().MatchRegex("^[0-9a-f]{64}$");
     }
