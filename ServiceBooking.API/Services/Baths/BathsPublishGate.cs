@@ -10,7 +10,7 @@ namespace ServiceBooking.API.Services.Baths;
 /// <summary>
 /// API_CONTRACT_CYCLE42.md §42.29 — the tariff check of publishing a «Бани» resource (402). Pure <see cref="Check"/> + the loading of the subscription and of the count of
 /// published resources of the account (all «Бани» companies). Must run under the lock <c>billing-account:{accountId}</c>.
-////// </summary>
+/// </summary>
 public class BathsPublishGate(StaysPlanResolver plans, IStaysClock clock)
 {
     public const string NoPlanText = "Выберите тариф или активируйте пробный период, чтобы опубликовать баню";
