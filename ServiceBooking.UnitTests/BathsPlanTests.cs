@@ -108,7 +108,7 @@ public class BathsPlanTests
     }
 
     [Fact]
-    public void A_transport_without_a_row_is_not_routable_even_inside_a_baths_trial()
+    public void A_transport_without_a_row_is_not_routable_even_with_an_active_services_trial_end_date()
     {
         var closed = new TransportOptionState(false, false, null);
         var state = AccountMessagingReader.BuildTransport(NotificationTransport.Max, null, Now.AddDays(5), NoServicesSubscription, Now, [], closed, true);

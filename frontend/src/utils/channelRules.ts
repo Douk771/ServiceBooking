@@ -266,7 +266,7 @@ export function evaluateWizardStep(f: WizardFacts): { wizardStep: WizardStep; ca
 
 // ---------- §40.10 «Рассылки работают» ----------
 
-export type OfferKind = 'Services' | 'Orders' | 'Stays'
+export type OfferKind = 'Services' | 'Orders' | 'Stays' | 'Baths'
 
 export interface OfferInput {
   platformEnabled: boolean
@@ -279,7 +279,7 @@ export interface OfferInput {
   transports: Partial<Record<Transport, { routable: boolean; working: boolean }>>
 }
 
-const OFFER_NOUN: Record<OfferKind, string> = { Services: 'записи', Orders: 'заказе', Stays: 'брони' }
+const OFFER_NOUN: Record<OfferKind, string> = { Services: 'записи', Orders: 'заказе', Stays: 'брони', Baths: 'брони' }
 
 export function evaluateCustomerOffer(i: OfferInput): { offered: boolean; transports: Transport[]; checkboxLabel: string | null } {
   const none = { offered: false, transports: [] as Transport[], checkboxLabel: null }
