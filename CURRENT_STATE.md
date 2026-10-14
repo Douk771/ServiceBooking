@@ -1,11 +1,39 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-> **Цикл 40 «Упрощение каналов рассылок (WhatsApp / MAX)» в `develop` НЕ влит.** Правка этого файла сделана в worktree ветки
-> `cycle/040-simplify-notification-channels` на `4d65578`; в ветку уже влит `origin/develop` = `4741843` (циклы 38, 41, 39 и их
-> закрывающие документы — мердж `ce5a428`). После мерджа в `develop` хеш в отметке ниже заменить на хеш мерджа.
+> **Цикл 42 «Бани» (bani.ezbook.ru) в `develop` НЕ влит.** Правка этого файла сделана в worktree задачи `task/c42-doc-2` от
+> `origin/cycle/042-bani` = `d000673`. Цикл 40 **влит** в `develop` (мердж `0bd2225`, фикс Designer `15259d7`, мердж `b6470ba` =
+> `origin/develop`), и `develop` целиком влит в ветку цикла 42 мерджем `41a9279` (✔ `git merge-base --is-ancestor b6470ba HEAD`). После
+> мерджа цикла 42 в `develop` хеш в отметке ниже заменить на хеш мерджа.
 
-**Актуально по состоянию на коммит: `0bd2225` (мердж `cycle/040-simplify-notification-channels` в `develop`, 2026-10-09; содержимое проверялось на `9eb50c1`; база — `origin/develop` = `4741843`), дата: 2026-10-09.**
-**Следующий diff отсчитывайте от коммита мерджа цикла 40 в `develop`: `0bd2225`.**
+**Актуально по состоянию на коммит: `d000673` (ветка `cycle/042-bani`, до мерджа в `develop`; база — `origin/develop` = `b6470ba`), дата: 2026-10-14.**
+**Следующий diff отсчитывайте от коммита мерджа цикла 42 в `develop` (до мерджа — от `d000673`).**
+
+**Обновление на `d000673`** (✔ `git log 4741843..HEAD`: 196 коммитов без мерджей, по первому родителю — мерджи задач `task/c42-*` и
+мердж `41a9279` «origin/develop (цикл 40) → cycle/042-bani»; `git diff --stat 0bd2225...HEAD`: 469 файлов, +50 825/−7 671, из них
+крупные генераты — `20261009120658_Cycle42Baths.Designer.cs`, снапшот, `contracts/cycle42/openapi.json`, `api-cycle42.generated.ts`;
+**codebase-analyst ничего не запускал** — ни тесты, ни сборку, ни `redocly`, ни смоуки, ни `test-bani-masking.sh`). Это **цикл 42
+«Бани» — бронирование бань по часам на четвёртом сайте `bani.ezbook.ru`**: новый вид компании `CompanyKind.Baths = 3`, слотовый
+движок цикла 39 переиспользован без копий (абстрактные базы контроллеров `Controllers/Slots/*Base` + наследники «Домов» и «Бань»,
+вертикаль данными — `SlotVertical`/`ServiceWording`/`CompanyKindTraits`), своя линейка тарифов и триал без мессенджера, вместимость и
+число гостей, напоминание перед сеансом (тип 41), мягкий фильтр алкоголя/табака в позициях с журналом подтверждений (для обоих
+префиксов), запрет смены города/пояса при будущих бронях, четвёртое фронтенд-приложение `frontend/bani`, vhost и `DEPLOY.md` §32.
+Источник намерения — `SPEC_CYCLE42_BANI.md` (корневой `SPEC.md` по-прежнему спека цикла 40), `ARCHITECTURE_CYCLE42.md` (§42.0a —
+решения заказчика 09.10.2026 и требования юриста Т42-01…17 приоритетнее SPEC), `API_CONTRACT_CYCLE42.md` (§42.20–§42.39),
+`LEGAL_REVIEW_CYCLE42.md`, `BRIEF_CYCLE42_BANI.md`, раздел «Цикл 42» `TEST_CATALOG.md`, `DEPLOY.md` §32. Где документы расходятся с
+кодом, записано по коду (§5.17, §9.12). Обновлены: шапка, §0 (ветки), §1, §2, §3 (блок «Бани — цикл 42»), §4 (блок «Бани — цикл 42»,
+462 строки эталона), §5.1, §5.5 (строка «Цикл 42»), §5.6, §5.16 и §9.11 (статус цикла 40 — влит; C40-14, C40-15), §5.17 (новый),
+§6.1, §6.2, §7.1–§7.4, §9.12 (переписан и перенесён после §9.11), §10. `CHANGELOG.md` и `README.md` в этой задаче не правились (их правит
+другой агент; на `d000673` раздела цикла 42 в них нет).
+- **Нумерация.** Цикл 42 получил **§5.17** и **§9.12**; раздел выката — `DEPLOY.md` **§32** (§31 — цикл 40, ✔ в `DEPLOY.md` теперь один
+  `## 29.`). Значения `NotificationType` 39–40 по-прежнему не заняты; цикл 42 взял **41** (R42-10 сверено: цикл 40 `NotificationType` не менял).
+- **Архив документов.** `docs/history/` нет — переносить нечего; документы цикла лежат в корне (`*_CYCLE42*.md`, §10.5). Корневой
+  `SPEC.md` — спека цикла 40 (✔ `head`), спека цикла 42 — только `SPEC_CYCLE42_BANI.md`.
+- **Машина** (🖥, в репозитории не проверяемо): по `DEPLOY.md` §32 «на машину ничего не выкатывалось»; DNS, vhost, certbot и домен в
+  SmartCaptcha для bani — ручные шаги заказчика, их статус не виден. Статус выката цикла 40 на бой в репозитории тоже не виден.
+
+*Ниже — шапка прежнего обновления (цикл 40), сохранена для истории.*
+
+**Прежняя отметка: `0bd2225` (мердж `cycle/040-simplify-notification-channels` в `develop`, 2026-10-09; содержимое проверялось на `9eb50c1`; база — `origin/develop` = `4741843`), дата: 2026-10-09.**
 
 **Обновление на `4d65578`** (✔ `git log origin/develop..HEAD`: 56 коммитов; `git diff --stat origin/develop...HEAD`: 253 файла,
 +35 071/−4 320, из них ~17 600 строк генератов и эталонов (`Cycle40ChannelOptions.Designer.cs` — 6 279, `contracts/cycle40/openapi.yaml` +
@@ -224,6 +252,10 @@ GUID тарифов `5a1e0c38…`). Подразделы цикла 38 полу�
 - 🖥 — факт о боевой машине. В репозитории его нет, в этом сканировании он не проверялся (SSH не использовался).
   Источник — прежняя редакция, блок «🚀20», проверено по SSH 30.09.2026.
 
+**Ветки на `d000673`** (✔ локальные ссылки, 2026-10-14; `git fetch` не делался): `origin/develop` = `b6470ba` (мердж цикла 40
+`0bd2225` + фикс Designer миграции `Cycle40ChannelOptions` `15259d7`, мердж `b6470ba`). Ветка `origin/cycle/042-bani` = `d000673` —
+в неё влит весь `develop` (мердж `41a9279`), в `develop` **не влита**; эта правка — worktree `ServiceBooking-c42-doc-2`, ветка
+`task/c42-doc-2`. Ориентиры: 1 704 коммита, 3 158 отслеживаемых файлов (✔ `git rev-list --count HEAD`, `git ls-files`).
 **Ветки на `4d65578`** (✔ локальные ссылки, 2026-10-09; `git fetch` не делался): `origin/develop` = `4741843` (мердж
 `docs/cycle39-closing`: этот файл, CHANGELOG и README после цикла 39). Ветка `cycle/040-simplify-notification-channels` = `4d65578` —
 56 коммитов поверх `origin/develop` (внутри — мердж `ce5a428` «origin/develop (циклы 38, 39, 41) → cycle/040» и мерджи задач `task/c40-*`),
@@ -311,7 +343,12 @@ fast-forward, мерджа нет). Локальная `cycle/035-goods-showcase
 Решения (`.sln`): `ServiceBooking.Core`, `.Infrastructure`, `.API`, `.LegalKit` (CLI правовых текстов), `.TestKit`
 (библиотека и CLI тестовой инфраструктуры), `.UnitTests`, `.Tests`. Файла `global.json` и `Directory.Packages.props` нет.
 
-### Фронтенд (`frontend/`, один npm-пакет; с цикла 37 — три приложения: ezbook, goods, dom)
+### Фронтенд (`frontend/`, один npm-пакет; с цикла 37 — три приложения: ezbook, goods, dom; с цикла 42 — четыре, + bani)
+**С цикла 42** (✔ `package.json` на `d000673`) **новых npm-зависимостей нет**; добавлены конфиги четвёртого приложения
+`vite.bani.config.ts` (порт `SB_BANI_WEB_PORT`, по умолчанию 5176), `tsconfig.bani.json`, `tailwind.bani.config.js` (+ `.d.ts`) и скрипты
+`dev:bani`, `build:bani` (`tsc -p tsconfig.bani.json && vite build --config vite.bani.config.ts`), `types:api:cycle42`; `build:release` =
+`build` + `build:goods` + `build:dom` + `build:bani` + `node scripts/merge-site-dist.mjs goods dom bani` (bani ложится в `dist/__bani`).
+Новых NuGet тоже нет; API встраивает `contracts/cycle42/bani-routes.json` как ресурс (`BathsSlugPolicy`).
 С цикла 37 (✔ `package.json` на `a7e3168`) **новых npm-зависимостей нет**; добавлены конфиги третьего приложения
 `vite.dom.config.ts`, `tsconfig.dom.json`, `tailwind.dom.config.js` (+ `.d.ts`) и скрипты `dev:dom` (порт 5175), `build:dom`,
 `types:api:cycle37`; `build:release` = `build` + `build:goods` + `build:dom` + `node scripts/merge-site-dist.mjs goods dom`.
@@ -387,6 +424,13 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 сообщении больше **не влияет** (решает `MessengerConsentRule`, §5.16), но по-прежнему проверяется на старте — ради отката. Состояние боя по
 каналам: живой отправки через GREEN-API не было ни разу (§9.11 C40-1).
 
+**Цикл 42 и интеграции** (✔ по коду на `d000673`): новых интеграций, хранилищ и обязательных переменных нет. Новое в `appsettings.json`:
+секция `Baths` (`TrialDays: 14`, `CatalogCacheSeconds: 30`) и `PublicSites:BathsBaseUrl = https://bani.ezbook.ru` (в `.env.production.example`
+— закомментированная `PublicSites__BathsBaseUrl`; `DeploymentSafetyChecks` в проде требует `https://`). Бани ездят на тех же каналах, что
+услуги «Домов»: push гостю (`IWebPushSender`, заголовок «EZBOOK Бани»), WhatsApp/MAX гостю (флаг `StaysSettings.GuestMessengerEnabled` + галочка
+брони + оплаченный номер аккаунта по правилам цикла 40), push и MAX персоналу. SmartCaptcha — тот же ключ сборки, домен `bani.ezbook.ru`
+в консоли Яндекса — ручной шаг заказчика (🖥 статус не виден).
+
 **Интеграций, которых нет** (✔): платёжного шлюза нет — ни YooKassa, ни Robokassa, ни других. Предоплата — флаг
 `Company.RequirePrepayment` и `PaymentStatus.Pending`, в «Оплачено» запись переводит персонал
 (`PATCH /api/bookings/{id}/mark-paid`). Тарифы назначает суперадмин вручную по заявке. **Отправки e-mail нет**: SMTP и
@@ -399,7 +443,7 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | Путь | Что там |
 |---|---|
 | `ServiceBooking.Core/` | `Entities/` (67 файлов, POCO-сущности), `Enums/` (47). Зависит только от `Microsoft.AspNetCore.Identity.EntityFrameworkCore` |
-| `ServiceBooking.Infrastructure/` | `Data/AppDbContext.cs` (1 086 строк, вся Fluent-конфигурация) и `Migrations/` (79 миграций + снапшот; последняя — `Cycle28ShowcaseMarks`, цикл 28). **На `a7e3168`** (✔ `wc -l`, `ls`): `AppDbContext.cs` — 1 338 строк, 81 строка с `DbSet<`; 80 миграций, последняя — `20261008070135_Cycle37Stays`. `Core/Entities` — 74 файла, `Core/Enums` — 49 (+`StaysEnums.cs`). **На `5bcd015`** (✔): `AppDbContext.cs` — 1 579 строк, 92 строки с `DbSet<`; 81 миграция, последняя — `20261008220221_Cycle39StaysServices`; `Core/Entities` — 75 файлов (новый `StayService.cs` — все сущности услуг в одном файле). **На `4d65578`** (✔): `AppDbContext.cs` — 1 595 строк, 93 строки с `DbSet<` (+`ChannelOptionChangeLogs`); 82 миграции, последняя — `20261009100000_Cycle40ChannelOptions`; `Core/Entities` — 76 файлов (+`ChannelOptionChangeLog.cs`), `Core/Enums` — 51 (+`ChannelTestResult.cs`, `ChannelOptionChangeSource.cs`) |
+| `ServiceBooking.Infrastructure/` | `Data/AppDbContext.cs` (1 086 строк, вся Fluent-конфигурация) и `Migrations/` (79 миграций + снапшот; последняя — `Cycle28ShowcaseMarks`, цикл 28). **На `a7e3168`** (✔ `wc -l`, `ls`): `AppDbContext.cs` — 1 338 строк, 81 строка с `DbSet<`; 80 миграций, последняя — `20261008070135_Cycle37Stays`. `Core/Entities` — 74 файла, `Core/Enums` — 49 (+`StaysEnums.cs`). **На `5bcd015`** (✔): `AppDbContext.cs` — 1 579 строк, 92 строки с `DbSet<`; 81 миграция, последняя — `20261008220221_Cycle39StaysServices`; `Core/Entities` — 75 файлов (новый `StayService.cs` — все сущности услуг в одном файле). **На `4d65578`** (✔): `AppDbContext.cs` — 1 595 строк, 93 строки с `DbSet<` (+`ChannelOptionChangeLogs`); 82 миграции, последняя — `20261009100000_Cycle40ChannelOptions`; `Core/Entities` — 76 файлов (+`ChannelOptionChangeLog.cs`), `Core/Enums` — 51 (+`ChannelTestResult.cs`, `ChannelOptionChangeSource.cs`). **На `d000673`** (✔): `AppDbContext.cs` — 1 628 строк, 95 строк с `DbSet<` (+`BathsSubscriptions`, `StayServiceItemConfirmations`); 83 миграции, последняя — `20261009120658_Cycle42Baths` (после `20261009100000_Cycle40ChannelOptions`); `Core/Entities` — 76 файлов (новых файлов нет: `BathsSubscription` + `BathsPlans` дописаны в `StaysSubscription.cs`, `StayServiceItemConfirmation` — в `StayService.cs`), `Core/Enums` — 51 |
 | `ServiceBooking.API/` | Веб-приложение, в нём же **вся бизнес-логика** (отдельного слоя Application нет) |
 | `ServiceBooking.API/Program.cs` | **Точка входа**, 48 строк — только порядок вызовов расширений |
 | `ServiceBooking.API/Startup/` | Инфраструктура запуска: `ApiExtensions` (MVC/JSON/CORS/Swagger/обработчик 500/раздача загрузок), `AuthenticationExtensions` (JWT, `OnTokenValidated`), `ApplicationServicesExtensions` (DI прикладных сервисов, фоновые задачи, подтверждение телефона), `NotificationServicesExtensions` (транспорты, реестры, Web Push), `RateLimitingExtensions`, `DeploymentValidationExtensions` (fail-fast проверки прод-конфигурации), `HealthEndpointsExtensions` (`/api/health/live`, `/api/health/ready`), `LoggingExtensions`, `StartupSeedingExtensions` (миграции, роли, суперадмин) |
@@ -425,6 +469,13 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | `contracts/cycle40/` | **Цикл 40.** `openapi.yaml` (OpenAPI 3.0.3, 3 227 строк: новые маршруты каналов и админки + изменённые ответы; с `x-examples` для prism-мока — валидатор `OpenApiContract.cs` их пропускает как аннотацию) + `openapi.json`; `channel-vectors.json` (version 2) — один эталон правил для C# (`ServiceBooking.UnitTests/Cycle40/ChannelVectorsTests.cs`) и TS (`frontend/src/utils/channelRules.test.ts`): `availability` 12, `optionFunding` 16, `routing` 17, `consent` 20, `display` 62, `wizardStep` 25, `offer` 16, `addons` 10 кейсов |
 | `frontend/src/components/notifications/` | **Цикл 40** (§5.16): общий для ezbook, goods и dom блок «Номера» — `NumbersBlock`, `NumberRow` (статус, кнопка по `action`, меню «Заменить номер»/«Отвязать»), `ConnectWizard` (шаги `Payment`/`Terms` — одна форма `TermsStep`, `Qr` — `QrStep`, `Done`, информационные `PaymentPending`/`Unavailable`/`None`), `numbersTexts.ts`; согласие клиента — `MessengerOptIn` (+ хук `src/hooks/useMessengerOptInDefault.ts`, `useMessengerLegalText.ts`, чистые `src/utils/messengerOptIn.ts`), `StaffMessengerConsentCheckbox`; правила — `src/utils/channelRules.ts` (TS-двойник по `channel-vectors.json`); API — `src/api/notificationNumbers.ts` (`overview`, админская карточка, `confirm-payment`). `ChannelBreachBanner.tsx` — старый (цикл 19), не менялся. Удалены `AssignCompanyDialog`, `ChannelRequestModal` (+ тест), `QrModal`, `RiskAcceptanceModal` и `src/pages/owner/NotificationsSection.tsx` |
 | `deploy/checks/cycle40-*.sql` | **Цикл 40** (DO-40-01): `cycle40-channels-report.sql` — отчёт до выката, только чтение, 5 блоков, блок 1 — стоп-сигнал (ненулевой → ошибка psql); `cycle40-rollback-assignments.sql` — запись, только при откате релиза: назначает каждую активную компанию на первый живой канал каждого транспорта аккаунта. Результатов прогона на копии боя в репозитории нет (§9.11 C40-13) |
+| `ServiceBooking.API/Services/Slots/` | **Цикл 42.** Общее для двух слотовых вертикалей («Дома»-услуги и «Бани»), всё чистое, кроме писателя: `SlotVertical.cs` (record вертикали + `SlotVerticals.Stays/Baths/Find/Get/IsSlotKind`), `ServiceWording.cs` (слова и тексты вертикали; `Stays` — прежние строки байт-в-байт), `GuestsCountRules`, `RestrictedItemFilter` (основы алкоголя/табака), `OwnerTextChecks` (400 на «задаток/невозвратн/депозит» + мягкие предупреждения), `SessionReminderPolicy`, `ServiceItemWriter` — **единственный писатель** позиций услуг и журнала `StayServiceItemConfirmations` |
+| `ServiceBooking.API/Services/Baths/` | **Цикл 42.** 9 файлов: `BathsCatalogService` (кеш «базы» 30 с), `BathsCompanyService`, `BathsScheduleService` (расписание банщика), `BathsMyOrdersService` («Мои брони»), `BathsPublishGate` (402 при публикации ресурса сверх тарифа), `BathsSlugPolicy` (по `bani-routes.json`), `BathsLocationChangePolicy`, `BathsTrialTerms`, `BathsOptions`. `Services/Companies/CompanyKindTraits.cs` — таблица свойств всех четырёх видов компании |
+| `ServiceBooking.API/Controllers/Slots/`, `Controllers/Baths/` | **Цикл 42.** Пять **абстрактных** баз без атрибутов класса (`SlotServicesPublicControllerBase`, `SlotServiceOrdersPublicControllerBase`, `SlotServicesCabinetControllerBase`, `SlotSessionsControllerBase`, `SlotCompanySettingsControllerBase`; `protected abstract SlotVertical Vertical`). Наследники «Домов» — прежние классы `Controllers/Stays/` с прежними `[Route]`; наследники «Бань» — `Controllers/Baths/` (7 классов: `BathsServicesPublicController`, `BathServiceOrdersPublicController`, `BathsServicesController`, `BathsSessionsController`, `BathsCompaniesController` + не наследники `BathsPublicController`, `BathsTrialController`). DTO — `DTOs/Baths/` (`BathsCompanyDtos.cs`, `BathsPublicDtos.cs`) |
+| `frontend/bani/` | **Цикл 42.** Приложение **bani.ezbook.ru** («Бани»). Точка входа — `bani/src/main.tsx` → `BaniApp.tsx` (маршруты по `contracts/cycle42/bani-routes.json`, обёртка `SlotVerticalProvider(bathsVertical)`); `bani/index.html` с `noindex`, `bani/public/` (свой `sw.js` без `fetch`/Cache API, манифест «EZBOOK Бани», иконки). Внутри `bani/src/`: `vertical.ts`, `api/`, `landing/` (конфиг главной и FAQ), `components/` (каталог), `cabinet/` (тексты кабинета, `providerForm`, `trialOutcome` — дубли dom, C42-6), `hooks/`, `pages/` (7 страниц) и `pages/cabinet/` (15 страниц, в т. ч. `SchedulePage` банщика), `utils/` (`baniTexts.ts` — запасные правовые тексты, `guestStorage.ts`), guard-тесты (`guestCopy`, `brand`, `legalKeys`, `sharedSources`, `workerRouting`, `baniRoutes`, `baniApp.routes`); 32 файла `*.test.ts(x)` |
+| `frontend/src/components/slots/`, `src/utils/slots/`, `src/hooks/slots/`, `src/api/slots.ts` | **Цикл 42** (FE-42-1a/1b): общий код услуг, **перенесённый** из dom: контекст `SlotVerticalContext.tsx` (`SlotVerticalProvider`, без провайдера — понятная ошибка), `ui/`, `services/`, `views/` (тела страниц как компоненты), утилиты (`businessClock`, `serviceDay`, `serviceForms`, `serviceGuests`, `slotTexts`, `ownerWarnings`…), фабрика API `createSlotApi('/stays' | '/baths')`. В dom остались тонкие реэкспорты-прокладки и специфика домов |
+| `contracts/cycle42/` | **Цикл 42.** `openapi.yaml` (OpenAPI 3.0.3, 2 925 строк: 57 путей `/api/baths/*` + 7 изменённых существующих путей) + `openapi.json`; `bani-routes.json` (маршруты bani, политика адресов компании и ресурса, резерв — встраивается в API); `bani-vectors.json` (эталон `sessionReminder`, `guests`, `restrictedItems` + `stems`, `ownerText`, `gate` для C# и TS) |
+| `deploy/nginx/bani.ezbook.conf`, `test-bani-masking.sh` | **Цикл 42** (DO-42-01): vhost четвёртого сайта (корень `current/__bani`, лог `bani.access.log` с маской токенов с первого коммита, `noindex`), скрипт проверки маскирования (идёт в CI). В `ezbook.conf` и `demo.visit.ezbook.conf` — `/__bani/` → 404, в `dom.ezbook.conf` маска дополнена `api/baths/service-orders/public` |
 | `tools/bench/cycle39/` | **Цикл 39** (US-39-23): `bench_catalog.py` + `README.md` — замер p95 каталога dom на 500 домах; **ни разу не прогонялся** (§9.10) |
 | `frontend/scripts/contracts-to-json.mjs` | Цикл 31: `npm run contracts:json` — `contracts/<цикл>/openapi.yaml` → `openapi.json` через `js-yaml`. Список циклов в скрипте на `2834e00` — `['cycle31', 'cycle32']`; **`cycle33` в нём нет** (§5.10, §9.1 C33-1) |
 | `frontend/goods-shared-sources.js` (+ `.d.ts`) | Цикл 31: **единый список** ezbook-исходников, которые можно импортировать из goods. Из него строятся `content` в `tailwind.goods.config.js` и регэксп ESLint; полноту списка проверяет guard-тест `goods/src/sharedSources.guard.test.ts` (§5.8, §6.2) |
@@ -466,6 +517,15 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
 
 Аккаунт общий, у трёх линеек тарифов (`SubscriptionPlanConfig.Line` типа `CompanyKind`: `Services`, `Orders`, `Stays`) раздельные подписки и
 лимиты.
+
+**С цикла 42 — четыре продукта** (✔ `CompanyKind.cs` на `d000673`): + «Бани» (`CompanyKind.Baths = 3`, bani.ezbook.ru) и четвёртая линейка
+тарифов `Baths` (своя таблица подписок `BathsSubscriptions`). Свойства видов собраны в одну таблицу `CompanyKindTraits` (`switch` по всем
+значениям с `UnreachableException`; `CompanyKindTraitsTests` и `CompanyKindExhaustiveTests` перебирают enum): `IsSalon`, текст отказа
+салонных маршрутов, видимость на `GET /api/companies/{slug}` (у бань — 404), галерея компании (у бань есть, у «Домов» нет), должности
+персонала, лимит мест салона, фиксированный город (только «Дома»), сайт и адрес страницы, линейка, подписи. Салонные маршруты отвечают
+бане 409 «Это компания «Бани»: записи, услуги и расписание для неё недоступны.»; маршруты заказов и `/api/stays/*` бани не видят (404),
+`/api/baths/*` не видят остальные виды (матрица `Cycle42IsolationTests`, CY42-01…09). Страж `CompanyKindBranchGuardTests` расширен на
+тернарники по `CompanyKind.(Orders|Stays|Baths)`.
 
 **Процесс в фоне один.** Фоновые задачи крутит `ScheduledTaskRunner` (hosted service) внутри API. Очередей и брокеров
 нет, отдельного worker-процесса нет.
@@ -701,6 +761,43 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
 - **Откат `Down()`**: `RAISE EXCEPTION`, если на `notifications.max` уже есть `AccountSubscriptionOptions`; иначе удаляет таблицу, колонки,
   индекс и строку опции. По `DEPLOY.md` (§31) схему назад не откатывают — откатывают релиз и запускают
   `deploy/checks/cycle40-rollback-assignments.sql`. Функционального теста наката/отката (как CY37-140, CY39-140) у цикла 40 **нет**.
+
+**«Бани» — цикл 42, миграция `20261009120658_Cycle42Baths`** (✔ по миграции, `Entities/StaysSubscription.cs`, `Entities/StayService.cs`,
+`AppDbContext` на `d000673`; форма — `ARCHITECTURE_CYCLE42.md` §42.2). Миграция одна, создана поверх модели цикла 40: метка времени позже
+`Cycle40ChannelOptions` (`20261009100000`), Designer-снимок содержит `ChannelOptionChangeLog` (✔ grep) — то есть пересобран после мерджа
+`develop` (R42-10 закрыт). Up — **только добавления**; Down удаляет данные линейки 3 и обе таблицы/пять столбцов, но **не** трогает
+компании `Kind = 3`, устройства `Site = 3`, брони и ресурсы банных компаний (откат при живых банях — только с `pg_dump` и после ручного
+удаления компаний, `DEPLOY.md` §32; после отката кода на них упадёт первый `switch` по виду). Накат → откат → накат поверх
+`Cycle40ChannelOptions` проверяет **CY42-140** (`Cycle42MigrationRollbackTests`).
+- **Вид компании — `CompanyKind.Baths = 3`**: обычная `Company`; хранится в уже существующих `int`-столбцах (`Companies.Kind`,
+  `SubscriptionPlanConfigs.Line`, `TrialGrants.Line`, `TrialPhoneRegistrations.Line`, `PushSubscriptions.Site`, `SubscriptionChangeLogs.Line`,
+  `BillingAccounts.RequestedLine`) — схема под вид не менялась. Город — из справочника (новых городов нет), пояс — по городу или вручную.
+  **Таблицы «Домов» переиспользуются как есть**: ресурс бани = строка `StayServices`, бронь = `StayServiceOrders` + сеанс `StayServiceSessions`
+  (родитель — только заказ), настройки компании — та же `StaysSettings` (`AcceptServiceOrdersWithoutStay = true` с создания, напоминание
+  перед сеансом по умолчанию 3 ч — `CompanyCreationService`). Домов, броней домов и блокировок у бань нет.
+- **Новые таблицы (2):** `BathsSubscriptions` (форма `StaysSubscriptions` один-в-один: `BillingAccountId` уникален, FK `Cascade`; `PlanConfigId`
+  FK `SetNull`; `PaidUntil`, `IsActive`, `UpdatedByUserId`) и **`StayServiceItemConfirmations`** — append-only журнал подтверждений «это не
+  алкоголь и не табак»: `CompanyId` (FK **`Restrict`**), `ServiceId` (**nullable**, FK `SetNull`), **`ServiceNameSnapshot varchar(100)`**,
+  `ItemId` (nullable, FK `SetNull`), `ItemNameSnapshot varchar(100)`, `MarkersHit varchar(200)`, `NoticeKey varchar(64)`, `NoticeVersion
+  varchar(80)`, `ConfirmedByUserId varchar(450)`, `ConfirmedByNameSnapshot varchar(200)`, `ConfirmedAtUtc`, `IpAddress varchar(64) NULL`;
+  индексы `(ServiceId, ConfirmedAtUtc)`, `CompanyId`, `ItemId`. ⚠️ Отличие от `ARCHITECTURE_CYCLE42.md` §42.2.2 (там `ServiceId` FK `Cascade`,
+  без снимка имени ресурса) — исправлено по ревью (M-5, `09158ab`): журнал переживает удаление ресурса и позиции. Пишет **только**
+  `ServiceItemWriter`; retention нет (живёт, пока жива компания). Обе таблицы — в `ShowcaseOwnership.NeverWritten`.
+- **Новые столбцы:** `SubscriptionPlanConfigs.MaxResources int NULL` (только линейка `Baths`), `StayServices.Capacity int NULL` + CHECK
+  `CK_StayServices_Capacity` (1…30), `StayServiceOrders.GuestsCount int NULL` + CHECK `CK_StayServiceOrders_GuestsCount` (1…30, снимок),
+  `StayServiceOrders.SessionReminderAtUtc timestamptz NULL` (однократность напоминания), `StaysSettings.ServiceReminderHours int NULL` + CHECK
+  `CK_StaysSettings_ServiceReminderHours` (1…24; NULL — выключено, у всех «Домов» NULL).
+- **Перечисления** (дописыванием): `NotificationType.ServiceGuestSessionReminder = 41` (в `NotificationTypeCatalog.ServiceTypes`),
+  `StayServiceOrderEventKind.SessionReminderSent = 10`; в API — `NotAcceptingReason.OverResourceLimit`, коды 409 `ServiceNoCapacity`,
+  `ItemRestrictedConfirmationRequired`; восемь ключей `LegalTextKey.Bath*` **вне** `All`.
+- **Данные миграцией** (идемпотентно, фиксированные Id `0c42ba70-6a3d-4a5e-9b1f-2d4c7e8a9b01…04`, `Line = 3`, `IsPublic = false`):
+  «Одна баня» 200 ₽ (`MaxResources = 1`), «До 3 бань» 500 ₽ (3), «Без ограничения» 1 000 ₽ (NULL), «Пробный период «Бани»» 0 ₽ —
+  **`IsSystemTrial = false`** (уникальный индекс `IX_SubscriptionPlanConfigs_IsSystemTrial` занят триалом «Записи»; триал «Бань» ищется по
+  `BathsPlans.TrialSeedId`, как триал «Домов»). У всех `AllowNotificationChannel = true` и строка `PlanOptionRules` опции `notifications.whatsapp`
+  (Availability 2) — по правилам цикла 40 это **мёртвые данные** (§9.12 C42-9). Строк для `notifications.max` миграция не создаёт.
+- **Инварианты** (кодом, §42.2.7): опубликованный ресурс бани имеет `Capacity` (иначе 409 `ServiceNoCapacity`, в т. ч. при попытке снять
+  вместимость у опубликованного — BUG-C42-QA-3 исправлен); `Capacity` задана ⇒ `1 ≤ GuestsCount ≤ Capacity` при создании; у ресурса бани
+  `AvailableForHouseBookings = false`; строки услуг бывают только у компаний `Stays` и `Baths` (`SlotVerticals.IsSlotKind`).
 
 ---
 
@@ -1013,6 +1110,35 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
   `/api/pricing` и в `availableOptions` подписки всех трёх линеек опции каналов больше не показываются. `GET /api/pricing/orders` и
   подписки «Заказов»/«Домов» строк мессенджеров не получают.
 
+**«Бани» — цикл 42** (✔ атрибуты контроллеров и эталон `Cycle22RouteTable.golden.txt` на `d000673`: **+68 маршрутов `/api/baths/*`**
+(29 GET, 20 POST, 14 PUT, 5 DELETE), прежние строки не менялись — **итого 462 строки** эталона против 394 на `0bd2225`). Форма —
+`contracts/cycle42/openapi.yaml` (57 путей), словами — `API_CONTRACT_CYCLE42.md` §42.20–§42.39; в `API_DOCUMENTATION.md` — §4.23
+(`a864849`, «НЕ ВЫПУЩЕНО»). Политики лимитов — те же, что у «Домов» (`stays-public`, `stay-service-create`).
+- **Наследники общих баз** (действия и их атрибуты — в базах `Controllers/Slots/`, у наследников — только `[Route]`/`[Authorize]`):
+  `api/baths/public` — страница ресурса `companies/{slug}/services/{serviceSlug}`, availability, starts, quote, создание брони `services/{serviceId}/orders`
+  (`CreateBathOrderInput` + `guestsCount`); `api/baths/service-orders` — бронь по токену `public/{token}` (get, подтверждения оплаты, cancel,
+  push-подписка) + **`GET my`** («Мои брони», `[Authorize]`, по `GuestUserId` и подтверждённому номеру — `SUBJECT-PHONE-GATE`, 12 месяцев);
+  `api/baths/companies/{companyId}/services…` — кабинет ресурсов (27 действий базы цикла 39: setup, content, items, schedule, prices,
+  фото, публикация…); `api/baths/companies/{companyId}` — «День услуг», сеансы, ручная бронь, карточка, confirm/reject/cancel, файл;
+  настройки компании — payment-details, provider, slug, qr, notification-settings.
+- **Свои маршруты бань:** `BathsPublicController` (`GET /api/baths/catalog?cityId&date&page&pageSize` — карточка = ресурс, «база» в кеше
+  30 с, фильтр даты пакетно; `GET /api/baths/catalog/cities`; `GET /api/baths/public/companies/{slug}` — комплекс); `BathsCompaniesController`
+  (`POST /api/baths/companies` с `[RequiresOwnerTerms]`, `GET …/my`, `GET /api/baths/slug-check`, карточка `BathsCompanyManageDto`,
+  `PUT …/settings` — в т. ч. `sessionReminderEnabled`/`sessionReminderHours`, `GET …/schedule` банщика — закрытая схема без телефонов,
+  сумм, файлов, реквизитов, `GET …/revision`); `BathsTrialController` (`GET|POST /api/baths/trial`).
+- **Изменённые существующие маршруты** (по `API_CONTRACT_CYCLE42.md` §42.21; выборочно ✔ по коду): `GET /api/companies/{slug}` — баня → 404;
+  салонные маршруты — 409 текстом «Бани»; `/api/shops/*`, `/api/orders/*`, `/api/stays/*` — баня → 404; `GET /api/companies/kinds-summary` +
+  `baths`; push (`config`, `subscriptions`, `subscribe`) — `site = Baths`, `siteUrls.baths`; **`PUT /api/companies/{id}`** — у бани город и пояс
+  меняются, но **409** `BathsLocationChangePolicy.LockedText`, пока есть будущие брони (✔ `CompaniesController.cs:429`; §5.17); галерея
+  `/api/companies/{id}/photos*` бане разрешена; участники — только `Master` с должностью «Администратор»/«Банщик», потолок
+  `Stays:MaxStaffPerCompany`; `GET /api/billing/subscription?line=Baths` и `POST …/request` с `line: Baths`; админка — линейка `Baths`,
+  `maxResources` (только `Baths`, иначе 400), блок `bathsSubscription`, назначение `line: Baths`, фильтр `kind=Baths`, `bathsStats
+  {resourcesCount, ordersLast30Days}`; **⚠ меняет dom:** `POST|PUT /api/stays/companies/{id}/services/{serviceId}/items…` — мягкий фильтр
+  алкоголя/табака (409 `ItemRestrictedConfirmationRequired` → повтор с `confirmRestricted: true`, `warnings[]` в ответе) и `PUT …/content` —
+  400 на «задаток/невозвратн/депозит», `contentWarnings[]`; `PUT …/setup` принимает `capacity`; публичные ответы услуг «Домов» + `cityName`,
+  `localTimeNote`, `sessionReminder` (у «Домов» всегда null), `bookAgainUrl` (null у «Домов»); `GET /api/profile/export` — в
+  `stayServiceOrders[]` + `guestsCount`, `site` (`Stays`/`Baths`), ссылка на сайт вертикали; `/api/pricing` линейку «Бани» не отдаёт (CY42-28).
+
 **Маршруты фронтенда** (✔ `App.tsx`, `GoodsApp.tsx`; dom — ✔ `DomApp.tsx` на `a7e3168`):
 - dom (цикл 37; эталон — `contracts/cycle37/dom-routes.json`, его сверяет `dom/src/domRoutes.test.ts`, бэкенд читает как ресурс
   для `StaysSlugPolicy`): `/` (каталог, фильтры в URL), `/:slug` (компания), `/:slug/:houseSlug` (дом), `/b/:token` (бронь),
@@ -1023,6 +1149,11 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
   уникальный индекс, что у салонов и магазинов). **С цикла 39** (эталон — `contracts/cycle39/dom-routes.json`): + `/:slug/uslugi/:serviceSlug`
   (услуга), `/s/:token` (заказ услуги без проживания), `/cabinet/:companyId/{services,services/new,services/:serviceId,
   service-day/:date,service-sessions/:sessionId}`.
+- bani (цикл 42; эталон — `contracts/cycle42/bani-routes.json`, его сверяют `bani/src/baniRoutes.test.ts` и `baniApp.routes.test.ts`,
+  бэкенд читает как ресурс для `BathsSlugPolicy`): `/` (главная на шаблоне `ServiceLanding` с панелью поиска), `/:slug` (комплекс),
+  `/:slug/:resourceSlug` (ресурс), `/s/:token` (бронь), `/bookings` (мои брони), профиль, правовые страницы и кабинет
+  `/cabinet…` (создание компании, «День услуг», брони, ресурсы, расписание банщика, настройки, персонал, уведомления, ссылка, подписка).
+  Шахматки, домов и заездов нет.
 - ezbook: `/`, `/login`, `/register`, `/company/:slug`, `/embed/:slug` (виджет без навбара), `/my-bookings`,
   `/my-visits`, `/cabinet` (с цикла 38 вошедший без ролей `Master`/`CompanyOwner`/`SuperAdmin` уходит на `/cabinet/new`, гость — на
   `/login?returnTo=/cabinet`), `/cabinet/new` (цикл 38: «Подключить салон» — любой вошедший, гость — на `/login?returnTo=/cabinet/new`), `/dashboard`, `/owner`, `/owner/company/:id`, `/admin`, `/billing`, `/pricing`, `/profile`,
@@ -1077,17 +1208,23 @@ dom задеплоен на ту же машину (она и стенд, и б�
 повтор certbot после копирования). Статус выката циклов 38 и 41 в этом обновлении не проверялся. Ограничение вертикали прежнее:
 реальных владельцев не приглашать до вычитки текстов живым юристом (все новые тексты `Stay*` цикла 39 — тоже черновые).
 
-**Цикл 40 (каналы рассылок)** — **не выкачен**: ветка `cycle/040-simplify-notification-channels` в `develop` не влита (шапка). Порядок выката —
+**Цикл 40 (каналы рассылок)** — влит в `develop` (мердж `0bd2225`, фикс Designer `15259d7`/`b6470ba`); выкат на бой в репозитории не
+виден (🖥 не проверялось). Порядок выката —
 `DEPLOY.md`, §31 «Каналы-мессенджеры…» (отчёт `cycle40-channels-report.sql` на копии боя → выкат → проверка доступности и цен опций →
 выключатель → ручные M40-01…08 → открыть владельцам только после вычитки текстов юристом). Миграция `Cycle40ChannelOptions` применится при
 любом деплое кода цикла. Статус по решению заказчика: **WhatsApp закрыт до заключения юриста, MAX открыт** (оба — умолчания конфигурации,
 меняются в админке).
 
+**Цикл 42 («Бани», bani.ezbook.ru)** — **не выкачен и в `develop` не влит** (ветка `cycle/042-bani`, шапка). По `DEPLOY.md` §32 на машину
+ничего не выкатывалось; ⚠️ миграция `Cycle42Baths` применится при **любом** деплое кода с циклом 42, даже без vhost bani. Статус вертикали
+по решению заказчика и юриста: стенд под `noindex`, **реальные бани не приглашать** до вычитки живым юристом и публикации правок D1–D4
+(Т42-17, R42-3); все новые правовые тексты — черновые (ключи вне `LegalTextKey.All`, запасные тексты на фронте); цены тарифов — начальные.
+
 ### 5.2 Код есть целиком, но выключен переключателем (✔ дефолты; 🖥 бой)
 - **Уведомления клиентам салонов в WhatsApp/MAX через GREEN-API.** Каналы, шаблоны, очередь, диспетчер, вебхуки, отписка —
   всё есть. На бою `NOTIFICATIONS_PROVIDER=green-api` (`.env`, 08.10.2026). Живого вызова GREEN-API не делал ни один тест и ни один человек. Договор с GREEN-API подписан и партнёрские
   токены добавлены (со слов заказчика, 08.10.2026); до включения не хватало `InstanceCreationEnabled` и `ServerCountry` в compose (исправлено в `55d01ee`) (C-13, C20-3).
-  **С цикла 40** (в ветке, не влит и не выкачен; §5.16) переключателей стало больше, и все они — **настройки платформы без релиза**:
+  **С цикла 40** (влит в `develop` мерджем `0bd2225`; выкат не виден; §5.16) переключателей стало больше, и все они — **настройки платформы без релиза**:
   доступность опции WhatsApp — **закрыта** по умолчанию (`Notifications:OptionAvailability:WhatsApp=false`; решение заказчика Р40-Ю1:
   закрыта до письменного заключения юриста), MAX — **открыта**; глобальный выключатель рассылок клиентам
   (`notifications.customer-messaging.enabled`, по умолчанию включён). «Открыта» ≠ «продаётся»: продаётся опция с ценой, `IsActive` и
@@ -1165,8 +1302,15 @@ dom задеплоен на ту же машину (она и стенд, и б�
 
 ### 5.5 Что сделали последние циклы
 
+**Цикл 42 — «Бани» (bani.ezbook.ru)** (✔ `git diff 0bd2225...d000673`; ветка `cycle/042-bani`, **в `develop` не влита**). Подробно —
+§5.17, схема — §3, маршруты — §4, долг — §9.12. Коротко: четвёртый вид компании `Baths = 3` и четвёртое приложение `frontend/bani`;
+слотовый движок цикла 39 без копий (общие базы контроллеров, вертикаль данными); линейка «Бани» из трёх платных тарифов и триала 14 дней
+без мессенджера; вместимость ресурса и число гостей в брони; напоминание перед сеансом; фильтр алкоголя/табака в позициях с журналом
+подтверждений (и для услуг «Домов»); запрет смены города/пояса бани при будущих бронях; vhost и `DEPLOY.md` §32. Общий код услуг dom
+перенесён в `frontend/src/{components,utils,hooks}/slots` и `src/api/slots.ts`.
+
 **Цикл 40 — упрощение каналов рассылок (WhatsApp / MAX)** (✔ `git diff origin/develop...4d65578`; ветка
-`cycle/040-simplify-notification-channels`, **в `develop` не влита**). Подробно — §5.16, долг — §9.11. Коротко:
+`cycle/040-simplify-notification-channels`, влита в `develop` мерджем `0bd2225`). Подробно — §5.16, долг — §9.11. Коротко:
 - номер мессенджера принадлежит аккаунту и работает на **все** его компании (салоны, магазины, «Дома»); назначений компаний больше нет —
   `ChannelCompanyAssignments` не читается и не пишется, старые маршруты назначения отвечают 410/204;
 - «оплачено» — по транспорту: строка опции аккаунта `notifications.whatsapp` или новой `notifications.max`; флаг тарифа
@@ -1569,6 +1713,14 @@ dom задеплоен на ту же машину (она и стенд, и б�
 - `channel-health` — простой номера считается по аккаунту (`MessagingDemand`: есть активная невитринная компания с включёнными сообщениями
   клиентам), один запрос на проход.
 - `trial-lifecycle` — истечение триальных строк опций пишется в `ChannelOptionChangeLog` (`TrialExpiry`).
+
+**Цикл 42 новых задач не добавил** (✔ `SessionReminderPolicy` используется только в `StaysScheduledMessagesTask`), расширил одну:
+`stays-scheduled-messages` — **третий проход** «напоминание перед сеансом»: брони `Confirmed` с `SessionReminderAtUtc IS NULL` у компаний с
+`StaysSettings.ServiceReminderHours IS NOT NULL` (у «Домов» всегда NULL — у них маршрута настройки нет), начало сеанса позже «сейчас» и не дальше
+25 ч, пачками по 50; решение — чистая `SessionReminderPolicy` (`Send`/`Wait`/`Skip`, векторы `bani-vectors.json` `sessionReminder`); `Send` —
+условный `UPDATE … WHERE "SessionReminderAtUtc" IS NULL`, событие `SessionReminderSent`, постановка в каналы (`NotificationType` 41;
+мессенджер — только при галочке брони, push — если подписан); отметка ставится и без каналов. Остальные задачи и retention бани покрывают
+без правок (работают по таблицам, а не по виду; маскирование пути в логах приложения — + префикс `/api/baths/service-orders/public/`).
 Задачи до цикла 37:
 
 | Задача | Полоса | Что делает |
@@ -2476,7 +2628,7 @@ Contract, MigrationRollback) + `Infrastructure/Cycle39TestBase.cs`; 136 атри
 84 `it` (в т.ч. `serviceVectors.test.ts` по общим векторам, `guestServicesQa.test.tsx`, `guestCopy.guard.test.ts` — запрет слов
 «бизнес-день»/«задаток» и т.п. в текстах для гостя). Ручных проверок на стенде в каталоге нет.
 
-### 5.16 Каналы рассылок: номер на аккаунт, оплата по транспорту, мастер, согласие клиента — цикл 40 (✔ по коду на `4d65578`, ветка не влита, ничего не запускалось)
+### 5.16 Каналы рассылок: номер на аккаунт, оплата по транспорту, мастер, согласие клиента — цикл 40 (✔ по коду на `4d65578`; влит в `develop` мерджем `0bd2225`, ничего не запускалось)
 Документы цикла: корневой `SPEC.md` (US-40-01…14, T-40-01…13, редакция 2026-10-09), `ARCHITECTURE_CYCLE40.md` (§40.0a — решения заказчика
 Р40-Ю1…Ю4, §40.0 — сводка A1–A16, §40.1–§40.19), `API_CONTRACT_CYCLE40.md` (§40.20–§40.39), `LEGAL_REVIEW_CYCLE40.md` (Т40-L-01…14),
 `contracts/cycle40/`, `DEPLOY.md` (§31). Схема — §3 («Каналы рассылок — цикл 40»), маршруты — §4, задачи — §5.6. Где документы
@@ -2596,6 +2748,87 @@ Contract, MigrationRollback) + `Infrastructure/Cycle39TestBase.cs`; 136 атри
 `messengerOptInFallbackRevision`, фикстура `numbersOverview`, `dom/.../NotificationsPage`), правки 8, удалён 1 (`ChannelRequestModal.test.tsx`).
 Раздела цикла 40 в `TEST_CATALOG.md` **нет**; ручные M40-01…08 (гейт выката, `ARCHITECTURE_CYCLE40.md` §40.18.5) **не проходили**.
 
+### 5.17 «Бани» (bani.ezbook.ru) — цикл 42 (✔ по коду на `d000673`, ветка `cycle/042-bani` не влита, ничего не запускалось)
+Документы цикла: `BRIEF_CYCLE42_BANI.md`, `SPEC_CYCLE42_BANI.md` (US-42-01…27, A42-1…13, «Решения заказчика от 09.10.2026»),
+`ARCHITECTURE_CYCLE42.md` (§42.0a, §42.0–§42.18), `API_CONTRACT_CYCLE42.md` (§42.20–§42.39), `LEGAL_REVIEW_CYCLE42.md` (Т42-01…17),
+`contracts/cycle42/`, `DEPLOY.md` §32, раздел «Цикл 42» `TEST_CATALOG.md`. Схема — §3, маршруты — §4, задачи — §5.6. Где документы расходятся
+с кодом, ниже — по коду.
+
+**Вертикаль как данные, движок без копий.**
+- `CompanyKind.Baths = 3` — новый вид компании, а не флаг внутри «Домов». Различия видов — `CompanyKindTraits` (§2, «Четыре продукта»);
+  различия двух слотовых вертикалей — `SlotVertical` (`Services/Slots/SlotVertical.cs`; `SlotVerticals.Stays`/`Baths`): префикс API, единица
+  лимита тарифа (`House` / `Resource`), триал (план, условия, срок), `HasHouses`, `StandaloneOrdersAlwaysOn`, `RequiresCapacityToPublish`,
+  лимит публикации, политики адресов (`StaysSlugPolicy` / `BathsSlugPolicy`), путь страницы ресурса (`/{c}/uslugi/{s}` / `/{c}/{s}`), правовые
+  ключи снимков, `Wording`.
+- `ServiceWording` (`Services/Slots/ServiceWording.cs`) — слова и тексты движка по вертикали: статусы, `outcomeText`, тексты отказов, события
+  журнала, тексты уведомлений, заголовок push, суффикс « (время местное, {город})». `ServiceWording.Stays` возвращает прежние строки
+  **байт-в-байт** (`ServiceWordingStaysBytesTests`), `ServiceWording.Baths` — «бронь», «EZBOOK Бани» (страж `BathsWordingGuardTests`:
+  без «заказ», «дом», «прожив», «заезд», «задаток» и т. п.). `ServiceWording.For` — через `switch` (`ba1bc28`, чтобы страж ветвлений был зелёным).
+- **Контроллеры** цикла 39 стали абстрактными базами `Controllers/Slots/*Base` (атрибуты действий — в базах, атрибуты класса — только у
+  наследников), наследники «Домов» сохранили имена и `[Route]` — эталон маршрутов «Домов» не изменился ни на строку (✔ 394 прежние строки
+  на месте). Сервисы цикла 39 получают `CompanyKind kind` только в точках поиска по внешнему идентификатору (изоляция: чужой вид — 404);
+  остальное выводится из `company.Kind`. Писатели сеансов, порядок замков, `EX_StayServiceSessions_NoOverlap` — без изменений; единственное
+  добавление — публикация ресурса бани берёт `billing-account:{accountId}` **первым** (`BathsPublishGate`). Параллельность и полночь —
+  CY42-50…55, регресс «Домов» — CY42-100…105.
+
+**Тарифы и триал.** Линейка `Baths`: «Одна баня» 200 ₽ (1 ресурс), «До 3 бань» 500 ₽ (3), «Без ограничения» 1 000 ₽, «Пробный период
+«Бани»» — 14 дней (`Baths:TrialDays`), однократно в линейке на аккаунт и на подтверждённый номер; бесплатного уровня нет; `IsPublic = false`,
+`/api/pricing` линейку не отдаёт. Лимит — опубликованные ресурсы всех банных компаний аккаунта (`MaxResources`): публикация сверх лимита — 402,
+превышение в гейте — `OverResourceLimit`. `StaysPlanResolver`/`StaysTrialService`/`OwnerSubscriptionService`/`AdminBillingController`
+обобщены по вертикали, имена классов прежние. **Триал без мессенджера** (решение 09.10.2026, Q-L42-4 отменён): `BathsTrialTerms` версии
+`baths-2026-10-10` прямо говорит «Сообщения гостям в WhatsApp или MAX в пробный период не включаются: они доступны на платном тарифе»; по коду
+`StaysTrialService` (общий для «Домов» и «Бань») строк опций каналов аккаунта не создаёт (в отличие от салонного `TrialActivationService`), а
+«оплачено» по циклу 40 решается только строкой опции аккаунта. Условия триала — снимок версии/хеша в `TrialGrants` (Т42-10); после окончания
+тарифа/триала управление принятыми бронями доступно (CY42-60…63).
+
+**Ресурсы, гости, позиции.**
+- Вместимость `Capacity` 1…30 обязательна для публикации ресурса бани (409 `ServiceNoCapacity`; снять её у опубликованного тоже нельзя —
+  `SlotServicesCabinetControllerBase` setup, BUG-C42-QA-3 исправлен). Число гостей `GuestsCount` («включая детей») обязательно при заданной
+  вместимости, 1…вместимость (`GuestsCountRules`), снимок в брони, на цену/предоплату/возврат не влияет, после создания не меняется; видно гостю,
+  персоналу, банщику, в выгрузке ПДн; при обезличивании остаётся. У услуг «Домов» вместимости нет — поведение dom не меняется.
+- **Мягкий фильтр алкоголя и табака — для обоих префиксов** (`/api/baths/…/items` и `/api/stays/…/items`, общий путь
+  `SlotServicesCabinetControllerBase` → `ServiceItemWriter`): `RestrictedItemFilter.Match` (основы с начала слова, без регистра, ё = е; список
+  `Stems` сверяется с `bani-vectors.json`) → без `confirmRestricted: true` — 409 `ItemRestrictedConfirmationRequired` с `markers` и текстом
+  `BathPositionsOwnerNotice`; с подтверждением — сохранение и строка журнала `StayServiceItemConfirmations` (снимки имени ресурса и позиции,
+  найденные основы, ключ и версия текста — `fallback:<sha256>`, пока ключа нет в манифесте, кто и когда, IP) в той же транзакции.
+  `OwnerTextChecks` — 400 на «задаток/невозвратн/депозит» и мягкие `warnings`/`contentWarnings` (условия отмены, доплаты, обещания пользы для
+  здоровья вкл. «иммунитет»/«полезно при» — BUG-C42-QA-2 исправлен, паспорт, номер карты) — тоже для обоих префиксов. **Это меняет dom**
+  (`ARCHITECTURE_CYCLE42.md` §42.18 п. 3). Суперадминского «скрыть позицию» нет.
+
+**Город и пояс.** У бани город — из справочника, пояс — по городу или вручную, менять можно через общий `PUT /api/companies/{id}`, **кроме**
+случая, когда есть будущие брони: неосвобождённый сеанс с концом позже «сейчас» у заказа в `AwaitingPaymentCheck`, `Confirmed` или `Held` с
+неистёкшим удержанием → 409 «Нельзя сменить город или часовой пояс, пока есть будущие брони — …» (`BathsLocationChangePolicy`, проверка в
+`CompaniesController.Update`). Блокируется и смена города без смены пояса. «Домов» (город фиксирован) и салона это не касается. Тесты —
+CY42-106…109 (`Cycle42LocationChangeTests`) и юнит `BathsLocationChangePolicyTests`.
+
+**Уведомления.** Типы цикла 39 для заказов услуг (28–36) + новый **41 `ServiceGuestSessionReminder`** — напоминание перед сеансом за
+`ServiceReminderHours` (1…24, у новой бани 3; настройка `PUT /api/baths/companies/{id}/settings`), фиксированный текст без рекламы, мессенджер —
+только при галочке брони, push — если подписан; на странице брони — блок `sessionReminder {sentAtUtc, text}` (текст собирается на лету, без
+имени гостя). Ссылки — `PublicSiteLinks` по виду компании (`https://bani.ezbook.ru/s/<token>`, персоналу — `/cabinet/<companyId>/service-sessions/<id>`),
+заголовок push гостю «EZBOOK Бани», пометка «Время местное, {город}» (`localTimeNote` в DTO, суффикс в сообщениях). Уведомления банщику не идут.
+
+**Роли.** Таблица `StaysAccess` без изменений: `Manager` = «Администратор», `Housekeeper` = «Банщик»; банщик видит только `GET …/schedule`
+(закрытая схема без телефонов, сумм, файлов, реквизитов, журнала; комментарий гостя — при `HousekeeperSeesGuestComment`) и карточку без настроек
+(CY42-70…72).
+
+**Фронтенд `frontend/bani`** (структура — §2). Главная — шаблон `ServiceLanding` с панелью (`backdrop: 'none'`, без тарифов и цен); комплекс,
+ресурс, форма брони с полем гостей и пометкой местного времени, страница брони с блоком напоминания и «Забронировать ещё в этом комплексе»
+(без ПДн в URL; имя/телефон анонима — из `sessionStorage` вкладки `bani:guest`); «Мои брони»; кабинет: создание компании с городом из
+справочника (ссылка «Написать в поддержку» не показывается — `SUPPORT_MAILTO = null`, C42-5), «День услуг», брони, ресурсы с вместимостью и
+диалогом подтверждения позиций, расписание банщика, настройки (профиль, фото комплекса, реквизиты, исполнитель, бронь и напоминание,
+уведомления), персонал, подписка (`BillingPage` с `line="Baths"`). Общий код услуг перенесён из dom в `frontend/src/*/slots` (вертикаль —
+`SlotVerticalProvider`; dom — `staysVertical`, bani — `bathsVertical`); в dom — реэкспорты. В ezbook — `Baths` в `companyKind.ts`, push-сайтах,
+админке тарифов/аккаунтов/компаний, `BillingPage`. Запасные правовые тексты — `bani/src/utils/baniTexts.ts`; guard-тесты не дают bani ссылаться
+на ключи «Домов» (Т42-04) и использовать запрещённые слова (Т42-11).
+
+**Деплой.** Сборка — `dist/__bani` в общем релизе; vhost `deploy/nginx/bani.ezbook.conf` (маска токенов `/s/`, `/b/`, `api/baths|stays …/public/<token>`
+и Referer, `noindex`, вебхуки → 404); смоук bani в `deploy-remote.sh` (`BANI_HOST`, `BANI_SMOKE`, `BANI_VHOST`; без vhost — предупреждение и
+пропуск); `DEPLOY.md` §32 (DNS, vhost + certbot, правка трёх других vhost, SmartCaptcha, ручные M42-*, проверка маскирования M42-04, откат).
+
+**Тесты** (подробно — §7.1, §7.2): функциональные `ServiceBooking.Tests/Tests/Cycle42*.cs` — 15 файлов, 152 атрибута `[Fact]`/`[Theory]`
+(CY42-01…17, 20…28, 30…55, 60…63, 70…72, 80…85, 90…99, 100…115, 130…134, 140); юнит — 13 новых файлов (+100 атрибутов по diff); фронт —
+39 новых файлов `*.test.ts(x)` (+187 `it`/`test` по diff), в т. ч. 32 в `frontend/bani`. Ручные `M42-*` и вердикты QA на стенде — не проводились.
+
 ## 6. Конвенции проекта (✔ выборочно по коду; им следовать, а не вводить рядом свои)
 
 ### 6.1 Бэкенд (C#)
@@ -2656,6 +2889,13 @@ Contract, MigrationRollback) + `Infrastructure/Cycle39TestBase.cs`; 136 атри
   Изменение опций каналов аккаунта пишется в `ChannelOptionChangeLog` через `ChannelOptionLog.Write`. Новые правовые ключи согласия
   (`BookingMessengerConsent`, `StaffBookingMessengerConsentHint`) — вне `LegalTextKey.All`, версия при отсутствии текста — `fallback:<sha256>`
   (`MessengerConsentVersions`), как у заверения реестра «Домов».
+- **Вид компании и слотовые вертикали (с цикла 42, §5.17).** Новое свойство вида — строкой в `CompanyKindTraits` (`switch` по всем значениям с
+  `UnreachableException`), а не `if (kind == …)`; тернарники по `CompanyKind.(Orders|Stays|Baths)` запрещает `CompanyKindBranchGuardTests`,
+  полноту — `CompanyKindTraitsTests`/`CompanyKindExhaustiveTests`. Различия «Домов»-услуг и «Бань» — полем `SlotVertical`, тексты — в
+  `ServiceWording` (у `Stays` — байт-в-байт прежние). Новое действие слотового кабинета/публички — в базу `Controllers/Slots/*Base` (атрибуты
+  действия там же), атрибуты класса — только у наследников; сервисы принимают `CompanyKind kind` только в точке поиска по внешнему
+  идентификатору. Позиции услуг и журнал подтверждений пишет **только** `ServiceItemWriter`. Новые ключи правовых текстов бань — вне
+  `LegalTextKey.All`, запасной текст на фронте. Ссылки на сайт вертикали — только `PublicSiteLinks` по виду.
 
 ### 6.2 Фронтенд (TypeScript/React, оба приложения)
 - Функциональные компоненты и **именованные экспорты**. Default export есть только у `App.tsx`/`GoodsApp.tsx`.
@@ -2731,6 +2971,13 @@ Contract, MigrationRollback) + `Infrastructure/Cycle39TestBase.cs`; 136 атри
   галочку» — берёт поля сервера (`wizardStep`, `displayStatus`/`action`, `canRequestPayment`, `deliveryChoiceVisible`,
   `customerMessaging.offered`, `preferences.providerDeliveryConsent`); из TS-двойника `utils/channelRules.ts` компоненты берут только тип
   `WizardStep`, сами правила в нём — для сверки с векторами (`channelRules.test.ts`). Галочка мессенджера в любой форме — `MessengerOptIn` + `useMessengerOptInDefault`, у сотрудника — `StaffMessengerConsentCheckbox`.
+- **bani (цикл 42)** устроен как dom: свои `bani/src/api/*.ts` поверх общего axios, React Query, Tailwind-конфиг `tailwind.bani.config.js`,
+  алиас `@bani`; ESLint не даёт bani импортировать `@/App`, `@dom`, `@goods`, а остальным — `bani/`. **Общий код услуг — в
+  `src/components/slots/`, `src/utils/slots/`, `src/hooks/slots/`, `src/api/slots.ts`** и не знает вида: вертикаль берётся из контекста
+  `SlotVerticalProvider` (`api`, `paths`, `legal`, `words`, `features`); новые различия «Домов» и «Бань» — полем вертикали (`staysVertical` в dom
+  обязан давать прежние строки и адреса), а не веткой по виду. Модули dom, переехавшие в общий код, — тонкие реэкспорты; новое писать сразу в
+  `slots`. Тексты гостя bani держат guard-тесты (`guestCopy`, `landing/configs.guard`, `legalKeys`, `brand`); область vitest — `stays`
+  (префиксы `bani/src/`, `src/*/slots` в `contracts/cycle36/test-areas.json`).
 
 ### 6.3 Правовые тексты
 Правится только `legal-drafts/`, потом `dotnet run --project ServiceBooking.LegalKit -- build` и коммит обоих деревьев
@@ -2853,6 +3100,17 @@ CY37-140 (`Cycle37MigrationRollbackTests`) создаёт и удаляет **о
 атрибутов, + 3 стража, 11; удалены 5 файлов старых правил); фронт — 285 файлов `*.test.ts(x)` (+10, −1). Эталон маршрутов — 394 строки.
 Подробно — §5.16. Тестов наката/отката миграции цикла 40 нет.
 
+**На `d000673` (цикл 42, ветка не влита)** (✔ `ls`, `grep`, diff `0bd2225...HEAD`; **ничего не запускалось**; статусы «зелёный» ниже ↪ из
+`TEST_CATALOG.md`, сам анализ их не проверял): `ServiceBooking.Tests/Tests/` — 136 файлов `.cs` (+15 `Cycle42*.cs`: `AfterTrial`, `Company`,
+`Concurrency`, `Contract`, `DomRegression`, `Isolation`, `LocationChange`, `MigrationRollback`, `Notifications`, `Privacy`, `Public`,
+`Reminder`, `Resources`, `ReviewFollowUp`, `TariffTrial`; 152 атрибута; общий помощник `Infrastructure/Cycle42TestBase.cs`); контракт cycle42
+подключён к `OpenApiContractValidatorTests` (`[InlineData("cycle42")]`), формы ответов — `Cycle42ContractTests` (CY42-130…134);
+`ServiceBooking.UnitTests` — 249 файлов `.cs` (+13: `CompanyKindTraitsTests`, `CompanyKindExhaustiveTests`, `BathsWordingGuardTests`,
+`ServiceWordingStaysBytesTests`, `BathsSlugPolicyTests`, `BathsLocationChangePolicyTests`, `BathsPlanTests`, `BathsPublicUnitTests`,
+`Cycle42ResourceRulesTests`, `Cycle42PrivacyUnitTests`, `SessionReminderTextsTests`, `OwnerTextChecksContractTests` и др.; +100 атрибутов);
+фронт — 324 файла `*.test.ts(x)` (+39 новых, 5 перенесены из dom в `src/*/slots` без правки, 2 перенесены с правкой, 3 изменены). Эталон
+маршрутов — 462 строки. Накат→откат→накат миграции — CY42-140. Ручных `M42-*` в каталоге нет (только упоминание в `DEPLOY.md` §32).
+
 Прогоны различаются по объёму: в прогоне считаются и наборы `[Theory]`, поэтому число прогонов больше числа атрибутов.
 Были ли в отчёте цикла 31 зелёные `tsc`, `lint`, `typecheck:node`, `build:release` и сколько тестов упало, в этом
 обновлении не проверялось: переданы только общие числа.
@@ -2972,7 +3230,7 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   ⚠️ `tools/bench/cycle39/bench_catalog.py` — не тест, а нагрузочный замер (засевает 500 домов); на боевой машине не запускать
   (`DEPLOY.md` §28а). ⚠️ Параллельные полные прогоны из разных сессий на одной машине мешают друг другу: контейнеры Testcontainers у
   каждой сессии свои, общая нагрузка ложится на одну VM colima — прогоны заметно замедляются (↪ из отчётов цикла 39).
-- **Цикл 40 «Каналы рассылок»** (запускает qa-engineer, не codebase-analyst; ветка не влита): функциональные —
+- **Цикл 40 «Каналы рассылок»** (запускает qa-engineer, не codebase-analyst; влит в `develop`): функциональные —
   `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle40"` (12 тестов) и регрессия каналов, триала и уведомлений, которые цикл
   переписал: `--filter "FullyQualifiedName~NotificationChannelsTests|FullyQualifiedName~Cycle18TrialLifecycle|FullyQualifiedName~Cycle22ChannelFunding|FullyQualifiedName~Cycle24Notifications|FullyQualifiedName~NotificationMaxTransport|FullyQualifiedName~NotificationQueueing|FullyQualifiedName~LegalPricingGate"`
   (фильтр составлен по именам изменённых классов, ↪ в документах цикла не зафиксирован; раздела цикла 40 в `TEST_CATALOG.md` нет). Побочные
@@ -2984,6 +3242,18 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   ⚠️ `deploy/checks/cycle40-channels-report.sql` и `cycle40-rollback-assignments.sql` — **не тесты**: первый читает копию боевой БД, второй
   **пишет** назначения; их запускает человек по `DEPLOY.md` (§31). Ручные M40-01…08 требуют реальных номеров WhatsApp/MAX и
   партнёрского аккаунта GREEN-API (стенд DO-40-04) — живые отправки.
+- **Цикл 42 «Бани»** (запускает qa-engineer, не codebase-analyst; ветка не влита): функциональные — команда из `TEST_CATALOG.md`
+  (раздел «Цикл 42»): `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle42"` с `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`
+  и `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock` (colima). Регресс «Домов», который цикл затронул переносом контроллеров в
+  базы и фильтром позиций, — `--filter "FullyQualifiedName~Cycle39|FullyQualifiedName~Cycle37|FullyQualifiedName~Cycle22RouteTable|FullyQualifiedName~OpenApiContractValidator"`
+  (фильтр ↪ составлен по именам классов, в документах цикла не зафиксирован). CY42-140 (`Cycle42MigrationRollbackTests`) поднимает
+  отдельную базу и гоняет миграцию туда-обратно — только тестовый Postgres. Юнит — `dotnet test ServiceBooking.UnitTests --filter
+  "FullyQualifiedName~Baths|FullyQualifiedName~Cycle42|FullyQualifiedName~CompanyKind|FullyQualifiedName~ServiceWording|FullyQualifiedName~SessionReminder|FullyQualifiedName~OwnerTextChecks"`
+  (векторы `contracts/cycle42/bani-vectors.json` читаются с диска). Vitest — `cd frontend && npm run test:area -- stays` (включает
+  `bani/src/` и `src/*/slots`). Сборка/тип-чек bani — `npx tsc --noEmit -p tsconfig.bani.json`, `npm run build:bani`; маскирование —
+  `bash deploy/nginx/test-bani-masking.sh` (нужен локальный `nginx`). Побочные эффекты — как у всего набора (`Notifications:Provider=logging`,
+  фоновые задачи в `Testing` выключены). Ручные `M42-*` (полночь на iOS/Android, 360 px, push на реальном телефоне, маскирование в
+  `bani.access.log` на машине — M42-04) — только после выката, `DEPLOY.md` §32.
 - `npm run contracts:json` — не тест: скрипт **перезаписывает** `contracts/cycle31/openapi.json` и `contracts/cycle32/openapi.json`
   (с цикла 35 — и `contracts/cycle35/openapi.json`, с цикла 37 — и `contracts/cycle37/openapi.json`).
   (с цикла 35 — и `contracts/cycle35/openapi.json`, с цикла 38 — `contracts/cycle38/openapi.json`, с цикла 39 — `contracts/cycle39/openapi.json`).
@@ -3063,6 +3333,12 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   match cycle31, cycle32, cycle35, cycle37, cycle38, cycle39 and cycle40 yaml»; `cycle40` добавлен в `scripts/contracts-to-json.mjs`. Новых
   шагов нет, джоб `backend` не менялся (тесты цикла идут в общем прогоне). SQL-отчёт и скрипт отката CI не запускает. Результатов CI на
   `4d65578` в этом обновлении не смотрели.
+- **Цикл 42** (✔ `ci.yml`, `contracts-to-json.mjs`, `smoke-frontend.sh` на `d000673`, DO-42-03): `cycle42/openapi.yaml` в `redocly lint`,
+  `npm run types:api:cycle42` + `api-cycle42.generated.ts` в `git diff --exit-code`, `cycle42/openapi.json` в шаге «Contract JSON must match
+  cycle31, cycle32, cycle35, cycle37, cycle38, cycle39, cycle40 and cycle42 yaml» (`cycle42` — в `scripts/contracts-to-json.mjs`); **новые шаги**
+  «Type-check bani» (`npx tsc --noEmit -p tsconfig.bani.json`), «Smoke test (bani build in dist/__bani)» (`SMOKE_PROFILE=bani`, включая
+  `noindex`), «Check bani nginx log masking» (`deploy/nginx/test-bani-masking.sh`); проверка запрета `fetch`/Cache API в `sw.js` дополнена
+  `bani/public/sw.js`. Джоб `backend` не менялся. Результатов CI на `d000673` в этом обновлении не смотрели.
 - **Время CI, цикл 36** (↪ таблицы «CI: до / после» в `docs/testing-isolation.md`; последняя строка — ✔ `gh run view`, только чтение):
 
   | Что | `backend` | Функциональные | `frontend` | vitest | `docker-build` |
@@ -3120,7 +3396,15 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   `customerMessagingEnabled=false` — стоп-кран без релиза (≤ 60 с). Откат — `rollback.sh` + `cycle40-rollback-assignments.sql`, схема назад не
   откатывается; после отката записи сотрудников без отметки снова получают сообщения «как до цикла». DO-40-04 (стенд M40 с реальными номерами)
   и DO-40-05 (снять с боя `ServerCountry*` и фактическую страну экземпляров для юриста) — за заказчиком. Новых обязательных переменных боя нет.
-  ⚠️ Неточности раздела — §9.11 C40-14.
+  ⚠️ Неточности раздела — §9.11 C40-14. (✔ на `d000673`: раздел переименован в **§31**, в `DEPLOY.md` один `## 29.`.)
+- **Цикл 42** (✔ `DEPLOY.md` §32 «bani.ezbook.ru — четвёртый сайт, «Бани»» на `d000673`): статус — подготовлено в репозитории, на машину
+  ничего не выкатывалось; ручные шаги (DNS `A bani.ezbook.ru`, vhost + **сразу** `certbot --nginx -d bani.ezbook.ru` — копирование поверх сносит
+  443-блок, правка `ezbook.conf`/`demo.visit.ezbook.conf`/`dom.ezbook.conf`, домен в SmartCaptcha) — за заказчиком. `deploy-remote.sh`: смоук
+  bani (`BANI_HOST`, `BANI_SMOKE=0` — аварийно выключить, `BANI_VHOST`); если vhost установлен — `current/__bani/index.html`, `https://bani.ezbook.ru/`
+  с `<div id="root">` и `/api/health/ready` = 200 через локальный nginx обязательны, иначе деплой падает; без vhost — предупреждение и пропуск.
+  `rollback.sh` правок не требует (все сайты — один symlink `current`). ⚠️ Миграция `Cycle42Baths` применится при любом деплое кода цикла;
+  откат миграции — только с `pg_dump` и после удаления компаний `Kind = 3`. `BusinessDayStartMinute` не менять (общий с «Домами», C39-11),
+  `noindex` снимать только по решению заказчика, реальные бани не приглашать до юриста (Т42-17). Новых обязательных переменных боя нет.
 - **Демо-стек** (✔ по файлам): `docker-compose.demo.yml` + `.env.demo.example`, vhost-ы `deploy/nginx/demo.visit.ezbook.conf` и
   `deploy/nginx/demo.zakaz.ezbook.conf` (ставятся руками), смоуки `deploy/ci/demo-smoke.sh` и `deploy/ci/demo-zakaz-smoke.sh`.
   `deploy-remote.sh` в шаге демо гоняет `demo-smoke.sh`, а `demo-zakaz-smoke.sh` — только при `DEMO_ZAKAZ_ENABLED=true`; сбой демо —
@@ -3839,21 +4123,7 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 - **C39-14 — ручных проверок цикла в каталоге нет.** Раздел «Цикл 39» `TEST_CATALOG.md` — только автотесты CY39-*; таблицы `M39-` и вердиктов
   QA на стенде нет (выбор времени через полночь на iOS, push с фильтром, страница `/s/` на 360 px — не зафиксированы).
 
-### 9.12 Долг и риски цикла 42 («Бани») — по коду и документам ветки `cycle/042-bani`, в `develop` не влит
-Список хвостов из обсуждения цикла; часть пунктов — мелкие вопросы контракта, исправлять только по решению архитектора (контракт тихо не правится).
-- **C42-1 — `BathsConflictDto` в контракте уже, чем ответ.** Схема описывает `{code, message}`, сервер переиспользует `StaysConflictDto` и пишет ещё `conflictingPeriod` и `conflicts` (у `slug-check` — `null`).
-  `Cycle42ContractTests` допускает ровно эти два поля внутри `$.conflict` (регэксп `KnownConflictDtoExtras`); новое лишнее поле тест по-прежнему уронит. Решение: либо дописать поля как nullable в схему, либо отдельный DTO.
-- **C42-2 — `cityRegion` и `utcOffset` в `BathsCompanyManageDto`.** Мелкий вопрос контракта: нужны ли они кабинету (пояс компании определяется городом), в схеме и ответе их состав надо согласовать.
-- **C42-3 — `site` в выгрузке `GET /api/profile/export`** по `Stays` и `Baths`: поле добавлено для различения видов, формат значения и обратная совместимость выгрузки «Домов» в контракте описаны скупо.
-- **C42-4 — `ordersLast30Days` (админская статистика) считает и отменённые брони.** Число завышено относительно «состоявшихся»; определение метрики нужно зафиксировать или исключить отменённые.
-- **C42-5 — нет контакта поддержки для случая «моего города нет».** Форма создания компании «Бани» отправляет в никуда: адрес/канал обращения не задан ни в контракте, ни в конфигурации.
-- **C42-6 — дубли `providerForm` и `trialOutcome` из dom.** Формы исполнителя и результата пробного периода продублированы между dom и bani, а не вынесены в общий код; расхождение текстов вероятно.
-- **C42-7 — `Cycle39ContractTests.CabinetServiceRoutes_MatchContract` держится белым списком** (как C39-4 для cycle37): допущены `capacity`, `contentWarnings`, `warnings` (регэксп `Cycle42AdditiveField`),
-  потому что схема cycle39 заморожена, а cycle42 описывает setup/items/content «Домов» только частично. Форма этих полей проверяется в `Cycle42ContractTests` (CY42-133) по cycle42.
-- **C42-9 — мессенджер в триале «Бань» не предоставляется (решение 09.10.2026, Q-L42-4 отменён).** Версия условий триала `baths-2026-10-10`. Миграция `Cycle42Baths` всё же создаёт строку `PlanOptionRules` `notifications.whatsapp` для плана-триала «Бань» (и платных): по архитектуре цикла 40 правила тарифа канал не читаются, строка — мёртвые данные, оставлена как есть (миграция уже может быть применена).
-- **C42-10 — смена города и пояса «Бани» (I-2).** `PUT /api/companies/{id}` для `Kind = Baths` отвечает 409, пока есть будущие брони (Held без просроченной заявки, AwaitingPaymentCheck, Confirmed; `BathsLocationChangePolicy`). Запрет шире, чем у магазина: блокируется и смена города без смены пояса; «Домов» и салон не затронуты. Других путей смены города/пояса в API нет (проверено grep по присвоениям `CityId`/`TimeZoneId`). Тесты CY42-106…109.
-- **C42-8 — в тестовом хосте web-push выключен**: `push-subscription` отвечает 409 строкой, контрактный тест проверяет только код; форму 204 покрывают тесты напоминания.
-### 9.11 Долг и риски цикла 40 (каналы рассылок) — ✔ по коду и документам на `4d65578`, ветка не влита, ничего не запускалось
+### 9.11 Долг и риски цикла 40 (каналы рассылок) — ✔ по коду и документам на `4d65578`; влит в `develop` мерджем `0bd2225`, ничего не запускалось
 Пометка ↪ — со слов постановки задачи / документов цикла, codebase-analyst не перепроверял; 🖥 — факт о машине, в репозитории не виден.
 - **C40-1 — живой отправки через GREEN-API не было ни разу** (R-40-1). Ни тест, ни человек не вызывали провайдера ни для WhatsApp, ни для MAX:
   функциональные тесты идут с `Notifications:Provider=logging`. Не проверены на живом провайдере: создание экземпляра и страна сервера по
@@ -3910,11 +4180,13 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   ветки это чинит незакоммиченная правка (§29 → §31), до коммита пункт открыт. В п. 4 сказано «для боя —
   `greenapi`», а распознаваемое значение — **`green-api`** (`NotificationServicesExtensions`); любое другое значение **роняет старт** API.
   Фраза «Точные имена и умолчания сверять с `appsettings.json` после слияния BE-40» осталась от черновика (✔ имена в таблице совпадают с
-  `appsettings.json`).
+  `appsettings.json`). **На `d000673` (✔ `grep`):** раздел закоммичен как **§31**, `## 29.` в файле один; в п. 4 теперь `green-api`. Открытой
+  осталась только фраза про «после слияния BE-40».
 - **C40-15 — документы отстали.** На `4d65578` `CHANGELOG.md`, `README.md`, `API_DOCUMENTATION.md`, `TEST_CATALOG.md` веткой не трогались
   (✔ `git diff --stat`): раздела цикла 40, описания новых маршрутов и кейсов CY40/M40 нет. В рабочей копии параллельная задача уже дописывает
   раздел цикла 40 в `CHANGELOG.md` и абзацы в `README.md` (не закоммичено, шапка); `API_DOCUMENTATION.md` и `TEST_CATALOG.md` не тронуты и там. В пользовательских `docs/owner.md`/`docs/admin.md` каналов WhatsApp/MAX нет
-  вовсе (✔ grep) — руководства владельцу по блоку «Номера» и админу по карточке номера нет.
+  вовсе (✔ grep) — руководства владельцу по блоку «Номера» и админу по карточке номера нет. **На `d000673`:** в `CHANGELOG.md` есть раздел
+  «Не выпущено — цикл 40…» (✔ `grep -n '^## '`, строка 19); раздела цикла 40 в `TEST_CATALOG.md` по-прежнему нет (✔ grep `CY40-`).
 - **C40-16 — «один номер на транспорт аккаунта» держит только код.** Уникального индекса по (`BillingAccountId`, `Transport`) для живых каналов
   нет: создание заявки сериализует advisory-lock `channel-request:{account}:{transport}`, старые дубли становятся «лишними» (`Unfunded`,
   «Отвяжите этот номер»). Сколько аккаунтов с двумя живыми каналами одного транспорта на бою — блок 3 отчёта (не прогонялся).
@@ -3922,6 +4194,68 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   опций и `notifications.channel.price-per-month` остались в БД без чтения (удаление — отдельным циклом); на таблицу назначений опирается
   откат (скрипт `cycle40-rollback-assignments.sql`). Наследное правило «строка опции без даты → срок подписки „Записей“» оставлено в коде
   (О-40-5).
+
+### 9.12 Долг и риски цикла 42 («Бани») — ✔ по коду и документам на `d000673`, ветка `cycle/042-bani` в `develop` не влита, ничего не запускалось
+Пометка ↪ — со слов документов цикла / `TEST_CATALOG.md`, codebase-analyst не перепроверял; 🖥 — факт о машине. Пункты C42-1…C42-7 —
+мелкие вопросы контракта и кода: исправлять только по решению архитектора (выпущенный контракт тихо не правится).
+- **C42-1 — `BathsConflictDto` в контракте уже, чем ответ.** ✔ Схема `contracts/cycle42/openapi.yaml` описывает `{code, message}`, сервер
+  отвечает `StaysConflictDto(Code, Message, ConflictingPeriod = null, Conflicts = null)` (`DTOs/Stays/StaysCommonDtos.cs:36`), то есть пишет ещё
+  `conflictingPeriod` и `conflicts` (у `slug-check` и ресурсов — `null`). `Cycle42ContractTests` пропускает ровно эти два поля внутри `$.conflict`
+  (регэксп `KnownConflictDtoExtras`); новое лишнее поле тест уронит. Варианты — дописать поля как nullable в схему или отдельный DTO.
+- **C42-2 — состав `BathsCompanyManageDto` по городу.** ✔ И DTO (`DTOs/Baths/BathsCompanyDtos.cs`), и схема отдают `cityId`, `cityName`,
+  `timeZoneId`, `timeZoneIsManual`; полей `cityRegion` и `utcOffset` **нет ни там, ни там** — открыт вопрос, нужны ли они кабинету (регион в
+  подписи города, смещение пояса рядом с «временем местным»).
+- **C42-3 — `site` в выгрузке `GET /api/profile/export`.** ✔ `SubjectDataExporter.ExportSite`: `Baths` → `"Baths"`, всё остальное (включая
+  неизвестный вид компании) → `"Stays"`; поле добавлено и к заказам услуг «Домов». Формат значения и совместимость выгрузки «Домов» в контракте
+  описаны скупо (§42.21 пишет «Дома»/«Бани», код — имена enum).
+- **C42-4 — `ordersLast30Days` в админской статистике считает все брони.** ✔ `AdminController` (`bathsStats`): `StayServiceOrders` банной
+  компании с `CreatedAtUtc ≥ now − 30 дней` **без фильтра статуса** — входят отменённые, истёкшие удержания и отклонённые оплаты. Определение
+  метрики не зафиксировано.
+- **C42-5 — нет контакта поддержки для «моего города нет в списке».** ✔ `frontend/bani/src/cabinet/cabinetTexts.ts`: `SUPPORT_MAILTO = null`,
+  поэтому ссылка «Написать в поддержку» в `CreateCompanyPage` не показывается — владелец видит только текст «города нет». Адреса/канала
+  поддержки нет ни в контракте, ни в конфигурации.
+- **C42-6 — дубли кода dom в bani.** ✔ `providerForm` и `trialOutcome` (форма исполнителя, итог пробного периода) — отдельные копии в
+  `frontend/bani/src/cabinet/` (+ `components/cabinet/ProviderCard.tsx`) и `frontend/dom/src/…`, в общий `src/*/slots` не вынесены; тексты
+  могут разойтись.
+- **C42-7 — `Cycle39ContractTests.CabinetServiceRoutes_MatchContract` держится белым списком** (как C39-4 для cycle37). ✔ Регэксп
+  `Cycle42AdditiveField` допускает `capacity`, `contentWarnings`, `warnings`: схема cycle39 заморожена, а cycle42 описывает setup/items/content
+  «Домов» частично. Форма этих полей проверяется в `Cycle42ContractTests` (CY42-133) по cycle42.
+- **C42-8 — в тестовом хосте web-push выключен.** ✔ `POST …/service-orders/public/{token}/push-subscription` в `Cycle42ContractTests` допускает
+  204 или 409 (строкой) и проверяет только код; форму 204 покрывают тесты напоминания ↪. Живой push гостю бани не проверялся (M42-*).
+- **C42-9 — мессенджер в триале «Бань» не предоставляется** (решение 09.10.2026, Q-L42-4 отменён). ✔ Условия `baths-2026-10-10` это прямо
+  говорят; `StaysTrialService` строк опций аккаунта не создаёт. Но миграция `Cycle42Baths` создаёт строку `PlanOptionRules`
+  `notifications.whatsapp` (Availability 2) для **всех четырёх** тарифов «Бань», включая триал, и ставит им `AllowNotificationChannel = true` —
+  по правилам цикла 40 тариф канал не решает, это мёртвые данные (продолжение C40-17). Комментарий в миграции («trial included, Q-L42-4»)
+  устарел относительно решения. ⚠️ Тест CY42-29 («платные номера в триале бани») из кода **удалён** при слиянии с циклом 40 (`ed8f07d`,
+  «сценарии переданы qa»: `EffectivePlan.PaidNotificationNumbers` больше нет), а `TEST_CATALOG.md` по-прежнему числит CY42-29 «зелёным» со
+  ссылкой на несуществующие методы `PaidNumbers_*`. Автотеста «триал бани не даёт мессенджер» поверх `AccountMessagingReader` нет.
+- **C42-10 — смена города и пояса «Бани» (I-2).** ✔ `PUT /api/companies/{id}` для `Kind = Baths` отвечает 409, пока есть будущие брони
+  (неосвобождённый сеанс с концом позже «сейчас» у заказа `AwaitingPaymentCheck`/`Confirmed`/`Held` с неистёкшим удержанием;
+  `BathsLocationChangePolicy` + запрос в `CompaniesController.Update`). Блокируется и смена города без смены пояса; «Домов» и салона не касается.
+  Других путей смены города/пояса в API нет (✔ grep присвоений `CityId`/`TimeZoneId`: только `CompaniesController` и генератор витрины).
+  Наблюдение: проверка «есть ли будущие брони» идёт без advisory-lock — бронь, создаваемая одновременно со сменой города, теоретически может
+  проскочить (тест на гонку не найден). Тесты — CY42-106…109, `BathsLocationChangePolicyTests`.
+- **C42-11 — расхождения `TEST_CATALOG.md` с кодом** (✔ grep): в таблице статусов CY42-31, CY42-39 и CY42-94 помечены «репро … — Skip», а в коде
+  `Skip =` у тестов `Cycle42*` нет (BUG-C42-QA-2…4 исправлены: «иммунитет»/«полезно при» в `OwnerTextChecks`, запрет снять вместимость у
+  опубликованного ресурса, «Гость отменил бронь» в `ServiceWording.Baths`); CY42-29 — см. C42-9. В каталоге ссылка на `REVIEW_CYCLE42.md` — такого
+  файла в репозитории нет. Строка «Не написаны здесь» перечисляет CY42-106…109 и 116…139, но 106…109 и 130…134 в коде есть.
+- **C42-12 — ручные проверки и выкат не делались** (🖥 / ↪ `DEPLOY.md` §32): `M42-*` (полночь на iOS/Android, 360 px, push на телефоне, M42-04 —
+  маскирование в `bani.access.log` на машине) не проходили, в `TEST_CATALOG.md` таблицы M42 и вердиктов QA нет. DNS, vhost, certbot, SmartCaptcha
+  для bani — за заказчиком. Замер каталога на 150 ресурсах (DO-42-07, p95 < 500 мс) — ↪ не найден в репозитории.
+- **C42-13 — правовой статус** (↪ `LEGAL_REVIEW_CYCLE42.md`, `ARCHITECTURE_CYCLE42.md` §42.0a): все новые тексты — черновые (8 ключей
+  `LegalTextKey.Bath*` вне `All`, запасные тексты в `bani/src/utils/baniTexts.ts`, `BathsTrialTerms` с пометкой «DRAFT until a lawyer reads it»);
+  `legal-drafts/` цикл не правил; правки D1–D4 и уведомление РКН (Т42-17) — до первого реального владельца. Реальные бани не приглашать.
+- **C42-14 — откат миграции и поведение после отката кода.** `Down()` не удаляет компании `Kind = 3`, устройства `Site = 3` и брони/ресурсы
+  банных компаний; после отката кода прежняя версия упадёт на них в первом `switch` по виду (`UnreachableException`). Откат схемы — только с
+  `pg_dump` и после ручного удаления банных компаний (`DEPLOY.md` §32). Миграция правилась в ветке после первого коммита (`09158ab`: `ServiceId`
+  nullable + `SetNull`, `ServiceNameSnapshot`) — если черновая версия где-то уже применялась (локальные базы разработчиков), схема разойдётся
+  с Designer-снимком.
+- **C42-15 — поведение dom изменилось** (намеренно, §42.18 п. 3): позиции услуг «Домов» с «алкогольными» основами теперь требуют подтверждения
+  (409 → повтор с `confirmRestricted`), описание с «задаток/невозвратн/депозит» → 400. У уже сохранённых позиций и описаний «Домов» проверка
+  не прогонялась — сработает только при следующем сохранении. Суперадминского «скрыть позицию» нет.
+- **C42-16 — хрупкое место: общие базы контроллеров.** Любая правка `Controllers/Slots/*Base` меняет одновременно `/api/stays/*` и `/api/baths/*`;
+  неизменность эталона «Домов» держит только `Cycle22RouteTable.golden.txt` + регресс CY39/CY37 и CY42-100…105. Хрупкая зона C39-10 (писатели
+  сеансов, порядок замков) сохранена, но публикация ресурса бани добавила `billing-account` первым замком.
 
 ---
 
@@ -3989,6 +4323,9 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 - Releases на GitHub и wiki не используются: тегов нет, ссылок на wiki в репозитории нет.
 - Внутренние справки: `BRIEF_BRAND_AND_DOMAINS.md` (бренд и домены «EZBOOK Запись» / «EZBOOK Заказы»),
   `BENCHMARK_CYCLE22.md`.
+- **На `d000673` (цикл 42, ветка не влита)** (✔ `grep -n '^## '`, `git log 4741843..HEAD -- CHANGELOG.md README.md`): раздела цикла 42 в
+  `CHANGELOG.md` и упоминания bani в `README.md` **нет** — их правит отдельная задача этого же цикла (в этой правке не трогались). Самый
+  верхний раздел `CHANGELOG.md` — «Не выпущено — цикл 40…» (строка 19).
 
 ### 10.2 Развёрнутая пользовательская документация
 - **`docs/`** (markdown, по ролям, только продукт ezbook — запись на услуги):
@@ -4041,6 +4378,8 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   кеш-заголовки goods, есть дубль-абзац в §21, C34-3), `DEPLOY-windows.md`,
   `INCIDENT_CHECK_PROCEDURE_CYCLE16.md`. Правовые внутренние документы — `legal-internal/*.md`, `LEGAL_REVIEW*.md`,
   `LEGAL_DECISIONS_CYCLE20.md`, `legal-drafts/README.md`.
+- **Цикл 42** (✔ grep по `docs/`): руководства по bani.ezbook.ru в `docs/` **нет** (ни «Бани», ни `bani`). Справка для пользователей
+  bani — только FAQ на главной (`frontend/bani/src/landing/`) и тексты интерфейса/запасные правовые тексты (`bani/src/utils/baniTexts.ts`).
 
 ### 10.3 Документация API для внешних потребителей
 - **`API_DOCUMENTATION.md`** (4 484 строки на `364cc2b`, markdown, по-русски) — основной справочник:
@@ -4081,7 +4420,7 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   генерат `api-cycle39.generated.ts`, JSON), `contracts/cycle39/dom-routes.json` (надмножество карты dom; встраивается в API вместо cycle37 —
   в cycle37-файле пометка `_supersededBy`), `contracts/cycle39/service-vectors.json` (векторы времени, цены, возврата, пересечений).
   Словами — `API_CONTRACT_CYCLE39.md` (535 строк, §39.20–§39.3x: конвенции, изменения маршрутов cycle37, маршруты по группам, лимиты §39.32).
-- **С цикла 40** (ветка не влита) — `contracts/cycle40/openapi.yaml` + `openapi.json` (OpenAPI 3.0.3, 3 227 строк: 3 новых маршрута целиком и
+- **С цикла 40** (влит в `develop` мерджем `0bd2225`) — `contracts/cycle40/openapi.yaml` + `openapi.json` (OpenAPI 3.0.3, 3 227 строк: 3 новых маршрута целиком и
   изменённые ответы каналов, настроек уведомлений, публичных страниц, записи, профиля, цен и админки; `x-examples` для prism-мока), JSON читает
   `OpenApiContract.Load("cycle40")` в CY40-CTR-01; в CI — lint, генерат `api-cycle40.generated.ts`, JSON. `contracts/cycle40/channel-vectors.json`
   — эталон правил каналов для C# и TS (§2). Словами — `API_CONTRACT_CYCLE40.md` (655 строк, §40.20–§40.39: конвенции, сводка изменений,
@@ -4097,6 +4436,10 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 - Swagger UI — только в Development; `swagger.json` там сейчас отдаёт 500 (C30-1, §9.1).
 - Полный перечень маршрутов с атрибутами — `ServiceBooking.Tests/Tests/Cycle22RouteTable.golden.txt` (§4).
 - Postman-коллекции нет. `ServiceBooking.API/ServiceBooking.API.http` — файл запросов IDE.
+- **С цикла 42** (ветка не влита) — `contracts/cycle42/openapi.yaml` + `openapi.json` (OpenAPI 3.0.3, 2 925 строк: 57 путей `/api/baths/*` и 7
+  изменённых существующих путей частичными схемами), `bani-routes.json`, `bani-vectors.json`; валидатор — `OpenApiContractValidatorTests`
+  (`cycle42`) и `Cycle42ContractTests`; в CI — lint, генерат `api-cycle42.generated.ts`, JSON. Словами — `API_CONTRACT_CYCLE42.md` (§42.20–§42.39,
+  497 строк). В `API_DOCUMENTATION.md` — **§4.23 «Бани»** (`a864849`, помечен «НЕ ВЫПУЩЕНО»; файл — 4 855 строк).
 
 ### 10.4 Описания тест-кейсов (отдельно от кода автотестов)
 - **`TEST_CATALOG.md`** (6 485 строк на `050816f`, markdown):
@@ -4173,8 +4516,18 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 - ID кейсов продублированы в коде атрибутом `[TestCase("CY26-01")]` на тестах `ServiceBooking.Tests`.
 - Ручные живые проверки выката — чек-листы в `DEPLOY.md` (§16 и шаги циклов).
 - Отдельного `TESTPLAN.md` или `docs/testing/` нет. Каталог сценариев — только `TEST_CATALOG.md`.
+- **На `d000673` (цикл 42, ветка не влита)** (✔ `grep`, `wc -l`): `TEST_CATALOG.md` — 7 867 строк; последний раздел — «Цикл 42 — «Бани»…»
+  (строка 7744): таблица областей → ID, таблица `Id | Что проверяет | US / источник | Класс → тесты | Статус` по CY42-01…115 и CY42-140, абзацы
+  «Найденное QA» (BUG-C42-QA-1…4, раунды 2–3) и команда прогона с переменными colima. Расхождения с кодом — §9.12 C42-11 (устаревшие «Skip»,
+  CY42-29 без теста, ссылка на несуществующий `REVIEW_CYCLE42.md`). Ручных `M42-*` в каталоге нет.
 
 ### 10.5 Документы циклов
+- **На `d000673`** (✔ `ls`, `wc -l`, `head`; ветка `cycle/042-bani`, не влита): корневой `SPEC.md` (938 строк) — по-прежнему **спека цикла 40**;
+  спека цикла 42 лежит только как `SPEC_CYCLE42_BANI.md` (607 строк, US-42-01…27, A42-1…13, «Решения заказчика от 09.10.2026»). Добавились
+  `BRIEF_CYCLE42_BANI.md` (62 строки), `ARCHITECTURE_CYCLE42.md` (945 строк, §42.0a решения и таблица Т42 → где закрыто, §42.0–§42.18, задачи
+  BE-42-*/FE-42-*/DO-42-*/QA, риски R42-*, отклонения от SPEC §42.18), `API_CONTRACT_CYCLE42.md` (497 строк), `LEGAL_REVIEW_CYCLE42.md` (636
+  строк, Т42-01…17, черновые тексты §11), `contracts/cycle42/`. `REVIEW_CYCLE42.md`, на который ссылается `TEST_CATALOG.md`, в репозитории нет.
+  `docs/history/` нет — переносить нечего.
 - **На `4d65578`** (✔ `ls`, `wc -l`, `cmp`; ветка `cycle/040-simplify-notification-channels`, не влита): корневой `SPEC.md` (938 строк) —
   **спека цикла 40** («упрощение каналов рассылок (WhatsApp / MAX)», дата 2026-10-08, редакция 2026-10-09; §0 запрос и решения О1–О8 и §0.4
   решения по юрразбору, §1–§10: пользователи, что есть по коду на `ece8038`, вне цикла, US-40-01…14, миграция, НФТ, задачи T-40-01…13,
