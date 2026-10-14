@@ -148,6 +148,52 @@ public class Cycle42TariffTrialTests(TestDatabaseFixture fixture) : Cycle39TestB
         (await AnonymousClient().GetAsync("/api/baths/trial")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    /// <summary>
+    /// CY42-29: решение от 09.10.2026 — мессенджер в триале «Бань» не включается: триал не заводит платных опций номера,
+    /// не пишет журнал каналов и не стартует «Дом/Записи»-триал аккаунта; задача жизненного цикла триала его не трогает.
+    /// </summary>
+    [Fact, TestCase("CY42-29")]
+    public async Task BathsTrial_DoesNotEnableMessenger_NoOptions_NoJournal_AndLifecycleTaskLeavesItAlone()
+    {
+        var b = await NewBathAsync();
+        var (status, outcome) = await ActivateTrialAsync(b.Token, TermsVersion);
+        status.Should().Be(HttpStatusCode.OK);
+        outcome.Granted.Should().BeTrue();
+        var accountId = await AccountIdAsync(b.Id);
+
+        async Task<(int Options, int Logs, DateTime? TrialStarted, TrialGrant Grant, BathsSubscription Sub)> SnapshotAsync() =>
+            await WithDbAsync(async db => (
+                await db.AccountSubscriptionOptions.CountAsync(o => o.BillingAccountId == accountId),
+                await db.ChannelOptionChangeLogs.CountAsync(l => l.BillingAccountId == accountId),
+                (await db.BillingAccounts.AsNoTracking().SingleAsync(a => a.Id == accountId)).TrialStartedAtUtc,
+                await db.TrialGrants.AsNoTracking().SingleAsync(g => g.BillingAccountId == accountId && g.Line == CompanyKind.Baths),
+                await db.BathsSubscriptions.AsNoTracking().SingleAsync(s => s.BillingAccountId == accountId)));
+
+        var before = await SnapshotAsync();
+        before.Options.Should().Be(0, "триал «Бань» не оплачивает номер и не создаёт платных опций");
+        before.Logs.Should().Be(0);
+        before.TrialStarted.Should().BeNull("триал линейки «Бани» не стартует общий триал аккаунта");
+
+        var refuse = await AuthedClient(b.Token).PutJsonAsync($"/api/baths/companies/{b.Id}/notification-settings",
+            new StaysNotificationSettingsInput(true, true, true, true, null, null));
+        refuse.StatusCode.Should().Be(HttpStatusCode.Conflict, await refuse.Content.ReadAsStringAsync());
+        (await refuse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString().Should().Be("MessengerUnavailable");
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var task = scope.ServiceProvider.GetServices<ServiceBooking.API.Services.Scheduling.IScheduledTask>().Single(t => t.Name == "trial-lifecycle");
+            await task.ExecuteAsync(CancellationToken.None);
+        }
+
+        var after = await SnapshotAsync();
+        after.Options.Should().Be(0);
+        after.Logs.Should().Be(0);
+        after.TrialStarted.Should().BeNull();
+        after.Grant.Should().BeEquivalentTo(before.Grant);
+        after.Sub.Should().BeEquivalentTo(before.Sub, o => o.Excluding(s => s.BillingAccount));
+        after.Sub.IsActive.Should().BeTrue();
+    }
+
     [Fact, TestCase("CY42-20")]
     public async Task TrialActivate_Grants14Days_WritesGrantWithTermsSnapshot_AndOpensThePlan()
     {
