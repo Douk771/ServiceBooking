@@ -46,7 +46,7 @@ public class PushController(
         var companies = await db.Companies.AsNoTracking()
             .Where(c => memberships.Contains(c.Id) && (allSites || c.Kind == siteKind))
             .Select(c => new { c.Id, c.Name, c.Kind }).ToListAsync(ct);
-        // §33.21: allSites — Services first, then Orders, then Stays (cycle 37), inside by name (ordinal).
+        // §33.21: allSites — Services first, then Orders, then Stays (cycle 37), then Baths (cycle 42), inside by name (ordinal).
         companies = companies.OrderBy(c => c.Kind).ThenBy(c => c.Name, StringComparer.Ordinal).ToList();
         var settingsByCompany = await db.CompanyNotificationSettings.AsNoTracking()
             .Where(s => memberships.Contains(s.CompanyId))
@@ -56,7 +56,7 @@ public class PushController(
             c.Id, c.Name, settingsByCompany.TryGetValue(c.Id, out var v) ? v : new CompanyNotificationSettings().StaffPushEnabled, c.Kind)).ToList();
 
         return Ok(new PushConfigDto(enabled, enabled ? opts.VapidPublicKey : null, opts.MaxSubscriptionsPerUser, companyDtos, siteKind,
-            new PushSiteUrlsDto(siteLinks.SiteBaseUrl(CompanyKind.Services), siteLinks.SiteBaseUrl(CompanyKind.Orders), siteLinks.SiteBaseUrl(CompanyKind.Stays))));
+            new PushSiteUrlsDto(siteLinks.SiteBaseUrl(CompanyKind.Services), siteLinks.SiteBaseUrl(CompanyKind.Orders), siteLinks.SiteBaseUrl(CompanyKind.Stays), siteLinks.SiteBaseUrl(CompanyKind.Baths))));
     }
 
     [HttpGet("subscriptions")]

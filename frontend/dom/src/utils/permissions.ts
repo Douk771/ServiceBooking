@@ -1,12 +1,6 @@
 import type { StaysMyRole, StaysPermission } from '../types'
 
-/**
- * Rights in the interface come from the server only: `myPermissions[]` of `GET /api/stays/companies/{id}` (ARCHITECTURE_CYCLE37.md §37.9,
- * §37.14.5). The menu is built from them; the server still checks every request (a hidden tab is not a lock).
- */
-export function can(perms: readonly StaysPermission[] | undefined, p: StaysPermission): boolean {
-  return !!perms && perms.includes(p)
-}
+export { can } from '@/utils/slots/slotPermissions'
 
 export interface CabinetTab {
   id: 'board' | 'bookings' | 'houses' | 'services' | 'schedule' | 'settings' | 'staff' | 'notifications' | 'link'

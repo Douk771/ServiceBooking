@@ -337,6 +337,43 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.BathsSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BillingAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("PaidUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("PlanConfigId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BillingAccountId")
+                        .IsUnique();
+
+                    b.HasIndex("PlanConfigId");
+
+                    b.ToTable("BathsSubscriptions");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.BillingAccount", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4382,6 +4419,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<int>("CancellationPolicy")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("Capacity")
+                        .HasColumnType("integer");
+
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uuid");
 
@@ -4441,6 +4481,8 @@ namespace ServiceBooking.Infrastructure.Migrations
                             t.HasCheckConstraint("CK_StayServices_Boundary", "\"CancellationBoundaryHours\" BETWEEN 1 AND 24");
 
                             t.HasCheckConstraint("CK_StayServices_Buffer", "\"BufferMinutes\" BETWEEN 0 AND 240 AND \"BufferMinutes\" % 15 = 0");
+
+                            t.HasCheckConstraint("CK_StayServices_Capacity", "\"Capacity\" IS NULL OR \"Capacity\" BETWEEN 1 AND 30");
 
                             t.HasCheckConstraint("CK_StayServices_Hours", "1 <= \"MinHours\" AND \"MinHours\" <= \"MaxHours\" AND \"MaxHours\" <= 12");
 
@@ -4530,6 +4572,74 @@ namespace ServiceBooking.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceItemConfirmation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ConfirmedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConfirmedByNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ConfirmedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ItemNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("MarkersHit")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("NoticeKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("NoticeVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<Guid?>("ServiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ServiceNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("ServiceId", "ConfirmedAtUtc");
+
+                    b.ToTable("StayServiceItemConfirmations");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceOrder", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4591,6 +4701,9 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.Property<string>("GuestUserId")
                         .HasColumnType("text");
+
+                    b.Property<int?>("GuestsCount")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("HoldExpiresAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -4665,6 +4778,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<Guid>("ServiceId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("SessionReminderAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -4714,6 +4830,8 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.ToTable("StayServiceOrders", t =>
                         {
+                            t.HasCheckConstraint("CK_StayServiceOrders_GuestsCount", "\"GuestsCount\" IS NULL OR \"GuestsCount\" BETWEEN 1 AND 30");
+
                             t.HasCheckConstraint("CK_StayServiceOrders_Money", "\"TotalRub\" = \"ServiceAmountRub\" + \"ItemsAmountRub\" AND \"DueOnSiteRub\" = \"TotalRub\" - \"PrepayRub\"");
                         });
                 });
@@ -5234,6 +5352,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<int?>("ProviderStatus")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("ServiceReminderHours")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("StaffMaxEnabled")
                         .HasColumnType("boolean");
 
@@ -5251,6 +5372,8 @@ namespace ServiceBooking.Infrastructure.Migrations
                             t.HasCheckConstraint("CK_StaysSettings_CheckOutNotAfterCheckIn", "\"CheckOutTime\" <= \"CheckInTime\"");
 
                             t.HasCheckConstraint("CK_StaysSettings_Nights", "\"MinNights\" BETWEEN 1 AND 30 AND \"MaxNights\" BETWEEN 1 AND 90 AND \"MinNights\" <= \"MaxNights\"");
+
+                            t.HasCheckConstraint("CK_StaysSettings_ServiceReminderHours", "\"ServiceReminderHours\" IS NULL OR \"ServiceReminderHours\" BETWEEN 1 AND 24");
                         });
                 });
 
@@ -5566,6 +5689,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     b.Property<int?>("MaxProductsPerShop")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MaxResources")
                         .HasColumnType("integer");
 
                     b.Property<string>("Name")
@@ -5932,6 +6058,24 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("BillingAccount");
 
                     b.Navigation("Option");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.BathsSubscription", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.BillingAccount", "BillingAccount")
+                        .WithMany()
+                        .HasForeignKey("BillingAccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.SubscriptionPlanConfig", "PlanConfig")
+                        .WithMany()
+                        .HasForeignKey("PlanConfigId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("BillingAccount");
+
+                    b.Navigation("PlanConfig");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.BillingAccount", b =>
@@ -6997,6 +7141,25 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasForeignKey("ServiceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceItemConfirmation", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.StayServiceItem", null)
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ServiceBooking.Core.Entities.StayService", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.StayServiceOrder", b =>

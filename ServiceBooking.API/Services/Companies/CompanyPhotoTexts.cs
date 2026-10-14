@@ -15,6 +15,8 @@ public static class CompanyPhotoTexts
     {
         CompanyKind.Orders => "магазина",
         CompanyKind.Stays => "компании «Дома»",
-        _ => "салона"
+        CompanyKind.Baths => "компании «Бани»",
+        CompanyKind.Services => "салона",
+        _ => throw new System.Diagnostics.UnreachableException()
     };
 }

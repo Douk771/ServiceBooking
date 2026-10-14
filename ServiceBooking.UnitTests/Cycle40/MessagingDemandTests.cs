@@ -45,5 +45,16 @@ public class MessagingDemandTests
         MessagingDemand.HasDemand([new(CompanyKind.Stays, true, false, null, true, false)]).Should().BeFalse();
     }
 
+    [Fact]
+    public void Baths_FollowGuestMessengerFlagLikeStays()
+    {
+        MessagingDemand.HasDemand([new(CompanyKind.Baths, true, false, null, false, true)]).Should().BeTrue();
+        MessagingDemand.HasDemand([new(CompanyKind.Baths, true, false, null, true, false)]).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Baths_CheckboxSubjectIsBookingAndDoesNotThrow() =>
+        CustomerMessagingOfferRule.CheckboxLabel(CompanyKind.Baths, [NotificationTransport.Max]).Should().StartWith("Получать уведомления о брони в ");
+
     [Fact] public void NoCompanies_NoDemand() => MessagingDemand.HasDemand([]).Should().BeFalse();
 }

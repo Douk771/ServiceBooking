@@ -12,7 +12,7 @@ namespace ServiceBooking.API.Services.Stays;
 /// </summary>
 public class ServiceDayService(AppDbContext db, ServiceSlotService slots, IStaysClock clock)
 {
-    private sealed record Row(StayServiceSession Session, string? HouseName, StayBookingStatus? Status, DateTime? HoldExpiresAtUtc);
+    private sealed record Row(StayServiceSession Session, string? HouseName, StayBookingStatus? Status, DateTime? HoldExpiresAtUtc, string? GuestName = null, int? GuestsCount = null, bool Erased = false);
 
     public static string BarStateText(StayBookingStatus status) => status switch
     {
@@ -20,6 +20,14 @@ public class ServiceDayService(AppDbContext db, ServiceSlotService slots, IStays
         StayBookingStatus.AwaitingPaymentCheck => "Проверка оплаты",
         _ => "Подтверждён"
     };
+
+    /// <summary>API_CONTRACT_CYCLE42.md §42.32: the bar of a «Бани» booking — «{имя гостя}, {N} чел.», or «Бронь» when the name is gone (erased / not given). The number of guests is shown only with a name.</summary>
+    public static string BathsBarLabel(string? guestName, int? guestsCount, bool erased)
+    {
+        var name = erased ? null : guestName?.Trim();
+        if (string.IsNullOrEmpty(name)) return "Бронь";
+        return guestsCount is { } n ? $"{name}, {n} чел." : name;
+    }
 
     public async Task<ServiceDayDto> BuildAsync(Company company, DateOnly date, CancellationToken ct)
     {
@@ -32,6 +40,7 @@ public class ServiceDayService(AppDbContext db, ServiceSlotService slots, IStays
         var serviceIds = sessions.Select(r => r.Session.ServiceId).Concat(previous.Select(r => r.Session.ServiceId)).ToHashSet();
         var services = await db.StayServices.AsNoTracking().Where(s => s.CompanyId == company.Id && (s.ArchivedAtUtc == null || serviceIds.Contains(s.Id)))
             .OrderBy(s => s.ArchivedAtUtc != null).ThenBy(s => s.Position).ThenBy(s => s.Name).ToListAsync(ct);
+        var isBaths = company.Kind == CompanyKind.Baths;
         var result = new List<ServiceDayServiceDto>();
         var from = int.MaxValue;
         var to = 0;
@@ -49,7 +58,8 @@ public class ServiceDayService(AppDbContext db, ServiceSlotService slots, IStays
                 var ses = r.Session;
                 var sessionEnd = ses.StartMinute + 60 * ses.Hours;
                 var needs = r.Status == StayBookingStatus.AwaitingPaymentCheck;
-                bars.Add(new ServiceDayBarDto(ServiceDayBarKind.Session, ses.Id, ses.StartMinute, sessionEnd, r.HouseName ?? "без проживания", r.Status?.ToString(),
+                bars.Add(new ServiceDayBarDto(ServiceDayBarKind.Session, ses.Id, ses.StartMinute, sessionEnd,
+                    isBaths ? BathsBarLabel(r.GuestName, r.GuestsCount, r.Erased) : r.HouseName ?? "без проживания", r.Status?.ToString(),
                     r.Status is { } st ? BarStateText(st) : null, needs));
                 if (ses.BufferMinutesSnapshot > 0)
                     bars.Add(new ServiceDayBarDto(ServiceDayBarKind.Buffer, ses.Id, sessionEnd, Math.Min(sessionEnd + ses.BufferMinutesSnapshot, end), "подготовка", null, null, false));
@@ -73,7 +83,7 @@ public class ServiceDayService(AppDbContext db, ServiceSlotService slots, IStays
         var orderIds = sessions.Where(s => s.StayServiceOrderId != null).Select(s => s.StayServiceOrderId!.Value).ToList();
         var bookings = await (from bk in db.StayBookings.AsNoTracking() join h in db.Houses.AsNoTracking() on bk.HouseId equals h.Id where bookingIds.Contains(bk.Id)
                               select new { bk.Id, bk.Status, bk.HoldExpiresAtUtc, HouseName = h.Name }).ToDictionaryAsync(x => x.Id, ct);
-        var orders = await db.StayServiceOrders.AsNoTracking().Where(o => orderIds.Contains(o.Id)).Select(o => new { o.Id, o.Status, o.HoldExpiresAtUtc }).ToDictionaryAsync(o => o.Id, ct);
+        var orders = await db.StayServiceOrders.AsNoTracking().Where(o => orderIds.Contains(o.Id)).Select(o => new { o.Id, o.Status, o.HoldExpiresAtUtc, o.GuestName, o.GuestsCount, o.PersonalDataErased }).ToDictionaryAsync(o => o.Id, ct);
         var rows = new List<Row>();
         foreach (var s in sessions)
         {
@@ -85,7 +95,7 @@ public class ServiceDayService(AppDbContext db, ServiceSlotService slots, IStays
             else if (s.StayServiceOrderId is { } oid && orders.TryGetValue(oid, out var o))
             {
                 if (o.Status == StayBookingStatus.Held && o.HoldExpiresAtUtc <= now) continue;
-                rows.Add(new Row(s, null, o.Status, o.HoldExpiresAtUtc));
+                rows.Add(new Row(s, null, o.Status, o.HoldExpiresAtUtc, o.GuestName, o.GuestsCount, o.PersonalDataErased));
             }
         }
         return rows;

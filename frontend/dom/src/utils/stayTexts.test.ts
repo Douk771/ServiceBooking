@@ -97,3 +97,17 @@ describe('StayTexts fallbacks of cycle 39', () => {
     expect(t).toContain('href="/privacy"')
   })
 })
+
+// Т42-01 / Т42-07 (LEGAL_REVIEW_CYCLE42.md §12).
+describe('service texts name the company neutrally (Т42-01)', () => {
+  it.each(['StayServiceBookingNotice', 'StayServiceBookingTerms'] as StayTextKey[])('%s has no «сдаёт» fallback', (k) => {
+    expect(allText(k)).not.toMatch(/сдаёт/)
+    expect(allText(k)).toContain('которая оказывает эту услугу')
+  })
+  it('the house texts keep their wording', () => {
+    expect(allText('StayBookingNotice')).toContain('которая сдаёт этот дом')
+  })
+  it('the owner safety hint warns about curative claims and medical services (Т42-07)', () => {
+    expect(allText('StayServiceSafetyOwnerNotice')).toMatch(/лечебного эффекта[\s\S]*медицинск/)
+  })
+})

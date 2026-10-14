@@ -2,8 +2,8 @@ import { api } from './client'
 import type { PushConfig, PushSubscriptionDevice, StaffPushSettings } from '../types'
 
 // API_CONTRACT_CYCLE9.md §115 — staff Web Push.
-/** API_CONTRACT_CYCLE24.md §484 — which site's devices: ezbook sends nothing (server default `Services`), goods `Orders`, dom `Stays` (API_CONTRACT_CYCLE37.md §37.21.5). */
-export type PushSite = 'Services' | 'Orders' | 'Stays'
+/** API_CONTRACT_CYCLE24.md §484 — which site's devices: ezbook sends nothing (server default `Services`), goods `Orders`, dom `Stays` (API_CONTRACT_CYCLE37.md §37.21.5), bani `Baths` (API_CONTRACT_CYCLE42.md). */
+export type PushSite = 'Services' | 'Orders' | 'Stays' | 'Baths'
 
 /** API_CONTRACT_CYCLE33.md §33.21-§33.22 — `allSites=true` asks for both sites; sent only when true. */
 export interface PushAllSitesOption {

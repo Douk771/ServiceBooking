@@ -37,7 +37,12 @@ public record OwnerSubscriptionDto(
     StaysSubscriptionBlockDto? Stays = null,
     // Cycle 40 (§40.14): the price lines of the messenger options, as on the public price list.
     IReadOnlyList<MessengerAddonDto>? MessengerAddons = null,
-    MessengerAddonsNoteDto? MessengerAddonsNote = null);
+    MessengerAddonsNoteDto? MessengerAddonsNote = null,
+    // Cycle 42 (API_CONTRACT_CYCLE42.md §42.5.5) — the «Бани» block; set only when Line = Baths.
+    BathsSubscriptionBlockDto? Baths = null);
+
+/// <summary>Published resources against the limit of the «Бани» tariff, the trial and the banner level (the same words as BathsPlanSummaryDto).</summary>
+public record BathsSubscriptionBlockDto(int ResourcesPublished, int? MaxResources, bool IsTrial, DateTime? TrialEndsAtUtc, string WarningLevel, string? Text);
 
 /// <summary>Published houses against the limit of the «Дома» tariff, the trial and the banner level (the same words as StaysPlanSummaryDto).</summary>
 public record StaysSubscriptionBlockDto(int HousesPublished, int? MaxHouses, bool IsTrial, DateTime? TrialEndsAtUtc, string WarningLevel, string? Text);
@@ -52,7 +57,8 @@ public record OrdersUsageDto(
 /// "no limit" for a «Дома» plan; for the other lines the field is OMITTED (the schema of cycle 24 is strict about unknown properties).</summary>
 public record AvailablePlanDto(
     Guid PlanId, string Name, decimal PricePerMonth, string? Description, IReadOnlyList<string> Highlights, string LimitsText,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? MaxHouses = null);
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? MaxHouses = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? MaxResources = null);
 
 public record RejectedRequestDto(string Reason, DateTime RejectedAtUtc);
 

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Baths;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Bookings;
 using ServiceBooking.API.Services.Companies;
@@ -183,7 +184,8 @@ public class CompaniesController(
         return Ok(new CompanyKindsSummaryDto(
             new CompanyKindSummaryItemDto(CountOf(CompanyKind.Services), siteLinks.SiteBaseUrl(CompanyKind.Services)),
             new CompanyKindSummaryItemDto(CountOf(CompanyKind.Orders), siteLinks.SiteBaseUrl(CompanyKind.Orders)),
-            new CompanyKindSummaryItemDto(CountOf(CompanyKind.Stays), siteLinks.SiteBaseUrl(CompanyKind.Stays))));
+            new CompanyKindSummaryItemDto(CountOf(CompanyKind.Stays), siteLinks.SiteBaseUrl(CompanyKind.Stays)),
+            new CompanyKindSummaryItemDto(CountOf(CompanyKind.Baths), siteLinks.SiteBaseUrl(CompanyKind.Baths))));
     }
 
     [HttpGet("{slug}")]
@@ -191,6 +193,8 @@ public class CompaniesController(
     {
         var c = await db.Companies.FirstOrDefaultAsync(c => c.Slug == slug && c.IsActive, ct);
         if (c is null) return NotFound();
+        // ARCHITECTURE_CYCLE42.md §42.3.4: a «Бани» company has no salon public page — it is "not there" for this route (its page lives on bani.ezbook.ru).
+        if (!CompanyKindTraits.For(c.Kind).VisibleOnSalonPublicPage) return NotFound();
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(c.Id);
         // US-49 regression fix (QA cycle C): rating shown on the public company page must be a true
@@ -402,7 +406,7 @@ public class CompaniesController(
                 }
             }
         }
-        else if (city is not null && company.Kind == CompanyKind.Services)
+        else if (city is not null && company.Kind is CompanyKind.Services or CompanyKind.Baths)
         {
             var (timeZoneId, timeZoneIsManual) = CompanyTimeZoneResolver.ForUpdate(
                 effectiveCityTimeZoneId: city.TimeZoneId,
@@ -411,6 +415,21 @@ public class CompaniesController(
                 requestedTimeZoneId: dto.TimeZoneId.Value,
                 currentTimeZoneId: company.TimeZoneId,
                 currentIsManual: company.TimeZoneIsManual);
+
+            // I-2 (ARCHITECTURE_CYCLE42.md §42.3.4): «Бани» with future bookings keep their city and zone. Held, AwaitingPaymentCheck and Confirmed count.
+            if (company.Kind == CompanyKind.Baths && (cityChanged || timeZoneId != company.TimeZoneId))
+            {
+                var nowUtc = DateTime.UtcNow;
+                var hasFutureBookings = await (from s in db.StayServiceSessions
+                                               join o in db.StayServiceOrders on s.StayServiceOrderId equals o.Id
+                                               where s.CompanyId == id && s.ReleasedAtUtc == null && s.EndUtc > nowUtc &&
+                                                     (o.Status == StayBookingStatus.AwaitingPaymentCheck || o.Status == StayBookingStatus.Confirmed ||
+                                                      (o.Status == StayBookingStatus.Held && (o.HoldExpiresAtUtc == null || o.HoldExpiresAtUtc > nowUtc)))
+                                               select s.Id).AnyAsync();
+                if (!BathsLocationChangePolicy.IsAllowed(cityChanged, company.TimeZoneId, timeZoneId, hasFutureBookings))
+                    return Conflict(BathsLocationChangePolicy.LockedText);
+            }
+
             company.TimeZoneId = timeZoneId;
             company.TimeZoneIsManual = timeZoneIsManual;
         }
@@ -479,7 +498,7 @@ public class CompaniesController(
             (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, id, userId));
         if (!isAllowed) return Forbid();
         // §389.2: salon-only route (rights first, kind second). Cycle 37 (§37.21.1): a "Дома" company is told that photos belong to houses.
-        if (company.Kind == CompanyKind.Stays) return Conflict(ServiceBooking.API.Services.Stays.StaysTexts.GalleryRefusalText);
+        if (!CompanyKindTraits.For(company.Kind).HasCompanyGallery) return Conflict(ServiceBooking.API.Services.Stays.StaysTexts.GalleryRefusalText);
         if (CompanyKindGuard.RejectNonSalon(company.Kind) is { } shopRefusal) return shopRefusal;
 
         var usedBytes = await db.ClientNotePhotos.Where(p => p.CompanyId == id).SumAsync(p => (long?)p.SizeBytes, ct) ?? 0;

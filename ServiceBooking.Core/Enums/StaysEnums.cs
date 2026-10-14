@@ -171,7 +171,8 @@ public enum StayServiceOrderEventKind
     CancelledByGuest = 6,
     CancelledByOwner = 7,
     PaymentProofsPurged = 8,
-    PersonalDataErased = 9
+    PersonalDataErased = 9,
+    SessionReminderSent = 10
 }
 
 public enum StayServiceScheduleEventKind

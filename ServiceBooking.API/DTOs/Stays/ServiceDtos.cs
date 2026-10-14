@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using ServiceBooking.API.Services.Stays;
 using ServiceBooking.Core.Enums;
 
@@ -70,7 +71,10 @@ public record PublicServiceDto(
     Guid Id, string Slug, string Name, string? Description, List<ServicePhotoDto> Photos, int MinHours, int MaxHours, int StepMinutes,
     List<PriceTableRowDto> PriceTable, List<ServiceItemPublicDto> Items, int? BufferMinutes, PublicServiceStandaloneDto Standalone,
     PublicServiceCompanyDto Company, ProviderPublicDto? Provider, bool AcceptingBookings, string? NotAcceptingText, bool Available, string? NotAvailableText,
-    DateOnly Today, string TimeZoneId);
+    DateOnly Today, string TimeZoneId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Capacity = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CityName = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LocalTimeNote = null);
 
 public record AvailabilityDayDto(DateOnly BusinessDate, string Label, bool HasStarts);
 
@@ -93,7 +97,7 @@ public record ServiceQuoteDto(
 
 public record CreateServiceOrderInput(
     DateOnly? BusinessDate, int? StartMinute, int? Hours, List<ItemSelectionInput>? Items, string? GuestName, string? GuestPhone, string? Comment,
-    bool NotifyByMessenger, int ExpectedTotalRub, Guid? IdempotencyKey, string? CaptchaToken);
+    bool NotifyByMessenger, int ExpectedTotalRub, Guid? IdempotencyKey, string? CaptchaToken, int? GuestsCount = null);
 
 public record CreateServiceOrderResponse(string Token, string OrderUrl, PublicServiceOrderDto Order);
 
@@ -112,7 +116,12 @@ public record PublicServiceOrderDto(
     List<HourPriceDto> HourPrices, int ServiceAmountRub, int ItemsAmountRub, int TotalRub, int? PrepayPercent, int PrepayRub, int DueOnSiteRub,
     PaymentInstructionsDto? Payment, DateTime? PaymentConfirmedAtUtc, List<PaymentProofDto> PaymentProofs, ProofRulesDto Proofs, OrderCancellationDto Cancellation,
     string? GuestName, string? GuestPhoneMasked, string? Comment, string? StatusReason, string? OutcomeText, OrderNotificationsDto Notifications,
-    List<string> AvailableActions);
+    List<string> AvailableActions,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? GuestsCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CityName = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LocalTimeNote = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Baths.SessionReminderViewDto? SessionReminder = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BookAgainUrl = null);
 
 // ── services of a stay (the booking page) ──
 public record BookingServiceOptionDto(Guid Id, string Name, string Url, string? CoverThumbUrl, int? PriceFromRub, int MinHours, List<AvailabilityDayDto> Dates,
@@ -139,7 +148,7 @@ public record ServiceCreateInput(string? Name);
 
 public record ServiceSetupInput(
     string? Name, string? Slug, int MinHours, int MaxHours, int StepMinutes, int BufferMinutes, bool ShowBufferToGuests, int MinLeadMinutes, int? StandalonePrepayPercent,
-    StayServiceCancellationPolicy CancellationPolicy, int CancellationBoundaryHours, bool AvailableForHouseBookings);
+    StayServiceCancellationPolicy CancellationPolicy, int CancellationBoundaryHours, bool AvailableForHouseBookings, int? Capacity = null);
 
 public record ServiceContentInput(string? Description);
 
@@ -149,7 +158,7 @@ public record ServiceManageDto(
     Guid Id, string Slug, string Name, string? Description, int MinHours, int MaxHours, int StepMinutes, int BufferMinutes, bool ShowBufferToGuests,
     int MinLeadMinutes, int? StandalonePrepayPercent, StayServiceCancellationPolicy CancellationPolicy, int CancellationBoundaryHours,
     BoundaryRangeDto CancellationBoundaryRange, bool AvailableForHouseBookings, bool IsPublished, bool IsArchived, int Position, List<ServicePhotoDto> Photos,
-    string PublicUrl, List<string> PublishProblems, bool HasSessions);
+    string PublicUrl, List<string> PublishProblems, bool HasSessions, int? Capacity = null, List<string>? ContentWarnings = null);
 
 public record PriceRuleDto(Guid Id, int DaysMask, int FromHour, int ToHour, int PriceRub, string Label);
 
@@ -161,9 +170,9 @@ public record PriceMatrixRowDto(int DayOfWeek, string Label, List<PriceMatrixCel
 
 public record PriceRulesDto(List<PriceRuleDto> Rules, List<PriceMatrixRowDto> Matrix);
 
-public record ServiceItemDto(Guid Id, string Name, int PriceRub, int MaxPerSession, bool IsActive, int Position);
+public record ServiceItemDto(Guid Id, string Name, int PriceRub, int MaxPerSession, bool IsActive, int Position, List<string>? Warnings = null);
 
-public record ServiceItemInput(string? Name, int PriceRub, int MaxPerSession, bool IsActive);
+public record ServiceItemInput(string? Name, int PriceRub, int MaxPerSession, bool IsActive, bool? ConfirmRestricted = null);
 
 // ── the cabinet: schedule ──
 public record WeeklyDayDto(int DayOfWeek, string Label, List<ServiceWindowDto> Windows);
@@ -212,7 +221,8 @@ public record StaffServiceSessionCardDto(
     string PreparedUntilLabel, StayServiceSessionState State, StayBookingStatus? OrderStatus, string? DisplayStatus, string StatusText, DateTime? HoldExpiresAtUtc,
     SessionBookingRefDto? Booking, string? GuestName, string? GuestPhone, string? Comment, SessionAddedByDto AddedBy, StayServiceCancellationPolicy? CancellationPolicy,
     string? OwnerCancelRefundText, List<PaymentProofDto> PaymentProofs, PaymentConfirmedDto? PaymentConfirmed, DateTime? PaymentProofsPurgedAtUtc, string? StatusReason,
-    bool IsManual, List<string> AvailableActions, List<StayBookingEventDto> Events);
+    bool IsManual, List<string> AvailableActions, List<StayBookingEventDto> Events,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? GuestsCount = null);
 
 public record StaffServiceQuoteInput(Guid? ServiceId, DateOnly? BusinessDate, int? StartMinute, int? Hours, List<ItemSelectionInput>? Items, Guid? BookingId);
 
@@ -221,7 +231,7 @@ public record StaffAddSessionInput(
 
 public record ManualServiceOrderInput(
     Guid? ServiceId, DateOnly? BusinessDate, int? StartMinute, int? Hours, List<ItemSelectionInput>? Items, string? GuestName, string? GuestPhone, string? Comment,
-    StayServiceRequestBasis? RequestBasis, Guid? IdempotencyKey);
+    StayServiceRequestBasis? RequestBasis, Guid? IdempotencyKey, int? GuestsCount = null);
 
 public record StaffBookingSessionDto(
     Guid Id, int Version, string ServiceName, ServiceTimeDto Time, List<SessionItemDto> Items, int TotalRub, StayServiceSessionState State, string StateText,

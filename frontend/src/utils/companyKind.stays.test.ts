@@ -7,7 +7,7 @@ describe('company kind «Дома» (cycle 37, §37.3.3 п. 4)', () => {
     expect(companyKindLabel('Stays')).toBe('Дома')
     expect(companyKindLabel('Orders')).toBe('Магазин')
     expect(companyKindLabel(undefined)).toBe('Салон')
-    expect(COMPANY_KIND_FILTERS.map((f) => f.label)).toEqual(['Все', 'Салоны', 'Магазины', 'Дома'])
+    expect(COMPANY_KIND_FILTERS.map((f) => f.label)).toEqual(['Все', 'Салоны', 'Магазины', 'Дома', 'Бани'])
     expect(kindParam('Stays')).toBe('Stays')
     expect(kindParam('all')).toBeUndefined()
   })

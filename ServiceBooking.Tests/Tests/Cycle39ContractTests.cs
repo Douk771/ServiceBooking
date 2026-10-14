@@ -16,6 +16,14 @@ public class Cycle39ContractTests(TestDatabaseFixture fixture) : Cycle39TestBase
 {
     private static readonly OpenApiContract C39 = OpenApiContract.Load("cycle39");
 
+    /// <summary>
+    /// Поля, которые цикл 42 ДОПИСАЛ в кабинет услуг «Домов» (<c>capacity</c>, <c>contentWarnings</c> в ServiceManageDto, <c>warnings</c> в ServiceItemDto). Схема cycle39 заморожена
+    /// (контракт выпущенного цикла не правится), а схема cycle42 описывает setup/items/content «Домов» частично и не покрывает остальные маршруты кабинета услуг, поэтому
+    /// здесь отдельно допускается ровно этот набор «поле не описано схемой». Форма этих полей проверяется по схеме cycle42 в Cycle42ContractTests.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex Cycle42AdditiveField =
+        new(@"^\$(\[\d+\])?\.(capacity|contentWarnings|warnings): property is not described by the schema$");
+
     private sealed class Violations
     {
         public readonly List<string> Items = [];
@@ -28,7 +36,7 @@ public class Cycle39ContractTests(TestDatabaseFixture fixture) : Cycle39TestBase
             JsonElement body;
             try { body = JsonDocument.Parse(text).RootElement.Clone(); }
             catch (JsonException) { Items.Add($"{method} {path} -> {status}: тело не JSON: {text}"); return; }
-            Items.AddRange(C39.Collect(method, path, status, body).Select(e => $"{method} {path} -> {status}: {e}"));
+            Items.AddRange(C39.Collect(method, path, status, body).Where(e => !Cycle42AdditiveField.IsMatch(e)).Select(e => $"{method} {path} -> {status}: {e}"));
         }
     }
 

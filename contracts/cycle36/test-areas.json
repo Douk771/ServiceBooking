@@ -80,6 +80,11 @@
       "description": "Посуточная аренда домов: каталог, страница дома и брони, кабинет владельца, шахматка, график, расчёты по эталонным векторам, всё приложение dom.",
       "frontendPathPrefixes": [
         "dom/src/",
+        "bani/src/",
+        "src/components/slots/",
+        "src/utils/slots/",
+        "src/hooks/slots/",
+        "src/api/slots",
         "src/components/landing/"
       ]
     },

@@ -3,8 +3,10 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Stays;
+using ServiceBooking.API.Services.Baths;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.PhoneVerification;
+using ServiceBooking.API.Services.Slots;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -34,25 +36,42 @@ public static class StaysTrialTerms
     public const string VersionMismatch = "Условия пробного периода были обновлены — перечитайте и примите новую редакцию.";
 }
 
-/// <summary>ARCHITECTURE_CYCLE37.md §37.10.2 — the once-only trial of the "Дома" line (same checks, order and uniqueness registry as the salon trial, with Line = Stays).</summary>
+/// <summary>
+/// ARCHITECTURE_CYCLE37.md §37.10.2, ARCHITECTURE_CYCLE42.md §42.5.4 — the once-only trial of a slot line ("Дома" or «Бани»; same checks, order and uniqueness
+/// registry as the salon trial, with Line = the vertical's kind). The methods without a vertical are the "Дома" wrappers of cycle 37. The trial plan is found
+/// by the vertical's <see cref="SlotVertical.TrialPlanId"/> (the «Бани» trial has IsSystemTrial = false: the unique index is taken by the salon trial).
+/// </summary>
 public class StaysTrialService(
     AppDbContext db, StaysPlanResolver plans, IOptions<TrialOptions> trialOptions, IOptions<StaysOptions> options,
-    IPhoneVerificationMethodRegistry phoneRegistry, IStaysClock clock)
+    IPhoneVerificationMethodRegistry phoneRegistry, IStaysClock clock, IOptions<BathsOptions> bathsOptions)
 {
+    private int TrialDays(SlotVertical v) => v.Kind switch
+    {
+        CompanyKind.Stays => options.Value.TrialDays,
+        CompanyKind.Baths => bathsOptions.Value.TrialDays,
+        _ => throw new ArgumentOutOfRangeException(nameof(v), v.Kind, "Not a slot vertical.")
+    };
+
     private bool PhoneVerificationEnabled => phoneRegistry.Get(PhoneVerificationMethod.MaxBot).Enabled;
 
-    public async Task<StaysTrialStateDto> GetStateAsync(Guid accountId, string ownerUserId, CancellationToken ct = default)
+    public Task<StaysTrialStateDto> GetStateAsync(Guid accountId, string ownerUserId, CancellationToken ct = default) =>
+        GetStateAsync(SlotVerticals.Stays, accountId, ownerUserId, ct);
+
+    public Task<StaysTrialOutcomeDto> GrantAsync(Guid accountId, string ownerUserId, string? acknowledgedTermsVersion, CancellationToken ct = default) =>
+        GrantAsync(SlotVerticals.Stays, accountId, ownerUserId, acknowledgedTermsVersion, ct);
+
+    public async Task<StaysTrialStateDto> GetStateAsync(SlotVertical vertical, Guid accountId, string ownerUserId, CancellationToken ct = default)
     {
-        var days = options.Value.TrialDays;
-        var plan = await db.SubscriptionPlanConfigs.AsNoTracking().FirstOrDefaultAsync(p => p.Id == StaysPlans.TrialSeedId, ct);
+        var days = TrialDays(vertical);
+        var plan = await db.SubscriptionPlanConfigs.AsNoTracking().FirstOrDefaultAsync(p => p.Id == vertical.TrialPlanId, ct);
         var offered = plan is { IsActive: true };
-        var current = await plans.GetForAccountAsync(accountId, clock.UtcNow, ct);
-        var terms = (StaysTrialTerms.Version, StaysTrialTerms.Text(days));
+        var current = await plans.GetForAccountAsync(vertical, accountId, clock.UtcNow, ct);
+        var terms = (vertical.TrialTerms.Version, vertical.TrialTerms.Text(days));
 
         if (!offered) return new(false, false, "TrialNotOffered", StaysTrialTerms.NotOffered, terms.Version, terms.Item2, days, null);
         if (current.HasActivePlan && current.IsTrial) return new(true, false, "TrialAlreadyActive", StaysTrialTerms.AlreadyActive, terms.Version, terms.Item2, days, current.PaidUntilUtc);
         if (current.HasActivePlan) return new(true, false, "AlreadyOnPaidPlan", StaysTrialTerms.AlreadyOnPaidPlan, terms.Version, terms.Item2, days, null);
-        if (await db.TrialGrants.AsNoTracking().AnyAsync(g => g.BillingAccountId == accountId && g.Line == CompanyKind.Stays && g.Source != TrialGrantSource.SuperAdminOverride, ct))
+        if (await db.TrialGrants.AsNoTracking().AnyAsync(g => g.BillingAccountId == accountId && g.Line == vertical.Kind && g.Source != TrialGrantSource.SuperAdminOverride, ct))
             return new(true, false, "TrialAlreadyUsed", StaysTrialTerms.AlreadyUsed, terms.Version, terms.Item2, days, null);
         var phone = await VerifiedPhoneOfAsync(ownerUserId, ct);
         if (phone is null)
@@ -61,23 +80,25 @@ public class StaysTrialService(
         return new(true, true, null, null, terms.Version, terms.Item2, days, null);
     }
 
-    public async Task<StaysTrialOutcomeDto> GrantAsync(Guid accountId, string ownerUserId, string? acknowledgedTermsVersion, CancellationToken ct = default)
+    public async Task<StaysTrialOutcomeDto> GrantAsync(SlotVertical vertical, Guid accountId, string ownerUserId, string? acknowledgedTermsVersion, CancellationToken ct = default)
     {
-        if (acknowledgedTermsVersion != StaysTrialTerms.Version) return Refuse("TrialTermsVersionMismatch", StaysTrialTerms.VersionMismatch);
+        if (acknowledgedTermsVersion != vertical.TrialTerms.Version) return Refuse("TrialTermsVersionMismatch", StaysTrialTerms.VersionMismatch);
         var now = clock.UtcNow;
-        var days = options.Value.TrialDays;
+        var days = TrialDays(vertical);
 
-        var plan = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.Id == StaysPlans.TrialSeedId, ct);
+        var plan = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.Id == vertical.TrialPlanId, ct);
         if (plan is not { IsActive: true }) return Refuse("TrialNotOffered", StaysTrialTerms.NotOffered);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await AdvisoryLock.AcquireAsync(db, $"billing-account:{accountId}");
 
-        var sub = await db.StaysSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == accountId, ct);
-        var current = StaysPlanResolver.Resolve(sub, now);
+        var isBaths = vertical.Kind == CompanyKind.Baths;
+        var staysSub = isBaths ? null : await db.StaysSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == accountId, ct);
+        var bathsSub = isBaths ? await db.BathsSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == accountId, ct) : null;
+        var current = isBaths ? StaysPlanResolver.ResolveBaths(bathsSub, now) : StaysPlanResolver.Resolve(staysSub, now);
         if (current.HasActivePlan && current.IsTrial) return Refuse("TrialAlreadyActive", StaysTrialTerms.AlreadyActive);
         if (current.HasActivePlan) return Refuse("AlreadyOnPaidPlan", StaysTrialTerms.AlreadyOnPaidPlan);
-        if (await db.TrialGrants.AnyAsync(g => g.BillingAccountId == accountId && g.Line == CompanyKind.Stays && g.Source != TrialGrantSource.SuperAdminOverride, ct))
+        if (await db.TrialGrants.AnyAsync(g => g.BillingAccountId == accountId && g.Line == vertical.Kind && g.Source != TrialGrantSource.SuperAdminOverride, ct))
             return Refuse("TrialAlreadyUsed", StaysTrialTerms.AlreadyUsed);
 
         var phone = await VerifiedPhoneOfAsync(ownerUserId, ct);
@@ -91,32 +112,48 @@ public class StaysTrialService(
         if (o.UniquenessCheck.Enabled)
         {
             keyHash = TrialPhoneKey.Compute(o.PhoneKeyHmac!, phone);
-            if (await db.TrialPhoneRegistrations.AnyAsync(r => r.Line == CompanyKind.Stays && r.PhoneKeyHash == keyHash, ct))
+            if (await db.TrialPhoneRegistrations.AnyAsync(r => r.Line == vertical.Kind && r.PhoneKeyHash == keyHash, ct))
                 return Refuse("TrialPhoneAlreadyUsed", StaysTrialTerms.PhoneAlreadyUsed);
         }
 
         var endsAt = now.AddDays(days);
-        if (sub is null)
+        if (isBaths)
         {
-            sub = new StaysSubscription { Id = Guid.NewGuid(), BillingAccountId = accountId, CreatedAtUtc = now };
-            db.StaysSubscriptions.Add(sub);
+            if (bathsSub is null)
+            {
+                bathsSub = new BathsSubscription { Id = Guid.NewGuid(), BillingAccountId = accountId, CreatedAtUtc = now };
+                db.BathsSubscriptions.Add(bathsSub);
+            }
+            bathsSub.PlanConfigId = plan.Id;
+            bathsSub.IsActive = true;
+            bathsSub.PaidUntil = endsAt;
+            bathsSub.UpdatedAtUtc = now;
+            bathsSub.UpdatedByUserId = ownerUserId;
         }
-        sub.PlanConfigId = plan.Id;
-        sub.IsActive = true;
-        sub.PaidUntil = endsAt;
-        sub.UpdatedAtUtc = now;
-        sub.UpdatedByUserId = ownerUserId;
+        else
+        {
+            if (staysSub is null)
+            {
+                staysSub = new StaysSubscription { Id = Guid.NewGuid(), BillingAccountId = accountId, CreatedAtUtc = now };
+                db.StaysSubscriptions.Add(staysSub);
+            }
+            staysSub.PlanConfigId = plan.Id;
+            staysSub.IsActive = true;
+            staysSub.PaidUntil = endsAt;
+            staysSub.UpdatedAtUtc = now;
+            staysSub.UpdatedByUserId = ownerUserId;
+        }
         db.TrialGrants.Add(new TrialGrant
         {
-            Id = Guid.NewGuid(), BillingAccountId = accountId, Line = CompanyKind.Stays, PlanConfigId = plan.Id, GrantedAtUtc = now, EndsAtUtc = endsAt,
+            Id = Guid.NewGuid(), BillingAccountId = accountId, Line = vertical.Kind, PlanConfigId = plan.Id, GrantedAtUtc = now, EndsAtUtc = endsAt,
             DurationDays = days, MailingWindowDays = 0, WarningThresholdsDays = string.Empty, Source = TrialGrantSource.OwnerSelfService,
-            GrantedByUserId = ownerUserId, TermsVersion = StaysTrialTerms.Version, TermsTextSha256 = StaysTrialTerms.Sha256,
+            GrantedByUserId = ownerUserId, TermsVersion = vertical.TrialTerms.Version, TermsTextSha256 = vertical.TrialTerms.Sha256,
             TermsShownAtUtc = now, TermsAcknowledgedAtUtc = now,
         });
         if (keyHash is not null)
             db.TrialPhoneRegistrations.Add(new TrialPhoneRegistration
             {
-                Id = Guid.NewGuid(), Line = CompanyKind.Stays, PhoneKeyHash = keyHash, RegisteredAtUtc = now, KeyId = o.PhoneKeyId!
+                Id = Guid.NewGuid(), Line = vertical.Kind, PhoneKeyHash = keyHash, RegisteredAtUtc = now, KeyId = o.PhoneKeyId!
             });
         try
         {

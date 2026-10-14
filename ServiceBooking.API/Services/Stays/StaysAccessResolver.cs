@@ -19,15 +19,15 @@ public sealed record StaysAccessResult(ActionResult? Error, Company? Company = n
 public class StaysAccessResolver(AppDbContext db)
 {
     public async Task<StaysAccessResult> ResolveAsync(
-        Guid companyId, ClaimsPrincipal user, StaysPermission permission, bool asNoTracking = false, CancellationToken ct = default) =>
-        await ResolveAnyAsync(companyId, user, [permission], asNoTracking, ct);
+        Guid companyId, ClaimsPrincipal user, StaysPermission permission, bool asNoTracking = false, CancellationToken ct = default, CompanyKind kind = CompanyKind.Stays) =>
+        await ResolveAnyAsync(companyId, user, [permission], asNoTracking, ct, kind);
 
     /// <summary>Passes when the caller has AT LEAST ONE of the permissions (routes open to two rights, e.g. ViewCabinet or ViewSchedule).</summary>
     public async Task<StaysAccessResult> ResolveAnyAsync(
-        Guid companyId, ClaimsPrincipal user, IReadOnlyCollection<StaysPermission> anyOf, bool asNoTracking = false, CancellationToken ct = default)
+        Guid companyId, ClaimsPrincipal user, IReadOnlyCollection<StaysPermission> anyOf, bool asNoTracking = false, CancellationToken ct = default, CompanyKind kind = CompanyKind.Stays)
     {
         var query = asNoTracking ? db.Companies.AsNoTracking() : db.Companies;
-        var company = await query.FirstOrDefaultAsync(c => c.Id == companyId && c.Kind == CompanyKind.Stays, ct);
+        var company = await query.FirstOrDefaultAsync(c => c.Id == companyId && c.Kind == kind, ct);
         if (company is null) return new StaysAccessResult(new NotFoundResult());
 
         var role = await RoleOfAsync(company.Id, user, ct);

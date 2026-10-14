@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import type { ServiceQuoteDto } from '../types'
+import type { ServiceQuoteDto } from '@/types/slots'
 import { toCreateOrderInput, validateOrderFields } from './serviceOrderForm'
 
 const quote = { ok: true, totalRub: 4600 } as ServiceQuoteDto

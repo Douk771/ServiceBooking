@@ -234,14 +234,14 @@ public class Cycle39NotificationsTests(TestDatabaseFixture fixture) : Cycle39Tes
         var all = Enum.GetValues<NotificationType>();
         foreach (var type in all)
             NotificationTexts.TypeText(type).Should().NotBeNullOrWhiteSpace($"у типа {type} есть название для экранов");
-        NotificationTypeCatalog.ServiceTypes.Should().HaveCount(12);
+        NotificationTypeCatalog.ServiceTypes.Should().HaveCount(13, "12 типов цикла 39 и 41 — напоминание перед сеансом (цикл 42)");
         ((int)NotificationType.StaffStaySessionAdded).Should().Be(27);
         ((int)NotificationType.StayGuestSessionCancelledByOwner).Should().Be(38);
         foreach (var t in NotificationTypeCatalog.ServiceTypes)
         {
             NotificationTypeCatalog.IsStayType(t).Should().BeTrue(t.ToString());
             NotificationTypeCatalog.IsBookingType(t).Should().BeFalse($"{t} не имеет бита в салонной маске");
-            ((int)t).Should().BeInRange(27, 38);
+            (((int)t) is >= 27 and <= 38 or 41).Should().BeTrue(t.ToString());
         }
         all.Select(t => (int)t).Should().OnlyHaveUniqueItems("значения перечисления не повторяются");
         all.Select(t => (int)t).Where(v => v is 39 or 40).Should().BeEmpty("39 и 40 оставлены циклу 40");

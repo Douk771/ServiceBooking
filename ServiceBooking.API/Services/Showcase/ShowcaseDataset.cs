@@ -646,6 +646,8 @@ public static class ShowcaseDataset
         "Визит не оправдал ожиданий.", "Остались вопросы по качеству, надеюсь, администрация отреагирует.",
     ];
 
+    private static readonly DateOnly RatingGuardAfter = new(2026, 10, 1);
+
     private static (int Rating, string? Comment) RollReview(ShowcaseRandom rng)
     {
         var roll = rng.NextDouble();
@@ -667,6 +669,9 @@ public static class ShowcaseDataset
             .Where(b => b.ClientId == demoClient.Id && b.Status == BookingStatus.Completed)
             .OrderBy(b => b.Date).ThenBy(b => b.StartTime).Select(b => (Guid?)b.Id).FirstOrDefault();
 
+        // running totals per company: the mean of a company is kept inside [MinMean, MaxMean] whatever the number of reviews (which grows with the date)
+        var totals = new Dictionary<Guid, (int Sum, int Count)>();
+
         foreach (var booking in graph.Bookings)
         {
             if (booking.Status != BookingStatus.Completed || booking.ClientId is not { } clientId) continue;
@@ -677,6 +682,13 @@ public static class ShowcaseDataset
             if (!rng.Chance(chance)) continue;
 
             var (rating, comment) = RollReview(rng);
+            const double MinMean = 3.85, MaxMean = 4.45;
+            var (sum, count) = totals.GetValueOrDefault(booking.CompanyId);
+            // the guard acts only on visits after the cycle-34 freeze date (the frozen salon fingerprint is computed at that date) and on samples large enough to mean something
+            var guard = count >= 30 && booking.Date > RatingGuardAfter;
+            if (guard && rating == 5 && (sum + 5) / (double)(count + 1) > MaxMean) { rating = 4; comment = comment is null ? null : rng.Pick(ReviewComments4); }
+            else if (guard && rating <= 3 && (sum + rating) / (double)(count + 1) < MinMean) { rating = 4; comment = comment is null ? null : rng.Pick(ReviewComments4); }
+            totals[booking.CompanyId] = (sum + rating, count + 1);
             var visitEndUtc = LocalToUtc(booking.Date, booking.EndTime, zones[booking.CompanyId]);
             var createdAt = visitEndUtc.AddHours(rng.Next(2, 72));
             if (createdAt > nowUtc) createdAt = nowUtc;

@@ -52,11 +52,20 @@ type OwnerSubscriptionDtoWithTrial = OwnerSubscriptionDto & Cycle18['OwnerSubscr
 type Cycle24 = Cycle24Schemas['schemas']
 // Cycle 37 (API_CONTRACT_CYCLE37.md §37.21.4): a third line — `Stays` — adds the `stays` block; `availablePlans` lists the line's plans.
 type Cycle37 = Cycle37Schemas['schemas']
-export type BillingLine = Cycle37['CompanyKind']
+export type BillingLine = Cycle37['CompanyKind'] | 'Baths'
 export type OrdersUsageDto = Cycle24['OrdersUsageDto']
 export type StaysSubscriptionBlockDto = Cycle37['StaysSubscriptionBlockDto']
-export type AvailablePlanDto = Cycle24['AvailablePlanDto']
-export type OwnerSubscriptionDtoCycle24Patch = Pick<Cycle24['OwnerSubscriptionDtoCycle24'], 'line' | 'orders' | 'availablePlans'> & { stays?: StaysSubscriptionBlockDto | null }
+/** Cycle 42 (API_CONTRACT_CYCLE42.md §42.21): `Baths` adds the `baths` block; each available plan of the line carries `maxResources`. */
+export interface BathsSubscriptionBlockDto {
+  resourcesPublished: number
+  maxResources?: number | null
+  isTrial: boolean
+  trialEndsAtUtc?: string | null
+  warningLevel: Cycle37['StaysSubscriptionBlockDto']['warningLevel']
+  text?: string | null
+}
+export type AvailablePlanDto = Cycle24['AvailablePlanDto'] & { maxResources?: number | null }
+export type OwnerSubscriptionDtoCycle24Patch = Pick<Cycle24['OwnerSubscriptionDtoCycle24'], 'line' | 'orders' | 'availablePlans'> & { stays?: StaysSubscriptionBlockDto | null; baths?: BathsSubscriptionBlockDto | null }
 
 /** Cycle 40 (§40.32): серверные строки мессенджеров в подписке (additive). */
 export type OwnerSubscriptionCycle40Patch = Pick<Cycle40Schemas['schemas']['OwnerSubscriptionCycle40Part'], 'messengerAddons' | 'messengerAddonsNote'>

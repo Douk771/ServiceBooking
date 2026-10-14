@@ -85,6 +85,15 @@ public static class LegalTextKey
     public const string StayReminderPushOwnerNotice = "StayReminderPushOwnerNotice";
     public const string StayServiceSafetyOwnerNotice = "StayServiceSafetyOwnerNotice";
 
+    // ARCHITECTURE_CYCLE42.md §42.2.4 — «Бани». DELIBERATELY NOT in All (the deploy must not wait for legal-counsel): the frontend shows its neutral fallback on 404.
+    public const string BathBookingNotice = "BathBookingNotice";
+    public const string BathBookingTerms = "BathBookingTerms";
+    public const string BathPublicContactsNotice = "BathPublicContactsNotice";
+    public const string BathPositionsOwnerNotice = "BathPositionsOwnerNotice";
+    public const string BathCapacityOwnerNotice = "BathCapacityOwnerNotice";
+    public const string BathPaymentProofNotice = "BathPaymentProofNotice";
+    public const string BathPaymentRequisitesOwnerNotice = "BathPaymentRequisitesOwnerNotice";
+    public const string BathOwnerCancelNotice = "BathOwnerCancelNotice";
     // ARCHITECTURE_CYCLE40.md §40.11.1 (LEGAL_REVIEW_CYCLE40.md §5.3, §7.3) — the booking-form messenger tick and the staff "client agreed" tick.
     // DELIBERATELY NOT in All (the deploy must not wait for legal-counsel): the frontend reads GET /api/legal/texts/<key> and shows its fallback on 404;
     // while there is no text, the server stores `fallback:<sha256 of the key>` as the consent version.

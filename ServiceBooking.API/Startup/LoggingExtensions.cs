@@ -189,6 +189,13 @@ internal static class LoggingExtensions
         const string stayPublicPrefix = "/api/stays/bookings/public/";
         // ARCHITECTURE_CYCLE39.md §39.13.2 — and the token of a stand-alone service order.
         const string serviceOrderPublicPrefix = "/api/stays/service-orders/public/";
+        // ARCHITECTURE_CYCLE42.md §42.10 — and the token of a booking of «Бани» (the same shape, its own prefix).
+        const string bathsOrderPublicPrefix = "/api/baths/service-orders/public/";
+        if (path.StartsWith(bathsOrderPublicPrefix, StringComparison.Ordinal) && path.Length > bathsOrderPublicPrefix.Length)
+        {
+            var bathsSlash = path.IndexOf('/', bathsOrderPublicPrefix.Length);
+            return bathsOrderPublicPrefix + "***" + (bathsSlash < 0 ? string.Empty : path[bathsSlash..]);
+        }
         if (path.StartsWith(serviceOrderPublicPrefix, StringComparison.Ordinal) && path.Length > serviceOrderPublicPrefix.Length)
         {
             var orderSlash = path.IndexOf('/', serviceOrderPublicPrefix.Length);

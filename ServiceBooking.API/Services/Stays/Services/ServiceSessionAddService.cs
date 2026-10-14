@@ -214,7 +214,7 @@ public class ServiceSessionAddService(
     // ── helpers ──
 
     private async Task<ServiceScope?> ServiceOfBookingAsync(StayBooking booking, Guid serviceId, CancellationToken ct) =>
-        await slots.FindOfCompanyAsync(booking.CompanyId, serviceId, ct);
+        await slots.FindOfCompanyAsync(CompanyKind.Stays, booking.CompanyId, serviceId, ct);
 
     private async Task<StayBooking?> IdempotentAsync(StayBooking booking, Guid key, CancellationToken ct)
     {

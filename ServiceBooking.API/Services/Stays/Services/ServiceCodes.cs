@@ -16,5 +16,6 @@ public enum ServiceRefundKind { NothingPaid, Full, PartialAtLeast, CostsOnlyUpTo
 public enum StaysServiceConflictCode
 {
     SlugInvalid, SlugTaken, ServiceHasSessions, ServiceArchived, ServiceNoPrice, ServiceNoWindows, ServiceLimitReached, PhotoLimitReached,
-    ItemLimitReached, PriceRuleOverlap, PriceRuleLimitReached, ReminderConfirmationRequired
+    ItemLimitReached, PriceRuleOverlap, PriceRuleLimitReached, ReminderConfirmationRequired,
+    ServiceNoCapacity, ItemRestrictedConfirmationRequired
 }

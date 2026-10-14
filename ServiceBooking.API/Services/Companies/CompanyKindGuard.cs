@@ -48,6 +48,7 @@ public static class CompanyKindGuard
         CompanyKind.Services => null,
         CompanyKind.Orders => ShopRefusalText,
         CompanyKind.Stays => StaysRefusalText,
+        CompanyKind.Baths => CompanyKindTraits.BathsRefusalText,
         _ => throw new System.Diagnostics.UnreachableException()
     };
 

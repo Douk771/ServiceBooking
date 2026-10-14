@@ -1,0 +1,71 @@
+{
+  "_comment": "ЕДИНСТВЕННЫЙ источник карты маршрутов bani.ezbook.ru и политики адресов компании «Бани» и её ресурсов (ARCHITECTURE_CYCLE42.md §42.10.1, API_CONTRACT_CYCLE42.md §42.37). Встраивается в API как ресурс bani-routes.json (BathsSlugPolicy) и читается тестом frontend/bani/src/baniRoutes.test.ts. Добавлять маршрут bani можно ТОЛЬКО вместе с новым словом в reservedSlugs (первый сегмент) или reservedResourceSlugs (второй сегмент под адресом компании). Адрес компании — общее пространство платформы (уникален среди ВСЕХ компаний без учёта регистра); префикс primer- зарезервирован витриной.",
+
+  "slugPattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+  "slugMinLength": 3,
+  "slugMaxLength": 50,
+
+  "_resourceSlugComment": "Адрес ресурса (баня, сауна, чан, фурако) — второй сегмент /<slug>/<resourceSlug>, уникален внутри компании. Технически это StayServices.Slug (тот же столбец, что адрес услуги «Домов»), но для компании «Бани» проверяется этим файлом: шаблон + reservedResourceSlugs.",
+  "resourceSlugPattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+  "resourceSlugMinLength": 2,
+  "resourceSlugMaxLength": 50,
+  "reservedResourceSlugs": ["uslugi", "services", "otzyvy", "reviews", "foto", "photos", "kalendar", "kalendari", "calendar", "ical"],
+
+  "companyPagePattern": "/:slug",
+  "resourcePagePattern": "/:slug/:resourceSlug",
+  "orderPagePattern": "/s/:token",
+
+  "_catalogQueryComment": "Корень / — главная с каталогом. Фильтры — в query: city (id города из справочника), date (YYYY-MM-DD, P1), page. Страница ресурса принимает date (дата выбора времени).",
+  "catalogQueryParams": ["city", "date", "page"],
+  "resourceQueryParams": ["date"],
+
+  "_spaRoutesComment": "Маршруты SPA bani, кроме /:slug и /:slug/:resourceSlug. Первый сегмент каждого обязан быть в reservedSlugs (тест фронта и юнит-тест бэкенда BathsSlugPolicyTests).",
+  "spaRoutes": [
+    "/",
+    "/login",
+    "/register",
+    "/s/:token",
+    "/bookings",
+    "/profile",
+    "/profile/consents",
+    "/notices",
+    "/cabinet",
+    "/cabinet/new",
+    "/cabinet/subscription",
+    "/cabinet/:companyId",
+    "/cabinet/:companyId/service-day/:date",
+    "/cabinet/:companyId/orders",
+    "/cabinet/:companyId/service-sessions/:sessionId",
+    "/cabinet/:companyId/resources",
+    "/cabinet/:companyId/resources/new",
+    "/cabinet/:companyId/resources/:serviceId",
+    "/cabinet/:companyId/schedule",
+    "/cabinet/:companyId/settings",
+    "/cabinet/:companyId/staff",
+    "/cabinet/:companyId/notifications",
+    "/cabinet/:companyId/link",
+    "/privacy",
+    "/terms",
+    "/terms-owner",
+    "/pdn-consent",
+    "/channel-risk",
+    "/offer-channel",
+    "/payment-terms",
+    "/data-request"
+  ],
+
+  "_reservedComment": "Слова, которые нельзя занять адресом компании «Бани»: всё из contracts/cycle39/dom-routes.json reservedSlugs (общая платформа) плюс слова bani (bath, baths, sauna, saunas, resources, resource).",
+  "reservedSlugs": [
+    "about", "account", "accounts", "admin", "api", "app", "apartments", "assets", "auth",
+    "b", "bani", "banya", "bath", "baths", "billing", "board", "book", "booking", "bookings",
+    "cabinet", "calendar", "cart", "catalog", "channel-risk", "checkout", "cities", "city",
+    "company", "companies", "contacts", "data-request", "dom", "doma", "embed", "extras", "ezbook",
+    "faq", "favicon", "goods", "guest", "guests", "health", "help", "house", "houses",
+    "ical", "index", "legal", "login", "logout", "manifest", "max", "me", "my", "new", "notices",
+    "o", "offer-channel", "order", "orders", "owner", "payment", "payment-terms", "payments",
+    "pdn-consent", "pricing", "privacy", "profile", "region", "regions", "register", "resource", "resources", "robots",
+    "s", "sauna", "saunas", "schedule", "search", "services", "settings", "sheregesh", "shop", "shops", "signup", "sitemap",
+    "static", "status", "stay", "stays", "support", "sw", "terms", "terms-owner",
+    "u", "uploads", "well-known", "www"
+  ]
+}

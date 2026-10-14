@@ -1,16 +1,10 @@
 import { api } from '@/api/client'
+import { slotApiStays } from './slotApiStays'
 import type {
   HouseBlockDto,
   HouseBlockInput,
   ManualStayBookingInput,
-  StaffServiceQuoteInput,
-  StaffServiceSessionCardDto,
-  StaffServiceSessionPage,
   StaffAddSessionInput,
-  ManualServiceOrderInput,
-  ServiceDayDto,
-  ServiceQuoteDto,
-  ServiceStartsDto,
   StaffStayBookingCardWithServices,
   StaysBoardWithServices,
   StaffStayBookingCardDto,
@@ -32,14 +26,7 @@ export interface BookingListQuery {
   pageSize?: number
 }
 
-export interface SessionListQuery {
-  status?: string
-  serviceId?: string
-  from?: string
-  to?: string
-  page?: number
-  pageSize?: number
-}
+export type { SessionListQuery } from '@/api/slots'
 
 /** Board, blocks, bookings and schedule of the cabinet (API_CONTRACT_CYCLE37.md §37.29–§37.31). */
 export const staysBoardApi = {
@@ -78,28 +65,9 @@ export const staysBoardApi = {
   createManual: (companyId: string, input: ManualStayBookingInput) =>
     api.post<StaffStayBookingCardDto>(`${co(companyId)}/bookings`, input).then((r) => r.data),
 
-  // ───── services: «День услуг», sessions of the cabinet (API_CONTRACT_CYCLE39.md §39.29, §39.30) ─────
-  serviceDay: (companyId: string, date: string) => api.get<ServiceDayDto>(`${co(companyId)}/service-day`, { params: { date } }).then((r) => r.data),
-  sessions: (companyId: string, q: SessionListQuery) =>
-    api.get<StaffServiceSessionPage>(`${co(companyId)}/service-sessions`, { params: q }).then((r) => r.data),
-  session: (companyId: string, sessionId: string) =>
-    api.get<StaffServiceSessionCardDto>(`${co(companyId)}/service-sessions/${sessionId}`).then((r) => r.data),
-  confirmSessionPayment: (companyId: string, sessionId: string, expectedVersion: number) =>
-    api.post<StaffServiceSessionCardDto>(`${co(companyId)}/service-sessions/${sessionId}/confirm-payment`, { expectedVersion }).then((r) => r.data),
-  rejectSessionPayment: (companyId: string, sessionId: string, expectedVersion: number, reason: string) =>
-    api
-      .post<StaffServiceSessionCardDto>(`${co(companyId)}/service-sessions/${sessionId}/reject-payment`, { expectedVersion, reason })
-      .then((r) => r.data),
-  cancelSession: (companyId: string, sessionId: string, expectedVersion: number, reason: string) =>
-    api.post<StaffServiceSessionCardDto>(`${co(companyId)}/service-sessions/${sessionId}/cancel`, { expectedVersion, reason }).then((r) => r.data),
-  sessionProofBlob: (companyId: string, sessionId: string, proofId: string) =>
-    api.get<Blob>(`${co(companyId)}/service-sessions/${sessionId}/payment-proofs/${proofId}`, { responseType: 'blob' }).then((r) => r.data),
-  staffStarts: (companyId: string, serviceId: string, params: { date: string; bookingId?: string }) =>
-    api.get<ServiceStartsDto>(`${co(companyId)}/services/${serviceId}/starts`, { params }).then((r) => r.data),
-  sessionQuote: (companyId: string, input: StaffServiceQuoteInput) =>
-    api.post<ServiceQuoteDto>(`${co(companyId)}/service-sessions/quote`, input).then((r) => r.data),
+  // ───── services: sessions of the cabinet come from the shared factory (src/api/slots.ts) ─────
+  ...slotApiStays.sessions,
+  // a session added to a stay booking is house-specific (§39.30)
   addSessionToBooking: (companyId: string, bookingId: string, input: StaffAddSessionInput) =>
     api.post<StaffStayBookingCardWithServices>(`${co(companyId)}/bookings/${bookingId}/sessions`, input).then((r) => r.data),
-  createManualOrder: (companyId: string, input: ManualServiceOrderInput) =>
-    api.post<StaffServiceSessionCardDto>(`${co(companyId)}/service-sessions`, input).then((r) => r.data),
 }

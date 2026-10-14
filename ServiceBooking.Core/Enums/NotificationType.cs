@@ -60,4 +60,7 @@ public enum NotificationType
     ServiceGuestCancelledByOwner = 36,
     StayGuestSessionAdded = 37,
     StayGuestSessionCancelledByOwner = 38,
+    // 39..40 were left unused by cycle 40 (merged without taking them); cycle 42 continues from 41.
+    /// <summary>ARCHITECTURE_CYCLE42.md §42.2.4 — reminder before a bath session.</summary>
+    ServiceGuestSessionReminder = 41,
 }

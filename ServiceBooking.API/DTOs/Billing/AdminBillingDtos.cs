@@ -26,7 +26,9 @@ public record AdminPlanInput(
     // For the "Заказы" line MaxEmployees / MaxCompanies read as "Макс. участников" / "Макс. магазинов"; null limits = unlimited.
     Core.Enums.CompanyKind? Line = null, int? MaxProductsPerShop = null, int? MaxOrdersPerMonth = null, bool? AllowOrders = null,
     // Cycle 37 (API_CONTRACT_CYCLE37.md §37.21.4): published houses per account, «Дома» line only.
-    int? MaxHouses = null);
+    int? MaxHouses = null,
+    // Cycle 42 (API_CONTRACT_CYCLE42.md): published resources per account, «Бани» line only.
+    int? MaxResources = null);
 
 // contracts/cycle7/openapi.yaml's AdminPlanInput has no isSystemFree property (additionalProperties:
 // false) — changing which plan is the system free one is a distinct, rarer administrative action from

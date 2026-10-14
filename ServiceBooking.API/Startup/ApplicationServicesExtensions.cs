@@ -91,6 +91,8 @@ internal static class ApplicationServicesExtensions
     // Cycle 37 (ARCHITECTURE_CYCLE37.md §37.16): "Дома".
     builder.Services.Configure<ServiceBooking.API.Services.Stays.StaysOptions>(
         builder.Configuration.GetSection(ServiceBooking.API.Services.Stays.StaysOptions.SectionName));
+    builder.Services.Configure<ServiceBooking.API.Services.Baths.BathsOptions>(
+        builder.Configuration.GetSection(ServiceBooking.API.Services.Baths.BathsOptions.SectionName));
     builder.Services.AddSingleton<ServiceBooking.API.Services.Stays.IStaysClock, ServiceBooking.API.Services.Stays.SystemStaysClock>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysAccessResolver>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysPlanResolver>();
@@ -109,6 +111,8 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayBookingCreationService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StayDtoMapper>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysCatalogService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Baths.BathsCatalogService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Baths.BathsMyOrdersService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysHousePageService>();
     builder.Services.AddSingleton<ServiceBooking.API.Services.Stays.StayProofIpLimiter>();
     builder.Services.AddSingleton<ServiceBooking.API.Services.Stays.StaySessionIpLimiter>();
@@ -123,6 +127,8 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaysGuestPushDispatchTask>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysBoardService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.StaysScheduleService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Baths.BathsCompanyService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Baths.BathsScheduleService>();
     // Cycle 39 (ARCHITECTURE_CYCLE39.md §39.16): time-slot services of «Дома».
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceSlotService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceSessionWriter>();
@@ -138,6 +144,9 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceSessionAddService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceCatalogService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ArrivalReminderService>();
+    // Cycle 42 (BE-42-3): positions writer with the alcohol/tobacco journal, the tariff check of publishing a «Бани» resource.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Slots.ServiceItemWriter>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Baths.BathsPublishGate>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceDayService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Stays.ServiceScheduleWriter>();
 

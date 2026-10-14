@@ -6,20 +6,23 @@ import type { PushSite } from '../api/push'
 // Which reason applies is still decided by getPushUnavailableReason(); this module only holds the words.
 
 /** `short_name` of the site's web manifest = the name of the icon on the iPhone Home Screen. */
-export type PushAppName = 'Запись' | 'Заказы' | 'Дома'
+export type PushAppName = 'Запись' | 'Заказы' | 'Дома' | 'Бани'
 
 export interface StaffKinds {
   hasServices: boolean
   hasOrders: boolean
   /** Cycle 37 (dom.ezbook.ru): staff of a «Дома» company. Absent = false, so the two-site callers are unchanged. */
   hasStays?: boolean
+  /** Cycle 42 (bani.ezbook.ru): staff of a «Бани» company. Absent = false. */
+  hasBaths?: boolean
 }
 
-function noun({ hasServices, hasOrders, hasStays = false }: StaffKinds): string {
+function noun({ hasServices, hasOrders, hasStays = false, hasBaths = false }: StaffKinds): string {
   const parts: string[] = []
   if (hasServices) parts.push('записях')
   if (hasOrders) parts.push('заказах')
   if (hasStays) parts.push('бронях домов')
+  if (hasBaths) parts.push('бронях бань')
   if (parts.length === 0) return 'записях'
   if (parts.length === 1) return parts[0]
   return `${parts.slice(0, -1).join(', ')} и ${parts[parts.length - 1]}`
@@ -51,6 +54,8 @@ function siteHost(site: PushSite): string {
       return 'goods.ezbook.ru'
     case 'Stays':
       return 'dom.ezbook.ru'
+    case 'Baths':
+      return 'bani.ezbook.ru'
   }
 }
 

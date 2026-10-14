@@ -57,6 +57,19 @@
       "env": {
         "VITE_API_TARGET": "http://localhost:5001"
       }
+    },
+    {
+      "name": "frontend-bani",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:bani"
+      ],
+      "cwd": "frontend",
+      "port": 5176,
+      "env": {
+        "VITE_API_TARGET": "http://localhost:5001"
+      }
     }
   ]
 }

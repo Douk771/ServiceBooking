@@ -14,10 +14,10 @@ public static class ServiceRefund
 {
     public static ServiceRefundResult Compute(
         StayBookingStatus status, StayServiceCancellationPolicy policy, int boundaryHours, int prepayRub, int firstHourRub,
-        DateTime startUtc, DateTime atUtc, bool cancelledByOwner, int maxDeductionHours = 1)
+        DateTime startUtc, DateTime atUtc, bool cancelledByOwner, int maxDeductionHours = 1, string? terminalText = null)
     {
         if (StayStateMachine.IsTerminal(status))
-            return new(ServiceRefundKind.NothingPaid, 0, 0, ServiceTexts.RefundTerminal);
+            return new(ServiceRefundKind.NothingPaid, 0, 0, terminalText ?? ServiceTexts.RefundTerminal);
         if (status == StayBookingStatus.Held || prepayRub <= 0)
             return new(ServiceRefundKind.NothingPaid, 0, 0, ServiceTexts.RefundNothingPaid);
         if (cancelledByOwner) return Full(prepayRub, byOwner: true);

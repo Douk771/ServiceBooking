@@ -42,7 +42,7 @@ public static class CustomerMessagingOfferRule
         {
             CompanyKind.Services => "записи",
             CompanyKind.Orders => "заказе",
-            CompanyKind.Stays => "брони",
+            CompanyKind.Stays or CompanyKind.Baths => "брони",
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
         };
         return $"Получать уведомления о {subject} в {MessengerTexts.TransportsPhrase(transports)}";

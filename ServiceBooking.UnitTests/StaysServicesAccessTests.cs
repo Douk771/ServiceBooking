@@ -54,7 +54,7 @@ public class StaysServicesAccessTests
         foreach (var type in Enum.GetValues<NotificationType>())
             new[] { NotificationTypeCatalog.IsBookingType(type), NotificationTypeCatalog.IsOrderType(type), NotificationTypeCatalog.IsStayType(type) }
                 .Count(x => x).Should().Be(1, type.ToString());
-        NotificationTypeCatalog.ServiceTypes.Select(t => (int)t).Should().Equal(Enumerable.Range(27, 12));
+        NotificationTypeCatalog.ServiceTypes.Select(t => (int)t).Should().Equal(Enumerable.Range(27, 12).Append(41));
         NotificationTypeCatalog.ServiceTypes.Should().OnlyContain(t => NotificationTypeCatalog.IsStayType(t) && !NotificationTypeCatalog.IsBookingType(t));
         Enum.GetValues<NotificationType>().Select(t => (int)t).Should().NotContain([39, 40], "39 and 40 are reserved for cycle 40 (iCal)");
     }
