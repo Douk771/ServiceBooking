@@ -154,7 +154,7 @@ public class Cycle42CompanyTests(TestDatabaseFixture fixture) : Cycle37TestBase(
         await Expect400(b => b["phone"] = "123", "Введите номер телефона в формате +7 (900) 000-00-00");
         await Expect400(b => b["cityId"] = null, "Укажите город комплекса");
         await Expect400(b => b["cityId"] = 999999, "Город не найден");
-        (await AuthedClient(owner.Token).GetAsync("/api/baths/companies/my")).Content.ReadJsonAsync<List<BathsCompanyListItemDto>>().Result.Should().BeEmpty("отказ не создаёт строк");
+        (await (await AuthedClient(owner.Token).GetAsync("/api/baths/companies/my")).Content.ReadJsonAsync<List<BathsCompanyListItemDto>>()).Should().BeEmpty("отказ не создаёт строк");
     }
 
     [Fact, TestCase("CY42-11")]
@@ -506,7 +506,7 @@ public class Cycle42CompanyTests(TestDatabaseFixture fixture) : Cycle37TestBase(
 
         foreach (var url in new[] { "", "/qr", "/notification-settings", "/arrival-reminder" })
             (await AuthedClient(baths.OwnerToken).GetAsync($"/api/stays/companies/{baths.Id}{url}")).StatusCode.Should().Be(HttpStatusCode.NotFound, url);
-        (await AuthedClient(baths.OwnerToken).GetAsync("/api/stays/companies/my")).Content.ReadJsonAsync<List<StaysCompanyListItemDto>>().Result.Should().NotContain(i => i.Id == baths.Id);
+        (await (await AuthedClient(baths.OwnerToken).GetAsync("/api/stays/companies/my")).Content.ReadJsonAsync<List<StaysCompanyListItemDto>>()).Should().NotContain(i => i.Id == baths.Id);
     }
 
     // ── CY42-17: ревизия ─────────────────────────────────────────────────────────

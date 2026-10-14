@@ -217,8 +217,8 @@ public class Cycle42DomRegressionTests(TestDatabaseFixture fixture) : Cycle42Tes
         var orderId = await OrderIdAsync(token);
         var sessionId = await SessionIdOfOrderAsync(token);
 
-        List<OutboundNotification> Rows() => WithDbAsync(db => db.OutboundNotifications.AsNoTracking().Where(n => n.StayServiceOrderId == orderId).ToListAsync()).GetAwaiter().GetResult();
-        var createdRow = Rows().Single(n => n.Type == NotificationType.ServiceGuestOrderCreated);
+        Task<List<OutboundNotification>> Rows() => WithDbAsync(db => db.OutboundNotifications.AsNoTracking().Where(n => n.StayServiceOrderId == orderId).ToListAsync());
+        var createdRow = (await Rows()).Single(n => n.Type == NotificationType.ServiceGuestOrderCreated);
         createdRow.Status.Should().Be(NotificationStatus.Pending, createdRow.Reason?.ToString());
         Template(Regex.Escape($"{companyName}: заказ «Баня», ") + GuestTime + Regex.Escape(" создан. Чтобы он сохранился, внесите предоплату ") + @"[^\n]+? до \d\d:\d\d \d\d\.\d\d" +
                  Regex.Escape($" по реквизитам: {PaymentDetailsText}. Назначение платежа: {PaymentPurposeText}. Затем приложите подтверждение оплаты на странице заказа: https://dom.ezbook.ru/s/{token}"))
@@ -228,14 +228,14 @@ public class Cycle42DomRegressionTests(TestDatabaseFixture fixture) : Cycle42Tes
         var card = await SessionCardAsync(company, sessionId);
         (await host.Client(company.OwnerToken).PostJsonAsync($"/api/stays/companies/{company.Id}/service-sessions/{sessionId}/confirm-payment", new ExpectedVersionInput(card.Version))).StatusCode
             .Should().Be(HttpStatusCode.OK);
-        var confirmed = Rows().Single(n => n.Type == NotificationType.ServiceGuestConfirmed);
+        var confirmed = (await Rows()).Single(n => n.Type == NotificationType.ServiceGuestConfirmed);
         Template(Regex.Escape($"{companyName}: оплата подтверждена. «Баня», ") + GuestTime + Regex.Escape($". Адрес: ул. Тайная, 77, Шерегеш. Заказ: https://dom.ezbook.ru/s/{token}"))
             .IsMatch(confirmed.Body).Should().BeTrue("оплата подтверждена: " + confirmed.Body);
 
         var card2 = await SessionCardAsync(company, sessionId);
         (await host.Client(company.OwnerToken).PostJsonAsync($"/api/stays/companies/{company.Id}/service-sessions/{sessionId}/cancel", new ExpectedVersionReasonInput(card2.Version, "Авария"))).StatusCode
             .Should().Be(HttpStatusCode.OK);
-        var cancelled = Rows().Single(n => n.Type == NotificationType.ServiceGuestCancelledByOwner);
+        var cancelled = (await Rows()).Single(n => n.Type == NotificationType.ServiceGuestCancelledByOwner);
         Template(Regex.Escape($"{companyName}: заказ «Баня», ") + GuestTime +
                  Regex.Escape($" отменён компанией. Причина: Авария. Предоплата возвращается полностью; вы вправе требовать возмещения убытков. Телефон компании: {phone}. https://dom.ezbook.ru/s/{token}"))
             .IsMatch(cancelled.Body).Should().BeTrue("отменён компанией, после оплаты: " + cancelled.Body);
