@@ -156,7 +156,7 @@ namespace ServiceBooking.Infrastructure.Migrations
             // ARCHITECTURE_CYCLE42.md §42.2.5 — four tariffs of the «Бани» line (Line = 3) with FIXED ids (BathsPlans.*SeedId), editable by an administrator
             // without a deploy. DEVIATION from §42.2.5: IsSystemTrial = false for the trial plan too — IX_SubscriptionPlanConfigs_IsSystemTrial is unique across ALL lines
             // (one flagged row in the table, already taken by the «Записи» trial); the «Дома» trial of cycle 37 is seeded the same way and is found by its fixed id.
-            // The whatsapp option rule (same availability as the paid «Дома» plans, trial included, Q-L42-4). Idempotent.
+            // The whatsapp option rule (same availability as the paid «Дома» plans, legacy data: Q-L42-4 was cancelled on 09.10.2026, the Baths trial does not include messengers and cycle 40 does not read this rule). Idempotent.
             migrationBuilder.Sql(
                 """
                 INSERT INTO "SubscriptionPlanConfigs"
