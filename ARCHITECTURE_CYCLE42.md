@@ -121,7 +121,7 @@ Line)` — это правка существующей схемы с недет
 и `StaysSubscriptions` по таблице на линейку.
 
 **`StayServiceItemConfirmations`** — журнал подтверждений «Это не алкоголь и не табак» (Т42-05, по образцу
-`HouseRegistryAttestations`), append-only: `Id`, `CompanyId`, `ServiceId` (FK `Cascade`), `ItemId uuid NULL` (FK `SetNull`;
+`HouseRegistryAttestations`), append-only: `Id`, `CompanyId` (FK `Restrict`), `ServiceId uuid NULL` (FK `SetNull`; решение M-5), `ServiceNameSnapshot` (имя услуги на момент подтверждения), `ItemId uuid NULL` (FK `SetNull`;
 NULL — позиция удалена), `ItemNameSnapshot varchar(100)`, `MarkersHit varchar(200)` (найденные основы через запятую),
 `NoticeKey varchar(64)` (`BathPositionsOwnerNotice`), `NoticeVersion varchar(80)` (версия из манифеста или
 `fallback:<sha256 ключа>`), `ConfirmedByUserId text`, `ConfirmedByNameSnapshot varchar(200)`, `ConfirmedAtUtc`, `IpAddress
@@ -143,7 +143,7 @@ varchar(64) NULL`. Индекс `(ServiceId, ConfirmedAtUtc)`. Пишет тол
 | Перечисление | Значение | Где хранится |
 |---|---|---|
 | `CompanyKind` | `Baths = 3` | `Companies.Kind`, `SubscriptionPlanConfigs.Line`, `TrialGrants.Line`, `TrialPhoneRegistrations.Line`, `PushSubscriptions.Site`, `SubscriptionChangeLogs.Line`, `BillingAccounts.RequestedLine` — все уже `int`, схема не меняется |
-| `NotificationType` | `ServiceGuestSessionReminder = 41` | `OutboundNotifications.Type` и др. (39–40 — резерв цикла 40; при мерже с циклом 40 сверить, R42-10) |
+| `NotificationType` | `ServiceGuestSessionReminder = 41` | `OutboundNotifications.Type` и др. (39–40 цикл 40 не занял; R42-10 закрыт) |
 | `StayServiceOrderEventKind` | `SessionReminderSent = 10` | `StayServiceOrderEvents.Kind` |
 | `NotAcceptingReason` (C#, не хранится) | `OverResourceLimit` | ответы API |
 | `StaysServiceConflictCode` (строки) | `ServiceNoCapacity`, `ItemRestrictedConfirmationRequired` | ответы API |
@@ -277,7 +277,7 @@ grep'ом по `CompanyKind.Stays` на ветке; исполнитель по�
 | `AdminController:552` | сброс кеша dom | + `BathsCatalogService.InvalidateBase()` для `Baths` |
 | `BillingTexts:70` | 3 линейки | + «Бани» |
 | `NotificationChannelsController:626` | `switch` | + `Baths` (тот же текст, что `Stays`) |
-| `ChannelEligibility`, `SubscriptionResolver:195-249` | «Записи» ∨ «Заказы» ∨ «Дома» | + «Бани» — обобщить до списка линеек-дополнений (§42.5.6) |
+| `ChannelEligibility`, `SubscriptionResolver:195-249` | «Записи» ∨ «Заказы» ∨ «Дома» | по факту: номер мессенджера принадлежит аккаунту, оплата по строке опции (§42.5.6); «Бани» добавлены в `MessagingDemand` и `CustomerMessagingOffer*` |
 | `StaysAccessResolver:30` | `Kind == Stays` | параметр `CompanyKind kind` (по умолчанию `Stays` — у всех существующих вызовов) |
 | `ServiceSlotService:53`, `ServiceCatalogService:89`, поиск заказа по токену | `Kind == Stays` | параметр `kind` от контроллера-наследника |
 | `StaysPlanResolver`, `StaysTrialService`, `StaysCompanyService.EvaluateGateAsync` | только «Дома» | по `SlotVertical` компании (§42.5) |
@@ -418,11 +418,11 @@ grep'ом по `CompanyKind.Stays` на ветке; исполнитель по�
 
 ### §42.5.6 Опция канала уведомлений
 
-`ChannelEligibility.IsAllowedAsync` и `SubscriptionResolver` (оплаченные номера, §457.4 цикла 24) сейчас знают «Записи» ∨
-«Заказы» ∨ «Дома» отдельными параметрами (`PaidNumbers(…, hasStays, staysUsable, staysAvailability)`). Обобщить до списка
-«дополнительных линеек» `IReadOnlyList<LineChannelGrant(line, hasCompanies, planUsable, availability)>` — для `Orders`, `Stays`,
-`Baths` — с юнит-тестами `PaidNumbers` (прежние кейсы байт-в-байт + кейсы «Бань»). Результат для аккаунтов без банных
-компаний не меняется.
+По факту реализации (цикл 40 заменил прежнюю схему `ChannelEligibility`/`PaidNumbers`/`LineChannelGrant`, обобщение не
+потребовалось): номер мессенджера принадлежит аккаунту; оплата идёт по строке опции (`AccountSubscriptionOption`,
+`ChannelOptionFunding`). «Бани» добавлены в `MessagingDemand` и `CustomerMessagingOffer*`. Триал «Бань» строк опций не
+создаёт: мессенджер в триале не включается (Q-L42-4 отменён 09.10.2026), правила `notifications.whatsapp` — мёртвые данные,
+цикл 40 их не читает.
 
 ### §42.5.7 После окончания тарифа или триала (Т42-10)
 
@@ -770,7 +770,7 @@ ServiceBooking.API/
 │                           (+kind, +guestsCount, +ключи вертикали), ServiceDtoMapper (+guestsCount, cityName, localTimeNote, sessionReminder,
 │                           bookAgainUrl), ServiceDayService (метка полосы), ServiceTexts/ServiceNotificationTexts (через ServiceWording)
 ├── Services/PublicSites/   PublicSitesOptions (+BathsBaseUrl), PublicSiteLinks (+по виду)
-├── Services/Billing/       OwnerSubscriptionService (+Baths), ChannelEligibility, SubscriptionResolver (список линеек), BillingTexts
+├── Services/Billing/       OwnerSubscriptionService (+Baths), BillingTexts
 ├── Services/Scheduling/Tasks/StaysScheduledMessagesTask (+третий проход), Services/Notifications/NotificationTypeCatalog (+41)
 ├── Controllers/            AdminBillingController, AdminPlansController, AdminAccountDtoBuilder, AdminController, CompaniesController,
 │                           CompanyMembersController, CompanyPhotosController, PushController, NotificationChannelsController (по §42.3.4)
@@ -779,7 +779,7 @@ ServiceBooking.API/
 └── appsettings.json        Baths:TrialDays=14, Baths:CatalogCacheSeconds=30, PublicSites:BathsBaseUrl
 
 ServiceBooking.UnitTests/   BaniVectorsTests, CompanyKindTraitsTests, CompanyKindExhaustiveTests, CompanyKindBranchGuardTests (+Stays/Baths),
-                            BathsSlugPolicyTests, BathsWordingGuardTests, ServiceWordingStaysBytesTests, PaidNumbersLinesTests, StaysAccessTests (без изменений)
+                            BathsSlugPolicyTests, BathsWordingGuardTests, ServiceWordingStaysBytesTests, StaysAccessTests (без изменений)
 ServiceBooking.Tests/       Infrastructure/Cycle42TestBase.cs; Tests/Cycle42KindIsolationTests, Cycle42CompanyTests, Cycle42TariffTests,
                             Cycle42ResourcesTests, Cycle42ItemFilterTests, Cycle42PublicTests, Cycle42OrderTests, Cycle42ConcurrencyTests,
                             Cycle42AfterTrialTests, Cycle42ScheduleShapeTests, Cycle42PrivacyTests, Cycle42NotificationsTests,
@@ -814,7 +814,7 @@ deploy/     nginx/bani.ezbook.conf, nginx/test-bani-masking.sh, nginx/{ezbook,do
 | BE-42-V | **Рефакторинг без изменения поведения:** базы `Controllers/Slots/*Base` (§42.4.1), параметр `kind` в точках поиска сервисов (§42.4.2), `StaysAccessResolver(kind)`. Готовность: эталон маршрутов **не изменился**, CY37-*/CY39-* и `Cycle39ContractTests` зелёные без правки | — | BE-42-M | BE-42-K, BE-42-W, BE-42-P |
 | BE-42-W | `ServiceWording` (Stays — байт-в-байт, Baths — «бронь», «EZBOOK Бани», пометка времени), перевод `ServiceTexts`/`ServiceNotificationTexts`/`StayNotificationTexts.GuestPushTitle`/планировщика на вертикаль; `ServiceWordingStaysBytesTests`, `BathsWordingGuardTests` | 08, 15 | BE-42-M | BE-42-V |
 | BE-42-1 | Компания «Бани»: `CompanyCreationService` (+вертикаль, город, `StaysSettings` с `AcceptServiceOrdersWithoutStay=true`, `ServiceReminderHours=3`), `BathsCompaniesController` (create, my, slug-check, карточка, settings, schedule, revision + наследование payment-details/provider/slug/qr/notification-settings), `BathsCompanyService` (DTO, чек-лист), `BathsScheduleService` (закрытая форма банщика) | 10, US-42-01/02/19/21 | BE-42-V, BE-42-K | BE-42-2, BE-42-3 |
-| BE-42-2 | Линейка «Бани»: `StaysPlanResolver`/`StaysTrialService` по вертикали, `BathsTrialTerms`, `StaysCompanyService.EvaluateGateAsync` по вертикали (+ предоплата-максимум), `GET|POST /api/baths/trial`, `OwnerSubscriptionService` (line Baths), админка (`AdminPlansController` `MaxResources`, защита триала; `AdminBillingController` назначение/очередь/лимит; `AdminAccountDtoBuilder`), `ChannelEligibility` + `SubscriptionResolver` (список линеек, `PaidNumbers`), тест `/api/pricing` без «Бань» | 10, 14, US-42-03/04 | BE-42-V, BE-42-P | BE-42-1, BE-42-3 |
+| BE-42-2 | Линейка «Бани»: `StaysPlanResolver`/`StaysTrialService` по вертикали, `BathsTrialTerms`, `StaysCompanyService.EvaluateGateAsync` по вертикали (+ предоплата-максимум), `GET|POST /api/baths/trial`, `OwnerSubscriptionService` (line Baths), админка (`AdminPlansController` `MaxResources`, защита триала; `AdminBillingController` назначение/очередь/лимит; `AdminAccountDtoBuilder`), `MessagingDemand`/`CustomerMessagingOffer*` (+«Бани», по факту цикла 40), тест `/api/pricing` без «Бань» | 10, 14, US-42-03/04 | BE-42-V, BE-42-P | BE-42-1, BE-42-3 |
 | BE-42-3 | Ресурсы: `BathsServicesController` (наследник), `Capacity` в setup/DTO, публикация (`ServiceNoCapacity`, 402 под `billing-account`), адрес ресурса по `BathsSlugPolicy`, `AvailableForHouseBookings=false`; `ServiceItemWriter` + фильтр позиций + `StayServiceItemConfirmations` (оба префикса); `OwnerTextChecks` в content/items (оба префикса) | 05, 06, 12, US-42-05…10 | BE-42-V, BE-42-P | BE-42-1, BE-42-4 |
 | BE-42-4 | Публичное: `BathsPublicController` (каталог с кешем «базы» и фильтром даты `HasStartsBatchAsync`, города, комплекс), `BathsServicesPublicController`/`BathServiceOrdersPublicController` (наследники), `guestsCount` в создании (`GuestsCountRules`), ключи текстов вертикали в снимках, поля DTO (`capacity`, `cityName`, `localTimeNote`, `bookAgainUrl`), `GET …/service-orders/my` (P1, `SUBJECT-PHONE-GATE`), маска пути в логах | 02, 06, 08, 09, US-42-11…18 | BE-42-V, BE-42-W, BE-42-3 (capacity) | BE-42-5 |
 | BE-42-5 | Уведомления и ссылки по вертикали (планировщик заказов, push гостю «EZBOOK Бани», персоналу — ссылки bani), `BathsSessionsController` (наследник; метка полосы «Дня»; ручная бронь + `guestsCount`); **напоминание** (P1): тип 41, событие 10, третий проход `stays-scheduled-messages`, `sessionReminder` в DTO | 08, 15, US-42-19/20/22/23 | BE-42-W, BE-42-4 | BE-42-6 |
