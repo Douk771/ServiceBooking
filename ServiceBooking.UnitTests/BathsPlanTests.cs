@@ -122,7 +122,7 @@ public class BathsPlanTests
         SlotVerticals.Stays.TrialPlanId.Should().Be(StaysPlans.TrialSeedId);
         SlotVerticals.Baths.TrialPlanId.Should().Be(BathsPlans.TrialSeedId);
         SlotVerticals.Stays.TrialTerms.Version.Should().Be(StaysTrialTerms.Version);
-        SlotVerticals.Baths.TrialTerms.Version.Should().Be("baths-2026-10-10");
+        SlotVerticals.Baths.TrialTerms.Version.Should().Be("baths-2026-10-14");
         SlotVerticals.Baths.TrialTerms.Sha256.Should().NotBe(SlotVerticals.Stays.TrialTerms.Sha256);
     }
 
@@ -131,7 +131,7 @@ public class BathsPlanTests
     {
         var text = BathsTrialTerms.Text(14);
         text.Should().Contain("линейки «Бани» — 14 дней");
-        text.Should().Contain("в пробный период не включаются").And.NotContain("доступны весь пробный период");
+        text.Should().Contain("в пробный период бесплатно не предоставляются").And.NotContain("доступны весь пробный период");
         text.Should().NotContain("«Дома»").And.NotContain("ваши дома");
         BathsTrialTerms.Sha256.Should().MatchRegex("^[0-9a-f]{64}$");
     }

@@ -236,7 +236,7 @@ Up — **только добавления**: 2 таблицы, 5 столбцо
 |---|---|---|
 | `Kind`, `ApiPrefix` | `Stays`, `api/stays` | `Baths`, `api/baths` |
 | `Unit` (единица лимита тарифа) | `House` (дома, `MaxHouses`) | `Resource` (опубликованные `StayServices` компаний `Baths` аккаунта, `MaxResources`) |
-| `TrialPlanId`, `TrialTerms` (версия, текст, хеш), `TrialDaysOption` | `StaysPlans.TrialSeedId`, `StaysTrialTerms`, `Stays:TrialDays` | `BathsPlans.TrialSeedId`, `BathsTrialTerms` (`baths-2026-10-10`), `Baths:TrialDays` (14) |
+| `TrialPlanId`, `TrialTerms` (версия, текст, хеш), `TrialDaysOption` | `StaysPlans.TrialSeedId`, `StaysTrialTerms`, `Stays:TrialDays` | `BathsPlans.TrialSeedId`, `BathsTrialTerms` (`baths-2026-10-14`), `Baths:TrialDays` (14) |
 | `HasHouses` (режим «к проживанию», `AvailableForHouseBookings`, сеансы в брони дома) | ✓ | — (флаг ресурса всегда `false`) |
 | `StandaloneOrdersAlwaysOn` | — (настройка компании) | ✓ (`AcceptServiceOrdersWithoutStay = true` с создания, маршрута смены нет) |
 | `RequiresCapacityToPublish` | — | ✓ |
@@ -399,8 +399,8 @@ grep'ом по `CompanyKind.Stays` на ветке; исполнитель по�
 ### §42.5.4 Триал
 
 `StaysTrialService` → методы с вертикалью (`TrialGrants.Line`, `TrialPhoneRegistrations.Line`, `TrialPlanId`, условия).
-`BathsTrialTerms` (`Services/Baths/BathsTrialTerms.cs`): версия `baths-2026-10-10`, текст — черновик §11.7 обзора с `{N}` и
-фразой «Сообщения гостям в WhatsApp или MAX в пробный период не включаются: они доступны на платном тарифе» (решение 09.10.2026), хеш SHA-256,
+`BathsTrialTerms` (`Services/Baths/BathsTrialTerms.cs`): версия `baths-2026-10-14`, текст — черновик §11.7 обзора с `{N}` и
+фразой «Сообщения гостям в WhatsApp или MAX в пробный период бесплатно не предоставляются: их можно подключить отдельно — платным номером аккаунта» (решение 09.10.2026), хеш SHA-256,
 пометка «DRAFT until a lawyer reads it». `TrialGrant.TermsVersion/TermsTextSha256/TermsShownAtUtc/TermsAcknowledgedAtUtc` —
 как у «Домов» (Т42-10). `MailingWindowDays = 0` (механика окна рассылок — салонная). Однократность — в линейке:
 `TrialGrants (BillingAccountId, Line)` и `TrialPhoneRegistrations (Line, PhoneKeyHash)` — уникальные индексы уже с линейкой

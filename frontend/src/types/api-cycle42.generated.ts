@@ -1475,7 +1475,7 @@ export interface components {
             phone: string;
             description?: string | null;
             ownerTermsVersion: string;
-            /** @description Версия условий пробного периода «Бань» (baths-2026-10-10) — если владелец согласился активировать триал. */
+            /** @description Версия условий пробного периода «Бань» (baths-2026-10-14) — если владелец согласился активировать триал. */
             trialTermsVersion?: string | null;
         };
         TrialOutcomeDto: {
