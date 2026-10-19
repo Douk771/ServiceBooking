@@ -15,6 +15,8 @@ vi.mock('../api/publicStays', () => ({ publicStaysApi: api }))
 // Cycle 40: the shared MessengerOptIn reads the lawyer's text through the shared client; a failure = the verbatim fallback.
 vi.mock('@/api/client', () => ({ api: { get: () => Promise.reject(Object.assign(new Error('404'), { response: { status: 404 } })) } }))
 vi.mock('../api/legalTexts', () => ({ stayLegalTextsApi: { get: () => Promise.reject(httpError(404, '')) } }))
+// A local frontend/.env with VITE_SMARTCAPTCHA_SITEKEY turns the captcha on and blocks the submit; it is not the subject here.
+vi.mock('@/components/booking/SmartCaptcha', () => ({ smartCaptchaEnabled: false, SmartCaptcha: () => null }))
 
 function Where() {
   return <span data-testid="where">{useLocation().pathname}</span>
