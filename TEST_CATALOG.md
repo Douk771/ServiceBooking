@@ -250,7 +250,10 @@ US-25), `ServicesTests.cs` (`POST /api/services/{id}/image`, US-25), `CompaniesT
 **CI:** `.github/workflows/ci.yml` (T-B18) гоняет оба .NET-набора (сначала `ServiceBooking.UnitTests` —
 без БД, быстрее падает при поломке; затем `ServiceBooking.Tests` против эфемерного `postgres:16` в
 GitHub Actions service-контейнере) и фронтовый `npx tsc --noEmit` + `npm run build` в отдельном
-параллельном джобе — независимо от бэкенда.
+параллельном джобе — независимо от бэкенда. С 19.10 `ServiceBooking.Tests` в CI разрезан на три шарда
+(матрица джоба `backend`, у каждого свой раннер и Postgres, фильтр по `FullyQualifiedName`): `demo` —
+классы с Demo/Showcase в имени, `cycle` — прочие `Cycle*`, `rest` — всё остальное плюс юнит-тесты и
+проверки без БД. Новый класс попадает в шард по имени сам, править фильтры не нужно.
 
 ## Юнит-тесты (без БД)
 

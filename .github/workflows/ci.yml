@@ -11,9 +11,26 @@ concurrency:
 
 jobs:
   backend:
+    name: backend (${{ matrix.shard.name }})
     runs-on: ubuntu-latest
     # Цикл 36 (DO-36-02): запас по времени, медленный раннер шёл до 10 минут при прежних 15.
     timeout-minutes: 20
+    # Функциональный набор разрезан на три шарда, у каждого свой раннер и свой Postgres: целиком он шёл ~6 минут
+    # и был критическим путём всего CI. Демо/витрина (Cycle28/35 — сброс демо, ~10 тыс. записей) — самая длинная
+    # цепочка, её держит DemoGate (не больше P демо-баз), поэтому она идёт отдельно. Фильтры — разбиение по построению:
+    # demo = A, cycle = не A и B, rest = не A и не B, так что ни один тест не теряется и не идёт дважды.
+    # Юнит-тесты и проверки без БД (пины образов, снапшоты миграций, правовые документы) — только в самом коротком шарде rest.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - name: demo
+            filter: "FullyQualifiedName~Demo|FullyQualifiedName~Showcase"
+          - name: cycle
+            filter: "FullyQualifiedName~.Cycle&FullyQualifiedName!~Demo&FullyQualifiedName!~Showcase"
+          - name: rest
+            filter: "FullyQualifiedName!~.Cycle&FullyQualifiedName!~Demo&FullyQualifiedName!~Showcase"
+            checks: true
     services:
       postgres:
         image: postgres:16
@@ -72,7 +89,7 @@ jobs:
       # traceable from the CI log for a single job's own re-runs.
       - name: Derive test run key
         run: |
-          job_hash="$(printf '%s' "$GITHUB_JOB" | cksum | cut -d' ' -f1)"
+          job_hash="$(printf '%s' "$GITHUB_JOB-${{ matrix.shard.name }}" | cksum | cut -d' ' -f1)"
           printf 'SERVICEBOOKING_TEST_RUN_KEY=%08x\n' "$(( (GITHUB_RUN_ID ^ job_hash) % 4294967296 ))" >> "$GITHUB_ENV"
 
       - uses: actions/setup-dotnet@v5
@@ -97,10 +114,11 @@ jobs:
       # Fast, no-DB suite runs first so a broken build/pure-logic regression fails quickly, before
       # spending time on the functional suite against Postgres.
       - name: Unit tests
+        if: matrix.shard.checks
         run: dotnet test ServiceBooking.UnitTests --no-build -c Release --logger "trx;LogFileName=unit.trx" --results-directory TestResults/ci
 
-      - name: Functional tests
-        run: dotnet test ServiceBooking.Tests --no-build -c Release --logger "trx;LogFileName=functional.trx" --results-directory TestResults/ci -- xUnit.MaxParallelThreads="$SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS"
+      - name: Functional tests (${{ matrix.shard.name }})
+        run: dotnet test ServiceBooking.Tests --no-build -c Release --filter "${{ matrix.shard.filter }}" --logger "trx;LogFileName=functional.trx" --results-directory TestResults/ci -- xUnit.MaxParallelThreads="$SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS"
 
       # Цикл 36 (DO-36-04, US-36-07): топ медленных классов и тестов в Summary прогона. Превышение порогов из
       # tools/test-timing/thresholds.json даёт ::warning::, но НЕ роняет шаг (код выхода 0): порог - сигнал, а не гейт.
@@ -117,7 +135,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: backend-test-results-${{ github.sha }}
+          name: backend-test-results-${{ github.sha }}-${{ matrix.shard.name }}
           path: TestResults/
           retention-days: 14
           if-no-files-found: ignore
@@ -126,6 +144,7 @@ jobs:
       # version drifts between ServiceBooking.TestKit/TestInfrastructure.cs, docker-compose.yml,
       # docker-compose.prod.yml and this file.
       - name: Check image pins
+        if: matrix.shard.checks
         run: bash deploy/ci/check-image-pins.sh
 
       # ARCHITECTURE_CYCLE17.md §308.2, authoritative check: asks EF Core itself whether
@@ -134,6 +153,7 @@ jobs:
       # design-time model, no live database connection.
       # Цикл 36 (DO-36-03): --no-build -c Release — сборка решения выше уже лежит в bin/Release, пересобирать Debug не нужно.
       - name: Migrations snapshot drift (US-17-11)
+        if: matrix.shard.checks
         run: |
           dotnet tool restore
           dotnet dotnet-ef migrations add __DriftProbe --no-build --configuration Release --project ServiceBooking.Infrastructure \
@@ -153,6 +173,7 @@ jobs:
       # Designer.cs losing properties a later one and today's snapshot both have) with a plain-text
       # walk, no dotnet-ef invocation. Pinpoints which migration/entity/property regressed.
       - name: Designer snapshots are monotonic (C15-4)
+        if: matrix.shard.checks
         run: bash deploy/ci/check-migration-snapshots.sh
 
       # ARCHITECTURE_CYCLE11.md §105.2/§117.3: `legal check` builds legal-drafts/ into a temp dir and
@@ -163,6 +184,7 @@ jobs:
       # T0 (marker in legal-drafts/09-channel-offer.html) and T8 (App_Data/legal replaced from the new
       # drafts) both land; see the cycle 11 backend report for T1/T3/T7.
       - name: Legal documents check
+        if: matrix.shard.checks
         run: dotnet ServiceBooking.LegalKit/bin/Release/net8.0/ServiceBooking.LegalKit.dll check
 
   frontend:
