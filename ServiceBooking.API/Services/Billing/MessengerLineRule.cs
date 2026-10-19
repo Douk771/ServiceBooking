@@ -45,6 +45,9 @@ public static class MessengerLineRule
         return Make(MessengerLineStatus.Expired, MessengerTexts.StatusExpired(payment.IsTrial, payment.PaidUntil), 0, false);
     }
 
+    public static OptionRowFacts FactsOf(Core.Entities.AccountSubscriptionOption row) =>
+        new(row.EndsAtUtc, row.PaidUntilUtc, row.GrantedByTrial, row.ActivatedAtUtc, row.Quantity);
+
     /// <summary>Monthly amount of a line and whether it takes part in the total: a paid line costs the catalog price (no price counts as 0),
     /// a trial line is free but counted, everything else is 0 and not counted.</summary>
     public static (decimal Monthly, bool Counts) Amount(TransportPayment payment, OptionRowFacts? row, decimal? price)

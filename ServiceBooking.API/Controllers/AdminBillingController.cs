@@ -162,7 +162,8 @@ public class AdminBillingController(
         // this page's account ids rather than every account in the system.
         // ARCHITECTURE_CYCLE19.md §386.1 — retired limit options never contribute to totalMonthlyPrice
         // or the "options" surfaces shown here.
-        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
+        // ARCHITECTURE_CYCLE43.md §43.32: the messengers are added by the one line rule below, not by the tariff's option rules.
+        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().WhereNotMessenger().Include(o => o.Option)
             .Where(o => accountIds.Contains(o.BillingAccountId))
             .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now)
             .ToListAsync(ct);
@@ -193,7 +194,8 @@ public class AdminBillingController(
                 var availability = rule?.Availability ?? OptionAvailability.Unavailable;
                 return BillingCalculator.MonthlyPriceFor(availability, o.Quantity, o.Option.PricePerMonth ?? 0m, rule?.IncludedQuantity);
             });
-            var totalMonthlyPrice = BillingCalculator.TotalMonthlyPrice(sub?.PlanConfig?.PricePerMonth ?? 0m, optionsMonthly);
+            var messengersMonthly = messagingByAccount.TryGetValue(a.Id, out var messaging) ? AdminMessengerLinesBuilder.Total(messaging) : 0m;
+            var totalMonthlyPrice = BillingCalculator.TotalMonthlyPrice(sub?.PlanConfig?.PricePerMonth ?? 0m, optionsMonthly.Append(messengersMonthly));
 
             return new
             {

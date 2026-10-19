@@ -10,7 +10,10 @@ using ServiceBooking.Infrastructure.Data;
 namespace ServiceBooking.API.Services.Notifications;
 
 /// <summary>What the catalog and the platform settings say about one messenger option (§40.7.1).</summary>
-public readonly record struct TransportOptionState(bool Open, bool Sellable, decimal? PricePerMonth);
+/// <remarks>Cycle 43 (ARCHITECTURE_CYCLE43.md §43.4.3): the trailing fields feed the single account-line rule and the sale explanation;
+/// they default to "unknown / not for sale" for callers that build the state by hand.</remarks>
+public readonly record struct TransportOptionState(
+    bool Open, bool Sellable, decimal? PricePerMonth, bool IsActive = false, bool TermsOwnerPublished = false, Guid? OptionId = null);
 
 /// <summary>
 /// One transport of one account (§40.3.3): how it is paid, whether its option is open/sellable, its first live number
@@ -19,8 +22,13 @@ public readonly record struct TransportOptionState(bool Open, bool Sellable, dec
 /// </summary>
 public sealed record TransportState(
     NotificationTransport Transport, TransportPayment Payment, TransportOptionState Option,
-    NotificationChannel? Primary, IReadOnlyList<NotificationChannel> Duplicates, bool Routable, bool Working)
+    NotificationChannel? Primary, IReadOnlyList<NotificationChannel> Duplicates, bool Routable, bool Working,
+    OptionRowFacts? Row = null, MessengerLine? EvaluatedLine = null)
 {
+    /// <summary>Cycle 43 (§43.4): status, text and monthly amount of the line — computed once by <see cref="MessengerLineRule"/>.</summary>
+    public MessengerLine Line => EvaluatedLine ?? MessengerLineRule.Evaluate(
+        new MessengerLineFacts(Transport, Row, null, default, Option.PricePerMonth, Primary?.RequestedAtUtc, DateTime.UtcNow));
+
     public bool Paid => Payment.Paid;
 }
 
@@ -72,7 +80,7 @@ public sealed class AccountMessagingReader(
     private const string CatalogCacheKey = "account-messaging:option-catalog";
     private static readonly TimeSpan CatalogCacheDuration = TimeSpan.FromSeconds(60);
 
-    private sealed record CatalogRow(bool IsActive, decimal? PricePerMonth);
+    private sealed record CatalogRow(Guid Id, bool IsActive, decimal? PricePerMonth);
 
     private static readonly NotificationTransport[] Transports = [NotificationTransport.WhatsApp, NotificationTransport.Max];
 
@@ -135,7 +143,8 @@ public sealed class AccountMessagingReader(
             var open = await platformSettings.IsOptionOpenAsync(transport, ct);
             var sellable = ChannelOptionAvailability.Sellable(
                 open, row?.IsActive ?? false, row?.PricePerMonth, LegalOptionGuards.IsPubliclySellable(code, snapshot));
-            options[transport] = new TransportOptionState(open, sellable, row?.PricePerMonth);
+            options[transport] = new TransportOptionState(
+                open, sellable, row?.PricePerMonth, row?.IsActive ?? false, LegalOptionGuards.IsPubliclySellable(code, snapshot), row?.Id);
         }
 
         foreach (var accountId in ids)
@@ -203,7 +212,9 @@ public sealed class AccountMessagingReader(
                 transport, payment.Paid, ranking.GetValueOrDefault(primary.Id) == ChannelFundingState.Funded,
                 primary.IsSuspendedByAdmin, primary.State).IsRoutable;
         var working = routable && primary!.State == ChannelState.Connected && platformEnabled;
-        return new TransportState(transport, payment, option, primary, duplicates, routable, working);
+        var line = MessengerLineRule.Evaluate(new MessengerLineFacts(
+            transport, optionRow, accountTrialEndsAtUtc, subscription, option.PricePerMonth, primary?.RequestedAtUtc, nowUtc));
+        return new TransportState(transport, payment, option, primary, duplicates, routable, working, optionRow, line);
     }
 
     private async Task<Dictionary<string, CatalogRow>> LoadCatalogAsync(CancellationToken ct)
@@ -211,9 +222,9 @@ public sealed class AccountMessagingReader(
         if (cache.TryGetValue(CatalogCacheKey, out Dictionary<string, CatalogRow>? cached) && cached is not null) return cached;
         var rows = await db.SubscriptionOptions.AsNoTracking()
             .Where(o => o.Code == ChannelOptionCodes.WhatsApp || o.Code == ChannelOptionCodes.Max)
-            .Select(o => new { o.Code, o.IsActive, o.PricePerMonth })
+            .Select(o => new { o.Id, o.Code, o.IsActive, o.PricePerMonth })
             .ToListAsync(ct);
-        var catalog = rows.ToDictionary(r => r.Code, r => new CatalogRow(r.IsActive, r.PricePerMonth));
+        var catalog = rows.ToDictionary(r => r.Code, r => new CatalogRow(r.Id, r.IsActive, r.PricePerMonth));
         cache.Set(CatalogCacheKey, catalog, CatalogCacheDuration);
         return catalog;
     }
