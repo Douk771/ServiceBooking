@@ -79,4 +79,12 @@ describe('LandingScreenshotCarousel', () => {
     })
     expect(active()).toBe(1)
   })
+
+  it('highlights the step of the active slide when autoplay advances', () => {
+    render(<LandingScreenshotCarousel carousel={carousel} />)
+    expect(screen.getByRole('button', { name: 'Кадр 1: 1. Шаг 1' })).toHaveAttribute('aria-current', 'true')
+    act(() => vi.advanceTimersByTime(CAROUSEL_INTERVAL_MS))
+    expect(screen.getByRole('button', { name: 'Кадр 2: 2. Шаг 2' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: 'Кадр 1: 1. Шаг 1' })).not.toHaveAttribute('aria-current')
+  })
 })

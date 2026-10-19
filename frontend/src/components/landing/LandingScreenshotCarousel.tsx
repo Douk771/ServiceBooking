@@ -34,12 +34,14 @@ export function LandingScreenshotCarousel({ carousel, className }: { carousel: C
     return () => window.clearTimeout(t)
   }, [playing, hovered, focused, index, go])
 
+  const title = (c: string) => c.replace(/^\d+\.\s*/, '')
+
   return (
     <div
       role="region"
       aria-roledescription="карусель"
       aria-label={label}
-      className={className}
+      className={`grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:gap-12 lg:gap-16 md:items-center ${className ?? ''}`.trim()}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocus={() => setFocused(true)}
@@ -47,82 +49,105 @@ export function LandingScreenshotCarousel({ carousel, className }: { carousel: C
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false)
       }}
     >
-      <div
-        className="grid touch-pan-y"
-        aria-live={playing && !hovered && !focused ? 'off' : 'polite'}
-        onPointerDown={(e) => {
-          swipeStart.current = e.clientX
-        }}
-        onPointerUp={(e) => {
-          if (swipeStart.current === null) return
-          const dx = e.clientX - swipeStart.current
-          swipeStart.current = null
-          if (Math.abs(dx) >= SWIPE_PX) go(index + (dx < 0 ? 1 : -1))
-        }}
-      >
-        {slides.map((shot, i) => {
-          const active = i === index
-          return (
-            <div
-              key={shot.src}
-              role="group"
-              aria-roledescription="слайд"
-              aria-label={`${i + 1} из ${count}`}
-              aria-hidden={!active}
-              data-testid="carousel-slide"
-              data-active={active || undefined}
-              className={`[grid-area:1/1] self-start transition-opacity duration-500 motion-reduce:transition-none ${
-                active ? 'opacity-100' : 'opacity-0 invisible'
-              }`}
-            >
-              <LandingScreenshotFigure shot={shot} />
-            </div>
-          )
-        })}
+      <div className="min-w-0 md:order-1">
+        <p className="hidden md:block text-[13px] font-semibold tracking-[0.14em] uppercase text-gold-dark mb-4">{label}</p>
+        <ol className="list-none flex gap-2 overflow-x-auto md:overflow-visible md:flex-col md:gap-1.5 pb-1 md:pb-0">
+          {slides.map((shot, i) => {
+            const on = i === index
+            return (
+              <li key={shot.src} className="shrink-0 md:shrink">
+                <button
+                  type="button"
+                  onClick={() => go(i)}
+                  aria-label={`Кадр ${i + 1}: ${shot.caption}`}
+                  aria-current={on ? 'true' : undefined}
+                  className={`w-full text-left flex items-start gap-3 rounded-full md:rounded-2xl px-3.5 py-2 md:px-4 md:py-3 border transition-colors ${
+                    on ? 'bg-ink text-cream border-ink md:bg-white md:text-ink md:border-line-strong md:shadow-soft' : 'bg-white text-ink-soft border-line hover:bg-cream-deep'
+                  }`}
+                >
+                  <span aria-hidden className="text-[14px] font-semibold md:w-6 md:h-6 md:rounded-full md:bg-cream-deep md:flex md:items-center md:justify-center md:shrink-0 md:text-[13px]">
+                    {i + 1}
+                  </span>
+                  <span aria-hidden className="hidden md:block">
+                    <span className="block text-[16px] font-medium text-ink">{title(shot.caption)}</span>
+                    {on && <span className="block mt-1 text-[14px] leading-[1.5] text-ink-soft">{shot.alt}</span>}
+                  </span>
+                </button>
+              </li>
+            )
+          })}
+        </ol>
+        <p aria-hidden className="md:hidden mt-3 text-[15px] font-medium text-ink">{title(slides[index].caption)}</p>
       </div>
 
-      <div className="mt-4 flex items-center justify-center gap-2">
-        <button
-          type="button"
-          onClick={() => go(index - 1)}
-          aria-label="Предыдущий кадр"
-          className="w-9 h-9 rounded-full border border-line bg-white text-ink flex items-center justify-center hover:bg-cream-deep"
+      <div className="mx-auto md:order-2 min-w-0">
+        <div
+          className="grid touch-pan-y justify-items-center"
+          aria-live={playing && !hovered && !focused ? 'off' : 'polite'}
+          onPointerDown={(e) => {
+            swipeStart.current = e.clientX
+          }}
+          onPointerUp={(e) => {
+            if (swipeStart.current === null) return
+            const dx = e.clientX - swipeStart.current
+            swipeStart.current = null
+            if (Math.abs(dx) >= SWIPE_PX) go(index + (dx < 0 ? 1 : -1))
+          }}
         >
-          <Icon name="chevron-left" size={16} aria-hidden />
-        </button>
-        <div className="flex items-center">
-          {slides.map((shot, i) => (
-            <button
-              key={shot.src}
-              type="button"
-              onClick={() => go(i)}
-              aria-label={`Кадр ${i + 1}: ${shot.caption}`}
-              aria-current={i === index ? 'true' : undefined}
-              className="w-6 h-9 flex items-center justify-center"
-            >
-              <span
-                className={`block h-2 rounded-full transition-all ${i === index ? 'w-5 bg-ink' : 'w-2 bg-line-strong'}`}
-                aria-hidden
-              />
-            </button>
-          ))}
+          {slides.map((shot, i) => {
+            const active = i === index
+            return (
+              <div
+                key={shot.src}
+                role="group"
+                aria-roledescription="слайд"
+                aria-label={`${i + 1} из ${count}`}
+                aria-hidden={!active}
+                data-testid="carousel-slide"
+                data-active={active || undefined}
+                className={`[grid-area:1/1] self-start transition-opacity duration-500 motion-reduce:transition-none ${
+                  active ? 'opacity-100' : 'opacity-0 invisible'
+                }`}
+              >
+                <LandingScreenshotFigure
+                  shot={shot}
+                  className="[&_figcaption]:sr-only"
+                  imgClassName="!w-auto max-w-full h-[min(60vh,540px)] object-contain !rounded-[28px] border-[6px] !border-ink/90"
+                />
+              </div>
+            )
+          })}
         </div>
-        <button
-          type="button"
-          onClick={() => go(index + 1)}
-          aria-label="Следующий кадр"
-          className="w-9 h-9 rounded-full border border-line bg-white text-ink flex items-center justify-center hover:bg-cream-deep"
-        >
-          <Icon name="chevron-right" size={16} aria-hidden />
-        </button>
-        <button
-          type="button"
-          onClick={() => setPlaying((p) => !p)}
-          aria-label={playing ? 'Остановить автолистание' : 'Листать автоматически'}
-          className="ml-1 w-9 h-9 rounded-full text-ink-soft flex items-center justify-center hover:text-ink"
-        >
-          <Icon name={playing ? 'pause' : 'play'} size={14} aria-hidden />
-        </button>
+
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => go(index - 1)}
+            aria-label="Предыдущий кадр"
+            className="w-9 h-9 rounded-full border border-line bg-white text-ink flex items-center justify-center hover:bg-cream-deep"
+          >
+            <Icon name="chevron-left" size={16} aria-hidden />
+          </button>
+          <span className="text-[13px] text-muted tabular-nums px-1" aria-hidden>
+            {index + 1} / {count}
+          </span>
+          <button
+            type="button"
+            onClick={() => go(index + 1)}
+            aria-label="Следующий кадр"
+            className="w-9 h-9 rounded-full border border-line bg-white text-ink flex items-center justify-center hover:bg-cream-deep"
+          >
+            <Icon name="chevron-right" size={16} aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={() => setPlaying((p) => !p)}
+            aria-label={playing ? 'Остановить автолистание' : 'Листать автоматически'}
+            className="ml-1 w-9 h-9 rounded-full text-ink-soft flex items-center justify-center hover:text-ink"
+          >
+            <Icon name={playing ? 'pause' : 'play'} size={14} aria-hidden />
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -24,29 +24,47 @@ export function LandingClientsSection({ config, placeholder }: { config: Landing
         </div>
       </div>
       <LandingStepsPanel panel={config.stepsPanel} />
-      <div className="mt-12 md:mt-16 grid md:grid-cols-[1.05fr_0.95fr] gap-10 md:gap-16 items-start">
-        <div>
-          <h3 id={config.list.titleId} className={`${H3} mb-6`}>
-            {config.list.title}
-          </h3>
-          <ul aria-labelledby={config.list.titleId} className="space-y-4">
-            {config.list.items.map((t) => (
-              <li key={t} className={CHECK_ITEM}>
-                <Icon name="check" size={18} className="text-gold-dark shrink-0 mt-[3px]" aria-hidden />
-                <span>{t}</span>
-              </li>
-            ))}
-          </ul>
-          {config.list.note && <p className="mt-6 text-[13px] text-muted">{config.list.note}</p>}
+      {screenshot && 'slides' in screenshot ? (
+        <>
+          <LandingScreenshotCarousel carousel={screenshot} className="mt-12 md:mt-16" />
+          <div className="mt-12 md:mt-16">
+            <h3 id={config.list.titleId} className={`${H3} mb-6`}>
+              {config.list.title}
+            </h3>
+            <ul aria-labelledby={config.list.titleId} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {config.list.items.map((t) => (
+                <li key={t} className={`${CHECK_ITEM} rounded-2xl border border-line bg-white p-4`}>
+                  <Icon name="check" size={18} className="text-gold-dark shrink-0 mt-[3px]" aria-hidden />
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+            {config.list.note && <p className="mt-4 text-[13px] text-muted">{config.list.note}</p>}
+          </div>
+        </>
+      ) : (
+        <div className="mt-12 md:mt-16 grid md:grid-cols-[1.05fr_0.95fr] gap-10 md:gap-16 items-start">
+          <div>
+            <h3 id={config.list.titleId} className={`${H3} mb-6`}>
+              {config.list.title}
+            </h3>
+            <ul aria-labelledby={config.list.titleId} className="space-y-4">
+              {config.list.items.map((t) => (
+                <li key={t} className={CHECK_ITEM}>
+                  <Icon name="check" size={18} className="text-gold-dark shrink-0 mt-[3px]" aria-hidden />
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+            {config.list.note && <p className="mt-6 text-[13px] text-muted">{config.list.note}</p>}
+          </div>
+          {screenshot ? (
+            <LandingScreenshotFigure shot={screenshot} className="mx-auto w-full max-w-[320px] md:max-w-[340px]" />
+          ) : (
+            placeholder && <LandingScreenshotPlaceholder />
+          )}
         </div>
-        {screenshot && 'slides' in screenshot ? (
-          <LandingScreenshotCarousel carousel={screenshot} className="mx-auto w-full max-w-[320px] md:max-w-[340px]" />
-        ) : screenshot ? (
-          <LandingScreenshotFigure shot={screenshot} className="mx-auto w-full max-w-[320px] md:max-w-[340px]" />
-        ) : (
-          placeholder && <LandingScreenshotPlaceholder />
-        )}
-      </div>
+      )}
     </section>
   )
 }
