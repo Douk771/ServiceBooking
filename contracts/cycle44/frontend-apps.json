@@ -1,0 +1,81 @@
+{
+  "$comment": "Реестр фронтенд-приложений (ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.6, API_CONTRACT_CYCLE44_PRODUCTS_LANDING.md §44.28). Читает guard frontend/src/test/appRegistry.guard.test.ts (CY44-06): каждое приложение с непустым distSubdir обязано быть вписано во все места регистрации. Сборкой НЕ управляет. Новое приложение начинается со строки здесь.",
+  "apps": [
+    {
+      "name": "ezbook",
+      "siteKey": "zapis",
+      "sourceDir": "src",
+      "distSubdir": "",
+      "vhost": "ezbook.conf",
+      "host": "ezbook.ru",
+      "devPort": 5173,
+      "devPortEnv": "SB_WEB_PORT",
+      "smokeProfile": "ezbook",
+      "serviceWorker": true,
+      "apiProxy": true,
+      "publicSitesKey": "ServicesBaseUrl",
+      "deploySmoke": "always"
+    },
+    {
+      "name": "goods",
+      "siteKey": "goods",
+      "sourceDir": "goods/src",
+      "distSubdir": "__goods",
+      "vhost": "goods.ezbook.conf",
+      "host": "goods.ezbook.ru",
+      "devPort": 5174,
+      "devPortEnv": "SB_GOODS_WEB_PORT",
+      "smokeProfile": "goods",
+      "serviceWorker": true,
+      "apiProxy": true,
+      "publicSitesKey": "OrdersBaseUrl",
+      "deploySmoke": "always"
+    },
+    {
+      "name": "dom",
+      "siteKey": "dom",
+      "sourceDir": "dom/src",
+      "distSubdir": "__dom",
+      "vhost": "dom.ezbook.conf",
+      "host": "dom.ezbook.ru",
+      "devPort": 5175,
+      "devPortEnv": "SB_DOM_WEB_PORT",
+      "smokeProfile": "dom",
+      "serviceWorker": true,
+      "apiProxy": true,
+      "publicSitesKey": "StaysBaseUrl",
+      "deploySmoke": "if-vhost-installed"
+    },
+    {
+      "name": "bani",
+      "siteKey": "bani",
+      "sourceDir": "bani/src",
+      "distSubdir": "__bani",
+      "vhost": "bani.ezbook.conf",
+      "host": "bani.ezbook.ru",
+      "devPort": 5176,
+      "devPortEnv": "SB_BANI_WEB_PORT",
+      "smokeProfile": "bani",
+      "serviceWorker": true,
+      "apiProxy": true,
+      "publicSitesKey": "BathsBaseUrl",
+      "deploySmoke": "if-vhost-installed"
+    },
+    {
+      "name": "about",
+      "siteKey": "about",
+      "sourceDir": "about/src",
+      "distSubdir": "__about",
+      "vhost": "about.ezbook.conf",
+      "host": "about.ezbook.ru",
+      "devPort": 5177,
+      "devPortEnv": "SB_ABOUT_WEB_PORT",
+      "smokeProfile": "about",
+      "serviceWorker": false,
+      "apiProxy": false,
+      "publicSitesKey": null,
+      "deploySmoke": "if-vhost-installed"
+    }
+  ],
+  "rootVhostsBlockingSubdirs": ["ezbook.conf", "demo.visit.ezbook.conf"]
+}

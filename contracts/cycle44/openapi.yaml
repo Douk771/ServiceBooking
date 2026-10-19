@@ -1,0 +1,168 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 44
+# (страница «Все продукты EZBOOK» на about.ezbook.ru — статический сайт без клиентского JavaScript).
+#
+# ГЛАВНОЕ: API ServiceBooking в цикле 44 НЕ МЕНЯЕТСЯ. Ни одного нового или изменённого маршрута /api/*, DTO, кода ответа.
+# Эта схема описывает НЕ API, а HTTP-поверхность нового статического сайта — то, о чём должны сойтись сборка фронтенда
+# (frontend/dist/__about) и vhost nginx (deploy/nginx/about.ezbook.conf). Плюс явное утверждение «API на этом хосте нет»
+# (GET /api/health/ready → 404).
+#
+# Смысл и порядок — API_CONTRACT_CYCLE44_PRODUCTS_LANDING.md (§44.20–§44.29), решения — ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md
+# (§44.0–§44.17), требования — SPEC_CYCLE44_PRODUCTS_LANDING.md. Рядом: contracts/cycle44/frontend-apps.json — реестр приложений.
+#
+# Как пользоваться:
+#   CI        cd frontend && npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle44/openapi.yaml
+#   QA        python3 -m http.server 4177 --directory frontend/dist/__about &
+#             schemathesis run contracts/cycle44/openapi.yaml --base-url http://127.0.0.1:4177 --checks all
+#             (после выката — тот же прогон с --base-url https://about.ezbook.ru)
+#   НЕ НУЖНО  types:api:cycle44 и contracts:json — фронт API не вызывает, бэкенд маршрутов не добавляет.
+#
+# Заголовки безопасности ставит только nginx. Статический сервер CI их не отдаёт, поэтому здесь они описаны, но не required.
+# Обязательность проверяют deploy/nginx/test-about-vhost.sh (P1) и deploy/deploy-remote.sh.
+
+info:
+  title: about.ezbook.ru — статический сайт «Все продукты EZBOOK» (цикл 44)
+  version: "44.1.0"
+  license:
+    name: Proprietary
+    url: https://ezbook.ru/terms
+  description: >-
+    Статический сайт без клиентского JavaScript. Все страницы — готовый HTML, собранный на этапе сборки. API ServiceBooking
+    в цикле 44 не меняется (x-servicebooking-api-changes: none); на этом хосте API нет, /api/* отвечает 404.
+    Ответы 404 — HTML-страница (nginx error_page /404.html; на статическом сервере CI — его собственная HTML-страница ошибки).
+
+x-servicebooking-api-changes: none
+
+servers:
+  - url: https://about.ezbook.ru
+    description: бой (= стенд; доступен после ручных шагов заказчика, DEPLOY.md §33)
+  - url: http://127.0.0.1:4177
+    description: статический сервер CI/QA над frontend/dist/__about (python3 -m http.server)
+
+tags:
+  - name: about-pages
+    description: HTML-страницы сайта — готовая разметка без JavaScript (API_CONTRACT_CYCLE44 §44.25).
+  - name: about-crawl
+    description: Файлы для поисковиков — robots.txt и sitemap.xml (страница открыта для индексации, Q44-3 (а)).
+  - name: about-assets
+    description: Статические файлы — иконки вкладки.
+  - name: about-no-api
+    description: Явное утверждение независимости от API — на этом хосте маршрутов API нет.
+
+paths:
+  /:
+    get:
+      tags: [about-pages]
+      operationId: getProductsPage
+      summary: Страница «Все продукты EZBOOK» — готовый HTML с h1, карточками видимых продуктов и абсолютными ссылками на их сайты
+      responses:
+        "200":
+          description: >-
+            Готовая страница (§44.25.1). Без <script>, без style=, без noindex. Ровно один h1, link rel=canonical,
+            meta description, html lang=ru. Карточки — article[data-product][data-status], только для не скрытых продуктов.
+          headers:
+            Content-Security-Policy:
+              description: "Только nginx: default-src 'none'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+              schema: { type: string }
+            X-Frame-Options:
+              description: Только nginx — DENY.
+              schema: { type: string, enum: [DENY] }
+            Strict-Transport-Security:
+              description: Только nginx — max-age=15552000.
+              schema: { type: string }
+            X-Content-Type-Options:
+              description: Только nginx — nosniff.
+              schema: { type: string, enum: [nosniff] }
+            Cache-Control:
+              description: Только nginx — no-cache.
+              schema: { type: string }
+          content:
+            text/html:
+              schema:
+                type: string
+                minLength: 200
+
+  /index.html:
+    get:
+      tags: [about-pages]
+      operationId: getProductsPageByFileName
+      summary: Тот же файл по имени — nginx отвечает 301 на «/», статический сервер CI отдаёт 200
+      responses:
+        "200":
+          description: Статический сервер CI — тот же HTML, что и для «/».
+          content:
+            text/html:
+              schema: { type: string }
+        "301":
+          description: nginx — постоянная переадресация на каноническую форму «/».
+          headers:
+            Location:
+              description: Канонический адрес страницы.
+              schema: { type: string }
+
+  /no-such-page:
+    get:
+      tags: [about-pages]
+      operationId: getMissingPage
+      summary: Любой несуществующий путь — честный 404 (без SPA-fallback на index.html)
+      responses:
+        "404":
+          description: HTML-страница 404 (nginx — содержимое 404.html с meta robots noindex и ссылкой на «/»).
+          content:
+            text/html:
+              schema: { type: string }
+
+  /robots.txt:
+    get:
+      tags: [about-crawl]
+      operationId: getRobotsTxt
+      summary: Правила для поисковиков — индексация разрешена, указан sitemap
+      responses:
+        "200":
+          description: "User-agent: *, Allow: /, Sitemap: <origin>/sitemap.xml (§44.25.3). Disallow: / отсутствует."
+          content:
+            text/plain:
+              schema:
+                type: string
+                pattern: "Allow: /"
+
+  /sitemap.xml:
+    get:
+      tags: [about-crawl]
+      operationId: getSitemapXml
+      summary: Карта сайта — ровно один адрес, совпадающий с canonical страницы
+      responses:
+        "200":
+          description: urlset с одним url/loc = <origin>/ (§44.25.4).
+          content:
+            application/xml:
+              schema: { type: string }
+            text/xml:
+              schema: { type: string }
+
+  /favicon.svg:
+    get:
+      tags: [about-assets]
+      operationId: getFaviconSvg
+      summary: Иконка вкладки (SVG)
+      responses:
+        "200":
+          description: Та же иконка, что у ezbook.ru.
+          content:
+            image/svg+xml:
+              schema: { type: string }
+
+  /api/health/ready:
+    get:
+      tags: [about-no-api]
+      operationId: getApiOnAboutHost
+      summary: Проверка независимости — на хосте about.ezbook.ru маршрутов API нет, любой /api/* отвечает 404
+      responses:
+        "404":
+          description: vhost не проксирует /api/ (location /api/ { return 404; }); в артефакте сборки каталога api нет.
+          content:
+            text/html:
+              schema: { type: string }
+
+components: {}
