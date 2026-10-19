@@ -28,7 +28,7 @@ function useAccountCardUpdate(accountId: string) {
   const qc = useQueryClient()
   return (card: AdminBillingAccount) => {
     qc.setQueryData(['admin-billing-account', accountId], card)
-    for (const key of ['admin-billing-accounts', 'admin-billing-account-history', 'admin-channels', 'admin-channel-card', 'notification-numbers'])
+    for (const key of ['admin-billing-accounts', 'admin-billing-account-history', 'admin-channels', 'admin-channel-card', 'admin-messenger-quote'])
       void qc.invalidateQueries({ queryKey: [key] })
   }
 }

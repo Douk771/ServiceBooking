@@ -45,7 +45,7 @@ function PriceModal({ option, onClose }: { option: AdminMessengerOption; onClose
         old ? { ...old, items: old.items.map((i) => (i.transport === fresh.transport ? fresh : i)) } : old,
       )
       void qc.invalidateQueries({ queryKey: MESSENGER_OPTIONS_QUERY_KEY })
-      for (const key of ['admin-billing-accounts', 'admin-billing-account', 'admin-options', 'admin-channels', 'public-pricing', 'notification-numbers'])
+      for (const key of ['admin-billing-accounts', 'admin-billing-account', 'admin-options', 'admin-channels', 'public-pricing', 'admin-channel-card', 'admin-messenger-quote'])
         void qc.invalidateQueries({ queryKey: [key] })
       onClose()
     },

@@ -120,6 +120,7 @@ function ConfirmPaymentModal({ channel, onClose }: { channel: AdminChannelDto; o
       <div className="mt-4 rounded-xl bg-cream-deep px-4 py-3 text-sm min-h-[3.5rem]" aria-live="polite" data-testid="confirm-payment-quote">
         {monthsValue == null ? <span className="text-muted">Укажите срок от 1 до 12 месяцев</span>
           : card.isError ? <span className="text-muted">Расчёт суммы недоступен — сервер проверит условия при подтверждении</span>
+          : card.data && !accountId ? <span role="alert" className="text-danger">У номера нет аккаунта — оплату подтвердить нельзя</span>
           : card.isLoading || quote.isLoading || quote.isFetching ? <span className="text-muted">Считаем…</span>
           : quote.isError ? <span role="alert" className="text-danger">{adminErrorText(quote.error)}</span>
           : quote.data ? (
