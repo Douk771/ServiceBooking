@@ -31,6 +31,9 @@ describe('zapis screenshots', () => {
     expect(manifest.capturedAt).toBeTruthy()
     expect(manifest.sourceCommit).toBeTruthy()
     expect(manifest.bookingFlow.slides.map((x: { key: string }) => x.key)).toEqual(FLOW)
+    // Все кадры карусели одного размера — иначе при листании блок выглядит рваным.
+    const sizes = new Set(manifest.bookingFlow.slides.map((x: { cssWidth: number; cssHeight: number }) => `${x.cssWidth}x${x.cssHeight}`))
+    expect(sizes.size).toBe(1)
     for (const sl of manifest.bookingFlow.slides) {
       expect(sl.cssWidth).toBeLessThanOrEqual(390)
       expect(Number.isInteger(sl.cssHeight) && sl.cssHeight > 0 && sl.cssHeight <= 720).toBe(true)

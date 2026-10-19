@@ -194,8 +194,9 @@ async function encode(page, { name, clip, dpr, budget }) {
 const dayAria = (ymd) =>
   new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${ymd}T12:00:00Z`))
 
-// Карусель клиента: весь путь записи, по кадру на шаг окна записи. Высота экрана 720: окно записи (max-h 88vh) не выше 634 px,
-// длинные шаги (услуги, контакты) снимаются как на телефоне — верхняя часть окна, остальное прокручивается.
+// Карусель клиента: весь путь записи, по кадру на шаг окна записи. Все кадры одного размера: окно записи растянуто до своей
+// предельной высоты (88vh от экрана 720 = 634 px), шаг — сверху, как на экране телефона. Длинные шаги (услуги, контакты)
+// снимаются как на телефоне — верхняя часть окна, остальное прокручивается.
 const FLOW_VIEWPORT = { width: 390, height: 720 }
 // На шаге времени — только первые четыре ряда слотов, чтобы кадр не вытягивался.
 const SLOT_ROWS = 4
@@ -239,6 +240,7 @@ async function shootFlow(browser, state, webUrl, tmp) {
   await page.locator('h3', { hasText: state.clientShot.serviceName }).first().waitFor()
   await page.addStyleTag({
     content: `.fixed.inset-0{background:#F6F1EA!important;backdrop-filter:none!important}
+      .fixed.inset-0>div{height:88vh!important}
       .grid.grid-cols-3>button:nth-child(n+${SLOT_ROWS * 3 + 1}){display:none!important}`,
   })
   await page.getByRole('button', { name: 'Записаться' }).first().click()
@@ -275,6 +277,8 @@ async function shootFlow(browser, state, webUrl, tmp) {
   await shoot('done', ['Запись подтверждена', lastSlot])
 
   await ctx.close()
+  const sizes = new Set(slides.map((sl) => `${sl.cssWidth}x${sl.cssHeight}`))
+  if (sizes.size !== 1) throw new Exit(5, `Кадры карусели разного размера: ${[...sizes].join(', ')}.`)
   return slides
 }
 
