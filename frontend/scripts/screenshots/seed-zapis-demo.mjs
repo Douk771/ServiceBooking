@@ -9,7 +9,7 @@ import process from 'node:process'
 import {
   ExitError, checkApiUrl, dateInZone, isSwaggerUiHtml, makeClient, makePassword, waitReady,
 } from './seed-goods-demo.mjs'
-import { BOOKINGS, CLIENT_SHOT, LOGO_IMAGE, MASTERS, OWNER, SALON, SERVICES, WORK_END, WORK_START } from './zapis-demo-data.mjs'
+import { BOOKINGS, CLIENT_GUEST, CLIENT_SHOT, LOGO_IMAGE, MASTERS, OWNER, SALON, SERVICES, WORK_END, WORK_START } from './zapis-demo-data.mjs'
 
 const HELP = `Засев демо-салона «Записи» для съёмки скриншотов.
 
@@ -178,7 +178,10 @@ export async function main(env = process.env) {
     clientShot: {
       serviceName: SERVICES.find((s) => s.key === CLIENT_SHOT.service).name,
       masterName: `${OWNER.firstName} ${OWNER.lastName}`,
+      masterNames: MASTERS.filter((m) => m.services.includes(CLIENT_SHOT.service))
+        .map((m) => (m.key === 'owner' ? `${OWNER.firstName} ${OWNER.lastName}` : `${m.firstName} ${m.lastName}`)),
     },
+    clientGuest: CLIENT_GUEST,
     ownerBookingCount: expectedOwner,
   }
   const stateDir = join(dirname(fileURLToPath(import.meta.url)), '.state')

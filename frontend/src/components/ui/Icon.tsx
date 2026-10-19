@@ -11,6 +11,8 @@ export type IconName =
   | 'check'
   | 'check-circle'
   | 'chevron-left'
+  | 'pause'
+  | 'play'
   | 'chevron-right'
   | 'chevron-down'
   | 'search'
@@ -93,6 +95,8 @@ const paths: Record<IconName, JSX.Element> = {
     </>
   ),
   'chevron-left': <path d="M15 6l-6 6 6 6" />,
+  pause: <path d="M9 6v12M15 6v12" strokeWidth={2.2} />,
+  play: <path d="M8 5.5v13l10.5-6.5L8 5.5z" />,
   'chevron-right': <path d="M9 6l6 6-6 6" />,
   'chevron-down': <path d="M6 9l6 6 6-6" />,
   search: (

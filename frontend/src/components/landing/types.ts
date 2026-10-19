@@ -54,6 +54,14 @@ export interface LandingScreenshot {
   caption: string
 }
 
+/** Карусель кадров: листается сама, с кнопками и точками. Не меньше двух кадров — один кадр задаётся без карусели. */
+export interface LandingScreenshotCarousel {
+  /** Имя карусели для экранного диктора, например «Как проходит запись». */
+  label: string
+  slides: readonly [LandingScreenshot, LandingScreenshot, ...LandingScreenshot[]]
+}
+export type LandingShot = LandingScreenshot | LandingScreenshotCarousel
+
 export interface LandingHeroConfig {
   /** Обычная шапка. Поле есть только для того, чтобы конфиг с layout: 'panel' нельзя было передать как обычный. */
   layout?: never
@@ -88,7 +96,7 @@ export interface LandingClientsConfig {
   actions: readonly [LandingAction] | readonly [LandingAction, LandingAction]
   stepsPanel: LandingStepsPanel
   list: { title: string; titleId: string; items: readonly [string, ...string[]]; note?: string }
-  screenshot?: LandingScreenshot
+  screenshot?: LandingShot
 }
 
 export interface LandingBusinessConfig {

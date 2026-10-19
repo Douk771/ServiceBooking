@@ -33,8 +33,8 @@ export const SERVICES = [
 // Владелец — тоже мастер (key: 'owner'). Второго мастера владелец добавляет по телефону. Мастеров двое: столько мест
 // у тарифа «Бесплатный» (владелец + 1), а засев ходит только через обычный API, без смены тарифа.
 export const MASTERS = [
-  { key: 'owner', services: ['cut', 'color', 'styling'] },
-  { key: 'marina', firstName: 'Марина', lastName: 'Ковалёва', phone: '+79000000101', bio: 'Маникюр, педикюр, брови и ресницы.', services: ['manicure', 'pedicure', 'brows', 'lashes'] },
+  { key: 'owner', services: ['cut', 'color', 'styling', 'brows', 'lashes'] },
+  { key: 'marina', firstName: 'Марина', lastName: 'Ковалёва', phone: '+79000000101', bio: 'Стрижки, укладки и маникюр.', services: ['cut', 'styling', 'manicure', 'pedicure'] },
 ]
 
 export const WORK_START = '10:00'
@@ -48,8 +48,10 @@ export const BOOKINGS = [
   { master: 'owner', service: 'cut', time: '16:00', name: 'Екатерина Орлова', phone: '+79000000114', notes: null },
   { master: 'marina', service: 'manicure', time: '10:00', name: 'Наталья Волкова', phone: '+79000000115', notes: null },
   { master: 'marina', service: 'pedicure', time: '12:00', name: 'Светлана Зайцева', phone: '+79000000116', notes: null },
-  { master: 'marina', service: 'brows', time: '15:00', name: 'Полина Соколова', phone: '+79000000117', notes: null },
+  { master: 'marina', service: 'cut', time: '15:00', name: 'Полина Соколова', phone: '+79000000117', notes: null },
 ]
 
-// Кадр клиента: запись к этому мастеру и на эту услугу — шаг выбора времени.
+// Карусель клиента: весь путь записи на эту услугу к этому мастеру (стрижку делают оба — есть шаг выбора мастера),
+// в форме — этот выдуманный клиент.
 export const CLIENT_SHOT = { master: 'owner', service: 'cut' }
+export const CLIENT_GUEST = { name: 'Анна Петрова', phone: '9000000130' }

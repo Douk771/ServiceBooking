@@ -1,21 +1,55 @@
 {
   "schemaVersion": 1,
-  "capturedAt": "2026-10-19T20:02:14Z",
-  "sourceCommit": "096e689f-dirty",
+  "capturedAt": "2026-10-19T20:41:39Z",
+  "sourceCommit": "2fc51416-dirty",
   "browser": "Chrome/155.0.8059.84",
-  "bookingSlots": {
-    "cssWidth": 378,
-    "cssHeight": 622,
-    "files": {
-      "1x": "booking-slots-1x.webp",
-      "2x": "booking-slots-2x.webp"
-    },
-    "bytes": {
-      "1x": 13344,
-      "2x": 27330
-    },
+  "bookingFlow": {
     "serviceName": "Женская стрижка",
-    "slotCount": 19
+    "masterName": "Алина Воронцова",
+    "slides": [
+      {
+        "key": "services",
+        "file": "booking-services-2x.webp",
+        "cssWidth": 378,
+        "cssHeight": 662,
+        "bytes": 29408
+      },
+      {
+        "key": "master",
+        "file": "booking-master-2x.webp",
+        "cssWidth": 378,
+        "cssHeight": 662,
+        "bytes": 19764
+      },
+      {
+        "key": "date",
+        "file": "booking-date-2x.webp",
+        "cssWidth": 378,
+        "cssHeight": 662,
+        "bytes": 25938
+      },
+      {
+        "key": "slots",
+        "file": "booking-slots-2x.webp",
+        "cssWidth": 378,
+        "cssHeight": 662,
+        "bytes": 21430
+      },
+      {
+        "key": "contacts",
+        "file": "booking-contacts-2x.webp",
+        "cssWidth": 378,
+        "cssHeight": 662,
+        "bytes": 27308
+      },
+      {
+        "key": "done",
+        "file": "booking-done-2x.webp",
+        "cssWidth": 378,
+        "cssHeight": 662,
+        "bytes": 15314
+      }
+    ]
   },
   "bookingsDesktop": {
     "cssWidth": 1024,
@@ -26,7 +60,7 @@
     },
     "bytes": {
       "1x": 27600,
-      "2x": 61900
+      "2x": 61930
     },
     "bookingCount": 4
   },

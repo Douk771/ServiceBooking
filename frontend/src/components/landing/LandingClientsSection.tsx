@@ -2,6 +2,7 @@ import { Icon } from '../ui/Icon'
 import { CHECK_ITEM, EYEBROW, H2, H3, LEAD, SECTION } from './classes'
 import { LandingActionLink } from './LandingActionLink'
 import { LandingScreenshotFigure, LandingScreenshotPlaceholder } from './LandingScreenshot'
+import { LandingScreenshotCarousel } from './LandingScreenshotCarousel'
 import { LandingStepsPanel } from './LandingStepsPanel'
 import type { LandingClientsConfig } from './types'
 
@@ -38,7 +39,9 @@ export function LandingClientsSection({ config, placeholder }: { config: Landing
           </ul>
           {config.list.note && <p className="mt-6 text-[13px] text-muted">{config.list.note}</p>}
         </div>
-        {screenshot ? (
+        {screenshot && 'slides' in screenshot ? (
+          <LandingScreenshotCarousel carousel={screenshot} className="mx-auto w-full max-w-[320px] md:max-w-[340px]" />
+        ) : screenshot ? (
           <LandingScreenshotFigure shot={screenshot} className="mx-auto w-full max-w-[320px] md:max-w-[340px]" />
         ) : (
           placeholder && <LandingScreenshotPlaceholder />
