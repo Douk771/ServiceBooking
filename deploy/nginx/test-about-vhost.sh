@@ -11,7 +11,8 @@ DIST_DIR=$(cd "$DIST_DIR" && pwd)
 PORT="${PORT:-18091}"
 W=$(mktemp -d)
 trap 'nginx -c "$W/n.conf" -p "$W" -s stop 2>/dev/null || true; rm -rf "$W"' EXIT
-{ echo "pid $W/n.pid; error_log $W/e.log; events{} http{ include $(dirname "$(command -v nginx)")/../etc/nginx/mime.types;"
+{ echo "pid $W/n.pid; error_log $W/e.log; events{} http{"
+  echo "include $(dirname "$(command -v nginx)")/../etc/nginx/mime.types;"
   echo "client_body_temp_path $W/b; proxy_temp_path $W/p; fastcgi_temp_path $W/f; uwsgi_temp_path $W/u; scgi_temp_path $W/s;"
   sed -e "s#listen 80;#listen $PORT;#" -e '/listen \[::\]:80;/d' \
       -e "s#root /var/www/ezbook/current/__about;#root $DIST_DIR;#" \
