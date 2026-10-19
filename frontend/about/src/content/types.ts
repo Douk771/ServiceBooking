@@ -11,6 +11,10 @@ export interface ProductAction {
   label: string
   path: RelativePath
 }
+/** Link to the product's demo stand; the address is DEMO_SITE_URLS[key] in src/utils/publicSites.ts. */
+export interface DemoLink {
+  label: string
+}
 export interface ChooserRow {
   business: string
 }
@@ -23,6 +27,8 @@ interface ProductBase {
   features: readonly [string, string, string, ...string[]]
   forClients: string
   clientAction: ProductAction
+  /** Demo stand with sample data; shown as a third link of the card. */
+  demo?: DemoLink
   chooserRows?: readonly ChooserRow[]
 }
 export interface LiveProduct extends ProductBase {

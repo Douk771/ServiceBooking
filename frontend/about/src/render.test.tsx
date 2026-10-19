@@ -3,7 +3,7 @@ import { renderSite } from './prerender'
 import { PRODUCTS } from './content/products'
 import { PAGE_COPY } from './content/page'
 import type { ProductCard, ProductKey } from './content/types'
-import { PRODUCTION_SITE_URLS, SiteUrlError } from '@/utils/publicSites'
+import { DEMO_SITE_URLS, PRODUCTION_SITE_URLS, SiteUrlError } from '@/utils/publicSites'
 
 // CY44-02 (ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.14): renderSite on status fixtures. Pure function, no browser.
 const TEMPLATE = '<!doctype html><html lang="ru"><head><!--about:head--></head><body><!--about:body--></body></html>'
@@ -19,23 +19,36 @@ function withStatuses(statuses: Record<ProductKey, 'live' | 'testing' | 'hidden'
   })
 }
 const cards = (html: string) => [...html.matchAll(/data-product="([a-z]+)"/g)].map((m) => m[1])
+const actionLinks = (html: string, action: string) =>
+  (html.match(new RegExp(`<a [^>]*data-action="${action}"[^>]*>`, 'g')) ?? []).map((a) => /href="([^"]+)"/.exec(a)![1])
 
 describe('CY44-02 renderSite', () => {
-  it('customer defaults: zapis, goods live; dom testing; bani nowhere', () => {
+  it('customer defaults (20.10.2026): all four live, nothing hidden, demo links for zapis and goods', () => {
     const { files, report } = renderSite(base)
     const html = files['index.html']
-    expect(cards(html)).toEqual(['zapis', 'goods', 'dom'])
-    expect(report.visibleProducts).toEqual(['zapis', 'goods', 'dom'])
-    expect(report.hiddenProducts).toEqual(['bani'])
+    expect(cards(html)).toEqual(['zapis', 'goods', 'dom', 'bani'])
+    expect(report.visibleProducts).toEqual(['zapis', 'goods', 'dom', 'bani'])
+    expect(report.hiddenProducts).toEqual([])
+    expect(report.hiddenHosts).toEqual([])
+    expect((html.match(/data-action="business"/g) ?? []).length).toBe(4)
+    expect(actionLinks(html, 'demo')).toEqual([
+      'https://demo.visit.ezbook.ru/',
+      'https://demo.zakaz.ezbook.ru/',
+    ])
+    expect(html).not.toContain('data-role="testing-badge"')
+  })
+
+  it('a hidden product is nowhere, including its host', () => {
+    const { files, report } = renderSite({ ...base, products: withStatuses({ zapis: 'live', goods: 'live', dom: 'live', bani: 'hidden' }) })
+    const html = files['index.html']
     expect(report.hiddenHosts).toEqual(['bani.ezbook.ru'])
     for (const host of report.hiddenHosts) expect(html).not.toContain(host)
-    expect(html).not.toContain('bani.ezbook.ru')
     expect(html).not.toContain('#product-bani')
     expect(html).not.toContain('EZBOOK Бани')
   })
 
   it('testing card: badge text, no business action and no call to join', () => {
-    const html = renderSite(base).files['index.html']
+    const html = renderSite({ ...base, products: withStatuses({ zapis: 'live', goods: 'live', dom: 'testing', bani: 'hidden' }) }).files['index.html']
     const dom = html.slice(html.indexOf('data-product="dom"'), html.indexOf('</article>', html.indexOf('data-product="dom"')))
     expect(dom).toContain('data-role="testing-badge"')
     expect(dom).toContain('Тестовый режим')
@@ -54,8 +67,24 @@ describe('CY44-02 renderSite', () => {
   it('all hidden except one: the hidden ones are in no place (cards, nav, footer, chooser, hosts)', () => {
     const html = renderSite({ ...base, products: withStatuses({ zapis: 'hidden', goods: 'live', dom: 'hidden', bani: 'hidden' }) }).files['index.html']
     expect(cards(html)).toEqual(['goods'])
-    for (const hidden of ['zapis.', 'EZBOOK Запись', 'EZBOOK Дома', 'EZBOOK Бани', 'dom.ezbook.ru', 'bani.ezbook.ru', '#product-zapis', '#product-dom']) {
+    for (const hidden of ['zapis.', 'EZBOOK Запись', 'EZBOOK Дома', 'EZBOOK Бани', 'dom.ezbook.ru', 'bani.ezbook.ru', 'demo.visit.ezbook.ru', '#product-zapis', '#product-dom']) {
       expect(html, hidden).not.toContain(hidden)
+    }
+  })
+
+  it('the demo stand of a hidden product is in hiddenHosts (prerender self-check)', () => {
+    const { report } = renderSite({ ...base, products: withStatuses({ zapis: 'live', goods: 'hidden', dom: 'live', bani: 'live' }) })
+    expect(report.hiddenHosts).toEqual(['goods.ezbook.ru', 'demo.zakaz.ezbook.ru'])
+  })
+
+  it('every action link: no target, screen-reader context with the product name, 44px', () => {
+    const html = renderSite(base).files['index.html']
+    const links = [...html.matchAll(/<a [^>]*data-action="[a-z]+"[^>]*>[\s\S]*?<\/a>/g)].map((m) => m[0])
+    expect(links.length).toBe(10)
+    for (const a of links) {
+      expect(a).not.toMatch(/\starget=/)
+      expect(a).toMatch(/<span class="sr-only"> — EZBOOK [А-Яа-я]+<\/span><\/a>$/)
+      expect(a).toContain('min-h-[44px]')
     }
   })
 
@@ -72,14 +101,14 @@ describe('CY44-02 renderSite', () => {
 
   it('every h3 belongs to a card; nav links only to visible cards', () => {
     const html = renderSite(base).files['index.html']
-    expect((html.match(/<h3 /g) ?? []).length).toBe(3)
+    expect((html.match(/<h3 /g) ?? []).length).toBe(4)
     const nav = html.slice(html.indexOf('<nav'), html.indexOf('</nav>'))
-    expect([...nav.matchAll(/href="#product-([a-z]+)"/g)].map((m) => m[1])).toEqual(['zapis', 'goods', 'dom'])
+    expect([...nav.matchAll(/href="#product-([a-z]+)"/g)].map((m) => m[1])).toEqual(['zapis', 'goods', 'dom', 'bani'])
   })
 
   it('external links are absolute and belong to the site addresses', () => {
     const html = renderSite(base).files['index.html']
-    const origins = new Set(Object.values(PRODUCTION_SITE_URLS))
+    const origins = new Set([...Object.values(PRODUCTION_SITE_URLS), ...Object.values(DEMO_SITE_URLS)])
     const hrefs = [...html.matchAll(/ href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('#') && !h.startsWith('/'))
     expect(hrefs.length).toBeGreaterThan(5)
     for (const h of hrefs) expect(origins.has(new URL(h).origin), h).toBe(true)

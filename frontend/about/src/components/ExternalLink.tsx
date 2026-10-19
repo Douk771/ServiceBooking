@@ -7,7 +7,7 @@ interface ExternalLinkProps {
   /** Контекст для скринридера: название продукта. */
   context?: string
   variant?: 'primary' | 'secondary' | 'text'
-  action?: 'client' | 'business'
+  action?: 'client' | 'business' | 'demo'
 }
 
 const VARIANT = {

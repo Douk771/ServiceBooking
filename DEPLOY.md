@@ -2702,7 +2702,7 @@ Up — только добавления (вид компании «Бани», 
 
 **Ограничения.**
 - Если на машине переопределён `PublicSites__*`, тот же адрес нужно задать в `VITE_SITE_URL_*` (Variables), иначе ссылки страницы и подвалов разойдутся с адресами в уведомлениях: согласованность с `appsettings.json` проверяет тест, но не переопределения на машине (§44.3.3).
-- Статусы продуктов на странице меняются правкой `frontend/about/src/content/products.ts` и деплоем. Бани показывать (`hidden` -> `testing`) только после выката bani и открытия `https://bani.ezbook.ru/`.
+- Статусы продуктов на странице меняются правкой `frontend/about/src/content/products.ts` и деплоем. С 20.10.2026 все четыре продукта `live`. Перед открытием about и после каждой смены статуса проверить, что ведущие со страницы адреса отвечают 200: `for u in ezbook.ru goods.ezbook.ru dom.ezbook.ru bani.ezbook.ru demo.visit.ezbook.ru demo.zakaz.ezbook.ru; do curl -s -o /dev/null -w "%{http_code} $u\n" https://$u/; done`. Ссылки «Посмотреть демо» ведут на `demo.visit` и `demo.zakaz` (адреса — `DEMO_SITE_URLS` в `frontend/src/utils/publicSites.ts`); если демо-стенд выключают, уберите `demo` у карточки.
 
 **Откат.** `deploy/rollback.sh` (симлинк `current`): страница откатывается вместе со всеми, правки не нужны. Убрать страницу совсем — удалить симлинк vhost'а, reload nginx и снять Variable `VITE_PRODUCTS_PAGE_LINK`.
 

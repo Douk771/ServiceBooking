@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { displayHost, resolveSiteUrls } from '@/utils/publicSites'
+import { DEMO_SITE_URLS, displayHost, resolveSiteUrls } from '@/utils/publicSites'
 import type { SiteEnv, SiteMode } from '@/utils/publicSites'
 import { AboutPage } from './components/AboutPage'
 import { Head } from './components/Head'
@@ -22,7 +22,7 @@ export interface RenderSiteInput {
 export interface RenderReport {
   visibleProducts: readonly ProductKey[]
   hiddenProducts: readonly ProductKey[]
-  /** Hosts of the hidden products' sites (e.g. bani.ezbook.ru); must not appear in index.html. */
+  /** Hosts of the hidden products' sites and demo stands (e.g. bani.ezbook.ru, demo.visit.ezbook.ru); must not appear in index.html. */
   hiddenHosts: readonly string[]
   canonical: string
 }
@@ -71,7 +71,9 @@ export function renderSite(input: RenderSiteInput): RenderSiteOutput {
     report: {
       visibleProducts: visible.map((p) => p.key),
       hiddenProducts: products.filter((p) => p.status === 'hidden').map((p) => p.key),
-      hiddenHosts: products.filter((p) => p.status === 'hidden').map((p) => displayHost(sites[p.key])),
+      hiddenHosts: products
+        .filter((p) => p.status === 'hidden')
+        .flatMap((p) => [sites[p.key], DEMO_SITE_URLS[p.key]].filter((o) => o !== undefined).map(displayHost)),
       canonical,
     },
   }

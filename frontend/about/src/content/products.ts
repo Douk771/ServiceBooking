@@ -2,9 +2,9 @@ import type { ProductCard } from './types'
 
 /**
  * Карточки продуктов (API_CONTRACT_CYCLE44 §44.23). Порядок массива = порядок на странице.
- * Статусы — решение заказчика 19.10.2026: Запись и Заказы — live, Дома — testing, Бани — hidden.
+ * Статусы — решение заказчика 20.10.2026: все четыре live (19.10 было: Дома — testing, Бани — hidden; bani.ezbook.ru выкачен).
+ * Демо-стенды (адреса — DEMO_SITE_URLS в publicSites.ts) есть у Записи и Заказов; у Домов и Бань демо нет.
  * Тексты — черновики команды на вычитку заказчиком (Q44-11); сверены с главными страницами продуктов.
- * Бани показывать (hidden -> testing) только после выката bani и открытия https://bani.ezbook.ru/ (DEPLOY.md).
  */
 export const PRODUCTS: readonly ProductCard[] = [
   {
@@ -22,6 +22,7 @@ export const PRODUCTS: readonly ProductCard[] = [
     forClients: 'Выберите мастера и свободное время и запишитесь онлайн, без звонков.',
     clientAction: { label: 'Найти мастера', path: '/' },
     businessAction: { label: 'Для бизнеса', path: '/#biz-title' },
+    demo: { label: 'Посмотреть демо' },
     chooserRows: [{ business: 'Салон, барбершоп, студия, частный мастер' }],
   },
   {
@@ -39,12 +40,13 @@ export const PRODUCTS: readonly ProductCard[] = [
     forClients: 'Выберите магазин, соберите заказ и заберите его в удобное время.',
     clientAction: { label: 'Найти магазин', path: '/' },
     businessAction: { label: 'Для бизнеса', path: '/#biz-title' },
+    demo: { label: 'Посмотреть демо' },
     chooserRows: [{ business: 'Магазин, кафе, столовая, пекарня' }],
   },
   {
     key: 'dom',
     name: 'EZBOOK Дома',
-    status: 'testing',
+    status: 'live',
     icon: 'home',
     forWhom: 'Владельцы домов и гостевых домов, посуточная аренда',
     features: [
@@ -54,13 +56,13 @@ export const PRODUCTS: readonly ProductCard[] = [
     ],
     forClients: 'Смотрите свободные даты и бронируйте дом без переписки.',
     clientAction: { label: 'Смотреть дома', path: '/' },
-    testingNote: 'Сайт работает в тестовом режиме, добавление компаний пока не открыто.',
+    businessAction: { label: 'Для бизнеса', path: '/#biz-title' },
     chooserRows: [{ business: 'Дом, гостевой дом, посуточная аренда' }],
   },
   {
     key: 'bani',
     name: 'EZBOOK Бани',
-    status: 'hidden',
+    status: 'live',
     icon: 'clock',
     forWhom: 'Бани и сауны с почасовой записью',
     features: [

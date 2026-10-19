@@ -70,6 +70,16 @@
       "env": {
         "VITE_API_TARGET": "http://localhost:5001"
       }
+    },
+    {
+      "name": "frontend-about",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:about"
+      ],
+      "cwd": "frontend",
+      "port": 5177
     }
   ]
 }

@@ -1,6 +1,6 @@
 import { Icon } from '@/components/ui/Icon'
 import { H3, CHECK_ITEM } from '@/components/landing/classes'
-import { displayHost } from '@/utils/publicSites'
+import { DEMO_SITE_URLS, displayHost } from '@/utils/publicSites'
 import type { SiteUrls } from '@/utils/publicSites'
 import type { ProductCard as Product } from '../content/types'
 import { ExternalLink } from './ExternalLink'
@@ -15,6 +15,7 @@ interface ProductCardProps {
 export function ProductCard({ product, sites, testingBadge }: ProductCardProps) {
   const origin = sites[product.key]
   const testing = product.status === 'testing'
+  const demoOrigin = DEMO_SITE_URLS[product.key]
   const titleId = `product-${product.key}-title`
   return (
     <article
@@ -66,6 +67,16 @@ export function ProductCard({ product, sites, testingBadge }: ProductCardProps) 
             context={product.name}
             variant="secondary"
             action="business"
+          />
+        )}
+        {/* Демо — витрина на примерных данных, не призыв подключаться, поэтому выводится при любом видимом статусе. */}
+        {product.demo && demoOrigin && (
+          <ExternalLink
+            href={`${demoOrigin}/`}
+            label={product.demo.label}
+            context={product.name}
+            variant="text"
+            action="demo"
           />
         )}
       </div>

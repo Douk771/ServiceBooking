@@ -1,5 +1,5 @@
 // ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.3, API_CONTRACT_CYCLE44 §44.22 — the single place in frontend/ that knows
-// the public addresses of the five ezbook sites. Pure module (no browser or Node APIs): used by the SSR render of `about`,
+// the public addresses of the five ezbook sites (and of the public demo stands, DEMO_SITE_URLS). Pure module (no browser or Node APIs): used by the SSR render of `about`,
 // by the footers of the four SPAs and by tests. The production addresses are checked against `PublicSites` in
 // ServiceBooking.API/appsettings.json by publicSites.consistency.test.ts.
 
@@ -16,6 +16,15 @@ export const PRODUCTION_SITE_URLS: SiteUrls = {
   dom: 'https://dom.ezbook.ru',
   bani: 'https://bani.ezbook.ru',
   about: 'https://about.ezbook.ru',
+}
+
+/**
+ * Public demo stands with sample data (cycle 28: demo.visit, cycle 35: demo.zakaz). One stand per product that has it,
+ * the same in every environment, so no VITE_SITE_URL_* override. Dom and bani have no demo.
+ */
+export const DEMO_SITE_URLS: Readonly<Partial<Record<Exclude<SiteKey, 'about'>, SiteOrigin>>> = {
+  zapis: 'https://demo.visit.ezbook.ru',
+  goods: 'https://demo.zakaz.ezbook.ru',
 }
 
 export const DEV_SITE_URLS: SiteUrls = {

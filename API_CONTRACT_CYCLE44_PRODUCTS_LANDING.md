@@ -138,6 +138,7 @@ interface ProductBase {
   features: readonly [string, string, string, ...string[]]   // 3..5 (≤5 — тест)
   forClients: string                                         // одна строка: что делает клиент
   clientAction: ProductAction                                // label: 'Найти мастера' и т. п.; path: '/'
+  demo?: { label: string }                                   // 20.10.2026: ссылка на DEMO_SITE_URLS[key] (publicSites.ts)
   chooserRows?: readonly ChooserRow[]                        // P2
 }
 export interface LiveProduct    extends ProductBase { status: 'live';    businessAction: ProductAction; testingNote?: never }
@@ -160,6 +161,8 @@ export interface PageCopy {
 export const PRODUCTS: readonly ProductCard[]                // products.ts; порядок массива = порядок на странице
 export const PAGE_COPY: PageCopy                             // page.ts
 ```
+
+> **Изменение 20.10.2026 (решение заказчика).** Все четыре продукта `live` (у `dom` и `bani` — `businessAction` `/#biz-title`, `testingNote` нет). В `ProductBase` добавлено необязательное `demo?: { label: string }`: при нём карточка выводит третью ссылку `<a href="{DEMO_SITE_URLS[key]}/" data-action="demo">` (у `zapis` — `https://demo.visit.ezbook.ru/`, у `goods` — `https://demo.zakaz.ezbook.ru/`; адреса в `frontend/src/utils/publicSites.ts`, одни на все окружения). Демо выводится при любом видимом статусе; демо-хост скрытого продукта входит в `hiddenHosts` самопроверки prerender. Запрет D35-3 (не давать ссылку на `demo.zakaz` до заключения юриста) снят тем же решением заказчика. Таблица ниже — исходные значения 19.10.2026.
 
 Значения по умолчанию (решение заказчика 19.10.2026; тексты — черновики FE-44-3 на вычитку):
 
@@ -265,8 +268,10 @@ export function renderSite(input: RenderSiteInput): RenderSiteOutput
 - ровно один `<h1`; у каждой карточки `h3`; `nav` содержит якоря только видимых продуктов;
 - `data-product` есть только у видимых продуктов, `data-status` ∈ {`live`, `testing`};
 - `data-action="business"` есть **только** у `data-status="live"`;
+- `data-action` ∈ {`client`, `business`, `demo`}; `demo` — только у продукта с `demo` и адресом в `DEMO_SITE_URLS`, при любом видимом статусе
+  (демо — витрина на примерных данных, не призыв подключаться); у каждой ссылки действия нет `target` и есть `<span class="sr-only"> — {name}</span>`;
 - `data-role="testing-badge"` с текстом «Тестовый режим» — у каждого `testing`;
-- все `href` вне `#…` — абсолютные, и их origin ∈ значения `SiteUrls`;
+- все `href` вне `#…` — абсолютные, и их origin ∈ значения `SiteUrls` ∪ значения `DEMO_SITE_URLS`;
 - атрибуты `id`, `data-*`, `aria-*` из примера — стабильные имена. Классы Tailwind и порядок атрибутов контрактом не являются.
 
 ### §44.25.2 `404.html`

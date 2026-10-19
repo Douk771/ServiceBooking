@@ -1,18 +1,20 @@
 import { describe, it, expect } from 'vitest'
 import { renderSite } from './prerender'
-import { productsPageHref } from '@/utils/publicSites'
+import { DEMO_SITE_URLS, productsPageHref } from '@/utils/publicSites'
 
 // QA цикла 44: сценарии по SPEC_CYCLE44_PRODUCTS_LANDING.md §5, написаны независимо от реализации (только публичный renderSite).
 const TEMPLATE = '<!doctype html><html lang="ru"><head><!--about:head--></head><body><!--about:body--></body></html>'
 const prod = renderSite({ template: TEMPLATE, env: {}, mode: 'production', year: 2026 })
 const html = prod.files['index.html']
 const hrefs = (s: string) => [...s.matchAll(/<a [^>]*href="([^"]*)"/g)].map((m) => m[1])
+const actionLinks = (s: string, action: string) =>
+  (s.match(new RegExp(`<a [^>]*data-action="${action}"[^>]*>`, 'g')) ?? []).map((a) => /href="([^"]+)"/.exec(a)![1])
 const text = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
 
 describe('CY44-QA US-44-01/03 карточки и ссылки', () => {
-  it('три карточки по умолчанию, у каждой «для кого», 3-5 пунктов, хост, ссылка клиента', () => {
+  it('четыре карточки по умолчанию, у каждой «для кого», 3-5 пунктов, хост, ссылка клиента', () => {
     const cards = html.split('<article ').slice(1).map((c) => c.slice(0, c.indexOf('</article>')))
-    expect(cards).toHaveLength(3)
+    expect(cards).toHaveLength(4)
     for (const c of cards) {
       const items = (c.match(/<li /g) ?? []).length
       expect(items).toBeGreaterThanOrEqual(3)
@@ -32,9 +34,14 @@ describe('CY44-QA US-44-01/03 карточки и ссылки', () => {
     expect(html).toContain('href="https://ezbook.ru/"')
     expect(html).toContain('href="https://goods.ezbook.ru/"')
     expect(html).toContain('href="https://dom.ezbook.ru/"')
+    expect(html).toContain('href="https://bani.ezbook.ru/"')
     expect(html).toContain('href="https://ezbook.ru/#biz-title"')
     expect(html).toContain('href="https://goods.ezbook.ru/#biz-title"')
-    expect(html).not.toContain('href="https://dom.ezbook.ru/#biz-title"')
+    expect(html).toContain('href="https://dom.ezbook.ru/#biz-title"')
+    expect(html).toContain('href="https://bani.ezbook.ru/#biz-title"')
+  })
+  it('у Записи и Заказов есть ссылка на демо-стенд', () => {
+    expect(actionLinks(html, 'demo')).toEqual(['https://demo.visit.ezbook.ru/', 'https://demo.zakaz.ezbook.ru/'])
   })
   it('у ссылок нет безымянных текстов', () => {
     expect(html).not.toMatch(/>\s*(тут|здесь|подробнее)\s*</i)
@@ -42,9 +49,12 @@ describe('CY44-QA US-44-01/03 карточки и ссылки', () => {
 })
 
 describe('CY44-QA US-44-06 окружения', () => {
-  it('dev: ссылки на localhost, ни одного ezbook.ru в ссылках', () => {
+  it('dev: ссылки на сайты — localhost, ezbook.ru только у демо-стендов', () => {
     const dev = renderSite({ template: TEMPLATE, env: {}, mode: 'development', year: 2026 }).files['index.html']
-    const ext = hrefs(dev).filter((h) => h.startsWith('http'))
+    // Демо-стенды публичные и одни на все окружения, поэтому их ссылки не локальные — но только на адреса DEMO_SITE_URLS.
+    const demos = actionLinks(dev, 'demo')
+    expect(demos).toEqual(Object.values(DEMO_SITE_URLS).map((o) => `${o}/`))
+    const ext = hrefs(dev).filter((h) => h.startsWith('http') && !demos.includes(h))
     expect(ext.length).toBeGreaterThan(0)
     for (const h of ext) expect(h).toMatch(/^http:\/\/localhost:517\d\//)
   })
@@ -89,11 +99,13 @@ describe('CY44-QA содержание: запреты и доступность
     expect(t).not.toMatch(/₽|руб|бесплатн|№\s?1|лучш|самый|самая|самые|без комисси/i)
     expect(html).not.toMatch(/<form|<input|<button|metrika|mc\.yandex|googletagmanager|localStorage|\/api\//i)
   })
-  it('у тестового режима нет призыва подключаться', () => {
-    const dom = html.slice(html.indexOf('data-product="dom"'))
-    const card = dom.slice(0, dom.indexOf('</article>'))
-    expect(card).toContain('Тестовый режим')
-    expect(card).not.toMatch(/подключ|попробуй|зарегистр|Для бизнеса/i)
+  it('по умолчанию (решение 20.10.2026) тестовых карточек нет: у всех есть «Для бизнеса»', () => {
+    // Карточка в тестовом режиме без призыва подключаться проверяется на фикстуре в render.test.tsx.
+    expect(html).not.toContain('Тестовый режим')
+    for (const key of ['zapis', 'goods', 'dom', 'bani']) {
+      const rest = html.slice(html.indexOf(`data-product="${key}"`))
+      expect(rest.slice(0, rest.indexOf('</article>'))).toContain('data-action="business"')
+    }
   })
   it('блок аккаунта не обещает единого входа', () => {
     expect(t).toContain('Один аккаунт на всех сайтах')
@@ -109,8 +121,8 @@ describe('CY44-QA содержание: запреты и доступность
     for (const a of html.match(/<a [^>]*data-action[^>]*>/g) ?? []) expect(a).toContain('min-h-[44px]')
     expect(html).toMatch(/grid gap-6 lg:grid-cols-2/)
   })
-  it('скрытый продукт нигде (включая подвал и sitemap)', () => {
-    for (const f of Object.values(prod.files)) expect(f).not.toMatch(/bani|Бани/)
+  it('скрытых продуктов по умолчанию нет', () => {
+    expect(prod.report.hiddenProducts).toEqual([])
   })
   it('h2 на блок, nav с aria-label', () => {
     expect((html.match(/<h2[\s>]/g) ?? []).length).toBeGreaterThanOrEqual(2)
