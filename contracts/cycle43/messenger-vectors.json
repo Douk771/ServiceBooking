@@ -1,0 +1,217 @@
+{
+  "$comment": "Цикл 43 — эталон чистых правил опций мессенджеров (ARCHITECTURE_CYCLE43.md §43.3.3, §43.4, §43.6, §43.8.2; API_CONTRACT_CYCLE43.md §43.22–§43.31). Читает C# (ServiceBooking.UnitTests/Cycle43). Даты текстов — московское время dd.MM.yyyy. Правка правила = правка этого файла в том же коммите. contracts/cycle40/channel-vectors.json не меняется.",
+  "version": 1,
+  "now": "2026-10-20T09:00:00Z",
+  "line": [
+    {
+      "name": "нет строки, нет заявки — не подключён",
+      "input": { "transport": "Max", "row": null, "accountTrialEndsAtUtc": null, "subscription": { "usable": false, "paidUntil": null }, "pricePerMonth": 490, "requestedAtUtc": null },
+      "expect": { "status": "NotConnected", "statusText": "Не подключён", "monthlyPrice": 0, "countsInTotal": false, "paidUntil": null, "isTrial": false }
+    },
+    {
+      "name": "нет строки, есть заявка владельца — ожидает подтверждения",
+      "input": { "transport": "Max", "row": null, "accountTrialEndsAtUtc": null, "subscription": { "usable": false, "paidUntil": null }, "pricePerMonth": 490, "requestedAtUtc": "2026-10-19T09:00:00Z" },
+      "expect": { "status": "PendingPayment", "statusText": "Ожидает подтверждения оплаты", "monthlyPrice": 0, "countsInTotal": false, "paidUntil": null, "isTrial": false }
+    },
+    {
+      "name": "пробная строка, окно рассылок не началось — без даты, 0 ₽",
+      "input": { "transport": "Max", "row": { "endsAtUtc": null, "paidUntilUtc": null, "grantedByTrial": true, "activatedAtUtc": "2026-10-15T09:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": "2026-11-03T09:00:00Z", "subscription": { "usable": true, "paidUntil": "2026-11-03T09:00:00Z" }, "pricePerMonth": 490, "requestedAtUtc": null },
+      "expect": { "status": "Trial", "statusText": "Пробный период", "monthlyPrice": 0, "countsInTotal": true, "paidUntil": "2026-11-03T09:00:00Z", "isTrial": true }
+    },
+    {
+      "name": "пробная строка с датой окна",
+      "input": { "transport": "WhatsApp", "row": { "endsAtUtc": null, "paidUntilUtc": "2026-11-03T09:00:00Z", "grantedByTrial": true, "activatedAtUtc": "2026-10-15T09:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": "2026-11-03T09:00:00Z", "subscription": { "usable": true, "paidUntil": "2026-11-03T09:00:00Z" }, "pricePerMonth": 390, "requestedAtUtc": null },
+      "expect": { "status": "Trial", "statusText": "Пробный период до 03.11.2026", "monthlyPrice": 0, "countsInTotal": true, "paidUntil": "2026-11-03T09:00:00Z", "isTrial": true }
+    },
+    {
+      "name": "оплаченная строка — цена опции",
+      "input": { "transport": "Max", "row": { "endsAtUtc": null, "paidUntilUtc": "2026-11-20T09:00:00Z", "grantedByTrial": false, "activatedAtUtc": "2026-10-20T08:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": null, "subscription": { "usable": false, "paidUntil": null }, "pricePerMonth": 490, "requestedAtUtc": null },
+      "expect": { "status": "Paid", "statusText": "Оплачено до 20.11.2026", "monthlyPrice": 490, "countsInTotal": true, "paidUntil": "2026-11-20T09:00:00Z", "isTrial": false }
+    },
+    {
+      "name": "оплаченная строка, цена с копейками",
+      "input": { "transport": "Max", "row": { "endsAtUtc": null, "paidUntilUtc": "2026-11-20T09:00:00Z", "grantedByTrial": false, "activatedAtUtc": "2026-10-20T08:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": null, "subscription": { "usable": false, "paidUntil": null }, "pricePerMonth": 490.5, "requestedAtUtc": null },
+      "expect": { "status": "Paid", "statusText": "Оплачено до 20.11.2026", "monthlyPrice": 490.5, "countsInTotal": true, "paidUntil": "2026-11-20T09:00:00Z", "isTrial": false }
+    },
+    {
+      "name": "оплаченная строка, цену сняли после оплаты — в итоге 0",
+      "input": { "transport": "Max", "row": { "endsAtUtc": null, "paidUntilUtc": "2026-11-20T09:00:00Z", "grantedByTrial": false, "activatedAtUtc": "2026-10-20T08:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": null, "subscription": { "usable": false, "paidUntil": null }, "pricePerMonth": null, "requestedAtUtc": null },
+      "expect": { "status": "Paid", "statusText": "Оплачено до 20.11.2026", "monthlyPrice": 0, "countsInTotal": true, "paidUntil": "2026-11-20T09:00:00Z", "isTrial": false }
+    },
+    {
+      "name": "оплаченная строка с заявкой новее оплаты — оплата важнее",
+      "input": { "transport": "Max", "row": { "endsAtUtc": null, "paidUntilUtc": "2026-11-20T09:00:00Z", "grantedByTrial": false, "activatedAtUtc": "2026-10-01T09:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": null, "subscription": { "usable": false, "paidUntil": null }, "pricePerMonth": 490, "requestedAtUtc": "2026-10-19T09:00:00Z" },
+      "expect": { "status": "Paid", "statusText": "Оплачено до 20.11.2026", "monthlyPrice": 490, "countsInTotal": true, "paidUntil": "2026-11-20T09:00:00Z", "isTrial": false }
+    },
+    {
+      "name": "оплата закончилась",
+      "input": { "transport": "Max", "row": { "endsAtUtc": null, "paidUntilUtc": "2026-10-01T09:00:00Z", "grantedByTrial": false, "activatedAtUtc": "2026-09-01T09:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": null, "subscription": { "usable": false, "paidUntil": null }, "pricePerMonth": 490, "requestedAtUtc": null },
+      "expect": { "status": "Expired", "statusText": "Оплата закончилась 01.10.2026", "monthlyPrice": 0, "countsInTotal": false, "paidUntil": "2026-10-01T09:00:00Z", "isTrial": false }
+    },
+    {
+      "name": "оплата закончилась, заявка новее последней оплаты — ожидает подтверждения",
+      "input": { "transport": "Max", "row": { "endsAtUtc": null, "paidUntilUtc": "2026-10-01T09:00:00Z", "grantedByTrial": false, "activatedAtUtc": "2026-09-01T09:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": null, "subscription": { "usable": false, "paidUntil": null }, "pricePerMonth": 490, "requestedAtUtc": "2026-10-19T09:00:00Z" },
+      "expect": { "status": "PendingPayment", "statusText": "Ожидает подтверждения оплаты", "monthlyPrice": 0, "countsInTotal": false, "paidUntil": "2026-10-01T09:00:00Z", "isTrial": false }
+    },
+    {
+      "name": "заявка старше последней оплаты — не ожидание",
+      "input": { "transport": "Max", "row": { "endsAtUtc": null, "paidUntilUtc": "2026-10-01T09:00:00Z", "grantedByTrial": false, "activatedAtUtc": "2026-09-01T09:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": null, "subscription": { "usable": false, "paidUntil": null }, "pricePerMonth": 490, "requestedAtUtc": "2026-08-20T09:00:00Z" },
+      "expect": { "status": "Expired", "statusText": "Оплата закончилась 01.10.2026", "monthlyPrice": 0, "countsInTotal": false, "paidUntil": "2026-10-01T09:00:00Z", "isTrial": false }
+    },
+    {
+      "name": "отключение назначено на конец периода",
+      "input": { "transport": "Max", "row": { "endsAtUtc": "2026-11-20T09:00:00Z", "paidUntilUtc": "2026-11-20T09:00:00Z", "grantedByTrial": false, "activatedAtUtc": "2026-10-20T08:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": null, "subscription": { "usable": false, "paidUntil": null }, "pricePerMonth": 490, "requestedAtUtc": null },
+      "expect": { "status": "Ending", "statusText": "Отключается 20.11.2026", "monthlyPrice": 490, "countsInTotal": true, "paidUntil": "2026-11-20T09:00:00Z", "isTrial": false }
+    },
+    {
+      "name": "отключено сейчас — как истёкшая оплата, дата отключения",
+      "input": { "transport": "Max", "row": { "endsAtUtc": "2026-10-20T08:00:00Z", "paidUntilUtc": "2026-11-20T09:00:00Z", "grantedByTrial": false, "activatedAtUtc": "2026-10-01T09:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": null, "subscription": { "usable": false, "paidUntil": null }, "pricePerMonth": 490, "requestedAtUtc": null },
+      "expect": { "status": "Expired", "statusText": "Оплата закончилась 20.10.2026", "monthlyPrice": 0, "countsInTotal": false, "paidUntil": "2026-10-20T08:00:00Z", "isTrial": false }
+    },
+    {
+      "name": "наследная строка без даты, подписка «Записей» годна",
+      "input": { "transport": "WhatsApp", "row": { "endsAtUtc": null, "paidUntilUtc": null, "grantedByTrial": false, "activatedAtUtc": "2026-09-01T09:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": null, "subscription": { "usable": true, "paidUntil": "2026-12-01T09:00:00Z" }, "pricePerMonth": 390, "requestedAtUtc": null },
+      "expect": { "status": "Paid", "statusText": "Оплачено до 01.12.2026", "monthlyPrice": 390, "countsInTotal": true, "paidUntil": "2026-12-01T09:00:00Z", "isTrial": false }
+    },
+    {
+      "name": "наследная строка без даты, подписка без даты",
+      "input": { "transport": "WhatsApp", "row": { "endsAtUtc": null, "paidUntilUtc": null, "grantedByTrial": false, "activatedAtUtc": "2026-09-01T09:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": null, "subscription": { "usable": true, "paidUntil": null }, "pricePerMonth": 390, "requestedAtUtc": null },
+      "expect": { "status": "Paid", "statusText": "Оплачено", "monthlyPrice": 390, "countsInTotal": true, "paidUntil": null, "isTrial": false }
+    },
+    {
+      "name": "наследная строка без даты, подписка кончилась",
+      "input": { "transport": "WhatsApp", "row": { "endsAtUtc": null, "paidUntilUtc": null, "grantedByTrial": false, "activatedAtUtc": "2026-09-01T09:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": null, "subscription": { "usable": false, "paidUntil": "2026-09-30T09:00:00Z" }, "pricePerMonth": 390, "requestedAtUtc": null },
+      "expect": { "status": "Expired", "statusText": "Оплата закончилась 30.09.2026", "monthlyPrice": 0, "countsInTotal": false, "paidUntil": "2026-09-30T09:00:00Z", "isTrial": false }
+    },
+    {
+      "name": "пробный период закончился",
+      "input": { "transport": "Max", "row": { "endsAtUtc": null, "paidUntilUtc": null, "grantedByTrial": true, "activatedAtUtc": "2026-09-26T09:00:00Z", "quantity": 1 }, "accountTrialEndsAtUtc": "2026-10-10T09:00:00Z", "subscription": { "usable": false, "paidUntil": "2026-10-10T09:00:00Z" }, "pricePerMonth": 490, "requestedAtUtc": null },
+      "expect": { "status": "Expired", "statusText": "Пробный период закончился 10.10.2026", "monthlyPrice": 0, "countsInTotal": false, "paidUntil": "2026-10-10T09:00:00Z", "isTrial": true }
+    }
+  ],
+  "sale": [
+    { "input": { "open": true, "isActive": true, "pricePerMonth": 490, "termsOwnerPublished": true }, "expect": { "sellable": true, "reason": null, "text": "Продаётся" } },
+    { "input": { "open": true, "isActive": true, "pricePerMonth": 0, "termsOwnerPublished": true }, "expect": { "sellable": true, "reason": null, "text": "Продаётся" } },
+    { "input": { "open": false, "isActive": false, "pricePerMonth": null, "termsOwnerPublished": false }, "expect": { "sellable": false, "reason": "Closed", "text": "Не продаётся: закрыт для владельцев" } },
+    { "input": { "open": true, "isActive": false, "pricePerMonth": 490, "termsOwnerPublished": true }, "expect": { "sellable": false, "reason": "Inactive", "text": "Не продаётся: опция неактивна" } },
+    { "input": { "open": true, "isActive": true, "pricePerMonth": null, "termsOwnerPublished": false }, "expect": { "sellable": false, "reason": "NoPrice", "text": "Не продаётся: цена не задана" } },
+    { "input": { "open": true, "isActive": true, "pricePerMonth": 490, "termsOwnerPublished": false }, "expect": { "sellable": false, "reason": "OfferNotPublished", "text": "Не продаётся: оферта не опубликована" } }
+  ],
+  "priceValidation": [
+    { "input": { "pricePerMonth": null }, "expect": { "error": null } },
+    { "input": { "pricePerMonth": 0 }, "expect": { "error": null } },
+    { "input": { "pricePerMonth": 99999999.99 }, "expect": { "error": null } },
+    { "input": { "pricePerMonth": -1 }, "expect": { "error": "Цена не может быть отрицательной" } },
+    { "input": { "pricePerMonth": 100000000 }, "expect": { "error": "Цена — не больше 99 999 999,99 ₽" } },
+    { "input": { "pricePerMonth": 490.555 }, "expect": { "error": "Цена — не больше двух знаков после запятой" } }
+  ],
+  "consequences": [
+    {
+      "name": "цену MAX задали впервые — начнёт продаваться",
+      "input": { "transport": "Max", "before": { "pricePerMonth": null, "isActive": true }, "after": { "pricePerMonth": 490, "isActive": true }, "open": true, "termsOwnerPublished": true, "activePaidAccounts": 0 },
+      "expect": { "sellableBefore": false, "sellableAfter": true, "startsSelling": true, "stopsSelling": false, "isZeroPrice": false,
+        "texts": [ "MAX начнёт продаваться: цена появится на странице тарифов и в мастере подключения" ] }
+    },
+    {
+      "name": "цену сняли — продажи остановятся",
+      "input": { "transport": "Max", "before": { "pricePerMonth": 490, "isActive": true }, "after": { "pricePerMonth": null, "isActive": true }, "open": true, "termsOwnerPublished": true, "activePaidAccounts": 3 },
+      "expect": { "sellableBefore": true, "sellableAfter": false, "startsSelling": false, "stopsSelling": true, "isZeroPrice": false,
+        "texts": [ "Продажи MAX остановятся. Уже оплаченные периоды продолжат действовать" ] }
+    },
+    {
+      "name": "смена цены, 1 аккаунт",
+      "input": { "transport": "Max", "before": { "pricePerMonth": 490, "isActive": true }, "after": { "pricePerMonth": 590, "isActive": true }, "open": true, "termsOwnerPublished": true, "activePaidAccounts": 1 },
+      "expect": { "sellableBefore": true, "sellableAfter": true, "startsSelling": false, "stopsSelling": false, "isZeroPrice": false,
+        "texts": [ "Оплата MAX действует у 1 аккаунта: их оплаченные периоды не меняются. Новая цена — для следующих подтверждений оплаты" ] }
+    },
+    {
+      "name": "смена цены, 11 аккаунтов",
+      "input": { "transport": "Max", "before": { "pricePerMonth": 490, "isActive": true }, "after": { "pricePerMonth": 590, "isActive": true }, "open": true, "termsOwnerPublished": true, "activePaidAccounts": 11 },
+      "expect": { "sellableBefore": true, "sellableAfter": true, "startsSelling": false, "stopsSelling": false, "isZeroPrice": false,
+        "texts": [ "Оплата MAX действует у 11 аккаунтов: их оплаченные периоды не меняются. Новая цена — для следующих подтверждений оплаты" ] }
+    },
+    {
+      "name": "смена цены, оплат нет",
+      "input": { "transport": "Max", "before": { "pricePerMonth": 490, "isActive": true }, "after": { "pricePerMonth": 590, "isActive": true }, "open": true, "termsOwnerPublished": true, "activePaidAccounts": 0 },
+      "expect": { "sellableBefore": true, "sellableAfter": true, "startsSelling": false, "stopsSelling": false, "isZeroPrice": false,
+        "texts": [ "Аккаунтов с действующей оплатой MAX нет" ] }
+    },
+    {
+      "name": "цена 0, 21 аккаунт",
+      "input": { "transport": "Max", "before": { "pricePerMonth": 490, "isActive": true }, "after": { "pricePerMonth": 0, "isActive": true }, "open": true, "termsOwnerPublished": true, "activePaidAccounts": 21 },
+      "expect": { "sellableBefore": true, "sellableAfter": true, "startsSelling": false, "stopsSelling": false, "isZeroPrice": true,
+        "texts": [ "Оплата MAX действует у 21 аккаунта: их оплаченные периоды не меняются. Новая цена — для следующих подтверждений оплаты", "Цена 0 ₽: MAX будет подключаться бесплатно" ] }
+    },
+    {
+      "name": "WhatsApp закрыт — цена задана, но не продаётся",
+      "input": { "transport": "WhatsApp", "before": { "pricePerMonth": null, "isActive": true }, "after": { "pricePerMonth": 390, "isActive": true }, "open": false, "termsOwnerPublished": true, "activePaidAccounts": 0 },
+      "expect": { "sellableBefore": false, "sellableAfter": false, "startsSelling": false, "stopsSelling": false, "isZeroPrice": false,
+        "texts": [ "WhatsApp не продаётся: закрыт для владельцев. Цена начнёт действовать, когда это изменится" ] }
+    },
+    {
+      "name": "выключили активность при прежней цене",
+      "input": { "transport": "Max", "before": { "pricePerMonth": 490, "isActive": true }, "after": { "pricePerMonth": 490, "isActive": false }, "open": true, "termsOwnerPublished": true, "activePaidAccounts": 2 },
+      "expect": { "sellableBefore": true, "sellableAfter": false, "startsSelling": false, "stopsSelling": true, "isZeroPrice": false,
+        "texts": [ "Продажи MAX остановятся. Уже оплаченные периоды продолжат действовать", "MAX не продаётся: опция неактивна. Цена начнёт действовать, когда это изменится" ] }
+    },
+    {
+      "name": "сняли цену у непродававшегося — последствий нет",
+      "input": { "transport": "WhatsApp", "before": { "pricePerMonth": 390, "isActive": true }, "after": { "pricePerMonth": null, "isActive": true }, "open": false, "termsOwnerPublished": true, "activePaidAccounts": 0 },
+      "expect": { "sellableBefore": false, "sellableAfter": false, "startsSelling": false, "stopsSelling": false, "isZeroPrice": false, "texts": [] }
+    }
+  ],
+  "quote": [
+    {
+      "name": "продление оплаченного — от конца оплаты",
+      "input": { "transport": "Max", "status": "Paid", "currentPaidUntil": "2026-11-20T09:00:00Z", "months": 3, "pricePerMonth": 490 },
+      "expect": { "amount": 1470, "amountText": "3 мес. × 490 ₽ = 1470 ₽", "newPaidUntil": "2027-02-20T09:00:00Z", "newPaidUntilText": "Будет оплачено до 20.02.2027", "actionText": "Продлить на 3 мес." }
+    },
+    {
+      "name": "подключение без строки — от сейчас, цена с копейками",
+      "input": { "transport": "Max", "status": "NotConnected", "currentPaidUntil": null, "months": 1, "pricePerMonth": 490.5 },
+      "expect": { "amount": 490.5, "amountText": "1 мес. × 490,50 ₽ = 490,50 ₽", "newPaidUntil": "2026-11-20T09:00:00Z", "newPaidUntilText": "Будет оплачено до 20.11.2026", "actionText": "Подключить на 1 мес." }
+    },
+    {
+      "name": "оплата закончилась — от сейчас",
+      "input": { "transport": "WhatsApp", "status": "Expired", "currentPaidUntil": "2026-10-01T09:00:00Z", "months": 12, "pricePerMonth": 390 },
+      "expect": { "amount": 4680, "amountText": "12 мес. × 390 ₽ = 4680 ₽", "newPaidUntil": "2027-10-20T09:00:00Z", "newPaidUntilText": "Будет оплачено до 20.10.2027", "actionText": "Подключить на 12 мес." }
+    },
+    {
+      "name": "выкуп пробного — от конца триала",
+      "input": { "transport": "Max", "status": "Trial", "currentPaidUntil": "2026-11-03T09:00:00Z", "months": 2, "pricePerMonth": 490 },
+      "expect": { "amount": 980, "amountText": "2 мес. × 490 ₽ = 980 ₽", "newPaidUntil": "2027-01-03T09:00:00Z", "newPaidUntilText": "Будет оплачено до 03.01.2027", "actionText": "Подключить на 2 мес." }
+    },
+    {
+      "name": "цена 0",
+      "input": { "transport": "Max", "status": "NotConnected", "currentPaidUntil": null, "months": 6, "pricePerMonth": 0 },
+      "expect": { "amount": 0, "amountText": "6 мес. × 0 ₽ = 0 ₽", "newPaidUntil": "2027-04-20T09:00:00Z", "newPaidUntilText": "Будет оплачено до 20.04.2027", "actionText": "Подключить на 6 мес." }
+    }
+  ],
+  "disable": [
+    { "name": "оплачено, сейчас", "input": { "transport": "Max", "status": "Paid", "rowPaidUntilUtc": "2026-11-20T09:00:00Z", "paymentPaidUntil": "2026-11-20T09:00:00Z", "isTrialWithoutOwnDate": false, "endsAtUtc": null, "when": "Now" }, "expect": { "error": null, "newEndsAtUtc": "2026-10-20T09:00:00Z" } },
+    { "name": "оплачено, по окончании", "input": { "transport": "Max", "status": "Paid", "rowPaidUntilUtc": "2026-11-20T09:00:00Z", "paymentPaidUntil": "2026-11-20T09:00:00Z", "isTrialWithoutOwnDate": false, "endsAtUtc": null, "when": "PeriodEnd" }, "expect": { "error": null, "newEndsAtUtc": "2026-11-20T09:00:00Z" } },
+    { "name": "нет строки", "input": { "transport": "Max", "status": "NotConnected", "rowPaidUntilUtc": null, "paymentPaidUntil": null, "isTrialWithoutOwnDate": false, "endsAtUtc": null, "when": "Now" }, "expect": { "error": "Нечего отключать: MAX у аккаунта не подключён", "newEndsAtUtc": null } },
+    { "name": "оплата закончилась", "input": { "transport": "Max", "status": "Expired", "rowPaidUntilUtc": "2026-10-01T09:00:00Z", "paymentPaidUntil": "2026-10-01T09:00:00Z", "isTrialWithoutOwnDate": false, "endsAtUtc": null, "when": "Now" }, "expect": { "error": "Нечего отключать: оплата MAX уже закончилась", "newEndsAtUtc": null } },
+    { "name": "пробная без даты, по окончании", "input": { "transport": "Max", "status": "Trial", "rowPaidUntilUtc": null, "paymentPaidUntil": "2026-11-03T09:00:00Z", "isTrialWithoutOwnDate": true, "endsAtUtc": null, "when": "PeriodEnd" }, "expect": { "error": "У пробного периода MAX нет даты окончания — отключите сейчас", "newEndsAtUtc": null } },
+    { "name": "пробная без даты, сейчас", "input": { "transport": "Max", "status": "Trial", "rowPaidUntilUtc": null, "paymentPaidUntil": "2026-11-03T09:00:00Z", "isTrialWithoutOwnDate": true, "endsAtUtc": null, "when": "Now" }, "expect": { "error": null, "newEndsAtUtc": "2026-10-20T09:00:00Z" } },
+    { "name": "наследная без даты, по окончании", "input": { "transport": "WhatsApp", "status": "Paid", "rowPaidUntilUtc": null, "paymentPaidUntil": null, "isTrialWithoutOwnDate": false, "endsAtUtc": null, "when": "PeriodEnd" }, "expect": { "error": "У оплаты WhatsApp нет даты окончания — отключите сейчас", "newEndsAtUtc": null } },
+    { "name": "отключение уже назначено, по окончании", "input": { "transport": "Max", "status": "Ending", "rowPaidUntilUtc": "2026-11-20T09:00:00Z", "paymentPaidUntil": "2026-11-20T09:00:00Z", "isTrialWithoutOwnDate": false, "endsAtUtc": "2026-11-20T09:00:00Z", "when": "PeriodEnd" }, "expect": { "error": "Отключение MAX уже назначено на 20.11.2026", "newEndsAtUtc": null } },
+    { "name": "отключение назначено, сейчас — переносится на сейчас", "input": { "transport": "Max", "status": "Ending", "rowPaidUntilUtc": "2026-11-20T09:00:00Z", "paymentPaidUntil": "2026-11-20T09:00:00Z", "isTrialWithoutOwnDate": false, "endsAtUtc": "2026-11-20T09:00:00Z", "when": "Now" }, "expect": { "error": null, "newEndsAtUtc": "2026-10-20T09:00:00Z" } }
+  ],
+  "disableConfirmText": [
+    { "input": { "transport": "Max", "date": "2026-10-20T09:00:00Z" }, "expect": "Деньги не возвращаются. Сообщения клиентам в MAX перестанут уходить с 20.10.2026" },
+    { "input": { "transport": "WhatsApp", "date": "2026-11-20T09:00:00Z" }, "expect": "Деньги не возвращаются. Сообщения клиентам в WhatsApp перестанут уходить с 20.11.2026" }
+  ],
+  "ownerAction": [
+    { "input": { "status": "NotConnected", "isTrial": false, "sellable": true, "platformEnabled": true, "hasLineCompany": true }, "expect": { "action": "Connect", "actionText": "Подключить", "noCompanyText": null } },
+    { "input": { "status": "Expired", "isTrial": false, "sellable": true, "platformEnabled": true, "hasLineCompany": true }, "expect": { "action": "Renew", "actionText": "Продлить", "noCompanyText": null } },
+    { "input": { "status": "Expired", "isTrial": true, "sellable": true, "platformEnabled": true, "hasLineCompany": true }, "expect": { "action": "Connect", "actionText": "Подключить", "noCompanyText": null } },
+    { "input": { "status": "NotConnected", "isTrial": false, "sellable": true, "platformEnabled": true, "hasLineCompany": false }, "expect": { "action": "Connect", "actionText": "Подключить", "noCompanyText": "Сначала создайте компанию" } },
+    { "input": { "status": "Paid", "isTrial": false, "sellable": true, "platformEnabled": true, "hasLineCompany": true }, "expect": { "action": null, "actionText": null, "noCompanyText": null } },
+    { "input": { "status": "Trial", "isTrial": true, "sellable": true, "platformEnabled": true, "hasLineCompany": true }, "expect": { "action": null, "actionText": null, "noCompanyText": null } },
+    { "input": { "status": "Ending", "isTrial": false, "sellable": true, "platformEnabled": true, "hasLineCompany": true }, "expect": { "action": null, "actionText": null, "noCompanyText": null } },
+    { "input": { "status": "PendingPayment", "isTrial": false, "sellable": true, "platformEnabled": true, "hasLineCompany": true }, "expect": { "action": null, "actionText": null, "noCompanyText": null } },
+    { "input": { "status": "NotConnected", "isTrial": false, "sellable": false, "platformEnabled": true, "hasLineCompany": false }, "expect": { "action": null, "actionText": null, "noCompanyText": null } },
+    { "input": { "status": "Expired", "isTrial": false, "sellable": true, "platformEnabled": false, "hasLineCompany": true }, "expect": { "action": null, "actionText": null, "noCompanyText": null } }
+  ]
+}
