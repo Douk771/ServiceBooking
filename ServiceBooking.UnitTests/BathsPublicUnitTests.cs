@@ -115,11 +115,11 @@ public class BathsPublicUnitTests
     // ── wording and shapes ──
 
     [Theory]
-    [InlineData("Шерегеш", "Время местное, Шерегеш")]
-    [InlineData("  Шерегеш ", "Время местное, Шерегеш")]
+    [InlineData("Шерегеш", "Время местное")]
+    [InlineData("  Шерегеш ", "Время местное")]
     [InlineData("", "Время местное")]
     [InlineData(null, "Время местное")]
-    public void The_local_time_note_names_the_city(string? city, string expected) =>
+    public void The_local_time_note_never_names_the_city(string? city, string expected) =>
         ServiceWording.LocalTimeNote(city).Should().Be(expected);
 
     [Fact]

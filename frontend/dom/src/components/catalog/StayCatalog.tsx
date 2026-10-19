@@ -24,7 +24,7 @@ export function StayCatalog() {
   return (
     <>
       <h2 id="houses-title" className="mb-4 font-serif text-[32px] font-medium text-ink">
-        Дома в Шерегеше
+        Дома
       </h2>
       <div aria-live="polite">
         {query.isLoading ? (

@@ -133,6 +133,15 @@ public class Cycle42CompanyTests(TestDatabaseFixture fixture) : Cycle37TestBase(
         created.Company.Slug.Should().StartWith("banya-u-ruchya");
     }
 
+    [Fact, TestCase("CY42-10")]
+    public async Task Create_WithoutCity_PutsTheCompanyInBarnaul()
+    {
+        var owner = await RegisterAsync();
+        var created = await CreateAsync(owner.Token, b => b["cityId"] = null);
+        created.Company.CityName.Should().Be("Барнаул");
+        created.Company.TimeZoneId.Should().Be("Asia/Barnaul");
+    }
+
     // ── CY42-11: проверки создания ───────────────────────────────────────────────
 
     [Fact, TestCase("CY42-11")]
@@ -152,7 +161,6 @@ public class Cycle42CompanyTests(TestDatabaseFixture fixture) : Cycle37TestBase(
         await Expect400(b => b["description"] = new string('я', 2001), "Описание — не длиннее 2000 символов");
         await Expect400(b => b["address"] = new string('я', 301), "Адрес — не длиннее 300 символов");
         await Expect400(b => b["phone"] = "123", "Введите номер телефона в формате +7 (900) 000-00-00");
-        await Expect400(b => b["cityId"] = null, "Укажите город комплекса");
         await Expect400(b => b["cityId"] = 999999, "Город не найден");
         (await (await AuthedClient(owner.Token).GetAsync("/api/baths/companies/my")).Content.ReadJsonAsync<List<BathsCompanyListItemDto>>()).Should().BeEmpty("отказ не создаёт строк");
     }

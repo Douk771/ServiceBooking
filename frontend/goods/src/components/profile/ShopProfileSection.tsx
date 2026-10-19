@@ -23,7 +23,6 @@ const TEXTS: CompanyProfileTexts = {
   phoneLabel: 'Телефон для покупателей',
   emailLabel: 'Email для покупателей',
   emailHint: 'Виден на странице магазина',
-  cityHint: 'Часы работы и время получения заказов считаются по часовому поясу города',
   addressHint: 'Адрес виден покупателям на странице магазина',
   saveFailed: 'Не удалось сохранить профиль.',
   timeZoneChange: (from, to) =>

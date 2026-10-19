@@ -149,7 +149,7 @@ function ReminderEditor({ companyId, settings }: { companyId: string; settings: 
             setTime(v)
             setSaved(false)
           }}
-          hint="Накануне заезда, по времени Шерегеша: с 08:00 до 22:00"
+          hint="Накануне заезда, по местному времени: с 08:00 до 22:00"
         />
 
         <div className="flex flex-col gap-2">

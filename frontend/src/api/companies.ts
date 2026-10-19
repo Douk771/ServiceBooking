@@ -54,8 +54,8 @@ export interface CreateCompanyPayload {
   email?: string
   allowSelfBooking: boolean
   showInPublicListing?: boolean
-  /** API_CONTRACT_CYCLE4.md §31.2 — required; the one breaking change of cycle 4. */
-  cityId: number
+  /** Not asked in the UI any more: without it the server puts the company in Барнаул. */
+  cityId?: number
   timeZoneId?: string | null
   /** API_CONTRACT_CYCLE5.md §42.1 (BREAKING № 3) — acceptance of `TermsOwner`, required. */
   ownerTerms: { version: string }

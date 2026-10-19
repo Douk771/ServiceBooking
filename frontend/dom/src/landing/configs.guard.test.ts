@@ -66,11 +66,10 @@ describe('stay landing guard (T41-03)', () => {
     expect(stayLanding.hero.backdrop).toBe('mountains')
     expect(stayLanding.hero.facts).toHaveLength(3)
     expect(stayLanding.hero.intro).toContain('напрямую владельцу')
-    expect(stayLanding.hero.eyebrow).toContain('Шерегеш')
+    expect(all).not.toMatch(/Шерегеш|город/iu)
   })
 
-  it('FAQ 7 says only Sheregesh; brand is EZBOOK Дома, never «ezbook ·»', () => {
-    expect(stayFaq[6].answer).toContain('Шерегеш')
+  it('brand is EZBOOK Дома, never «ezbook ·»', () => {
     expect(all).not.toMatch(/ezbook ·/i)
     expect(JSON.stringify({ ...stayLanding, faq: null }).match(/EZBOOK Дома/g)).toBeNull()
     expect(JSON.stringify(stayFaq).match(/EZBOOK Дома/g)).toHaveLength(1)

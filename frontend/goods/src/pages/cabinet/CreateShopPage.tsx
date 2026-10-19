@@ -7,11 +7,8 @@ import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { PhoneInput } from '@/components/ui/PhoneInput'
-import { CityCombobox } from '@/components/ui/CityCombobox'
 import { PublicAddressNotice } from '@/components/company/PublicAddressNotice'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { formatCityTimeZone } from '@/utils/timezone'
-import type { City } from '@/types'
 import { shopsApi } from '../../api/shops'
 import { InlineError } from '../../components/StatePanels'
 import { getCatalogErrorMessage } from '../../utils/catalogError'
@@ -27,7 +24,7 @@ interface FormData {
 }
 
 /**
- * US-23-09 — same rules as creating a salon on ezbook: TermsOwner accepted first, city required, address
+ * US-23-09 — same rules as creating a salon on ezbook: TermsOwner accepted first (the city is not asked — the server puts the shop in Барнаул), address
  * optional with the public-address notice before it is sent, account company limit explained (402).
  * The response carries a fresh token (claim `lco`) that MUST replace the stored one (§409.1).
  */
@@ -35,8 +32,6 @@ export function CreateShopPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { user, token, setAuth } = useAuthStore()
-  const [city, setCity] = useState<City | null>(null)
-  const [cityError, setCityError] = useState('')
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [termsError, setTermsError] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
@@ -83,7 +78,6 @@ export function CreateShopPage() {
       shopsApi.create({
         name: d.name.trim(),
         slug: d.slug.trim(),
-        cityId: city!.id,
         timeZoneId: null,
         description: d.description.trim() || undefined,
         address: d.address.trim() || undefined,
@@ -101,15 +95,10 @@ export function CreateShopPage() {
   })
 
   function submit(d: FormData) {
-    if (!city) {
-      setCityError('Укажите город магазина')
-      return
-    }
     if (!ownerTerms) {
       setTermsError('Не удалось загрузить текст соглашения. Обновите страницу и попробуйте снова.')
       return
     }
-    setCityError('')
     setTermsError('')
     // The notice is shown on first fill and on every edit of the address text, before it is sent (§409.1).
     if (d.address.trim() && noticeConfirmedFor !== d.address.trim()) {
@@ -167,19 +156,6 @@ export function CreateShopPage() {
             </p>
           )}
         </div>
-
-        <CityCombobox
-          label="Город *"
-          value={city}
-          onChange={(c) => {
-            setCity(c)
-            if (c) setCityError('')
-          }}
-          error={cityError}
-        />
-        {city && (
-          <p className="text-xs text-muted -mt-3">Часовой пояс: {formatCityTimeZone(city.label, city.utcOffsetMinutes, city.timeZoneId)}</p>
-        )}
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="shop-description" className="text-[13px] font-medium text-[#4A4038]">

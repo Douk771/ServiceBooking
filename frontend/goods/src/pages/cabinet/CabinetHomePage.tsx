@@ -42,7 +42,7 @@ export function CabinetHomePage() {
       ) : !shops.data || shops.data.length === 0 ? (
         <EmptyState
           title="У вас пока нет магазинов"
-          text="Создайте магазин — это занимает несколько минут: название, город и адрес для покупателей."
+          text="Создайте магазин — это занимает несколько минут: название и адрес для покупателей."
           action={<LinkButton to="/cabinet/new">Открыть магазин</LinkButton>}
         />
       ) : (

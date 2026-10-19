@@ -36,7 +36,8 @@ export type CatalogConflictCode = M['CatalogConflictCode']
 /** Cycle-24 shape (keeps `conflictingOrders`) with the cycle-25 code list (+ `CatalogListingNotAllowedByPlan`). */
 export type CatalogConflictDto = Omit<N['CatalogConflictDto'], 'code'> & { code: M['CatalogConflictCode'] }
 export type CompanyKindsSummaryDto = C37['schemas']['CompanyKindsSummaryDto']
-export type CreateShopInput = S['CreateShopInput']
+/** The city is not asked any more: without `cityId` the server puts the shop in Барнаул. */
+export type CreateShopInput = Omit<S['CreateShopInput'], 'cityId'> & { cityId?: number | null }
 export type CreateShopResponse = S['CreateShopResponse']
 export type SlugCheckDto = S['SlugCheckDto']
 export type ShopListItemDto = S['ShopListItemDto']

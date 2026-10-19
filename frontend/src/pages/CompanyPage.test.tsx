@@ -210,7 +210,8 @@ describe('CompanyMapLinks — ARCHITECTURE_CYCLE15.md §253/§285, wired into th
 
     renderWithProviders(<CompanyPage />)
 
-    expect(await screen.findByText('Барнаул, Ленина, 5')).toBeInTheDocument()
+    expect(await screen.findByText('Ленина, 5')).toBeInTheDocument()
+    expect(screen.queryByText(/Барнаул/)).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Открыть в Яндекс Картах/ })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Открыть в 2ГИС/ })).not.toBeInTheDocument()
   })

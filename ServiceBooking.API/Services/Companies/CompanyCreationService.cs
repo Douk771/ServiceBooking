@@ -41,6 +41,8 @@ public sealed class CompanyCreationService(
 {
     public const int DefaultSessionReminderHours = 3;
     public const string SlugTakenSalonText = "Slug already taken";
+    public const string DefaultCityName = "Барнаул";
+    public const string DefaultCityRegion = "Алтайский край";
 
     public async Task<CompanyCreationOutcome> CreateAsync(
         CompanyKind kind, CompanyCreationRequest request, ClaimsPrincipal user, string? remoteIp, string? userAgent)
@@ -121,12 +123,14 @@ public sealed class CompanyCreationService(
         }
         else
         {
-            if (request.CityId is null)
-                return Refuse(new BadRequestObjectResult(isShop ? "Укажите город магазина" : isBaths ? "Укажите город комплекса" : "Укажите город салона"));
-
-            city = await db.Cities.FindAsync(request.CityId.Value);
+            // The city is no longer asked in the UI: without a cityId the company is in Барнаул (the default city of the platform).
+            city = request.CityId is { } cityId
+                ? await db.Cities.FindAsync(cityId)
+                : await db.Cities.FirstOrDefaultAsync(c => c.Name == DefaultCityName && c.Region == DefaultCityRegion && c.IsActive);
             if (city is null || !city.IsActive)
-                return Refuse(new BadRequestObjectResult("Город не найден"));
+                return Refuse(request.CityId is null
+                    ? new ObjectResult("Справочник городов не готов") { StatusCode = StatusCodes.Status503ServiceUnavailable }
+                    : new BadRequestObjectResult("Город не найден"));
         }
 
         if (!string.IsNullOrWhiteSpace(request.TimeZoneId) &&

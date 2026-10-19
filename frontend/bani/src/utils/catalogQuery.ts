@@ -2,10 +2,9 @@ import type { CatalogQuery } from '../api/bathsPublic'
 
 /**
  * The catalog filters live in the URL, so a result list can be shared (`catalogQueryParams` of contracts/cycle42/bani-routes.json:
- * city, date, page). The URL calls the city `city`; the API parameter is `cityId`.
+ * date, page). The city is not offered any more — an old `city` in a shared link is ignored.
  */
 export interface CatalogFilters {
-  cityId: number | null
   /** YYYY-MM-DD, P1. */
   date: string | null
   page: number
@@ -29,7 +28,6 @@ function positiveInt(raw: string | null, max: number): number | null {
 export function parseCatalogFilters(sp: URLSearchParams): CatalogFilters {
   const date = sp.get('date')
   return {
-    cityId: positiveInt(sp.get('city'), 2_000_000_000),
     date: date && isIsoDate(date) ? date : null,
     page: positiveInt(sp.get('page'), 10_000) ?? 1,
   }
@@ -38,7 +36,6 @@ export function parseCatalogFilters(sp: URLSearchParams): CatalogFilters {
 /** Filters → the URL's query string; defaults are omitted so the plain catalog stays `/`. */
 export function toSearchParams(f: CatalogFilters): URLSearchParams {
   const sp = new URLSearchParams()
-  if (f.cityId) sp.set('city', String(f.cityId))
   if (f.date) sp.set('date', f.date)
   if (f.page > 1) sp.set('page', String(f.page))
   return sp
@@ -46,14 +43,13 @@ export function toSearchParams(f: CatalogFilters): URLSearchParams {
 
 export function toApiQuery(f: CatalogFilters, pageSize = CATALOG_PAGE_SIZE): CatalogQuery {
   const q: CatalogQuery = { page: f.page, pageSize }
-  if (f.cityId) q.cityId = f.cityId
   if (f.date) q.date = f.date
   return q
 }
 
 /** True when any filter narrows the list (drives «Сбросить» and the empty-state wording). */
 export function hasActiveFilters(f: CatalogFilters): boolean {
-  return f.cityId !== null || f.date !== null
+  return f.date !== null
 }
 
 /** Link to a resource page: the chosen date goes on as `date` (`resourceQueryParams`). `path` is the server's `/<companySlug>/<resourceSlug>`. */

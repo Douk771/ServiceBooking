@@ -44,7 +44,7 @@ export function planProfileZone(
     if (cityChanged && draft.city) offset = draft.city.utcOffsetMinutes
     else {
       // The city's own zone is unknown to the client (§32.3, variant В): always ask, without a number.
-      plan.confirm = { from: fromText(base), to: `пояс города ${draft.city?.label ?? ''}`.trim() }
+      plan.confirm = { from: fromText(base), to: 'автоматический' }
       return plan
     }
   } else if (cityChanged && !base.isManual && draft.city) {

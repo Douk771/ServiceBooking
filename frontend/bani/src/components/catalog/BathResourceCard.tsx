@@ -29,10 +29,12 @@ export function BathResourceCard({ item, filters }: { item: BathResourceCardDto;
       <div className="flex flex-1 flex-col gap-1.5 p-5">
         <p className="text-xs font-medium uppercase tracking-wide text-gold-dark break-words [overflow-wrap:anywhere]">{item.companyName}</p>
         <h3 className="font-serif text-xl leading-snug text-ink break-words [overflow-wrap:anywhere]">{item.resourceName}</h3>
-        <p className="flex items-start gap-1.5 text-sm text-ink-soft">
-          <Icon name="map-pin" size={14} strokeWidth={1.6} className="mt-0.5 shrink-0" />
-          <span className="min-w-0 break-words [overflow-wrap:anywhere]">{item.address ? `${item.cityName}, ${item.address}` : item.cityName}</span>
-        </p>
+        {item.address && (
+          <p className="flex items-start gap-1.5 text-sm text-ink-soft">
+            <Icon name="map-pin" size={14} strokeWidth={1.6} className="mt-0.5 shrink-0" />
+            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{item.address}</span>
+          </p>
+        )}
         {item.capacity != null && (
           <p className="flex items-center gap-1.5 text-sm text-ink-soft">
             <Icon name="users" size={14} strokeWidth={1.6} />

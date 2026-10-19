@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { Modal } from '@/components/ui/Modal'
 import { formatPhone, telHref } from '@/utils/phone'
-import { publicAddress } from '@/utils/publicAddress'
 import { ordersApi } from '../api/orders'
 import { OrderStatusBadge } from '../components/OrderStatusBadge'
 import { OrderTimeline } from '../components/OrderTimeline'
@@ -175,10 +174,10 @@ export function OrderPage() {
           {order.shop.name}
         </Link>
         <div className="mt-2 flex flex-col gap-1 text-sm text-ink-soft">
-          {(order.shop.address || order.shop.cityName) && (
+          {order.shop.address && (
             <p className="flex items-start gap-1.5">
               <Icon name="map-pin" size={14} strokeWidth={1.8} className="mt-0.5 shrink-0" />
-              {publicAddress(order.shop.cityName, order.shop.address)}
+              {order.shop.address}
             </p>
           )}
           {order.shop.phone && (

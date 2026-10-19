@@ -258,10 +258,6 @@ public class Cycle23ShopsCatalogTests(TestDatabaseFixture fixture) : Cycle23Test
         reserved.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await ReadJsonElementAsync(reserved)).GetProperty("code").GetString().Should().Be("SlugReserved");
 
-        var noCity = await c.PostJsonAsync("/api/shops", new CreateShopInput("М", Unique("s-"), null, null, null, null, null, null, terms));
-        noCity.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await noCity.Content.ReadAsStringAsync()).Should().Contain("Укажите город магазина");
-
         var badCity = await c.PostJsonAsync("/api/shops", new CreateShopInput("М", Unique("s-"), 999999, null, null, null, null, null, terms));
         badCity.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await badCity.Content.ReadAsStringAsync()).Should().Contain("Город не найден");

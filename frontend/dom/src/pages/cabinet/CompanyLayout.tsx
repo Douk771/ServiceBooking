@@ -78,7 +78,7 @@ export function CompanyLayout() {
               </Link>
               <h1 className="mt-1 truncate font-serif text-[28px] leading-tight text-ink sm:text-[34px]">{company.name}</h1>
               <p className="mt-0.5 text-xs text-muted">
-                {roleLabel(company.myRole)} · {company.cityName}
+                {roleLabel(company.myRole)}
                 {!company.isActive && <span className="ml-2 font-semibold text-danger">Компания заблокирована администратором</span>}
               </p>
             </div>

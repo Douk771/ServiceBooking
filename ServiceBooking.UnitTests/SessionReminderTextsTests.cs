@@ -15,7 +15,7 @@ public class SessionReminderTextsTests
     public void Messenger_text_names_the_booking_marks_local_time_and_carries_the_link_and_unsubscribe()
     {
         var text = ServiceNotificationTexts.Messenger(NotificationType.ServiceGuestSessionReminder, Facts(), "https://bani.ezbook.ru/s/tok", "https://x/u/1", ServiceWording.Baths);
-        text.Should().StartWith("Баня у реки: напоминаем о брони — «Баня №1», ").And.Contain("(время местное, Барнаул). Бронь: https://bani.ezbook.ru/s/tok")
+        text.Should().StartWith("Баня у реки: напоминаем о брони — «Баня №1», ").And.Contain("(время местное). Бронь: https://bani.ezbook.ru/s/tok")
             .And.EndWith("Отписаться от сообщений: https://x/u/1");
     }
 
@@ -23,7 +23,7 @@ public class SessionReminderTextsTests
     public void Page_text_has_no_link_no_address_no_phone()
     {
         var text = ServiceNotificationTexts.BathsSessionReminderPageText("Баня у реки", "Баня №1", new DateOnly(2026, 11, 20), 20 * 60, 3, "Барнаул");
-        text.Should().StartWith("Баня у реки: напоминаем о брони — «Баня №1», ").And.EndWith("(время местное, Барнаул).");
+        text.Should().StartWith("Баня у реки: напоминаем о брони — «Баня №1», ").And.EndWith("(время местное).");
         text.Should().NotContain("http").And.NotContain("+7").And.NotContain("Парковая");
     }
 

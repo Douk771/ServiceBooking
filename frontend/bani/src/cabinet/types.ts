@@ -11,7 +11,8 @@ export type StaysMyRole = components['schemas']['StaysMyRole']
 
 // ───── company: create, settings, trial, notifications (FE-42-5) ─────
 export type BathsSettingsDto = components['schemas']['BathsSettingsDto']
-export type BathsCompanyCreateInput = components['schemas']['BathsCompanyCreateInput']
+/** The city is not asked any more: without `cityId` the server puts the company in Барнаул. */
+export type BathsCompanyCreateInput = Omit<components['schemas']['BathsCompanyCreateInput'], 'cityId'> & { cityId?: number | null }
 export type BathsCompanyCreatedDto = components['schemas']['BathsCompanyCreatedDto']
 export type BathsSlugCheckDto = components['schemas']['BathsSlugCheckDto']
 export type BathsConflictDto = components['schemas']['BathsConflictDto']
