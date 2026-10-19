@@ -24,7 +24,6 @@ function toCardData(c: Company): CompanyCardData {
     phone: c.phone,
     email: c.email,
     address: c.address,
-    cityName: c.cityName,
     yandexMapsUrl: c.yandexMapsUrl,
     twoGisUrl: c.twoGisUrl,
     photos: c.photos ?? [],

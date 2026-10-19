@@ -41,18 +41,11 @@ describe('CreateCompanyPage', () => {
     expect(button).toBeEnabled()
   })
 
-  it('asks for the city and does not create the company without one', async () => {
+  it('does not ask for a city (the server puts the company in Барнаул) and shows the legal notice by the phone', async () => {
     renderPage()
-    await userEvent.type(await screen.findByLabelText('Название комплекса *'), 'Сибирские бани')
-    await userEvent.click(screen.getByRole('checkbox', { name: /Я принимаю/ }))
-    await userEvent.click(screen.getByRole('button', { name: 'Создать компанию' }))
-    expect(await screen.findByText('Укажите город комплекса')).toBeInTheDocument()
-    expect(create).not.toHaveBeenCalled()
-  })
-
-  it('says honestly that a missing city has to be reported, and shows the legal notice by the phone', async () => {
-    renderPage()
-    expect(await screen.findByText(/Вашего города пока нет в списке — напишите в поддержку/)).toBeInTheDocument()
+    await screen.findByLabelText('Название комплекса *')
+    expect(screen.queryByLabelText(/Город/)).toBeNull()
+    expect(screen.queryByText(/город/i)).toBeNull()
     expect(screen.getByText('notice:BathPublicContactsNotice')).toBeInTheDocument()
   })
 

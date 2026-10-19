@@ -5,7 +5,6 @@ import { CompanyMapLinks } from './CompanyMapLinks'
 import { CompanyLogoMark } from './CompanyLogoMark'
 import { COMPANY_ACTION_LINK_CLASS, COMPANY_ACTION_STATIC_CLASS } from './companyActionLink'
 import { formatPhone, telHref } from '../../utils/phone'
-import { publicAddress } from '../../utils/publicAddress'
 import type { CompanyPhoto } from '../../types'
 
 /**
@@ -19,7 +18,6 @@ export interface CompanyCardData {
   phone?: string | null
   email?: string | null
   address?: string | null
-  cityName?: string | null
   yandexMapsUrl?: string | null
   twoGisUrl?: string | null
   photos: CompanyPhoto[]
@@ -28,7 +26,7 @@ export interface CompanyCardData {
 export function CompanyCard({ company, children }: { company: CompanyCardData; children?: ReactNode }) {
   const hasGallery = company.photos.length > 0
   const phoneHref = telHref(company.phone)
-  const address = publicAddress(company.cityName, company.address)
+  const address = company.address?.trim() ?? ''
   const email = company.email?.trim()
   const description = company.description?.trim()
   const overlap = hasGallery ? '-mt-[52px]' : ''

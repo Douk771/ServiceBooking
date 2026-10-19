@@ -159,7 +159,7 @@ export function StaysProfileCard({ company, onSaved }: { company: StaysCompanyMa
           <Input label="Яндекс Карты" placeholder="https://yandex.ru/maps/org/..." value={yandex} error={errors.yandexMapsUrl} onChange={(e) => { setYandex(e.target.value); touch() }} />
           <Input label="2ГИС" placeholder="https://2gis.ru/..." value={twoGis} error={errors.twoGisUrl} onChange={(e) => { setTwoGis(e.target.value); touch() }} />
         </div>
-        <p className="text-xs text-muted">Город — Шерегеш, часовой пояс — {company.timeZoneId}. Адрес у каждого дома свой; здесь — общий адрес компании.</p>
+        <p className="text-xs text-muted">Адрес у каждого дома свой; здесь — общий адрес компании.</p>
         {formError && <InlineError>{formError}</InlineError>}
         <div className="flex items-center gap-3">
           <Button type="submit" loading={saving} className="min-h-[44px]">

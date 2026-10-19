@@ -4,7 +4,6 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ShopProfileSection } from './ShopProfileSection'
 import type { ShopManageDto } from '../../types'
-import type { City } from '@/types'
 
 const update = vi.fn()
 const saveAddress = vi.fn()
@@ -15,19 +14,6 @@ vi.mock('@/components/company/PublicAddressNotice', () => ({
     <div role="dialog" aria-label="notice">
       <button onClick={onConfirmed}>notice-ok</button>
       <button onClick={onCancel}>notice-cancel</button>
-    </div>
-  ),
-}))
-
-const tomsk: City = { id: 2, name: 'Томск', region: 'Томская область', timeZoneId: 'Asia/Tomsk', utcOffsetMinutes: 420, label: 'Томск, Томская область' }
-const moscow: City = { id: 3, name: 'Москва', region: 'Москва', timeZoneId: 'Europe/Moscow', utcOffsetMinutes: 180, label: 'Москва, Москва' }
-vi.mock('@/components/ui/CityCombobox', () => ({
-  CityCombobox: ({ label, value, onChange, error }: { label: string; value: City | null; onChange: (c: City | null) => void; error?: string }) => (
-    <div>
-      <span>{label}: {value?.name ?? 'нет'}</span>
-      <button type="button" onClick={() => onChange(tomsk)}>pick-tomsk</button>
-      <button type="button" onClick={() => onChange(moscow)}>pick-moscow</button>
-      {error && <p role="alert">{error}</p>}
     </div>
   ),
 }))
@@ -69,7 +55,9 @@ describe('ShopProfileSection — ARCHITECTURE_CYCLE26.md §552', () => {
       expect(screen.getByLabelText(l)).toBeInTheDocument()
     expect(screen.getByText('Виден на странице магазина')).toBeInTheDocument()
     expect(screen.getByText('Адрес виден покупателям на странице магазина')).toBeInTheDocument()
-    expect(screen.getByText(/Часовой пояс: Барнаул, Алтайский край → UTC\+7, Asia\/Barnaul/)).toBeInTheDocument()
+    // The city is never shown or offered (it is always Барнаул)
+    expect(screen.queryByText(/Барнаул|Город|город/)).toBeNull()
+    expect(screen.queryByRole('combobox')).toBeNull()
   })
 
   it('sends untouched links never, a cleared one as "", cityId only on change and never timeZoneId', async () => {
@@ -160,52 +148,6 @@ describe('ShopProfileSection — ARCHITECTURE_CYCLE26.md §552', () => {
     expect(screen.getByLabelText('Адрес')).toHaveValue('Ленина, 57')
   })
 
-  it('saves a city with the same UTC offset without a confirmation', async () => {
-    const user = userEvent.setup()
-    renderIt(shop())
-    await user.click(screen.getByText('pick-tomsk'))
-    await save(user)
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(update.mock.calls[0][1]).toMatchObject({ cityId: 2 })
-  })
-
-  it('asks to confirm a city in another time zone; cancel sends nothing', async () => {
-    const user = userEvent.setup()
-    renderIt(shop())
-    await user.click(screen.getByText('pick-moscow'))
-    await save(user)
-    const dialog = screen.getByRole('dialog', { name: 'Сменить город?' })
-    expect(dialog).toHaveTextContent('Часовой пояс магазина изменится: UTC+7 → UTC+3.')
-    await user.click(screen.getByRole('button', { name: 'Отмена' }))
-    expect(update).not.toHaveBeenCalled()
-    await save(user)
-    await user.click(screen.getByRole('button', { name: 'Сменить город' }))
-    expect(update.mock.calls[0][1]).toMatchObject({ cityId: 3 })
-  })
-
-  it('with timeZoneChangeAllowed=false shows the server text at the city and sends nothing', async () => {
-    const user = userEvent.setup()
-    renderIt(shop({ timeZoneChangeAllowed: false, timeZoneChangeLockedText: 'У магазина уже есть заказы …(UTC+7).' }))
-    await user.click(screen.getByText('pick-moscow'))
-    await save(user)
-    expect(screen.getByRole('alert')).toHaveTextContent('У магазина уже есть заказы …(UTC+7).')
-    expect(update).not.toHaveBeenCalled()
-    // same offset stays allowed
-    await user.click(screen.getByText('pick-tomsk'))
-    await save(user)
-    expect(update).toHaveBeenCalledTimes(1)
-  })
-
-  it('shows a 409 body at the city field', async () => {
-    const user = userEvent.setup()
-    update.mockImplementation(() => err(409, 'У магазина уже есть заказы, поэтому часовой пояс сменить нельзя'))
-    renderIt(shop())
-    await user.click(screen.getByText('pick-moscow'))
-    await save(user)
-    await user.click(screen.getByRole('button', { name: 'Сменить город' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('У магазина уже есть заказы')
-  })
-
   it('invalidates shop, my-shops and storefront after a successful save', async () => {
     const user = userEvent.setup()
     const { invalidate } = renderIt(shop())
@@ -213,50 +155,5 @@ describe('ShopProfileSection — ARCHITECTURE_CYCLE26.md §552', () => {
     await screen.findByRole('status')
     const keys = invalidate.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey))
     expect(keys).toEqual(expect.arrayContaining(['["shop","s1"]', '["my-shops"]', '["storefront"]']))
-  })
-})
-
-// ARCHITECTURE_CYCLE29.md §29.10 (T-29-05, C26-3): the flag alone blocks nothing — offsets are compared.
-describe('T-29-05 — timeZoneChangeAllowed vs UTC offset (API_CONTRACT_CYCLE29.md §29.24)', () => {
-  const LOCKED = 'У магазина уже есть заказы — часовой пояс сменить нельзя (UTC+7).'
-
-  it('V29-10: false + same offset -> saved without dialog, no city error', async () => {
-    const user = userEvent.setup()
-    renderIt(shop({ timeZoneChangeAllowed: false, timeZoneChangeLockedText: LOCKED }))
-    await user.click(screen.getByText('pick-tomsk'))
-    await save(user)
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(update).toHaveBeenCalledTimes(1)
-    expect(update.mock.calls[0][1]).toMatchObject({ cityId: 2 })
-    expect(await screen.findByRole('status')).toHaveTextContent('Сохранено')
-    expect(screen.queryByRole('alert')).toBeNull()
-  })
-
-  it('V29-11: false + other offset -> locked text at the city, nothing sent', async () => {
-    const user = userEvent.setup()
-    renderIt(shop({ timeZoneChangeAllowed: false, timeZoneChangeLockedText: LOCKED }))
-    await user.click(screen.getByText('pick-moscow'))
-    await save(user)
-    expect(screen.getByRole('alert')).toHaveTextContent(LOCKED)
-    expect(update).not.toHaveBeenCalled()
-  })
-
-  it('V29-12: false + unknown shop offset -> treated as different', async () => {
-    const user = userEvent.setup()
-    renderIt(shop({ timeZoneChangeAllowed: false, timeZoneChangeLockedText: LOCKED, utcOffsetMinutes: null }))
-    await user.click(screen.getByText('pick-tomsk'))
-    await save(user)
-    expect(screen.getByRole('alert')).toHaveTextContent(LOCKED)
-    expect(update).not.toHaveBeenCalled()
-  })
-
-  it('V29-13: true + other offset, confirmed, server 409 -> its text at the city field', async () => {
-    const user = userEvent.setup()
-    update.mockImplementation(() => err(409, 'Заказ появился, пояс сменить нельзя'))
-    renderIt(shop({ timeZoneChangeAllowed: true }))
-    await user.click(screen.getByText('pick-moscow'))
-    await save(user)
-    await user.click(screen.getByRole('button', { name: 'Сменить город' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Заказ появился, пояс сменить нельзя')
   })
 })

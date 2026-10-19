@@ -4,7 +4,6 @@ import { companiesApi } from '../../api/companies'
 import { companyAddressApi } from '../../api/companyAddress'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
-import { CityCombobox } from '../ui/CityCombobox'
 import { InlineError } from '../ui/InlineError'
 import { Input } from '../ui/Input'
 import { Modal } from '../ui/Modal'
@@ -15,7 +14,7 @@ import { planProfileZone, type ZonePlan } from './profileZone'
 import { getLogoErrorMessage } from '../../utils/companyManageError'
 import { httpStatusOf, plainErrorBody } from '../../utils/httpError'
 import { mapLinksFieldError } from '../../utils/mapLinksFieldError'
-import { formatCityTimeZone, utcOffsetMinutesOf } from '../../utils/timezone'
+import { utcOffsetMinutesOf } from '../../utils/timezone'
 import type { City } from '../../types'
 import type { components as C32 } from '../../types/api-cycle32.generated'
 
@@ -34,7 +33,7 @@ export interface CompanyProfileSnapshot {
   address: string | null
   yandexMapsUrl: string | null
   twoGisUrl: string | null
-  /** CityCombobox value; the adapter builds `label` ("Город, Регион"). */
+  /** Never shown or changed in the UI (the city is always Барнаул); only the zone plan reads it. */
   city: City | null
   /** The company's EFFECTIVE zone now (manual if manual). offsetMinutes null = unknown. */
   zone: { id: string | null; offsetMinutes: number | null; isManual: boolean }
@@ -47,7 +46,6 @@ export interface CompanyProfileTexts {
   phoneLabel: string
   emailLabel: string
   emailHint: string
-  cityHint: string
   addressHint: string
   saveFailed: string
   timeZoneChange: (from: string, to: string) => string
@@ -68,7 +66,7 @@ export interface CompanyProfileCardProps {
   errorMessage: (error: unknown, fallback: string) => string
   /** Cache invalidation after logo upload, full success, and address failure (the profile PUT did land). */
   onChanged: () => void
-  /** Shop only. When set, a 409 of the profile PUT goes to the city field. */
+  /** Shop only. When set, a 409 of the profile PUT is shown as the form error. */
   timeZoneLock?: TimeZoneLock
   /** Salon only: «Указать часовой пояс вручную» + IANA field (§32.6). */
   manualTimeZone?: boolean
@@ -78,7 +76,7 @@ export interface CompanyProfileCardProps {
   contactsNotice?: ReactNode
 }
 
-type FieldKey = 'name' | 'city' | 'address' | 'yandexMapsUrl' | 'twoGisUrl' | 'timeZone'
+type FieldKey = 'name' | 'address' | 'yandexMapsUrl' | 'twoGisUrl' | 'timeZone'
 type FieldErrors = Partial<Record<FieldKey, string>>
 
 interface Values {
@@ -128,7 +126,7 @@ export function CompanyProfileCard({
 }: CompanyProfileCardProps) {
   const ids = useId()
   const [values, setValues] = useState<Values>(() => initialValues(company))
-  const [city, setCity] = useState<City | null>(() => company.city)
+  const [city] = useState<City | null>(() => company.city)
   const [manual, setManual] = useState(() => company.zone.isManual)
   const [manualZoneId, setManualZoneId] = useState(() => (company.zone.isManual ? (company.zone.id ?? '') : ''))
   const baseline = useRef({
@@ -188,7 +186,8 @@ export function CompanyProfileCard({
     setPlan(p)
     if (p.confirm) {
       if (timeZoneLock && !timeZoneLock.allowed) {
-        setErrors({ city: timeZoneLock.lockedText ?? timeZoneLock.fallbackText })
+        setErrors({})
+        setFormError(timeZoneLock.lockedText ?? timeZoneLock.fallbackText)
         return
       }
       setErrors({})
@@ -288,9 +287,8 @@ export function CompanyProfileCard({
     const status = httpStatusOf(err)
     const raw = plainErrorBody(err)
     const text = () => errorMessage(err, texts.saveFailed)
-    if (status === 409 && timeZoneLock) return { field: { city: text() } }
+    if (status === 409 && timeZoneLock) return { field: {}, form: text() }
     if (status === 400) {
-      if (raw.includes('Город не найден')) return { field: { city: raw } }
       if (manualTimeZone && raw === 'Неизвестный часовой пояс') return { field: { timeZone: raw } }
       let field = mapLinksFieldError(raw)
       // §567: the generic «Ссылка …» text belongs to Яндекс Карты only if that field was in the request.
@@ -308,12 +306,7 @@ export function CompanyProfileCard({
 
   function zoneLineText(): string | null {
     const z = manual ? manualZoneId.trim() : ''
-    if (manualTimeZone && z !== '') return `Часовой пояс: ${z} — указан вручную`
-    if (!city) return null
-    const b = baseline.current
-    const fresh = city.id !== b.cityId
-    if (!fresh && (b.zone.isManual || (b.zone.id === null && b.zone.offsetMinutes === null))) return `Часовой пояс: как у города ${city.label}`
-    return `Часовой пояс: ${formatCityTimeZone(city.label, city.utcOffsetMinutes, city.timeZoneId)}`
+    return manualTimeZone && z !== '' ? `Часовой пояс: ${z} — указан вручную` : null
   }
 
   return (
@@ -418,32 +411,13 @@ export function CompanyProfileCard({
 
         <fieldset className="flex flex-col gap-4 border-t border-line pt-5">
           <legend className="text-[13px] font-semibold text-ink pr-2">Адрес и карты</legend>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1">
-              <CityCombobox
-                label="Город"
-                value={city}
-                describedBy={hintId('city')}
-                onChange={(c) => {
-                  setCity(c)
-                  setSaved(false)
-                  setErrors((e) => ({ ...e, city: undefined }))
-                }}
-                error={errors.city}
-              />
-              <p id={hintId('city')} className="text-xs text-muted">
-                {texts.cityHint}
-              </p>
-              {zoneLine && <p className="text-xs text-muted">{zoneLine}</p>}
-            </div>
-            <Input
-              label="Адрес"
-              value={values.address}
-              maxLength={300}
-              error={errors.address}
-              onChange={(e) => set('address', e.target.value)}
-            />
-          </div>
+          <Input
+            label="Адрес"
+            value={values.address}
+            maxLength={300}
+            error={errors.address}
+            onChange={(e) => set('address', e.target.value)}
+          />
           <div className="grid sm:grid-cols-2 gap-4">
             <Input
               label="Яндекс Карты"
@@ -489,6 +463,7 @@ export function CompanyProfileCard({
                   }}
                 />
               )}
+              {zoneLine && <p className="text-xs text-muted">{zoneLine}</p>}
             </>
           )}
           <p className="text-xs text-muted">{texts.addressHint}</p>
@@ -504,7 +479,7 @@ export function CompanyProfileCard({
       </form>
 
       {step === 'tz' && plan?.confirm && (
-        <Modal title="Сменить город?" onClose={() => setStep(null)}>
+        <Modal title="Сменить часовой пояс?" onClose={() => setStep(null)}>
           <div className="flex flex-col gap-4">
             <p className="text-sm text-ink-soft">{texts.timeZoneChange(plan.confirm.from, plan.confirm.to)}</p>
             <div className="flex gap-3">
@@ -512,7 +487,7 @@ export function CompanyProfileCard({
                 Отмена
               </Button>
               <Button className="flex-1" onClick={() => plan && afterTimeZone(plan)}>
-                Сменить город
+                Сменить
               </Button>
             </div>
           </div>

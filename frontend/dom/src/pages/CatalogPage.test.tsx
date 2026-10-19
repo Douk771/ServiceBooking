@@ -56,8 +56,8 @@ describe('CatalogPage on the template (T41-04)', () => {
     ids.forEach((e) => expect(e).toBeTruthy())
     for (let i = 0; i < ids.length - 1; i++) expect(Boolean(ids[i].compareDocumentPosition(ids[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
     const houses = container.querySelector('section#houses')!
-    expect(houses.getAttribute('aria-label')).toBe('Дома в Шерегеше')
-    expect(within(houses as HTMLElement).getByRole('heading', { level: 2 }).textContent).toBe('Дома в Шерегеше')
+    expect(houses.getAttribute('aria-label')).toBe('Дома')
+    expect(within(houses as HTMLElement).getByRole('heading', { level: 2 }).textContent).toBe('Дома')
     const live = container.querySelector('[aria-live="polite"]')!
     expect(live.querySelector('ul')).toBeTruthy()
     expect(live.querySelector('form')).toBeNull()
@@ -215,7 +215,7 @@ describe('CatalogPage on the template (T41-04)', () => {
     await screen.findByText('Все дома: 1')
     const faq = container.querySelector('#faq')!
     const btns = faq.querySelectorAll('button[aria-expanded="false"]')
-    expect(btns).toHaveLength(8)
+    expect(btns).toHaveLength(7)
     expect(faq.querySelectorAll('a')).toHaveLength(0)
   })
 

@@ -283,7 +283,7 @@ public class Cycle42PublicTests(TestDatabaseFixture fixture) : Cycle42TestBase(f
         page.GetProperty("name").GetString().Should().Be("Чан на дровах");
         page.GetProperty("capacity").GetInt32().Should().Be(6);
         page.GetProperty("cityName").GetString().Should().NotBeNullOrEmpty();
-        page.GetProperty("localTimeNote").GetString().Should().StartWith("Время местное").And.Contain(page.GetProperty("cityName").GetString()!);
+        page.GetProperty("localTimeNote").GetString().Should().Be("Время местное");
         page.GetProperty("standalone").GetProperty("ordering").GetBoolean().Should().BeTrue("бронь без проживания у бани включена всегда");
         page.GetProperty("acceptingBookings").GetBoolean().Should().BeTrue();
         body.Should().NotContain("Анна Гость", "имён гостей нет").And.NotContain(PaymentDetailsText);

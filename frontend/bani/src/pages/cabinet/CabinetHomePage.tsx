@@ -51,7 +51,7 @@ export function CabinetHomePage() {
       ) : list.length === 0 ? (
         <EmptyState
           title="У вас пока нет компаний"
-          text="Создайте компанию — название, город, телефон для гостей и адрес на bani.ezbook.ru. Бани, цены и реквизиты — следующими шагами."
+          text="Создайте компанию — название, телефон для гостей и адрес на bani.ezbook.ru. Бани, цены и реквизиты — следующими шагами."
           action={<LinkButton to="/cabinet/new">Подключить баню</LinkButton>}
         />
       ) : (

@@ -5,7 +5,6 @@ import { Controller, useForm } from 'react-hook-form'
 import { legalApi } from '@/api/legal'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
-import { CityCombobox } from '@/components/ui/CityCombobox'
 import { Input } from '@/components/ui/Input'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { PublicAddressNotice } from '@/components/company/PublicAddressNotice'
@@ -14,9 +13,7 @@ import { InlineError } from '@/components/slots/ui/StatePanels'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { isRussianPhone } from '@/utils/phone'
 import { getStayErrorMessage, readConflict } from '@/utils/slots/slotError'
-import type { City } from '@/types'
 import { bathsCompaniesApi } from '../../api/bathsCompanies'
-import { CITY_MISSING_TEXT, SUPPORT_MAILTO } from '../../cabinet/cabinetTexts'
 import type { BathsConflictDto } from '../../cabinet/types'
 import { BATHS_SLUG_MAX, normalizeSlugInput, slugLocalProblem } from '../../utils/baniSlug'
 
@@ -29,8 +26,7 @@ interface FormData {
 }
 
 /**
- * `/cabinet/new` (US-42-01) — a «Бани» company. The city comes from the reference list (the zone follows the city and can be corrected in the
- * settings). The owner accepts the agreement with the company (`TermsOwner`) and may start the trial in the same step (conditions shown first).
+ * `/cabinet/new` (US-42-01) — a «Бани» company. The city is not asked — the server puts the company in Барнаул. The owner accepts the agreement with the company (`TermsOwner`) and may start the trial in the same step (conditions shown first).
  * The answer carries a fresh token that MUST replace the stored one, otherwise the owner meets an owner-gate 451 on their own new company.
  * An address typed here goes through the same public-address notice as everywhere else before the company is created.
  */
@@ -42,8 +38,6 @@ export function CreateCompanyPage() {
   const [termsError, setTermsError] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
   const [startTrial, setStartTrial] = useState(true)
-  const [city, setCity] = useState<City | null>(null)
-  const [cityError, setCityError] = useState('')
   const [addressNotice, setAddressNotice] = useState<FormData | null>(null)
 
   const { data: manifest } = useQuery({ queryKey: ['legal-documents'], queryFn: legalApi.getManifest })
@@ -88,7 +82,6 @@ export function CreateCompanyPage() {
       bathsCompaniesApi.create({
         name: d.name.trim(),
         slug: d.slug.trim() || null,
-        cityId: city!.id,
         address: d.address.trim() || null,
         description: d.description.trim() || null,
         phone: d.phone,
@@ -112,11 +105,6 @@ export function CreateCompanyPage() {
       return
     }
     setTermsError('')
-    if (!city) {
-      setCityError('Укажите город комплекса')
-      return
-    }
-    setCityError('')
     if (d.address.trim()) setAddressNotice(d)
     else create.mutate(d)
   }
@@ -137,7 +125,7 @@ export function CreateCompanyPage() {
         Несколько минут — и у вас будет страница на bani.ezbook.ru. Бани и купели, цены и реквизиты для оплаты добавите следующими шагами.
       </p>
 
-      <form onSubmit={handleSubmit(submit, () => !city && setCityError('Укажите город комплекса'))} className="flex flex-col gap-5 rounded-3xl border border-line bg-white p-6 sm:p-8" noValidate>
+      <form onSubmit={handleSubmit(submit)} className="flex flex-col gap-5 rounded-3xl border border-line bg-white p-6 sm:p-8" noValidate>
         <Input
           label="Название комплекса *"
           placeholder="Сибирские бани"
@@ -169,32 +157,6 @@ export function CreateCompanyPage() {
               {slugHint.text}
             </p>
           )}
-        </div>
-
-        <div>
-          <CityCombobox
-            label="Город *"
-            value={city}
-            onChange={(c) => {
-              setCity(c)
-              setCityError('')
-            }}
-            error={cityError}
-            describedBy="city-missing"
-          />
-          <p id="city-missing" className="mt-1.5 text-xs text-muted">
-            {CITY_MISSING_TEXT}
-            {SUPPORT_MAILTO && (
-              <>
-                {' '}
-                <a href={SUPPORT_MAILTO} className="font-medium text-gold-dark hover:underline">
-                  Написать в поддержку
-                </a>
-                .
-              </>
-            )}{' '}
-            Часовой пояс берётся по городу; при необходимости его можно поправить в настройках.
-          </p>
         </div>
 
         <Input label="Адрес бани" placeholder="Улица, дом" maxLength={300} {...register('address')} />

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { formatUtcOffset, formatCityTimeZone, utcOffsetMinutesOf } from './timezone'
+import { formatUtcOffset, utcOffsetMinutesOf } from './timezone'
 
 describe('formatUtcOffset', () => {
   it('formats a positive whole-hour offset', () => {
@@ -18,14 +18,6 @@ describe('formatUtcOffset', () => {
 
   it('formats zero offset', () => {
     expect(formatUtcOffset(0)).toBe('UTC+0')
-  })
-})
-
-describe('formatCityTimeZone', () => {
-  it('Barnaul is UTC+7 with its own IANA zone — not Novosibirsk, despite matching offsets', () => {
-    expect(formatCityTimeZone('Барнаул, Алтайский край', 420, 'Asia/Barnaul')).toBe(
-      'Барнаул, Алтайский край → UTC+7, Asia/Barnaul',
-    )
   })
 })
 

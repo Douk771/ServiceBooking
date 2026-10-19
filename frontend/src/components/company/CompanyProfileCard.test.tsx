@@ -7,11 +7,10 @@ import { CompanyProfileCard, type CompanyProfileSnapshot, type CompanyProfileTex
 const update = vi.fn()
 vi.mock('../../api/companies', () => ({ companiesApi: { update: (...a: unknown[]) => update(...a), uploadLogo: vi.fn() } }))
 vi.mock('../../api/companyAddress', () => ({ companyAddressApi: { saveAddress: vi.fn() } }))
-vi.mock('../../api/cities', () => ({ citiesApi: { search: () => Promise.resolve([]) } }))
 
 const texts: CompanyProfileTexts = {
   title: 'Профиль', logoAlt: 'Лого', nameRequired: 'Введите название', phoneLabel: 'Телефон', emailLabel: 'Email',
-  emailHint: 'eh', cityHint: 'Подсказка города', addressHint: 'ah', saveFailed: 'Не удалось сохранить.',
+  emailHint: 'eh', addressHint: 'ah', saveFailed: 'Не удалось сохранить.',
   timeZoneChange: (f, t) => `${f} → ${t}`,
 }
 const snap: CompanyProfileSnapshot = {
@@ -47,13 +46,11 @@ describe('CompanyProfileCard — error routing (ARCHITECTURE_CYCLE32.md §32.4.6
     expect(await screen.findByRole('alert')).toHaveTextContent('mapped:Не удалось сохранить.')
   })
 
-  it('409 with timeZoneLock goes to the city field', async () => {
+  it('409 with timeZoneLock goes under the form too (there is no city field)', async () => {
     failWith = fail(409, 'конфликт')
     renderCard({ timeZoneLock: { allowed: true, lockedText: null, fallbackText: 'fb' } })
     await save()
-    const alert = await screen.findByText('mapped:Не удалось сохранить.')
-    expect(screen.getByRole('combobox')).toHaveAccessibleDescription(expect.stringContaining('mapped:'))
-    expect(alert.tagName).toBe('P')
+    expect(await screen.findByRole('alert')).toHaveTextContent('mapped:Не удалось сохранить.')
   })
 
   it('"Неизвестный часовой пояс" without manualTimeZone goes under the form', async () => {
@@ -61,14 +58,6 @@ describe('CompanyProfileCard — error routing (ARCHITECTURE_CYCLE32.md §32.4.6
     renderCard()
     await save()
     expect(await screen.findByRole('alert')).toHaveTextContent('mapped:Не удалось сохранить.')
-  })
-
-  it('"Город не найден" goes to the city field as the raw text', async () => {
-    failWith = fail(400, 'Город не найден')
-    renderCard()
-    await save()
-    await waitFor(() => expect(screen.getByRole('combobox')).toHaveAccessibleDescription(expect.stringContaining('Город не найден')))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('a generic "Ссылка…" goes to 2ГИС when Yandex was not sent, to Yandex when it was', async () => {
@@ -80,9 +69,10 @@ describe('CompanyProfileCard — error routing (ARCHITECTURE_CYCLE32.md §32.4.6
     expect(screen.getByLabelText('Яндекс Карты')).not.toHaveAccessibleDescription('Ссылка должна начинаться с https://')
   })
 
-  it('the city hint is linked to the combobox', () => {
+  it('neither shows nor offers the city', () => {
     renderCard()
-    expect(screen.getByRole('combobox')).toHaveAccessibleDescription(expect.stringContaining('Подсказка города'))
+    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(screen.queryByText(/Барнаул|Город|город/)).toBeNull()
   })
 })
 

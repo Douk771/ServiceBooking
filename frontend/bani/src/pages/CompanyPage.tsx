@@ -53,10 +53,12 @@ export function CompanyPage() {
         <CompanyLogoMark name={company.name} logoUrl={company.logoUrl ?? null} size="card" />
         <div className="min-w-0 flex-1">
           <h1 className="font-serif text-[32px] leading-tight text-ink break-words [overflow-wrap:anywhere] sm:text-[40px]">{company.name}</h1>
-          <p className="mt-2 flex items-start gap-1.5 text-sm text-ink-soft">
-            <Icon name="map-pin" size={14} strokeWidth={1.6} className="mt-0.5 shrink-0" />
-            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{company.address ? `${company.cityName}, ${company.address}` : company.cityName}</span>
-          </p>
+          {company.address && (
+            <p className="mt-2 flex items-start gap-1.5 text-sm text-ink-soft">
+              <Icon name="map-pin" size={14} strokeWidth={1.6} className="mt-0.5 shrink-0" />
+              <span className="min-w-0 break-words [overflow-wrap:anywhere]">{company.address}</span>
+            </p>
+          )}
           {company.description && <p className="mt-3 max-w-[680px] whitespace-pre-line text-[15px] leading-relaxed text-ink-soft">{company.description}</p>}
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
             {company.phone && (

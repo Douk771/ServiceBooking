@@ -47,10 +47,10 @@ describe('planProfileZone — salon', () => {
     const b = base({ isManual: true, zoneId: 'Asia/Omsk', offsetMinutes: 360 })
     expect(plan(b, { city: barnaul, manual: true, manualZoneId: 'Asia/Omsk' })).toEqual({ confirm: null })
   })
-  it('manual turned off, same city -> null and confirm without number', () => {
+  it('manual turned off, same city -> null and confirm without number or city', () => {
     const b = base({ isManual: true, zoneId: 'Asia/Omsk', offsetMinutes: 360 })
     expect(plan(b, { city: barnaul, manual: false, manualZoneId: '' })).toEqual({
-      timeZoneId: null, confirm: { from: 'UTC+6', to: 'пояс города Барнаул, Алтайский край' },
+      timeZoneId: null, confirm: { from: 'UTC+6', to: 'автоматический' },
     })
   })
   it('manual turned off + new city -> null, cityId and the new city offset', () => {

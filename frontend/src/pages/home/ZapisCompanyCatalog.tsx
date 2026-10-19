@@ -1,37 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { companiesApi } from '../../api/companies'
-import { CityCombobox } from '../../components/ui/CityCombobox'
 import { Icon } from '../../components/ui/Icon'
 import { CatalogCard } from '../../components/landing/CatalogCard'
 import { Pagination } from '../../components/ui/Pagination'
 import { ShowcaseBadge } from '../../components/showcase/ShowcaseBadge'
-import type { City, Company } from '../../types'
+import type { Company } from '../../types'
 
-// US-115: the visitor's city choice persists across visits (SPEC §115 п. 4, ARCHITECTURE_CYCLE9.md
-// §103.5 / §118 п. 6 name this key `home-city`).
-const HOME_CITY_KEY = 'home-city'
 const PAGE_SIZE = 20
-
-function isValidStoredCity(value: unknown): value is City {
-  if (!value || typeof value !== 'object') return false
-  const c = value as Record<string, unknown>
-  return typeof c.id === 'number' && typeof c.name === 'string'
-}
-
-function loadStoredCity(): City | null {
-  try {
-    const raw = localStorage.getItem(HOME_CITY_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (isValidStoredCity(parsed)) return parsed
-    // Malformed entry (e.g. `{}`) — treat as "all cities" and clean up so we don't keep re-reading it.
-    localStorage.removeItem(HOME_CITY_KEY)
-    return null
-  } catch {
-    return null
-  }
-}
 
 function CompanyCard({ company }: { company: Company }) {
   // A closed showcase company shows «Онлайн-запись» in the catalog while the server refuses every booking
@@ -53,7 +29,6 @@ function CompanyCard({ company }: { company: Company }) {
 
 /** Каталог салонов внутри рамки шаблона `#companies` (ARCHITECTURE_CYCLE38.md §38.4.2); поведение прежней главной. */
 export function ZapisCompanyCatalog() {
-  const [city, setCity] = useState<City | null>(() => loadStoredCity())
   const [search, setSearch] = useState('')
   // Debounce so the search-by-name/address query (server-side, per SPEC §115) isn't re-fired per
   // keystroke.
@@ -65,29 +40,20 @@ export function ZapisCompanyCatalog() {
     return () => clearTimeout(timer)
   }, [search])
 
-  useEffect(() => {
-    if (city) {
-      localStorage.setItem(HOME_CITY_KEY, JSON.stringify(city))
-    } else {
-      localStorage.removeItem(HOME_CITY_KEY)
-    }
-  }, [city])
-
   // Reset to page 1 whenever the filters change — a stale page number from a previous, longer
   // result set would otherwise request an out-of-range page.
   useEffect(() => {
     setPage(1)
-  }, [city?.id, debouncedSearch])
+  }, [debouncedSearch])
 
   const {
     data: companiesPage,
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ['companies-public', city?.id ?? null, debouncedSearch, page],
+    queryKey: ['companies-public', debouncedSearch, page],
     queryFn: () =>
       companiesApi.getPublic({
-        cityId: city?.id,
         search: debouncedSearch || undefined,
         page,
         pageSize: PAGE_SIZE,
@@ -97,13 +63,13 @@ export function ZapisCompanyCatalog() {
 
   return (
     <>
-      <div className="flex items-baseline justify-between mb-6 flex-wrap gap-3">
+      <div className="flex items-baseline justify-between mb-10 flex-wrap gap-3">
         <div>
           <h2 className="font-serif text-[32px] font-medium mb-2 text-ink">
-            {city ? `Компании и салоны — ${city.name}` : 'Компании и салоны'}
+            Компании и салоны
           </h2>
           <p className="text-[15px] text-ink-soft">
-            {city ? `Показаны салоны в городе «${city.label}»` : 'Проверенные специалисты на платформе, все города'}
+            Проверенные специалисты на платформе
           </p>
         </div>
         <div className="relative">
@@ -120,21 +86,6 @@ export function ZapisCompanyCatalog() {
             className="w-[280px] pl-[42px] pr-4 py-3 rounded-full border border-line bg-white text-sm outline-none text-ink focus:border-gold focus:ring-[3px] focus:ring-cream-deep"
           />
         </div>
-      </div>
-
-      <div className="flex items-end gap-3 mb-10 flex-wrap">
-        <div className="w-[280px]">
-          <CityCombobox label="" value={city} onChange={setCity} placeholder="Выберите город" />
-        </div>
-        {city && (
-          <button
-            type="button"
-            onClick={() => setCity(null)}
-            className="text-[13px] font-medium text-ink-soft border-b border-line-strong pb-[3px] hover:text-ink"
-          >
-            Все города
-          </button>
-        )}
       </div>
 
       {isLoading ? (
@@ -165,18 +116,6 @@ export function ZapisCompanyCatalog() {
             />
           )}
         </>
-      ) : city ? (
-        <div className="text-center py-16 text-muted">
-          <Icon name="store" size={36} strokeWidth={1.4} className="mx-auto mb-3" />
-          <p className="text-lg">В городе «{city.name}» пока нет компаний на платформе.</p>
-          <button
-            type="button"
-            onClick={() => setCity(null)}
-            className="mt-4 text-[14px] font-medium text-gold-dark border-b border-gold-dark"
-          >
-            Показать все города
-          </button>
-        </div>
       ) : (
         <div className="text-center py-16 text-muted">
           <Icon name="store" size={36} strokeWidth={1.4} className="mx-auto mb-3" />

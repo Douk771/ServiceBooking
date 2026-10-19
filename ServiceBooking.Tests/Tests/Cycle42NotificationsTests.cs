@@ -220,7 +220,7 @@ public class Cycle42NotificationsTests(TestDatabaseFixture fixture) : Cycle42Tes
         created.Should().NotBeEmpty();
         var message = created.First();
         message.Status.Should().Be(NotificationStatus.Pending, message.Reason?.ToString());
-        message.Body.Should().Contain($"https://bani.ezbook.ru/s/{b.Token}").And.Contain("брон").And.Contain("(время местное,");
+        message.Body.Should().Contain($"https://bani.ezbook.ru/s/{b.Token}").And.Contain("брон").And.Contain("(время местное)");
         message.Body.Should().NotContain("dom.ezbook.ru");
         NoDomWords(message.Body, "сообщение в мессенджер");
         message.Body.Should().Contain("Сбербанк", "реквизиты этой брони — только в мессенджер этой брони");

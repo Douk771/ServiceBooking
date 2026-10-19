@@ -153,7 +153,7 @@ export function RulesCard({ company, onSaved }: { company: StaysCompanyManageWit
       </SectionCard>
 
       <SectionCard title="Информация к заселению" description="Коды замков, как найти ключ. Гость увидит её на странице брони в день заезда.">
-        <SelectField label="Когда открывать" value={s.checkInInfoSendTime} options={TIME_OPTIONS} onChange={(v) => set('checkInInfoSendTime', v)} error={errors.checkInInfoSendTime} hint="В день заезда, по времени Шерегеша" />
+        <SelectField label="Когда открывать" value={s.checkInInfoSendTime} options={TIME_OPTIONS} onChange={(v) => set('checkInInfoSendTime', v)} error={errors.checkInInfoSendTime} hint="В день заезда, по местному времени" />
         <TextArea
           label="Общий текст к заселению"
           rows={4}

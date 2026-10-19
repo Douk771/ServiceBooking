@@ -8,12 +8,10 @@ import { PublicAddressNotice } from './PublicAddressNotice'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Modal } from '../ui/Modal'
-import { CityCombobox } from '../ui/CityCombobox'
 import { withOwnerRole } from '../../utils/ownerRole'
 import { useAuthStore } from '../../store/authStore'
 import { getCreateCompanyErrorMessage } from '../../utils/companyError'
-import { formatCityTimeZone } from '../../utils/timezone'
-import type { Company, City } from '../../types'
+import type { Company } from '../../types'
 
 function slugify(str: string) {
   return str
@@ -76,8 +74,6 @@ interface FormData {
 
 /** Диалог «Создать компанию» (кабинет и маршрут /cabinet/new). Общий для обоих мест. */
 export function CreateCompanyDialog({ onClose, onCreated }: { onClose: () => void; onCreated?: (company: Company) => void }) {
-  const [city, setCity] = useState<City | null>(null)
-  const [cityError, setCityError] = useState('')
   const [termsError, setTermsError] = useState('')
   const [ownerTermsAccepted, setOwnerTermsAccepted] = useState(false)
   // ARCHITECTURE_CYCLE13.md §220.2/§220.4 — the public-address notice gates the address text ITSELF:
@@ -111,12 +107,7 @@ export function CreateCompanyDialog({ onClose, onCreated }: { onClose: () => voi
   })
 
   function submitCompany(d: FormData) {
-    if (!city) {
-      setCityError('Укажите город салона')
-      return
-    }
     if (!ownerTerms) return
-    setCityError('')
     create.mutate({
       name: d.name,
       slug: d.slug || slugify(d.name),
@@ -126,7 +117,6 @@ export function CreateCompanyDialog({ onClose, onCreated }: { onClose: () => voi
       email: d.email || undefined,
       allowSelfBooking: d.allowSelfBooking,
       showInPublicListing: d.showInPublicListing,
-      cityId: city.id,
       ownerTerms: { version: ownerTerms.version },
     })
   }
@@ -139,14 +129,8 @@ export function CreateCompanyDialog({ onClose, onCreated }: { onClose: () => voi
     >
       <form
         onSubmit={handleSubmit((d) => {
-          // US-30 п. 5 — validated before the notice gate below, not just inside `submitCompany`:
-          // the notice writes an entry to the consent ledger the moment it's confirmed (review
-          // finding, cycle 13), so a missing city must fail BEFORE that write, not after it.
-          if (!city) {
-            setCityError('Укажите город салона')
-            return
-          }
-          // Same reasoning for `ownerTerms` (review finding, cycle 13): if `GET
+          // Validated before the notice gate below (review finding, cycle 13): the notice writes an entry
+          // to the consent ledger the moment it's confirmed, so if `GET
           // /api/legal/documents` hasn't produced a `TermsOwner` entry by submit time, the
           // owner must see WHY nothing happened rather than have the notice write a consent
           // ledger entry for a submission that then silently no-ops in `submitCompany`.
@@ -182,20 +166,6 @@ export function CreateCompanyDialog({ onClose, onCreated }: { onClose: () => voi
           error={errors.slug?.message}
           {...register('slug', { required: true })}
         />
-        <CityCombobox
-          label="Город *"
-          value={city}
-          onChange={(c) => {
-            setCity(c)
-            if (c) setCityError('')
-          }}
-          error={cityError}
-        />
-        {city && (
-          <p className="text-xs text-muted -mt-2.5">
-            Часовой пояс: {formatCityTimeZone(city.label, city.utcOffsetMinutes, city.timeZoneId)}
-          </p>
-        )}
         <div className="flex flex-col gap-1.5">
           <label className="text-[13px] font-medium text-[#4A4038]">Описание</label>
           <textarea

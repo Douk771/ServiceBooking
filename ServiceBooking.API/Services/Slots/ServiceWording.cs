@@ -51,10 +51,10 @@ public sealed record ServiceWording(
         BathsStatusText,
         BathsStaffEventText,
         BathsOutcomeText,
-        city => string.IsNullOrWhiteSpace(city) ? " (время местное)" : $" (время местное, {city.Trim()})");
+        _ => " (время местное)");
 
-    /// <summary>API_CONTRACT_CYCLE42.md §42.20 (Т42-08): «Время местное, Шерегеш» — the note next to a time of a «Бани» resource and booking (the city is empty → «Время местное»).</summary>
-    public static string LocalTimeNote(string? city) => string.IsNullOrWhiteSpace(city) ? "Время местное" : $"Время местное, {city.Trim()}";
+    /// <summary>API_CONTRACT_CYCLE42.md §42.20 (Т42-08): the note next to a time of a «Бани» resource and booking. The city is not shown to users any more — always «Время местное».</summary>
+    public static string LocalTimeNote(string? city) => "Время местное";
 
     /// <summary>The wording of a company's vertical; kinds that are not slot verticals fall back to «Дома» (their legacy strings).</summary>
     public static ServiceWording For(CompanyKind kind) => kind switch { CompanyKind.Baths => Baths, _ => Stays };

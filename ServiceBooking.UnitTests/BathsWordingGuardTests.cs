@@ -59,12 +59,12 @@ public class BathsWordingGuardTests
     public void Title_and_time_mark_follow_the_decisions()
     {
         W.GuestPushTitle.Should().Be("EZBOOK Бани");
-        W.GuestTimeSuffix("Барнаул").Should().Be(" (время местное, Барнаул)");
+        W.GuestTimeSuffix("Барнаул").Should().Be(" (время местное)");
     }
 
     [Fact]
-    public void Guest_messenger_marks_local_time_with_the_city() =>
-        ServiceNotificationTexts.Messenger(NotificationType.ServiceGuestConfirmed, Facts(0, true), "u", null, W).Should().Contain("(время местное, Барнаул)");
+    public void Guest_messenger_marks_local_time_without_the_city() =>
+        ServiceNotificationTexts.Messenger(NotificationType.ServiceGuestConfirmed, Facts(0, true), "u", null, W).Should().Contain("(время местное)").And.NotContain("Барнаул");
 
     [Fact]
     public void Staff_push_names_a_booking_not_an_order() =>

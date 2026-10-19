@@ -176,10 +176,6 @@ export function CreateCompanyPage() {
           <StayNotice textKey="StayPublicContactsNotice" className="mt-2" />
         </div>
 
-        <p className="rounded-xl bg-cream-deep px-4 py-3 text-sm text-ink-soft">
-          Город — <span className="font-semibold text-ink">Шерегеш</span>. Часовой пояс — по городу: Asia/Novokuznetsk.
-        </p>
-
         {trial.data?.offered && (
           <fieldset className="rounded-2xl border border-line bg-cream-deep/40 p-4" data-testid="trial-block">
             <legend className="px-1 text-[13px] font-semibold text-ink">Пробный период</legend>

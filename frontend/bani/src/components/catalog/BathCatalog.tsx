@@ -18,7 +18,7 @@ export function BathCatalog() {
     queryKey: ['baths-catalog', toApiQuery(filters)],
     queryFn: () => bathsPublicApi.catalog(toApiQuery(filters)),
     placeholderData: (prev) => prev,
-    // 400 is an answer about the filter (unknown city, past date), not a hiccup
+    // 400 is an answer about the filter (past date), not a hiccup
     retry: (count, err) => httpStatus(err) !== 400 && count < 1,
   })
   const list = query.data
@@ -52,7 +52,7 @@ export function BathCatalog() {
         ) : !list || list.items.length === 0 ? (
           <EmptyState
             title={filtered ? 'По этим условиям бань нет' : 'Пока нет бань в каталоге'}
-            text={list?.emptyText ?? (filtered ? 'Попробуйте другую дату или другой город.' : 'Как только владельцы опубликуют бани, они появятся здесь.')}
+            text={list?.emptyText ?? (filtered ? 'Попробуйте другую дату.' : 'Как только владельцы опубликуют бани, они появятся здесь.')}
             action={
               filtered ? (
                 <Button variant="secondary" onClick={resetFilters}>

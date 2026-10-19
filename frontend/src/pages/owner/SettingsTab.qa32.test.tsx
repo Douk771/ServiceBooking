@@ -1,9 +1,9 @@
 /**
  * QA цикла 32 (`QA32-`): сквозные сценарии вкладки «Настройки» салона по критериям приёмки SPEC.md (US-32-02..04).
- * Написано по SPEC.md, без опоры на реализацию: настоящие CityCombobox/PhoneInput/Modal, мокается только сеть.
+ * Написано по SPEC.md, без опоры на реализацию: настоящие PhoneInput/Modal, мокается только сеть.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SettingsTab } from './CompanyManagePage'
@@ -12,7 +12,6 @@ import { CANCEL_WINDOW_FIELD_CAPTION } from '../../legal/staffNotices'
 const update = vi.fn()
 const getMy = vi.fn()
 const saveAddress = vi.fn()
-const search = vi.fn()
 
 vi.mock('../../api/companies', () => ({
   companiesApi: {
@@ -33,7 +32,6 @@ vi.mock('../../api/companyCatalogListing', () => ({
   },
 }))
 vi.mock('../../api/companyPhotos', () => ({ companyPhotosApi: { list: () => Promise.resolve([]) } }))
-vi.mock('../../api/cities', () => ({ citiesApi: { search: (...a: unknown[]) => search(...a) } }))
 vi.mock('../../api/services', () => ({ servicesApi: { getByCompany: () => Promise.resolve([]) } }))
 vi.mock('../../components/company/PublicAddressNotice', () => ({
   PublicAddressNotice: ({ onConfirmed, onCancel }: { onConfirmed: () => void; onCancel: () => void }) => (
@@ -44,8 +42,6 @@ vi.mock('../../components/company/PublicAddressNotice', () => ({
   ),
 }))
 
-const TOMSK = { id: 6, name: 'Томск', region: 'Томская область', timeZoneId: 'Asia/Tomsk', utcOffsetMinutes: 420, label: 'Томск, Томская область' }
-const MOSCOW = { id: 7, name: 'Москва', region: 'Москва', timeZoneId: 'Europe/Moscow', utcOffsetMinutes: 180, label: 'Москва, Москва' }
 
 const COMPANY = {
   id: 'co1', name: 'Салон', slug: 'salon', description: 'Стрижки', phone: '79001234567', email: 'a@b.ru',
@@ -68,18 +64,9 @@ const rejectWith = (status: number, data: string) => Promise.reject({ isAxiosErr
 const saveProfile = () => userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
 const saveRules = () => userEvent.click(screen.getByRole('button', { name: 'Сохранить правила' }))
 
-async function pickCity(city: typeof TOMSK) {
-  search.mockResolvedValue([city])
-  const box = screen.getByRole('combobox', { name: 'Город' })
-  await userEvent.clear(box)
-  await userEvent.type(box, city.name)
-  await userEvent.click(await screen.findByRole('option', { name: new RegExp(city.name) }))
-}
-
 beforeEach(() => {
   update.mockReset().mockResolvedValue({})
   saveAddress.mockReset().mockResolvedValue({})
-  search.mockReset().mockResolvedValue([])
   getMy.mockReset().mockResolvedValue([COMPANY])
 })
 afterEach(() => vi.useRealTimers())
@@ -125,38 +112,14 @@ describe('QA32 — US-32-02 сохранение профиля одной кн�
     expect(saveAddress).not.toHaveBeenCalled()
   })
 
-  it('QA32-04: город с другим смещением — окно «Сменить город?»; «Отмена» ничего не шлёт', async () => {
+  it('QA32-04: города в профиле нет — ни поля, ни упоминания; cityId не уходит', async () => {
     renderTab()
     await screen.findByLabelText('Название *')
-    await pickCity(MOSCOW)
-    await saveProfile()
-    const dlg = await screen.findByRole('dialog')
-    expect(within(dlg).getByText(/UTC\+7.*→.*UTC\+3|\+7.*\+3/)).toBeInTheDocument()
-    expect(dlg).toHaveTextContent('салона')
-    await userEvent.click(within(dlg).getByRole('button', { name: 'Отмена' }))
-    expect(update).not.toHaveBeenCalled()
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  })
-
-  it('QA32-05: «Сменить город» продолжает: в PUT уходит cityId', async () => {
-    renderTab()
-    await screen.findByLabelText('Название *')
-    await pickCity(MOSCOW)
-    await saveProfile()
-    await userEvent.click(await screen.findByRole('button', { name: 'Сменить город' }))
-    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
-    expect(update.mock.calls[0][1]).toMatchObject({ cityId: 7 })
-    expect(update.mock.calls[0][1]).not.toHaveProperty('address')
-  })
-
-  it('QA32-06: город с тем же смещением — без окна, cityId в общем PUT', async () => {
-    renderTab()
-    await screen.findByLabelText('Название *')
-    await pickCity(TOMSK)
+    expect(screen.queryByRole('combobox', { name: /Город/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Барнаул/)).not.toBeInTheDocument()
     await saveProfile()
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
-    expect(screen.queryByRole('button', { name: 'Сменить город' })).not.toBeInTheDocument()
-    expect(update.mock.calls[0][1]).toMatchObject({ cityId: 6 })
+    expect(update.mock.calls[0][1]).not.toHaveProperty('cityId')
   })
 
   it('QA32-07: смена адреса — сначала уведомление, основной PUT раньше PUT адреса; «Не сохранять» ничего не шлёт', async () => {
@@ -200,8 +163,8 @@ describe('QA32 — US-32-02 сохранение профиля одной кн�
 
     await userEvent.click(screen.getByLabelText(/Указать часовой пояс вручную/))
     await saveProfile()
-    // Сброс к поясу города: клиент не знает смещение пояса города, поэтому всегда спрашивает (ARCHITECTURE_CYCLE32 §32.6, вариант В).
-    await userEvent.click(await screen.findByRole('button', { name: 'Сменить город' }))
+    // Сброс к автоматическому поясу: клиент не знает его смещение, поэтому всегда спрашивает (ARCHITECTURE_CYCLE32 §32.6, вариант В).
+    await userEvent.click(await screen.findByRole('button', { name: 'Сменить' }))
     await waitFor(() => expect(update).toHaveBeenCalledTimes(2))
     expect(update.mock.calls[1][1]).toHaveProperty('timeZoneId', null)
   })
@@ -211,7 +174,7 @@ describe('QA32 — US-32-02 сохранение профиля одной кн�
     await userEvent.click(await screen.findByLabelText(/Указать часовой пояс вручную/))
     await userEvent.type(screen.getByLabelText('Часовой пояс (IANA)'), 'Europe/Moscow')
     await saveProfile()
-    expect(await screen.findByRole('button', { name: 'Сменить город' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Сменить' })).toBeInTheDocument()
     expect(update).not.toHaveBeenCalled()
   })
 
@@ -224,16 +187,6 @@ describe('QA32 — US-32-02 сохранение профиля одной кн�
     const msg = await screen.findByText(/Яндекс Карты должна вести/)
     expect(y.getAttribute('aria-describedby') ?? '').toContain(msg.id)
     expect(screen.queryByText('Сохранено')).not.toBeInTheDocument()
-  })
-
-  it('QA32-12: 400 «Город не найден» — у поля города', async () => {
-    update.mockReset().mockImplementation(() => rejectWith(400, 'Город не найден'))
-    renderTab()
-    await screen.findByLabelText('Название *')
-    await pickCity(TOMSK)
-    await saveProfile()
-    const msg = await screen.findByText('Город не найден')
-    expect(msg.closest('div')).toContainElement(screen.getByRole('combobox', { name: 'Город' }))
   })
 
   it('QA32-13: сетевой обрыв (нет ответа) — сообщение под формой, введённый текст остаётся', async () => {
@@ -418,8 +371,6 @@ describe('QA32 — US-32-04 раскладка и доступность', () =>
     const email = await screen.findByLabelText('Email для клиентов')
     const hint = screen.getByText('Виден на странице салона')
     expect(email.getAttribute('aria-describedby')).toContain(hint.id)
-    const city = screen.getByRole('combobox', { name: 'Город' })
-    expect(city.getAttribute('aria-describedby')).toBeTruthy()
     expect(screen.getByAltText('Логотип салона')).toBeInTheDocument()
     await saveProfile()
     expect(await screen.findByText('Сохранено')).toHaveAttribute('role', 'status')

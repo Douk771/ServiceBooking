@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SalonProfileSection } from './SalonProfileSection'
-import type { City, Company } from '../../types'
+import type { Company } from '../../types'
 
 const update = vi.fn()
 const saveAddress = vi.fn()
@@ -14,19 +14,6 @@ vi.mock('../../components/company/PublicAddressNotice', () => ({
     <div role="dialog" aria-label="notice">
       <button onClick={onConfirmed}>notice-ok</button>
       <button onClick={onCancel}>notice-cancel</button>
-    </div>
-  ),
-}))
-
-const tomsk: City = { id: 2, name: 'Томск', region: 'Томская область', timeZoneId: 'Asia/Tomsk', utcOffsetMinutes: 420, label: 'Томск, Томская область' }
-const moscow: City = { id: 3, name: 'Москва', region: 'Москва', timeZoneId: 'Europe/Moscow', utcOffsetMinutes: 180, label: 'Москва, Москва' }
-vi.mock('../../components/ui/CityCombobox', () => ({
-  CityCombobox: ({ label, value, onChange, error }: { label: string; value: City | null; onChange: (c: City | null) => void; error?: string }) => (
-    <div>
-      <span>{label}: {value?.name ?? 'нет'}</span>
-      <button type="button" onClick={() => onChange(tomsk)}>pick-tomsk</button>
-      <button type="button" onClick={() => onChange(moscow)}>pick-moscow</button>
-      {error && <p role="alert">{error}</p>}
     </div>
   ),
 }))
@@ -99,31 +86,14 @@ describe('SalonProfileSection — ARCHITECTURE_CYCLE32.md §32.5.2', () => {
     expect(update.mock.calls[0][1]).toEqual({ name: 'Ромашка', description: 'Стрижки', phone: '79005554433', email: 'a@b.ru' })
   })
 
-  it('V32-04: another offset asks first; cancel sends nothing, confirm sends cityId without timeZoneId', async () => {
+  it('V32-04: the city is neither shown nor offered; an untouched save sends no cityId', async () => {
     const user = userEvent.setup()
     renderIt(salon())
-    await user.click(screen.getByText('pick-moscow'))
-    await save(user)
-    const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText(/Часовой пояс салона изменится: UTC\+7 → UTC\+3\./)).toBeInTheDocument()
-    await user.click(within(dialog).getByRole('button', { name: 'Отмена' }))
-    expect(update).not.toHaveBeenCalled()
-    await save(user)
-    await user.click(await screen.findByRole('button', { name: 'Сменить город' }))
-    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
-    const body = update.mock.calls[0][1]
-    expect(body.cityId).toBe(3)
-    expect(body).not.toHaveProperty('timeZoneId')
-  })
-
-  it('V32-05: same offset -> no dialog, cityId in the body', async () => {
-    const user = userEvent.setup()
-    renderIt(salon())
-    await user.click(screen.getByText('pick-tomsk'))
+    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(screen.queryByText(/Барнаул|Город/)).toBeNull()
     await save(user)
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
-    expect(update.mock.calls[0][1].cityId).toBe(2)
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(update.mock.calls[0][1]).not.toHaveProperty('cityId')
   })
 
   it('V32-06: changed address -> notice first, then update BEFORE saveAddress', async () => {
@@ -160,20 +130,20 @@ describe('SalonProfileSection — ARCHITECTURE_CYCLE32.md §32.5.2', () => {
     await user.type(screen.getByLabelText('Часовой пояс (IANA)'), 'Asia/Omsk')
     await save(user)
     expect(await screen.findByText(/UTC\+7 → UTC\+6/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Сменить город' }))
+    await user.click(screen.getByRole('button', { name: 'Сменить' }))
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
     expect(update.mock.calls[0][1].timeZoneId).toBe('Asia/Omsk')
   })
 
-  it('V32-08: manual zone off -> dialog "пояс города" -> timeZoneId null; untouched -> no keys', async () => {
+  it('V32-08: manual zone off -> dialog "автоматический" -> timeZoneId null; untouched -> no keys', async () => {
     const user = userEvent.setup()
     renderIt(salon({ timeZoneId: 'Asia/Omsk', utcOffsetMinutes: 360, timeZoneIsManual: true }))
     expect(screen.getByText('Часовой пояс: Asia/Omsk — указан вручную')).toBeInTheDocument()
     await user.click(screen.getByLabelText(/Указать часовой пояс вручную/))
-    expect(screen.getByText('Часовой пояс: как у города Барнаул, Алтайский край')).toBeInTheDocument()
+    expect(screen.queryByText(/Барнаул/)).toBeNull()
     await save(user)
-    expect(await screen.findByText(/→ пояс города Барнаул, Алтайский край/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Сменить город' }))
+    expect(await screen.findByText(/→ автоматический/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Сменить' }))
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
     expect(update.mock.calls[0][1].timeZoneId).toBeNull()
   })
@@ -200,14 +170,12 @@ describe('SalonProfileSection — ARCHITECTURE_CYCLE32.md §32.5.2', () => {
   })
 
   it.each([
-    ['Город не найден', 'city'],
     ['Неизвестный часовой пояс', 'zone'],
     ['Ждём ссылку на Яндекс Карты — например, https://yandex.ru/maps/org/1', 'yandex'],
   ])('V32-10: 400 "%s" goes to its field', async (text, where) => {
     update.mockImplementation(() => err(400, text))
     const user = userEvent.setup()
     renderIt(salon())
-    if (where === 'city') await user.click(screen.getByText('pick-tomsk'))
     if (where === 'zone') {
       await user.click(screen.getByLabelText(/Указать часовой пояс вручную/))
       await user.type(screen.getByLabelText('Часовой пояс (IANA)'), 'Asia/Nowhere')
@@ -215,10 +183,8 @@ describe('SalonProfileSection — ARCHITECTURE_CYCLE32.md §32.5.2', () => {
     if (where === 'yandex') await user.type(screen.getByLabelText('Яндекс Карты'), 'x')
     await save(user)
     await waitFor(() => expect(update).toHaveBeenCalled())
-    const field =
-      where === 'city' ? screen.getByRole('alert') : where === 'zone' ? screen.getByLabelText('Часовой пояс (IANA)') : screen.getByLabelText('Яндекс Карты')
-    if (where === 'city') expect(field).toHaveTextContent(text)
-    else await waitFor(() => expect(field).toHaveAccessibleDescription(text))
+    const field = where === 'zone' ? screen.getByLabelText('Часовой пояс (IANA)') : screen.getByLabelText('Яндекс Карты')
+    await waitFor(() => expect(field).toHaveAccessibleDescription(text))
   })
 
   it('V32-10: another 400 goes under the form with the mapper text', async () => {

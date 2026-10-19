@@ -12,7 +12,6 @@ const getManifest = vi.fn()
 const getText = vi.fn()
 const confirmNotice = vi.fn()
 const saveAddress = vi.fn()
-const searchCities = vi.fn()
 
 vi.mock('../api/companies', () => ({
   companiesApi: {
@@ -31,9 +30,6 @@ vi.mock('../api/companyAddress', () => ({
     confirmNotice: (...args: unknown[]) => confirmNotice(...args),
     saveAddress: (...args: unknown[]) => saveAddress(...args),
   },
-}))
-vi.mock('../api/cities', () => ({
-  citiesApi: { search: (...args: unknown[]) => searchCities(...args) },
 }))
 
 const noticeHtml = '<h2>Текст для владельца</h2><p>Этот адрес увидит любой человек в интернете.</p><h2>Подтверждение</h2><p>x</p>'
@@ -75,13 +71,7 @@ function renderTab() {
 async function openFormAndFillRequired(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: '+ Создать компанию' }))
   await user.type(screen.getByLabelText('Название *'), 'Салон')
-
-  searchCities.mockResolvedValue([{ id: 1, name: 'Барнаул', label: 'Барнаул, Алтайский край', utcOffsetMinutes: 240 }])
-  const cityInput = screen.getByLabelText('Город *')
-  await user.click(cityInput)
-  await user.type(cityInput, 'Барн')
-  const option = await screen.findByText('Барнаул, Алтайский край')
-  await user.click(option)
+  expect(screen.queryByLabelText(/Город/)).not.toBeInTheDocument()
 
   await user.click(screen.getByRole('checkbox', { name: /Я принимаю/ }))
 }
@@ -93,7 +83,6 @@ beforeEach(() => {
   getText.mockReset().mockResolvedValue(noticeText())
   confirmNotice.mockReset().mockResolvedValue({ version: 'v1', acknowledgedAt: '2026-09-24T10:00:00Z' })
   saveAddress.mockReset()
-  searchCities.mockReset()
 })
 
 describe('MyCompaniesTab — ownerTerms must be checked before the public-address-notice consent write (review finding, cycle 13)', () => {
@@ -111,6 +100,7 @@ describe('MyCompaniesTab — ownerTerms must be checked before the public-addres
     await user.click(screen.getByRole('button', { name: 'Понятно, сохранить адрес' }))
 
     await waitFor(() => expect(create).toHaveBeenCalled())
+    expect(create.mock.calls[0][0]).not.toHaveProperty('cityId')
   })
 
   it('shows an error and never opens the address notice (no consent-ledger write) when ownerTerms failed to load', async () => {

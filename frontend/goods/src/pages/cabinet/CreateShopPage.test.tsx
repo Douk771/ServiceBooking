@@ -9,14 +9,10 @@ import { CreateShopPage } from './CreateShopPage'
 const create = vi.fn()
 const slugCheck = vi.fn()
 const getManifest = vi.fn()
-const searchCities = vi.fn()
 
 vi.mock('../../api/shops', () => ({ shopsApi: { create: (...a: unknown[]) => create(...a), slugCheck: (...a: unknown[]) => slugCheck(...a) } }))
 vi.mock('@/api/legal', () => ({ legalApi: { getManifest: (...a: unknown[]) => getManifest(...a), getText: () => new Promise(() => {}) } }))
-vi.mock('@/api/cities', () => ({ citiesApi: { search: (...a: unknown[]) => searchCities(...a) } }))
 vi.mock('@/api/companyAddress', () => ({ companyAddressApi: { confirmNotice: vi.fn() } }))
-
-const BARNAUL = { id: 5, name: 'Барнаул', region: 'Алтайский край', timeZoneId: 'Asia/Barnaul', utcOffsetMinutes: 420, label: 'Барнаул, Алтайский край' }
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -43,8 +39,6 @@ async function submitWhenReady(user: ReturnType<typeof userEvent.setup>) {
 
 async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Название *'), 'Шаурма на Ленина')
-  await user.click(screen.getByRole('combobox', { name: 'Город *' }))
-  await user.click(await screen.findByRole('option', { name: /Барнаул/ }))
   // the suggested address arrives after a short debounce; the field is required
   await waitFor(() => expect(screen.getByLabelText('Адрес магазина на goods *')).toHaveValue('shaurma-na-lenina'))
 }
@@ -55,7 +49,6 @@ beforeEach(() => {
     Promise.resolve(p.slug ? { slug: p.slug, available: true } : { slug: 'shaurma-na-lenina', available: true }),
   )
   getManifest.mockReset().mockResolvedValue({ documents: [{ type: 'TermsOwner', version: 'v7', title: 'x' }], uiTexts: [] })
-  searchCities.mockReset().mockResolvedValue([BARNAUL])
   useAuthStore.setState({ user: { id: 'u', phone: '79001234567', firstName: 'И', lastName: 'П', roles: ['Client'] }, token: 'old-token' })
 })
 
@@ -73,18 +66,19 @@ describe('CreateShopPage', () => {
     await user.click(submit)
 
     await screen.findByText('Каталог магазина')
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Шаурма на Ленина', slug: 'shaurma-na-lenina', cityId: 5, ownerTerms: { version: 'v7' } }))
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Шаурма на Ленина', slug: 'shaurma-na-lenina', ownerTerms: { version: 'v7' } }))
     expect(useAuthStore.getState().token).toBe('new-token')
   })
 
-  it('does not send anything without a city', async () => {
+  it('does not ask for a city: the request carries no cityId (the server puts the shop in Барнаул)', async () => {
+    create.mockResolvedValue({ shop: { id: 'shop-1' }, token: 'new-token' })
     const user = userEvent.setup()
     renderPage()
-    await user.type(screen.getByLabelText('Название *'), 'Шаурма')
-    await waitFor(() => expect(screen.getByLabelText('Адрес магазина на goods *')).toHaveValue('shaurma-na-lenina'))
+    expect(screen.queryByRole('combobox', { name: /Город/ })).toBeNull()
+    await fillRequired(user)
     await submitWhenReady(user)
-    expect(await screen.findByText('Укажите город магазина')).toBeInTheDocument()
-    expect(create).not.toHaveBeenCalled()
+    await screen.findByText('Каталог магазина')
+    expect(create.mock.calls[0][0]).not.toHaveProperty('cityId')
   })
 
   it('shows the server reason when the address is taken', async () => {

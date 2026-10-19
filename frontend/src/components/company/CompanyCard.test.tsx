@@ -8,7 +8,6 @@ const FULL: CompanyCardData = {
   phone: '79991234567',
   email: 'shop@example.com',
   address: 'Ленина, 1',
-  cityName: 'Барнаул',
   yandexMapsUrl: 'https://yandex.ru/maps/-/abc',
   twoGisUrl: 'https://2gis.ru/-/abc',
   photos: [],
@@ -67,7 +66,7 @@ describe('CompanyCard header (ARCHITECTURE_CYCLE31.md §31.11)', () => {
     expect(screen.getByTestId('company-card-actions')).toBeInTheDocument()
     expect(screen.queryByTestId('company-card-meta')).not.toBeInTheDocument()
     unmount()
-    render(<CompanyCard company={{ name: 'A', address: 'Ленина, 1', cityName: 'Барнаул', photos: [] }} />)
+    render(<CompanyCard company={{ name: 'A', address: 'Ленина, 1', photos: [] }} />)
     expect(screen.queryByTestId('company-card-actions')).not.toBeInTheDocument()
     expect(screen.getByTestId('company-card-meta')).toBeInTheDocument()
   })

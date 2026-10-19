@@ -14,7 +14,6 @@ const TEXTS: CompanyProfileTexts = {
   phoneLabel: 'Телефон для клиентов',
   emailLabel: 'Email для клиентов',
   emailHint: 'Виден на странице салона',
-  cityHint: 'Напоминания клиентам и срок переноса и отмены записи считаются по часовому поясу салона',
   addressHint: 'Адрес виден клиентам на странице салона',
   saveFailed: 'Не удалось сохранить профиль салона.',
   timeZoneChange: (from, to) =>

@@ -131,7 +131,7 @@ public class Cycle42ReminderTests(TestDatabaseFixture fixture) : Cycle39TestBase
         push.GetProperty("body").GetString().Should().NotContain("Анна").And.NotContain("http");
 
         var block = (await PageAsync(host, token)).GetProperty("sessionReminder");
-        block.GetProperty("text").GetString().Should().Contain("напоминаем о брони").And.Contain("(время местное,").And.NotContain("http").And.NotContain("Анна");
+        block.GetProperty("text").GetString().Should().Contain("напоминаем о брони").And.Contain("(время местное)").And.NotContain("http").And.NotContain("Анна");
 
         host.StaysClock.Set(start.AddHours(-2));
         await host.RunTaskAsync("stays-scheduled-messages");

@@ -9,18 +9,18 @@ import { stayFaq } from './stayFaq'
 export const stayLanding: LandingPanelConfig = {
   hero: {
     layout: 'panel',
-    eyebrow: 'Шерегеш · посуточно',
+    eyebrow: 'Дома · посуточно',
     title: { lead: 'Дом на склоне,', accent: 'а не номер в отеле' },
     intro: 'Свободные даты видны сразу. Бронь держится за вами, пока вы оплачиваете её напрямую владельцу — без комиссии с гостя.',
     howTo: { kind: 'anchor', href: '#guests-title', label: 'Как забронировать' },
     facts: [
-      { icon: 'map-pin', text: 'Только дома в Шерегеше' },
+      { icon: 'map-pin', text: 'Дома рядом со склоном' },
       { icon: 'calendar', text: 'Свободные даты видны сразу' },
       { icon: 'credit-card', text: 'Предоплата — напрямую владельцу' },
     ],
     backdrop: 'mountains',
   },
-  catalog: { id: 'houses', ariaLabel: 'Дома в Шерегеше' },
+  catalog: { id: 'houses', ariaLabel: 'Дома' },
   clients: {
     eyebrow: 'Для гостей',
     title: 'Забронируйте дом на свои даты — без звонков и переписки',

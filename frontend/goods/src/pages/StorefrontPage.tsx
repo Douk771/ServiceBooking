@@ -27,7 +27,6 @@ function toCardData(shop: StorefrontDto): CompanyCardData {
     phone: shop.phone,
     email: shop.email,
     address: shop.address,
-    cityName: shop.cityName,
     yandexMapsUrl: shop.yandexMapsUrl,
     twoGisUrl: shop.twoGisUrl,
     photos: shop.photos ?? [], // rollout window: an API on cycle 25 omits the field

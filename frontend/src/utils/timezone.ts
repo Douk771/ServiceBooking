@@ -11,10 +11,6 @@ export function formatUtcOffset(utcOffsetMinutes: number): string {
   return minutes === 0 ? `UTC${sign}${hours}` : `UTC${sign}${hours}:${String(minutes).padStart(2, '0')}`
 }
 
-export function formatCityTimeZone(cityLabel: string, utcOffsetMinutes: number, timeZoneId: string): string {
-  return `${cityLabel} → ${formatUtcOffset(utcOffsetMinutes)}, ${timeZoneId}`
-}
-
 /** Client-side offset of an arbitrary IANA zone — used ONLY to decide whether to show the confirmation. */
 export function utcOffsetMinutesOf(timeZoneId: string, at: Date = new Date()): number | null {
   try {
