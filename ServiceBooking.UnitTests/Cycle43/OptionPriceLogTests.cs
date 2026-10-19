@@ -15,7 +15,7 @@ public class OptionPriceLogTests
     [InlineData("notifications.max", 490, 490, true, true, false)]
     [InlineData("analytics", null, 490, true, true, false)]
     [InlineData("", null, 490, true, true, false)]
-    public void ShouldWrite_OnlyForAMessengerOptionWithARealChange(string code, double? oldPrice, double? newPrice, bool oldActive, bool newActive, bool expected) =>
+    public void ShouldWrite_OnlyForAMessengerOptionWithARealChange(string code, int? oldPrice, int? newPrice, bool oldActive, bool newActive, bool expected) =>
         OptionPriceLog.ShouldWrite(code, (decimal?)oldPrice, (decimal?)newPrice, oldActive, newActive).Should().Be(expected);
 
     [Fact]
