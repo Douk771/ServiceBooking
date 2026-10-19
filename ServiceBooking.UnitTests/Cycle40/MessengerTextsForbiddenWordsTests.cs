@@ -29,6 +29,46 @@ public class MessengerTextsForbiddenWordsTests
             yield return MessengerTexts.AlreadyHaveNumber(t);
             yield return MessengerTexts.PayFirst(t);
             yield return MessengerTexts.TestMessageBody(t);
+            // Cycle 43 (ARCHITECTURE_CYCLE43.md §43.10): outputs of the new text methods.
+            var date = new DateTime(2026, 11, 20, 9, 0, 0, DateTimeKind.Utc);
+            yield return MessengerTexts.CatalogMissing(t);
+            yield return MessengerTexts.PriceChangedByOtherAdmin(t);
+            yield return MessengerTexts.PriceChangedConflict(t, 490.5m);
+            yield return MessengerTexts.ConfirmTitle(t);
+            yield return MessengerTexts.ConsequenceStartsSelling(t);
+            yield return MessengerTexts.ConsequenceStopsSelling(t);
+            yield return MessengerTexts.ConsequencePaidAccounts(t, 0);
+            yield return MessengerTexts.ConsequencePaidAccounts(t, 21);
+            yield return MessengerTexts.ConsequenceZeroPrice(t);
+            yield return MessengerTexts.AmountText(3, 490.5m);
+            yield return MessengerTexts.NewPaidUntilText(date);
+            yield return MessengerTexts.ExtendActionText(true, 3);
+            yield return MessengerTexts.ExtendActionText(false, 3);
+            yield return MessengerTexts.StatusEnding(date);
+            yield return MessengerTexts.StatusTrial(null);
+            yield return MessengerTexts.StatusTrial(date);
+            yield return MessengerTexts.StatusPaid(null);
+            yield return MessengerTexts.StatusExpired(true, date);
+            yield return MessengerTexts.StatusExpired(false, null);
+            yield return MessengerTexts.NumberBoundText("+7 9** ***-**-12");
+            yield return MessengerTexts.PriceLineText(null);
+            yield return MessengerTexts.OwnerTotalText(490m);
+            yield return MessengerTexts.DisableConfirmText(t, date);
+            yield return MessengerTexts.NothingToDisableNotConnected(t);
+            yield return MessengerTexts.NothingToDisableExpired(t);
+            yield return MessengerTexts.DisableTrialWithoutDate(t);
+            yield return MessengerTexts.DisablePaymentWithoutDate(t);
+            yield return MessengerTexts.DisableAlreadyScheduled(t, date);
+            yield return MessengerTexts.OptionsSummary(t, true, date);
+            yield return MessengerTexts.OptionsSummary(t, false, null);
+            yield return MessengerTexts.ExtendHistoryComment(t, true, 3, 490m, "по счёту");
+            yield return MessengerTexts.DisableHistoryComment(t, date, "по заявлению");
+            foreach (var reason in Enum.GetValues<API.Services.Notifications.Funding.MessengerSaleReason>())
+            {
+                yield return MessengerTexts.NotSellableConflict(t, reason);
+                yield return MessengerTexts.ConsequenceNotSellable(t, reason);
+                yield return MessengerTexts.SaleText(reason);
+            }
             yield return MessengerTexts.StaffConsentLabel([t]);
             yield return ChannelPresentation.TransportConnectionNotice(t) ?? "";
             foreach (var line in MessengerTexts.QrInstruction(t)) yield return line;
