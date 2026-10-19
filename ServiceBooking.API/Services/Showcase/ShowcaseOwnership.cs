@@ -106,6 +106,7 @@ public static class ShowcaseOwnership
     {
         ["NotificationChannels"] = "showcase accounts own no notification numbers (mixing with real accounts is forbidden, sending is suppressed)",
         ["ChannelOptionChangeLogs"] = "cycle 40: journal of the channel options; showcase accounts own no notification numbers (ARCHITECTURE_CYCLE40.md §40.2.3)",
+        ["SubscriptionOptionPriceChangeLogs"] = "cycle 43: journal of option price changes; showcase and demo never write it (ARCHITECTURE_CYCLE43.md §43.2.1)",
         ["StaysSettings"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
         ["Houses"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",
         ["HousePhotos"] = "cycle 37: the \"Дома\" vertical has no showcase (ARCHITECTURE_CYCLE37.md §37.3.2)",

@@ -6,6 +6,9 @@ import { fmtDate } from '@/utils/dateFormat'
 import { bathsCompaniesApi } from '../../api/bathsCompanies'
 import { isTrialTermsMismatch, trialErrorMessage } from '../../cabinet/trialOutcome'
 
+/** Cycle 43 (ARCHITECTURE_CYCLE43.md §43.8.3): the «Мессенджеры» button of the subscription leads to the company's notifications section and opens the wizard of the transport. */
+const notificationsHref = (companyId: string, transport: string) => `/cabinet/${companyId}/notifications?connect=${transport}`
+
 /**
  * `/cabinet/subscription` (owner) — «Ваша подписка» of the «Бани» line. The screen is ezbook's own component (ARCHITECTURE_CYCLE42.md §42.12.3):
  * same texts and request flow, `line="Baths"` switches it to resources and the plans from `availablePlans`. Above it, the trial of the line:
@@ -15,7 +18,7 @@ export function SubscriptionPage() {
   return (
     <>
       <BathsTrialSection />
-      <BillingPage line="Baths" />
+      <BillingPage line="Baths" notificationsHref={notificationsHref} />
     </>
   )
 }

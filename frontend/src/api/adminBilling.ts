@@ -5,6 +5,18 @@ import type { components as Cycle19Schemas } from '../types/api-cycle19.generate
 import type { components as Cycle20Schemas } from '../types/api-cycle20.generated'
 import type { components as Cycle24Schemas } from '../types/api-cycle24.generated'
 import type { components as Cycle28Schemas } from '../types/api-cycle28.generated'
+import type { components as Cycle43Schemas } from '../types/api-cycle43.generated'
+import type {
+  AdminMessengerOption,
+  AdminMessengerOptions,
+  DisableMessengerInput,
+  ExtendMessengerInput,
+  MessengerPriceInput,
+  MessengerPricePreview,
+  MessengerQuote,
+  NotificationTransport,
+  UpdateMessengerPriceInput,
+} from '../types'
 import type { ShowcaseFilter } from '../utils/showcaseFilter'
 import type { SubscriptionRequestDto } from './billing'
 
@@ -14,6 +26,9 @@ type Cycle19 = Cycle19Schemas['schemas']
 type Cycle20 = Cycle20Schemas['schemas']
 type Cycle24 = Cycle24Schemas['schemas']
 type Cycle28 = Cycle28Schemas['schemas']
+
+/** Cycle 43 (API_CONTRACT_CYCLE43.md §43.28): the account card gets `messengers[]` and `messengersMonthlyTotal` in the END; `options[]` no longer carries WhatsApp/MAX. */
+type Cycle43AccountPart = Cycle43Schemas['schemas']['AdminBillingAccountCycle43Part']
 
 /** Cycle 24 (API_CONTRACT_CYCLE24.md §485.3) — the account's «Заказы» subscription block and the request line. Additive. */
 export type AdminOrdersSubscription = Cycle24['AdminOrdersSubscriptionDto']
@@ -49,7 +64,7 @@ export type AdminBillingAccountListItem = Schemas['AdminBillingAccountListItemDt
   // Cycle 28 (API_CONTRACT_CYCLE28.md §594.2) — the list item gets `isShowcase`; optional so an older server still type-checks.
   Partial<Pick<Cycle28['AdminBillingAccountItem'], 'isShowcase'>>
 export type AdminBillingAccount = Omit<Schemas['AdminBillingAccountDto'], 'pendingRequest'> &
-  Cycle18['AdminBillingAccountDtoTrialPatch'] & { pendingRequest?: SubscriptionRequestDto | null; ordersSubscription?: AdminOrdersSubscription | null; staysSubscription?: AdminStaysSubscription | null; bathsSubscription?: AdminBathsSubscription | null }
+  Cycle18['AdminBillingAccountDtoTrialPatch'] & Pick<Cycle43AccountPart, 'messengers' | 'messengersMonthlyTotal'> & { pendingRequest?: SubscriptionRequestDto | null; ordersSubscription?: AdminOrdersSubscription | null; staysSubscription?: AdminStaysSubscription | null; bathsSubscription?: AdminBathsSubscription | null }
 export type AdminSubscribedOption = Schemas['AdminSubscribedOptionDto']
 /** Cycle 20 (US-20-02, API_CONTRACT_CYCLE20.md §433.1) adds `reasonCode`/`reasonDetails` in the
  *  request body — same `AssignOptionInput`/log shapes otherwise. */
@@ -126,4 +141,31 @@ export const adminBillingApi = {
 
   rejectRequest: (id: string, comment?: string) =>
     api.post<void>(`/admin/subscription-requests/${id}/reject`, comment ? { comment } : {}),
+
+  // ── Cycle 43 (API_CONTRACT_CYCLE43.md §43.22–§43.27), SuperAdmin. 400/409 arrive as a bare Russian string (text/plain) — show it verbatim.
+
+  /** GET /api/admin/messenger-options (§43.22) — both messenger options, the sale verdict, the price journal and the server hints. */
+  messengerOptions: () => api.get<AdminMessengerOptions>('/admin/messenger-options').then((r) => r.data),
+
+  /** POST …/{transport}/price/preview (§43.23) — consequences of a price change, nothing is written. */
+  previewMessengerPrice: (transport: NotificationTransport, body: MessengerPriceInput) =>
+    api.post<MessengerPricePreview>(`/admin/messenger-options/${transport}/price/preview`, body).then((r) => r.data),
+
+  /** PUT …/{transport}/price (§43.24) — saves the price (and activity); the answer is the fresh option row. */
+  updateMessengerPrice: (transport: NotificationTransport, body: UpdateMessengerPriceInput) =>
+    api.put<AdminMessengerOption>(`/admin/messenger-options/${transport}/price`, body).then((r) => r.data),
+
+  /** GET …/billing-accounts/{id}/messengers/{transport}/quote?months=N (§43.25). */
+  messengerQuote: (accountId: string, transport: NotificationTransport, months: number) =>
+    api
+      .get<MessengerQuote>(`/admin/billing-accounts/${accountId}/messengers/${transport}/quote`, { params: { months } })
+      .then((r) => r.data),
+
+  /** POST …/extend (§43.26) — connect or renew; the answer is the account card. */
+  extendMessenger: (accountId: string, transport: NotificationTransport, body: ExtendMessengerInput) =>
+    api.post<AdminBillingAccount>(`/admin/billing-accounts/${accountId}/messengers/${transport}/extend`, body).then((r) => r.data),
+
+  /** POST …/disable (§43.27, P1) — the answer is the account card. */
+  disableMessenger: (accountId: string, transport: NotificationTransport, body: DisableMessengerInput) =>
+    api.post<AdminBillingAccount>(`/admin/billing-accounts/${accountId}/messengers/${transport}/disable`, body).then((r) => r.data),
 }

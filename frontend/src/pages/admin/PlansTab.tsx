@@ -16,6 +16,8 @@ import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
 import { getPlanErrorMessage } from '../../utils/planError'
 import { planStateLabel, type PlanStateTone } from './planState'
+import { excludeMessengerOptions } from './messengerOptionsHelpers'
+import { useMessengerOptions } from './useMessengerOptions'
 import {
   MAX_HIGHLIGHTS,
   PUBLIC_MAX_HIGHLIGHTS,
@@ -109,6 +111,13 @@ export function PlansTab() {
     queryKey: ['admin-options'],
     queryFn: plansApi.listOptions,
   })
+
+  // Cycle 43 (§43.5.3): WhatsApp / MAX are not a plan feature — the matrix lists the other options and a server note points to the notifications tab.
+  const { data: messengerOptions } = useMessengerOptions()
+  const planOptions = catalogOptions
+    ? excludeMessengerOptions(catalogOptions, (messengerOptions?.items ?? []).map((i) => i.optionId))
+    : catalogOptions
+  const matrixNote = messengerOptions?.planMatrixNote ?? 'Мессенджеры WhatsApp и MAX подключаются отдельно от тарифа. Цена — во вкладке уведомлений'
 
   const formToPayload = (): AdminPlanInput => ({
     name: form.name,
@@ -831,10 +840,13 @@ export function PlansTab() {
                   Не удалось загрузить каталог опций. Матрица недоступна, остальные поля тарифа можно сохранить как
                   обычно.
                 </p>
-              ) : catalogOptions && catalogOptions.length > 0 ? (
-                <div className="rounded-xl border border-line px-3">{catalogOptions.map(renderOptionRow)}</div>
+              ) : planOptions && planOptions.length > 0 ? (
+                <>
+                  <div className="rounded-xl border border-line px-3">{planOptions.map(renderOptionRow)}</div>
+                  <p className="text-xs text-muted mt-2">{matrixNote}</p>
+                </>
               ) : (
-                <p className="text-xs text-muted">Опций в каталоге ещё нет</p>
+                <p className="text-xs text-muted">{matrixNote}</p>
               )}
             </div>
 

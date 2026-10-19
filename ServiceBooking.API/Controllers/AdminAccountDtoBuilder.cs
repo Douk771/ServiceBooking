@@ -28,7 +28,8 @@ internal static class AdminAccountDtoBuilder
 
         // ARCHITECTURE_CYCLE19.md §386.1 — retired limit options never contribute to totalMonthlyPrice
         // or the "options" surfaces shown here.
-        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
+        // ARCHITECTURE_CYCLE43.md §43.28: the messenger options moved out of options[] into messengers[].
+        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().WhereNotMessenger().Include(o => o.Option)
             .Where(o => o.BillingAccountId == account.Id).Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now).ToListAsync();
         var planRules = sub?.PlanConfigId is { } planId ? await db.PlanOptionRules.Where(r => r.PlanConfigId == planId).ToListAsync() : [];
 
@@ -84,7 +85,9 @@ internal static class AdminAccountDtoBuilder
             };
         }).ToList();
 
-        var totalMonthlyPrice = (sub?.PlanConfig?.PricePerMonth ?? 0m) + optionDtos.Sum(o => o.pricePerMonth);
+        var messengers = AdminMessengerLinesBuilder.Build(messaging, now);
+        var messengersMonthlyTotal = AdminMessengerLinesBuilder.Total(messaging);
+        var totalMonthlyPrice = (sub?.PlanConfig?.PricePerMonth ?? 0m) + optionDtos.Sum(o => o.pricePerMonth) + messengersMonthlyTotal;
 
         var pendingRequest = ownerSubscriptionService.BuildPendingRequestDto(
             account, subscribedOptions.Select(o => o.Option).Concat(await db.SubscriptionOptions.ToListAsync()).DistinctBy(o => o.Id).ToList(),
@@ -142,6 +145,9 @@ internal static class AdminAccountDtoBuilder
             staysSubscription = await BuildStaysSubscriptionAsync(db, account, now),
             // ARCHITECTURE_CYCLE42.md §42.5.5 — the «Бани» block next to the «Дома» one: same fields, resources instead of houses.
             bathsSubscription = await BuildBathsSubscriptionAsync(db, account, now),
+            // ARCHITECTURE_CYCLE43.md §43.28 — new at the end: the two messenger lines and their part of the total.
+            messengers,
+            messengersMonthlyTotal,
         };
     }
 

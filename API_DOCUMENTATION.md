@@ -4748,6 +4748,41 @@ JSON** с `code` и готовым `message`; 401/403/404 — пустое те�
 Фактические отличия от `contracts/cycle42/openapi.yaml`: `BathsConflictDto` на деле содержит ещё `conflictingPeriod` и `conflicts` (всегда `null` у `slug-check`) — долг C42-1 в `CURRENT_STATE.md`;
 `push-subscription` при выключенном web-push отвечает 409 строкой.
 
+## 4.24. Опции мессенджеров WhatsApp и MAX: цена из админки, подключение отдельно от тарифа (цикл 43; НЕ ВЫПУЩЕНО — доступно с ветки `cycle/043-messenger-options-pricing`, на боевом адресе появится с релизом цикла 43)
+
+Документ отражает **фактическую реализацию**; контракт до кода — `API_CONTRACT_CYCLE43.md` (§43.20–§43.34), форма — `contracts/cycle43/openapi.yaml` (+ `openapi.json`), эталон правил — `contracts/cycle43/messenger-vectors.json`.
+Все новые маршруты — только `SuperAdmin` (401/403 — пустое тело). `{transport}` — `WhatsApp` или `Max` по имени без учёта регистра; неизвестное значение — 404 с пустым телом.
+Тела осознанных 400/409 — голая строка `text/plain`, по-русски; фронт показывает её дословно.
+
+### Новые маршруты
+
+| Метод и путь | Назначение |
+|---|---|
+| `GET /api/admin/messenger-options` | две строки (WhatsApp, MAX): цена, активность, «открыто», итог продажи (`sale`), число аккаунтов с действующей оплатой, последние 50 записей журнала цены; подсказки `planMatrixNote`, `priceHint` |
+| `POST /api/admin/messenger-options/{transport}/price/preview` | последствия смены цены без записи (`consequences[]`, `startsSelling`, `stopsSelling`, `isZeroPrice`) |
+| `PUT /api/admin/messenger-options/{transport}/price` | сохранить цену и, по желанию, активность; обязательны причина и ожидаемые старые значения; 200 — свежее состояние строки |
+| `GET /api/admin/billing-accounts/{id}/messengers/{transport}/quote?months=1..24` | расчёт подключения/продления: сумма, текст, «будет оплачено до» |
+| `POST /api/admin/billing-accounts/{id}/messengers/{transport}/extend` | подключить или продлить на 1…24 месяца; 200 — карточка аккаунта |
+| `POST /api/admin/billing-accounts/{id}/messengers/{transport}/disable` | отключить сейчас или по окончании оплаты; причина обязательна; 200 — карточка аккаунта |
+
+### Правила, которые закреплены кодом
+
+* **Продаётся** (`ChannelOptionAvailability.Explain`): открыто ∧ активно ∧ цена задана (0 — задана) ∧ оферта `TermsOwner` опубликована; первая неуспешная проверка — причина (`Closed`, `Inactive`, `NoPrice`, `OfferNotPublished`).
+  Подключить, продлить и «Подтвердить оплату» можно только продаваемый мессенджер, иначе 409 с текстом причины.
+* **Одно правило суммы и статуса** (`MessengerLineRule`): список аккаунтов, карточка, `GET /api/profile` и «Подписка» владельца берут сумму и текст статуса из него. Мессенджеры ушли из `options[]` карточки аккаунта и «Подписки» в `messengers`.
+* **Продление** считается от `max(сейчас, конец оплаты)`; пробная строка выкупается; назначенное отключение снимается; повтор запроса — ещё одно продление. Всё под замком `billing-account:{id}` в одной транзакции вместе с журналами (`ChannelOptionChangeLogs` с ценой/месяцами/суммой и `SubscriptionChangeLogs`).
+* **Смена цены** не меняет оплаченные периоды; после коммита сбрасываются кеш публичных цен и кеш каталога мессенджеров. Журнал `SubscriptionOptionPriceChangeLogs` пишется и на старом `PUT|DELETE /api/admin/options/{id}` (`source = OptionsCatalogApi`).
+* **Тарифы не знают о мессенджерах:** `POST|PUT /api/admin/plans` и форма `PUT /api/admin/billing-accounts/{id}/subscription` молча игнорируют строки WhatsApp и MAX; `GET /api/admin/plans` их не отдаёт.
+
+### Изменения существующих маршрутов
+
+`GET /api/admin/billing-accounts/{id}` — `options[]` без мессенджеров, в конец добавлены `messengers[]` и `messengersMonthlyTotal`, `totalMonthlyPrice` включает их; `GET /api/admin/billing-accounts` и `GET /api/profile` — тот же итог;
+`GET /api/billing/subscription` — `options[]`/`totalMonthlyPrice` без мессенджеров, в конец добавлен `messengers` (блок владельца, `null`, если показывать нечего); `POST /api/admin/notification-channels/{id}/confirm-payment` —
+необязательный `expectedPricePerMonth`, новые 409 (неактивна, нет цены, оферта не опубликована, цена изменилась), в `ChannelPaymentLogs.Amount` пишется сумма.
+
+Фактические отличия от `contracts/cycle43/openapi.yaml` (дополнения, не меняющие формы успешных ответов): 400 «Укажите цену или null, чтобы снять цену» при отсутствии поля `pricePerMonth` в `preview`/`PUT price`;
+400 «Укажите, когда отключить: сейчас или по окончании оплаты» при отсутствии `when` в `disable`.
+
 ## 6. Справочник кодов ответа
 
 | Код | Когда встречается |

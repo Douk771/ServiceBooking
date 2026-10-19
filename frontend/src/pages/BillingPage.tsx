@@ -1,4 +1,3 @@
-import { MessengerAddonLines } from '../components/pricing/MessengerAddonLines'
 import { useEffect, useState } from 'react'
 import { AxiosError } from 'axios'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -17,6 +16,8 @@ import { TrialExpiredNotice } from '../components/billing/TrialExpiredNotice'
 import { TrialActivationTerms } from '../components/billing/TrialActivationTerms'
 import { OperatorDetailsSection } from '../components/billing/OperatorDetailsSection'
 import { BillingNoticesSummary } from '../components/billing/BillingNoticesSummary'
+import { MessengersBlock } from '../components/billing/MessengersBlock'
+import type { NotificationTransport } from '../types'
 
 /**
  * Owner screen "Ваша подписка" (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41. One request
@@ -27,7 +28,16 @@ import { BillingNoticesSummary } from '../components/billing/BillingNoticesSumma
  * real endpoint from the contract, so it lights up unchanged once the backend exists; until then it
  * renders the error state below (also exercised by unit tests via a mocked client).
  */
-export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) {
+interface BillingPageProps {
+  line?: BillingLine
+  /** Cycle 43 (§43.8.3): where the notifications section of a company is on THIS site; the transport goes in as `?connect=`.
+   *  Default is ezbook's company page. */
+  notificationsHref?: (companyId: string, transport: NotificationTransport) => string
+}
+
+const defaultNotificationsHref = (companyId: string, transport: NotificationTransport) => `/owner/company/${companyId}?tab=notifications&connect=${transport}`
+
+export function BillingPage({ line = 'Services', notificationsHref = defaultNotificationsHref }: BillingPageProps = {}) {
   const qc = useQueryClient()
   // Cycle 24: goods mounts this same screen with line="Orders" (ARCHITECTURE_CYCLE24.md §462.2 п.2); cycle 37: dom with line="Stays"
   // (ARCHITECTURE_CYCLE37.md §37.10.4). Without the prop nothing below differs from before: same query key, same request, same blocks.
@@ -292,8 +302,6 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
           {options.length > 0 && ` + ${options.length} опц.`}
         </p>
 
-        <MessengerAddonLines addons={data.messengerAddons} note={data.messengerAddonsNote} />
-
         <dl className="grid gap-2 text-sm text-ink-soft mb-2">
           <div className="flex justify-between">
             <dt>{data.usage.companiesText}</dt>
@@ -329,6 +337,9 @@ export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) 
           )}
         </dl>
       </Card>
+
+      {/* Cycle 43 (§43.8.3, А5): WhatsApp / MAX are no longer in options[] / totalMonthlyPrice — their own block, with its own monthly total. */}
+      <MessengersBlock block={data.messengers} notificationsHref={notificationsHref} />
 
       {options.length > 0 && (
         <Card className="p-[26px] mb-6">

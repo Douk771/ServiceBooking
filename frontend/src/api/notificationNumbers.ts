@@ -12,7 +12,8 @@ export type AdminChannelDto = Schemas['AdminChannelDto']
 export type AdminChannelListDto = Schemas['AdminChannelListDto']
 export type AdminChannelSummaryDto = Schemas['AdminChannelSummaryDto']
 export type AdminChannelCardDto = Schemas['AdminChannelCardDto']
-export type ConfirmChannelPaymentInput = Schemas['ConfirmChannelPaymentInput']
+/** Cycle 43 (§43.30): the same body plus an optional `expectedPricePerMonth` taken from the account's messenger quote. */
+export type ConfirmChannelPaymentInput = Schemas['ConfirmChannelPaymentInput'] & { expectedPricePerMonth?: number | null }
 export type PaymentFilter = Schemas['PaymentFilter']
 
 /** Ключ запроса блока «Номера»; после любого действия — invalidateQueries (§40.15.1). */

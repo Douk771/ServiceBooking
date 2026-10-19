@@ -85,7 +85,7 @@ public class AdminChannelsController(AppDbContext db, ChannelFundingReader fundi
     }
 
     /// <summary>API_CONTRACT_CYCLE40.md §40.37 — the manual confirmation of a payment (the «Оплата» step of the owner's wizard is an application the SuperAdmin confirms).
-    /// Order of refusals: 404; months not 1..12 → 400; comment &gt; 500 → 400; replaced → 409; no option in the catalog → 409; option closed → 409.</summary>
+    /// Order of refusals: 404; months not 1..12 → 400; comment &gt; 500 → 400; replaced → 409; no account → 409; no option in the catalog → 409; option not for sale (closed, inactive, no price, offer not published) → 409; price changed → 409 (API_CONTRACT_CYCLE43.md §43.30).</summary>
     [HttpPost("notification-channels/{id:guid}/confirm-payment")]
     public async Task<ActionResult<AdminChannelCardDto>> ConfirmNotificationChannelPayment(Guid id, [FromBody] ConfirmChannelPaymentInput input, CancellationToken ct)
     {
@@ -94,7 +94,7 @@ public class AdminChannelsController(AppDbContext db, ChannelFundingReader fundi
         if (input.Months is < 1 or > 12) return BadRequest("Срок — от 1 до 12 месяцев");
         if (input.Comment is { Length: > 500 }) return BadRequest("Комментарий — не длиннее 500 символов");
 
-        var result = await adminChannels.ConfirmPaymentAsync(channel, input.Months, input.Comment, User.FindFirstValue(ClaimTypes.NameIdentifier)!, ct);
+        var result = await adminChannels.ConfirmPaymentAsync(channel, input.Months, input.Comment, input.ExpectedPricePerMonth, User.FindFirstValue(ClaimTypes.NameIdentifier)!, ct);
         if (!result.Ok) return StatusCode(result.Status!.Value, result.Text);
 
         return Ok(await adminChannels.BuildCardAsync(id, ct));
@@ -171,6 +171,7 @@ public record AdminChannelCardDto(
     IReadOnlyList<ServiceBooking.API.DTOs.Notifications.ChannelCompanyDto> Companies, IReadOnlyList<AdminChannelStateEventDto> StateEvents,
     IReadOnlyList<AdminChannelPaymentEventDto> PaymentEvents, IReadOnlyList<string> AvailableActions);
 
-public record ConfirmChannelPaymentInput(int Months, string? Comment);
+// Cycle 43 (API_CONTRACT_CYCLE43.md §43.30): ExpectedPricePerMonth is appended and optional — when sent and different from the price, the answer is 409.
+public record ConfirmChannelPaymentInput(int Months, string? Comment, decimal? ExpectedPricePerMonth = null);
 
 public record AdminChannelSuspendDto(string? Comment);

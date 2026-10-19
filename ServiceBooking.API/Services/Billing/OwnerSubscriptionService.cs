@@ -54,7 +54,7 @@ public class OwnerSubscriptionService(
 
         // ARCHITECTURE_CYCLE19.md §386.1 — retired limit options never show up as "subscribed" for the
         // owner either, regardless of any leftover row.
-        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
+        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().WhereNotMessenger().Include(o => o.Option)
             .Where(o => o.BillingAccountId == account.Id)
             .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now)
             .ToListAsync();
@@ -69,7 +69,8 @@ public class OwnerSubscriptionService(
         var companies = await db.Companies.Where(c => c.BillingAccountId == account.Id).ToListAsync();
         var companyIds = companies.Select(c => c.Id).ToList();
         var seatsByCompany = await usageReader.GetCompanySeatsAsync(companyIds);
-        var hasNumber = await AccountHasWorkingNumberAsync(account.Id);
+        var messaging = await messagingReader.ForAccountAsync(account.Id); // ARCHITECTURE_CYCLE43.md §43.4.3: ONE read per build
+        var hasNumber = HasWorkingNumber(messaging);
 
         var status = SubscriptionStatusFor(sub, now);
         var statusText = StatusTextFor(status, sub?.PaidUntil);
@@ -79,7 +80,7 @@ public class OwnerSubscriptionService(
 
         var numbersRegistered = await db.NotificationChannels
             .CountAsync(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced);
-        var (numbersPaid, numbersText) = await NumbersAsync(account.Id);
+        var (numbersPaid, numbersText) = Numbers(messaging);
 
         // Cycle 18, API_CONTRACT_CYCLE18.md §365 (Д3) — "деградация = заморозка": going over a limit
         // (e.g. a trial ending and the account falling back to the Free plan's tighter limits) never
@@ -157,7 +158,8 @@ public class OwnerSubscriptionService(
             "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays, isExpiringSoon,
             usageDto, coveredCompanies, warning, availableOptions, pendingRequest, CanRequestChanges: true,
             LastRejectedRequest: lastRejectedRequest, Trial: trial,
-            MessengerAddons: addons, MessengerAddonsNote: addonsNote);
+            MessengerAddons: addons, MessengerAddonsNote: addonsNote,
+            Messengers: await BuildMessengersAsync(account, CompanyKind.Services, messaging));
     }
 
     /// <summary>"Free" (no subscription of the line), "Expired" (not active / past its date), "Active" — the same three words as the "Записи" line.</summary>
@@ -178,7 +180,7 @@ public class OwnerSubscriptionService(
         var planConfig = plan.PlanId is { } planId ? await db.SubscriptionPlanConfigs.AsNoTracking().FirstOrDefaultAsync(p => p.Id == planId) : null;
 
         // The purchased options belong to the ACCOUNT and are shared by both lines; what differs is the availability rule of the tariff of THIS line.
-        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
+        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().WhereNotMessenger().Include(o => o.Option)
             .Where(o => o.BillingAccountId == account.Id && (o.EndsAtUtc == null || o.EndsAtUtc > now)).ToListAsync();
         var planRules = plan.PlanId is { } rulesPlanId
             ? await db.PlanOptionRules.Where(r => r.PlanConfigId == rulesPlanId).ToListAsync()
@@ -188,14 +190,15 @@ public class OwnerSubscriptionService(
         var shops = await db.Companies.AsNoTracking().Where(c => c.BillingAccountId == account.Id && c.Kind == CompanyKind.Orders).ToListAsync();
         var usage = (await usageReader.GetAsync([account.Id], CompanyKind.Orders)).GetValueOrDefault(account.Id) ?? new AccountUsage(account.Id, 0, 0);
         var seatsByCompany = await usageReader.GetCompanySeatsAsync(shops.Select(c => c.Id).ToList());
-        var hasNumber = await AccountHasWorkingNumberAsync(account.Id);
+        var messaging = await messagingReader.ForAccountAsync(account.Id); // ARCHITECTURE_CYCLE43.md §43.4.3: ONE read per build
+        var hasNumber = HasWorkingNumber(messaging);
 
         var status = OrdersStatusFor(sub, now);
         var expiresInDays = BillingCalculator.ExpiresInDays(sub?.PaidUntil, now);
         var isExpiringSoon = sub?.PlanConfig is not null && BillingCalculator.IsExpiringSoon(sub.PaidUntil, sub.PlanConfig.NotifyDaysBefore, now);
 
         var numbersRegistered = await db.NotificationChannels.CountAsync(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced);
-        var (numbersPaid, numbersText) = await NumbersAsync(account.Id);
+        var (numbersPaid, numbersText) = Numbers(messaging);
 
         // "Frozen degradation" (Д3): being over the limits after a downgrade forbids ADDING, nothing is switched off. Counted within the line.
         var overShops = plan.IsFreeTier && plan.MaxShops is { } maxShops ? Math.Max(0, usage.CompaniesUsed - maxShops) : 0;
@@ -252,7 +255,8 @@ public class OwnerSubscriptionService(
         return new OwnerSubscriptionDto(
             "RUB", status, StatusTextFor(status, sub?.PaidUntil), planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays, isExpiringSoon,
             usageDto, coveredShops, warning, availableOptions, pendingRequest, CanRequestChanges: true, LastRejectedRequest: lastRejected, Trial: null,
-            Line: nameof(CompanyKind.Orders), Orders: ordersDto, AvailablePlans: availablePlans);
+            Line: nameof(CompanyKind.Orders), Orders: ordersDto, AvailablePlans: availablePlans,
+            Messengers: await BuildMessengersAsync(account, CompanyKind.Orders, messaging));
     }
 
     /// <summary>
@@ -270,7 +274,7 @@ public class OwnerSubscriptionService(
         var published = await slotPlans.CountPublishedUnitsAsync(vertical, account.Id);
         var (level, text) = Stays.StaysPlanResolver.Warning(plan, published, now, vertical.Unit);
 
-        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
+        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().WhereNotMessenger().Include(o => o.Option)
             .Where(o => o.BillingAccountId == account.Id && (o.EndsAtUtc == null || o.EndsAtUtc > now)).ToListAsync();
         var planRules = plan.PlanId is { } rulesPlanId ? await db.PlanOptionRules.Where(r => r.PlanConfigId == rulesPlanId).ToListAsync() : [];
         var optionDtos = subscribedOptions.Select(o => ToSubscribedOptionDto(o, planRules)).ToList();
@@ -278,10 +282,11 @@ public class OwnerSubscriptionService(
         var companies = await db.Companies.AsNoTracking().Where(c => c.BillingAccountId == account.Id && c.Kind == kind).ToListAsync();
         var companyIds = companies.Select(c => c.Id).ToList();
         var seatsByCompany = await usageReader.GetCompanySeatsAsync(companyIds);
-        var hasNumber = await AccountHasWorkingNumberAsync(account.Id);
+        var messaging = await messagingReader.ForAccountAsync(account.Id); // ARCHITECTURE_CYCLE43.md §43.4.3: ONE read per build
+        var hasNumber = HasWorkingNumber(messaging);
         var staff = seatsByCompany.Values.Sum();
         var numbersRegistered = await db.NotificationChannels.CountAsync(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced);
-        var (numbersPaid, numbersText) = await NumbersAsync(account.Id);
+        var (numbersPaid, numbersText) = Numbers(messaging);
         var usageDto = new SubscriptionUsageDto(
             companies.Count, null, staff, null, $"Сотрудников: {staff}", $"Компаний: {companies.Count}",
             numbersPaid, numbersRegistered, numbersText);
@@ -317,7 +322,8 @@ public class OwnerSubscriptionService(
             warning, availableOptions, pendingRequest, CanRequestChanges: true, LastRejectedRequest: lastRejected, Trial: null,
             Line: kind.ToString(), Orders: null, AvailablePlans: availablePlans,
             Stays: isBaths ? null : new StaysSubscriptionBlockDto(published, plan.MaxHouses, plan.IsTrial, plan.IsTrial ? plan.PaidUntilUtc : null, level, text),
-            Baths: isBaths ? new BathsSubscriptionBlockDto(published, plan.MaxResources, plan.IsTrial, plan.IsTrial ? plan.PaidUntilUtc : null, level, text) : null);
+            Baths: isBaths ? new BathsSubscriptionBlockDto(published, plan.MaxResources, plan.IsTrial, plan.IsTrial ? plan.PaidUntilUtc : null, level, text) : null,
+            Messengers: await BuildMessengersAsync(account, kind, messaging));
     }
 
     /// <summary>"до N дома/ресурсов" for a limited plan of a slot line, the "no limit" phrase otherwise. "Дома" keeps its cycle-37 words byte for byte.</summary>
@@ -433,12 +439,21 @@ public class OwnerSubscriptionService(
     /// entry per SHOWN transport (it is sold, or the account has its number or its payment), joined by "; ".</summary>
     /// <summary>Cycle 40 (§40.4.2 #9): a number serves EVERY company of the account, so <c>hasNumber</c> of a company is "the account has a
     /// working number" (a routable transport whose first number is connected, the service on), not "this company was assigned".</summary>
-    private async Task<bool> AccountHasWorkingNumberAsync(Guid accountId) =>
-        (await messagingReader.ForAccountAsync(accountId)) is { } state && state.Transports.Any(t => t.Working);
-
-    private async Task<(int Paid, string Text)> NumbersAsync(Guid accountId)
+    /// <summary>ARCHITECTURE_CYCLE43.md §43.8 — the «Сообщения клиентам в мессенджеры» block of the screen of one line; the target company of the button
+    /// is the first company (by creation date) of the account of this line's kind.</summary>
+    private async Task<OwnerMessengersBlockDto?> BuildMessengersAsync(BillingAccount account, CompanyKind line, AccountMessagingState? messaging)
     {
-        var state = await messagingReader.ForAccountAsync(accountId);
+        if (messaging is null) return null;
+        var targetCompanyId = await db.Companies.AsNoTracking()
+            .Where(c => c.BillingAccountId == account.Id && c.Kind == line)
+            .OrderBy(c => c.CreatedAt).ThenBy(c => c.Id).Select(c => (Guid?)c.Id).FirstOrDefaultAsync();
+        return OwnerMessengersBlockBuilder.Build(messaging, targetCompanyId);
+    }
+
+    private static bool HasWorkingNumber(AccountMessagingState? state) => state is not null && state.Transports.Any(t => t.Working);
+
+    private static (int Paid, string Text) Numbers(AccountMessagingState? state)
+    {
         if (state is null) return (0, string.Empty);
         var shown = state.Transports
             .Where(t => t.Option.Sellable || t.Primary is not null || t.Payment.Paid)

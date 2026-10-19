@@ -39,7 +39,9 @@ public record OwnerSubscriptionDto(
     IReadOnlyList<MessengerAddonDto>? MessengerAddons = null,
     MessengerAddonsNoteDto? MessengerAddonsNote = null,
     // Cycle 42 (API_CONTRACT_CYCLE42.md §42.5.5) — the «Бани» block; set only when Line = Baths.
-    BathsSubscriptionBlockDto? Baths = null);
+    BathsSubscriptionBlockDto? Baths = null,
+    // Cycle 43 (API_CONTRACT_CYCLE43.md §43.31) — the messenger lines of the account, common for all its companies; null when there is nothing to show.
+    OwnerMessengersBlockDto? Messengers = null);
 
 /// <summary>Published resources against the limit of the «Бани» tariff, the trial and the banner level (the same words as BathsPlanSummaryDto).</summary>
 public record BathsSubscriptionBlockDto(int ResourcesPublished, int? MaxResources, bool IsTrial, DateTime? TrialEndsAtUtc, string WarningLevel, string? Text);

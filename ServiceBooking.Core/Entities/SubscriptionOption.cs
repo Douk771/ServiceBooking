@@ -11,6 +11,11 @@ namespace ServiceBooking.Core.Entities;
 /// billing-owner/billing-admin endpoints, which are a separate, not-yet-implemented slice of this
 /// cycle — see the backend report for cycle 07.
 /// </summary>
+/// <remarks>
+/// Cycle 43 (ARCHITECTURE_CYCLE43.md §43.0a, T-43-04): for the two messenger options (<c>notifications.whatsapp</c>,
+/// <c>notifications.max</c>) <see cref="PricePerMonth"/> is THE price for every account and every product line — it does not depend on
+/// the tariff. The tariff rules (<c>PlanOptionRule</c>) of these two options are left in the database but nobody reads or writes them.
+/// </remarks>
 public class SubscriptionOption
 {
     public Guid Id { get; set; }

@@ -22,6 +22,15 @@ vi.mock('../../api/platformSettings', () => ({
     updateSettings: (...args: unknown[]) => updateSettings(...args),
   },
 }))
+// Cycle 43: the tab embeds the messenger price panel; its own behaviour is covered in MessengerOptionsPanel.test.tsx.
+const messengerOptions = vi.fn()
+const messengerQuote = vi.fn()
+vi.mock('../../api/adminBilling', () => ({
+  adminBillingApi: {
+    messengerOptions: (...args: unknown[]) => messengerOptions(...args),
+    messengerQuote: (...args: unknown[]) => messengerQuote(...args),
+  },
+}))
 vi.mock('../../api/notificationNumbers', () => ({
   adminNumbersApi: {
     list: (...args: unknown[]) => listChannels(...args),
@@ -110,6 +119,9 @@ beforeEach(() => {
   updateSettings.mockReset()
   summary.mockResolvedValue(emptySummary())
   getSettings.mockResolvedValue(platformSettings())
+  messengerOptions.mockReset()
+  messengerOptions.mockResolvedValue({ items: [], planMatrixNote: 'note', priceHint: 'Цена действует для всех аккаунтов и всех линеек.' })
+  messengerQuote.mockReset()
 })
 
 describe('NotificationsAdminTab — trial settings (API_CONTRACT_CYCLE18.md §367)', () => {
@@ -218,10 +230,21 @@ describe('NotificationsAdminTab — the table, «Подтвердить опла
     expect(within(row).queryByRole('button', { name: 'Приостановить' })).not.toBeInTheDocument()
   })
 
-  it('confirms a payment for the chosen number of months and refreshes; the server refusal is printed as it is', async () => {
+  const quoteFor = (months: number) => ({
+    transport: 'WhatsApp', months, pricePerMonth: 490, amount: months * 490, amountText: `${months} мес. × 490 ₽ = ${months * 490} ₽`,
+    currentPaidUntil: null, newPaidUntil: '2027-01-20T00:00:00Z', newPaidUntilText: 'Будет оплачено до 20.01.2027', actionText: `Продлить на ${months} мес.`,
+  })
+  const pendingChannel = () => channel({ displayStatus: 'ActionRequired', displayText: 'Оплата на проверке', paymentText: 'заявка от 20.10' })
+
+  beforeEach(() => {
+    card.mockResolvedValue({ billingAccountId: 'acc1', channel: channel(), companies: [], paymentEvents: [], stateEvents: [] })
+    messengerQuote.mockImplementation((_a: string, _t: string, m: number) => Promise.resolve(quoteFor(m)))
+  })
+
+  it('confirms a payment for the chosen number of months with the quoted price; the server refusal is printed as it is (cycle 43, US-43-04)', async () => {
     const user = userEvent.setup()
-    listChannels.mockResolvedValue(channelsPage([channel({ displayStatus: 'ActionRequired', displayText: 'Оплата на проверке', paymentText: 'заявка от 20.10' })]))
-    confirmPayment.mockRejectedValueOnce({ response: { status: 409, data: 'Опция MAX закрыта для подключения. Откройте её в блоке „Подключение мессенджеров“' } })
+    listChannels.mockResolvedValue(channelsPage([pendingChannel()]))
+    confirmPayment.mockRejectedValueOnce({ response: { status: 409, data: 'Цена MAX изменилась: теперь 590 ₽/мес. Проверьте сумму и повторите' } })
     confirmPayment.mockResolvedValueOnce({})
     renderTab()
 
@@ -229,15 +252,42 @@ describe('NotificationsAdminTab — the table, «Подтвердить опла
     const dialog = screen.getByRole('dialog')
     await user.clear(within(dialog).getByLabelText('На сколько месяцев (1–12)'))
     await user.type(within(dialog).getByLabelText('На сколько месяцев (1–12)'), '3')
+    expect(await within(dialog).findByText('3 мес. × 490 ₽ = 1470 ₽')).toBeInTheDocument()
+    expect(messengerQuote).toHaveBeenCalledWith('acc1', 'WhatsApp', 3)
     await user.type(within(dialog).getByLabelText('Комментарий (счёт, платёж)'), 'Счёт 17')
     await user.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
 
-    expect(await within(dialog).findByText(/закрыта для подключения/)).toBeInTheDocument()
-    expect(confirmPayment).toHaveBeenCalledWith('ch1', { months: 3, comment: 'Счёт 17' })
+    expect(await within(dialog).findByText(/Цена MAX изменилась: теперь 590/)).toBeInTheDocument()
+    expect(confirmPayment).toHaveBeenCalledWith('ch1', { months: 3, comment: 'Счёт 17', expectedPricePerMonth: 490 })
 
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Подтвердить' })).toBeEnabled())
     await user.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
     await waitFor(() => expect(confirmPayment).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('prints the «not sold» refusal of the quote and does not let the payment through', async () => {
+    const user = userEvent.setup()
+    listChannels.mockResolvedValue(channelsPage([pendingChannel()]))
+    messengerQuote.mockRejectedValue({ response: { status: 409, data: 'У WhatsApp не задана цена. Задайте её во вкладке уведомлений, блок „Подключение мессенджеров“' } })
+    renderTab()
+    await user.click(await screen.findByRole('button', { name: 'Подтвердить оплату' }))
+    const dialog = screen.getByRole('dialog')
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('У WhatsApp не задана цена.')
+    expect(within(dialog).getByRole('button', { name: 'Подтвердить' })).toBeDisabled()
+  })
+
+  it('still lets the admin confirm when the card (and so the amount) cannot be loaded: the server checks the conditions itself', async () => {
+    const user = userEvent.setup()
+    listChannels.mockResolvedValue(channelsPage([pendingChannel()]))
+    card.mockRejectedValue(new Error('network'))
+    confirmPayment.mockResolvedValue({})
+    renderTab()
+    await user.click(await screen.findByRole('button', { name: 'Подтвердить оплату' }))
+    const dialog = screen.getByRole('dialog')
+    expect(await within(dialog).findByText(/Расчёт суммы недоступен/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
+    await waitFor(() => expect(confirmPayment).toHaveBeenCalledWith('ch1', { months: 1, comment: null }))
   })
 
   it('switches an option open for owners and the stop-cock of customer messaging without a release', async () => {
@@ -253,6 +303,17 @@ describe('NotificationsAdminTab — the table, «Подтвердить опла
     await waitFor(() => expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
       whatsAppOptionOpen: true, trialDurationDays: null, trialMailingWindowDays: null, trialWarningThresholdsDays: null,
     })))
+  })
+
+  it('does not send the retired channelPricePerMonth and prints the server priceHint instead of the old hint', async () => {
+    const user = userEvent.setup()
+    listChannels.mockResolvedValue(channelsPage([]))
+    updateSettings.mockResolvedValue(platformSettings())
+    renderTab()
+    await user.click(await screen.findByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(updateSettings).toHaveBeenCalled())
+    expect(updateSettings.mock.calls[0][0]).not.toHaveProperty('channelPricePerMonth')
+    expect((await screen.findAllByText('Цена действует для всех аккаунтов и всех линеек.')).length).toBeGreaterThan(0)
   })
 
   it('no longer offers a price field for the «channel» option', async () => {

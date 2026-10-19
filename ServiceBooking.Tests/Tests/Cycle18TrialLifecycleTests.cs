@@ -1222,25 +1222,27 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
         (await DbAsync(db => db.AccountSubscriptionOptions.AsNoTracking().FirstAsync(o => o.Id == trialGrantedRowId)))
             .EndsAtUtc.Should().NotBeNull("the first trial's own expiry must have dated this SAME row out");
 
-        // Superadmin buys the SAME option out for real money, far in the future — AssignSubscription's own
-        // B1 fix (AdminBillingController.cs) must flip GrantedByTrial to false on this write.
+        // Superadmin buys the SAME option out for real money. Cycle 43 (SPEC US-43-03, ARCHITECTURE_CYCLE43.md §43.10, Д-6): the subscription form no longer touches the rows of the
+        // messengers, so the buy-out goes through the account card — «Подключить/Продлить на N мес.» (POST …/messengers/WhatsApp/extend); it redeems a trial row (GrantedByTrial → false).
+        // The arrange gives WhatsApp a price (it is sold only with one). The row keeps the quantity of the trial grant (1): the extension changes the period, not the quantity.
         var admin = await LoginAsSuperAdminAsync();
         var adminClient = AuthedClient(admin.Token);
-        var farFuture = DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(11));
-        var assign = await adminClient.PutAsJsonAsync($"/api/admin/billing-accounts/{accountId}/subscription", new
-        {
-            planId = (Guid?)null, isActive = true, paidUntil = (DateOnly?)null,
-            options = new[] { new { optionId, quantity = 5, paidUntil = farFuture } },
-        });
+        var screen = (await (await adminClient.GetAsync("/api/admin/messenger-options")).Content.ReadFromJsonAsync<System.Text.Json.JsonElement>())
+            .GetProperty("items").EnumerateArray().Single(i => i.GetProperty("transport").GetString() == "WhatsApp");
+        var currentPrice = screen.GetProperty("pricePerMonth").ValueKind == System.Text.Json.JsonValueKind.Null ? (decimal?)null : screen.GetProperty("pricePerMonth").GetDecimal();
+        if (currentPrice != 300m || !screen.GetProperty("isActive").GetBoolean())
+            (await adminClient.PutAsJsonAsync("/api/admin/messenger-options/WhatsApp/price",
+                new { pricePerMonth = 300, isActive = true, comment = "CY18L-23 arrange", expectedPricePerMonth = currentPrice, expectedIsActive = screen.GetProperty("isActive").GetBoolean() })).EnsureSuccessStatusCode();
+        var assign = await adminClient.PostAsJsonAsync($"/api/admin/billing-accounts/{accountId}/messengers/WhatsApp/extend",
+            new { months = 11, comment = "QA CY18L-23", expectedPricePerMonth = 300 });
         assign.StatusCode.Should().Be(HttpStatusCode.OK, await assign.Content.ReadAsStringAsync());
 
         var boughtOut = await DbAsync(db => db.AccountSubscriptionOptions.AsNoTracking().FirstAsync(o => o.Id == trialGrantedRowId));
-        boughtOut.GrantedByTrial.Should().BeFalse("AdminBillingController's own B1 fix: an admin write always produces an ordinary row");
-        boughtOut.Quantity.Should().Be(5);
+        boughtOut.GrantedByTrial.Should().BeFalse("the paid extension of the account card always produces an ordinary (non-trial) row");
+        boughtOut.Quantity.Should().Be(1);
         boughtOut.EndsAtUtc.Should().BeNull();
-        // AdminBillingController.ToUtc anchors a DateOnly PaidUntil at TimeOnly.MaxValue (end of day), not midnight.
-        var farFutureUtc = farFuture.ToDateTime(TimeOnly.MaxValue);
-        boughtOut.PaidUntilUtc.Should().BeCloseTo(farFutureUtc, TimeSpan.FromMinutes(2));
+        var farFutureUtc = DateTime.UtcNow.AddMonths(11);
+        boughtOut.PaidUntilUtc.Should().BeCloseTo(farFutureUtc, TimeSpan.FromMinutes(5));
 
         // Superadmin's emergency re-grant — the exact regression this scenario targets: the trial's OWN
         // GrantAsync must never mistake this now-paid, non-trial row for its own leftover.
@@ -1250,8 +1252,8 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
 
         var afterRegrant = await DbAsync(db => db.AccountSubscriptionOptions.AsNoTracking().FirstAsync(o => o.Id == trialGrantedRowId));
         afterRegrant.GrantedByTrial.Should().BeFalse("regrant must never claim an admin-paid row as its own");
-        afterRegrant.Quantity.Should().Be(5, "Б1 regression: the admin's own paid quantity must survive the emergency regrant untouched");
-        afterRegrant.PaidUntilUtc.Should().BeCloseTo(farFutureUtc, TimeSpan.FromMinutes(2),
+        afterRegrant.Quantity.Should().Be(1, "Б1 regression: the admin's own paid row must survive the emergency regrant untouched");
+        afterRegrant.PaidUntilUtc.Should().BeCloseTo(boughtOut.PaidUntilUtc!.Value, TimeSpan.FromSeconds(1),
             "Б1 regression: the admin's own far-future paid-until date must survive the emergency regrant untouched");
         afterRegrant.EndsAtUtc.Should().BeNull("Б1 regression: the paid row must not be dated out by the regrant either");
 
@@ -1270,7 +1272,7 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
         afterSecondExpiry.EndsAtUtc.Should().BeNull(
             "Б1 regression, the headline check: the paid row must survive the SECOND trial's own expiry too — " +
             "before the fix, this row would silently lose its Quantity/PaidUntilUtc AND then be dated out here");
-        afterSecondExpiry.Quantity.Should().Be(5);
+        afterSecondExpiry.Quantity.Should().Be(1);
     }
 
     // ── Scenario 24 (Б2 regression, this pass) — a batch where EVERY account fails deterministically must

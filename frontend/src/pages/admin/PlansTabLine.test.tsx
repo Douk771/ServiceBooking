@@ -11,6 +11,8 @@ vi.mock('../../api/plans', () => ({
   plansApi: { list: (...a: unknown[]) => listPlans(...a), listOptions: () => Promise.resolve([]), create: (...a: unknown[]) => createPlan(...a), update: vi.fn(), deactivate: vi.fn(), setSystemFree: vi.fn(), setSystemTrial: vi.fn() },
 }))
 
+vi.mock('../../api/adminBilling', () => ({ adminBillingApi: { messengerOptions: () => Promise.resolve({ items: [], planMatrixNote: '', priceHint: '' }) } }))
+
 const plan = (over: Record<string, unknown>): PlanConfig =>
   ({ id: 'x', name: 'X', pricePerMonth: 0, currency: 'RUB', maxEmployees: null, maxCompanies: null, allowOnlineBooking: true, allowMailing: false, allowAnalytics: false, allowPublicListing: true, allowOnlinePayment: false, photoQuotaMb: null, notifyDaysBefore: 7, isPublic: true, isActive: true, sortOrder: 1, highlights: [], options: [], isSystemFree: false, ...over }) as unknown as PlanConfig
 

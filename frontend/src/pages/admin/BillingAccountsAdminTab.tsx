@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { fmtDate, fmtDateTime } from '../../utils/dateFormat'
 import {
@@ -32,6 +32,9 @@ import {
   type AssignOptionRow,
 } from './billingAccountsHelpers'
 import type { SubscriptionChangeReason } from '../../api/adminBilling'
+import { AccountMessengersBlock } from './AccountMessengersBlock'
+import { excludeMessengerOptions } from './messengerOptionsHelpers'
+import { useMessengerOptions } from './useMessengerOptions'
 import { formatRubRounded } from '../../utils/money'
 import { formatMonthlyPrice } from '../../utils/pricingFormat'
 
@@ -64,7 +67,13 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
   const qc = useQueryClient()
 
   const { data: plans } = useQuery({ queryKey: ['admin-plans'], queryFn: plansApi.list })
-  const { data: catalogOptions } = useQuery({ queryKey: ['admin-options'], queryFn: plansApi.listOptions })
+  const { data: allCatalogOptions } = useQuery({ queryKey: ['admin-options'], queryFn: plansApi.listOptions })
+  // Cycle 43 (§43.5.3): the subscription form no longer offers WhatsApp / MAX (they are connected from the «Мессенджеры» block of the card; the server ignores such lines).
+  const { data: messengerOptions } = useMessengerOptions()
+  const catalogOptions = useMemo(
+    () => (allCatalogOptions ? excludeMessengerOptions(allCatalogOptions, (messengerOptions?.items ?? []).map((i) => i.optionId)) : undefined),
+    [allCatalogOptions, messengerOptions],
+  )
   // US-20-02 — closed list of reasons; the dropdown only offers `assignableManually: true` entries
   // (§433.3), so a fetch failure just means an empty dropdown, not a broken form.
   const { data: reasons } = useQuery({ queryKey: ['admin-subscription-change-reasons'], queryFn: adminBillingApi.getChangeReasons })
@@ -561,6 +570,12 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
                   <span className="text-ink">{formatRubRounded(o.pricePerMonth)}</span>
                 </div>
               ))}
+              {!!account.messengersMonthlyTotal && (
+                <div className="flex items-center justify-between px-3 py-2 text-sm">
+                  <span className="text-ink-soft">Мессенджеры (блок ниже)</span>
+                  <span className="text-ink">{formatRubRounded(account.messengersMonthlyTotal)}</span>
+                </div>
+              )}
               <div className="flex items-center justify-between px-3 py-2.5 bg-cream-deep font-semibold text-sm">
                 <span>Итог в месяц</span>
                 <span>{formatRubRounded(account.totalMonthlyPrice)}</span>
@@ -570,6 +585,9 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
               <p className="text-xs text-muted mt-1.5">{account.grandfatheredEmployeeBonusText}</p>
             )}
           </div>
+
+          {/* Cycle 43 (§43.6.6): WhatsApp / MAX are connected separately from the tariff. */}
+          <AccountMessengersBlock account={account} />
 
           {/* Cycle 24 (ARCHITECTURE_CYCLE24.md §462.2 п.3): the account's «Заказы» subscription — a separate block. */}
           {account.ordersSubscription && (
