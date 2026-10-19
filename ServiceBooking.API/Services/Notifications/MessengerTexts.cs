@@ -1,4 +1,5 @@
 using System.Globalization;
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.Services.Notifications;
@@ -124,6 +125,7 @@ public static class MessengerTexts
     public const string MonthsRange = "Срок — от 1 до 24 месяцев";
     public const string ExtendCommentTooLong = "Комментарий — не длиннее 500 символов";
     public const string ExpectedPriceMissing = "Не передана ожидаемая цена — обновите расчёт";
+    public const string DisableWhenRequired = "Укажите, когда отключить: сейчас или по окончании оплаты";
     public const string DisableCommentRequired = "Укажите причину отключения";
     public const string DisableCommentTooLong = "Причина — не длиннее 500 символов";
     public const string OfferNotPublishedConflict = "Оферта для владельцев не опубликована — {0} не продаётся";
@@ -229,9 +231,20 @@ public static class MessengerTexts
     public static string DisableAlreadyScheduled(NotificationTransport t, DateTime endsAtUtc) =>
         $"Отключение {DisplayName(t)} уже назначено на {FormatDate(endsAtUtc)}";
 
-    /// <summary>Subscription-history summary of one messenger row: "MAX: оплачено до 20.10.2026" / "MAX: не подключён".</summary>
-    public static string OptionsSummary(NotificationTransport t, bool paid, DateTime? paidUntilUtc) =>
-        paid && paidUntilUtc is { } d ? $"{DisplayName(t)}: оплачено до {FormatDate(d)}" : paid ? $"{DisplayName(t)}: оплачено" : $"{DisplayName(t)}: не подключён";
+    /// <summary>Subscription-history summary of one messenger line: "MAX: оплачено до 20.10.2026" / "MAX: не подключён" (a trial and an ended payment
+    /// have their own wording).</summary>
+    public static string OptionsSummary(NotificationTransport t, MessengerLineStatus status, bool isTrial, DateTime? untilUtc) =>
+        $"{DisplayName(t)}: " + status switch
+        {
+            MessengerLineStatus.Paid or MessengerLineStatus.Ending =>
+                untilUtc is { } d ? $"оплачено до {FormatDate(d)}" : "оплачено",
+            MessengerLineStatus.Trial => untilUtc is { } d ? $"пробный период до {FormatDate(d)}" : "пробный период",
+            MessengerLineStatus.Expired => (isTrial ? "пробный период закончился" : "оплата закончилась") + (untilUtc is { } d ? $" {FormatDate(d)}" : ""),
+            _ => "не подключён",
+        };
+
+    public static string OptionsSummaryAfterDisable(NotificationTransport t, bool immediately, DateTime fromUtc) =>
+        $"{DisplayName(t)}: " + (immediately ? "отключён" : "отключается") + $" с {FormatDate(fromUtc)}";
 
     public static string ExtendHistoryComment(NotificationTransport t, bool renew, int months, decimal price, string? comment) =>
         $"{(renew ? "Продление" : "Подключение")} {DisplayName(t)} на {months} мес. ({AmountText(months, price)})." +

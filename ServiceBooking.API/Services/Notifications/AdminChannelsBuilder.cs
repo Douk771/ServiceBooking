@@ -17,7 +17,7 @@ public enum AdminChannelPaymentFilter { Paid, NotPaid, Requested, Suspended, Tri
 /// text comes from the same pure rules the owner sees (<see cref="ChannelPresentation"/>), computed from the facts of <see cref="NumbersOverviewBuilder"/> — the admin
 /// and the owner never disagree about what a number is doing.
 /// </summary>
-public sealed class AdminChannelsBuilder(AppDbContext db, NumbersOverviewBuilder numbers, PlatformSettings platformSettings)
+public sealed class AdminChannelsBuilder(AppDbContext db, NumbersOverviewBuilder numbers, MessengerPaymentService payments)
 {
     public sealed record Row(NotificationChannel Channel, AdminChannelDto Dto, AdminChannelPaymentFilter Payment, ChannelDisplayFacts Facts);
 
@@ -148,67 +148,16 @@ public sealed class AdminChannelsBuilder(AppDbContext db, NumbersOverviewBuilder
         public static readonly ConfirmResult Success = new(null, null, true);
     }
 
-    /// <summary>«Подтвердить оплату» (§40.13): the paid period of the account's option for the number's transport is extended from max(now, current end) by
-    /// <paramref name="months"/>; journals: <see cref="ChannelPaymentLog"/> and <see cref="ChannelOptionChangeLog"/>. Saves (inside its own transaction under the account's lock).</summary>
-    public async Task<ConfirmResult> ConfirmPaymentAsync(NotificationChannel channel, int months, string? comment, string adminUserId, CancellationToken ct)
+    /// <summary>«Подтвердить оплату» (§40.13, ARCHITECTURE_CYCLE43.md §43.6.7): a thin wrapper over <see cref="MessengerPaymentService.ExtendAsync"/> — the same rule, the same
+    /// refusals (not for sale, price changed) and the same journals as the account card, plus the number's <see cref="ChannelPaymentLog"/> with the amount.</summary>
+    public async Task<ConfirmResult> ConfirmPaymentAsync(
+        NotificationChannel channel, int months, string? comment, decimal? expectedPricePerMonth, string adminUserId, CancellationToken ct)
     {
         if (channel.State == ChannelState.Replaced) return ConfirmResult.Fail(StatusCodes.Status409Conflict, ReplacedConflict);
         if (channel.BillingAccountId is not { } accountId) return ConfirmResult.Fail(StatusCodes.Status409Conflict, "У номера нет аккаунта — оплату подтвердить нельзя");
 
-        var transport = channel.Transport;
-        var display = MessengerTexts.DisplayName(transport);
-        var code = transport == NotificationTransport.Max ? ChannelOptionCodes.Max : ChannelOptionCodes.WhatsApp;
-        var option = await db.SubscriptionOptions.FirstOrDefaultAsync(o => o.Code == code, ct);
-        if (option is null) return ConfirmResult.Fail(StatusCodes.Status409Conflict, $"Опция {display} отсутствует в каталоге");
-        if (!await platformSettings.IsOptionOpenAsync(transport, ct))
-            return ConfirmResult.Fail(StatusCodes.Status409Conflict, $"Опция {display} закрыта для подключения. Откройте её в блоке „Подключение мессенджеров“");
-
-        // One confirmation at a time per billing account — the SAME lock the admin billing screens take: two admins (or a repeated request) must not both read one
-        // paid-until and both write "+N months" over each other, nor race to create the row (unique index (BillingAccountId, OptionId)).
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        await AdvisoryLock.AcquireAsync(db, $"billing-account:{accountId}");
-
-        var now = DateTime.UtcNow;
-        var row = await db.AccountSubscriptionOptions.FirstOrDefaultAsync(o => o.BillingAccountId == accountId && o.OptionId == option.Id, ct);
-        var oldPaidUntil = row?.PaidUntilUtc;
-        // A row without a date of its own (granted by the trial, or an old row) rides the account's subscription period: the extension starts from there, not from "now".
-        var effectiveEnd = oldPaidUntil ?? (row is null ? null
-            : await db.AccountSubscriptions.AsNoTracking().Where(s => s.BillingAccountId == accountId).Select(s => s.PaidUntil).FirstOrDefaultAsync(ct));
-        var baseDate = effectiveEnd is { } current && current > now ? current : now;
-        var newPaidUntil = baseDate.AddMonths(months);
-        var (oldEndsAt, newEndsAt) = (row?.EndsAtUtc, (DateTime?)null);
-
-        if (row is null)
-        {
-            db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
-            {
-                Id = Guid.NewGuid(), BillingAccountId = accountId, OptionId = option.Id, Quantity = 1, PaidUntilUtc = newPaidUntil,
-                ActivatedAtUtc = now, ActivatedByUserId = adminUserId,
-            });
-        }
-        else
-        {
-            row.Quantity = Math.Max(row.Quantity, 1);
-            row.PaidUntilUtc = newPaidUntil;
-            row.EndsAtUtc = null;
-            row.ActivatedAtUtc = now;
-            row.ActivatedByUserId = adminUserId;
-            row.GrantedByTrial = false; // a bought-out row is an ordinary one (the invariant of AccountSubscriptionOption.GrantedByTrial)
-            row.RequestedQuantity = null;
-            row.RequestedAtUtc = null;
-            row.RequestedByUserId = null;
-        }
-
-        ChannelOptionLog.Write(db, accountId, code, ChannelOptionChangeSource.AdminChannelCard, oldPaidUntil, newPaidUntil, oldEndsAt, newEndsAt,
-            adminUserId, now, channel.Id, comment);
-        db.ChannelPaymentLogs.Add(new ChannelPaymentLog
-        {
-            Id = Guid.NewGuid(), ChannelId = channel.Id, ChangedByUserId = adminUserId, OldPaidUntil = oldPaidUntil, NewPaidUntil = newPaidUntil,
-            Comment = string.IsNullOrWhiteSpace(comment) ? $"payment confirmed: {months} мес." : $"payment confirmed: {comment}", ChangedAtUtc = now,
-        });
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return ConfirmResult.Success;
+        var result = await payments.ExtendAsync(accountId, channel.Transport, months, comment, expectedPricePerMonth, adminUserId, channel.Id, ct);
+        return result.Ok ? ConfirmResult.Success : ConfirmResult.Fail(result.Status!.Value, result.Text!);
     }
 
     /// <summary>Plain Russian line for a state-journal row (the journal keeps the enum, the admin reads this).</summary>

@@ -70,6 +70,8 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.AdminChannelsBuilder>();
     // Cycle 43 (ARCHITECTURE_CYCLE43.md §43.12): the price screen of the messenger options.
     builder.Services.AddScoped<ServiceBooking.API.Services.Billing.MessengerOptionsReader>();
+    // ARCHITECTURE_CYCLE43.md §43.6.1: the only writer of the money of a messenger of an account (quote, connect/extend, switch-off).
+    builder.Services.AddScoped<ServiceBooking.API.Services.Billing.MessengerPaymentService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Billing.MessengerAddonsProvider>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.PendingRebinder>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingEventLog>();

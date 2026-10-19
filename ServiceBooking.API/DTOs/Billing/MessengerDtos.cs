@@ -50,7 +50,8 @@ public sealed record MessengerQuoteDto(
 
 public sealed record ExtendMessengerInput(int Months, string? Comment, decimal? ExpectedPricePerMonth);
 
-public sealed record DisableMessengerInput(MessengerDisableWhen When, string? Comment);
+/// <summary><c>When</c> is nullable on purpose: an omitted field must not silently mean "switch off now" (the enum default).</summary>
+public sealed record DisableMessengerInput(MessengerDisableWhen? When, string? Comment);
 
 public sealed record OwnerMessengerLineDto(
     NotificationTransport Transport, string Label, MessengerLineStatus Status, string StatusText, decimal? PricePerMonth, string? PriceText,

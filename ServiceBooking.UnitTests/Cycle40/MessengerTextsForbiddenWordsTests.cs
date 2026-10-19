@@ -59,8 +59,13 @@ public class MessengerTextsForbiddenWordsTests
             yield return MessengerTexts.DisableTrialWithoutDate(t);
             yield return MessengerTexts.DisablePaymentWithoutDate(t);
             yield return MessengerTexts.DisableAlreadyScheduled(t, date);
-            yield return MessengerTexts.OptionsSummary(t, true, date);
-            yield return MessengerTexts.OptionsSummary(t, false, null);
+            foreach (var status in Enum.GetValues<API.Services.Billing.MessengerLineStatus>())
+            {
+                yield return MessengerTexts.OptionsSummary(t, status, false, date);
+                yield return MessengerTexts.OptionsSummary(t, status, true, null);
+            }
+            yield return MessengerTexts.OptionsSummaryAfterDisable(t, true, date);
+            yield return MessengerTexts.OptionsSummaryAfterDisable(t, false, date);
             yield return MessengerTexts.ExtendHistoryComment(t, true, 3, 490m, "по счёту");
             yield return MessengerTexts.DisableHistoryComment(t, date, "по заявлению");
             foreach (var reason in Enum.GetValues<API.Services.Notifications.Funding.MessengerSaleReason>())
