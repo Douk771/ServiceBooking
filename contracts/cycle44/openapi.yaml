@@ -36,7 +36,7 @@ x-servicebooking-api-changes: none
 
 servers:
   - url: https://about.ezbook.ru
-    description: бой (= стенд; доступен после ручных шагов заказчика, DEPLOY.md §33)
+    description: бой (= стенд; доступен после ручных шагов заказчика, DEPLOY.md §34)
   - url: http://127.0.0.1:4177
     description: статический сервер CI/QA над frontend/dist/__about (python3 -m http.server)
 

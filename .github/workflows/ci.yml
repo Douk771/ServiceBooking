@@ -221,7 +221,8 @@ jobs:
             ../contracts/cycle39/openapi.yaml \
             ../contracts/cycle40/openapi.yaml \
             ../contracts/cycle42/openapi.yaml \
-            ../contracts/cycle43/openapi.yaml
+            ../contracts/cycle43/openapi.yaml \
+            ../contracts/cycle44/openapi.yaml
 
       # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
       # (e.g. @redocly/cli's own dependency tree) is explicitly out of scope for this threshold so the
