@@ -744,6 +744,7 @@ components:
       required:
       - pricePerMonth
       - comment
+      - expectedPricePerMonth
       - expectedIsActive
       properties:
         pricePerMonth:
@@ -759,7 +760,7 @@ components:
         expectedPricePerMonth:
           type: number
           nullable: true
-          description: Цена, от которой считались последствия; отсутствует = null.
+          description: Цена, которую админ видел на экране (null — цена не была задана). Обязательно.
         expectedIsActive:
           type: boolean
     MessengerPricePreviewDto:

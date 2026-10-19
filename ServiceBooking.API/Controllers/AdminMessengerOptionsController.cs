@@ -25,6 +25,7 @@ public class AdminMessengerOptionsController(
     IMemoryCache cache, ILogger<AdminMessengerOptionsController> logger) : ControllerBase
 {
     private const string PriceRequired = "Укажите цену или null, чтобы снять цену";
+    private const string ExpectedRequired = "Обновите страницу и повторите: не переданы цена и активность, которые вы видели на экране";
 
     [HttpGet("messenger-options")]
     public async Task<IActionResult> Get(CancellationToken ct) => Ok(await reader.BuildAsync(ct));
@@ -58,7 +59,7 @@ public class AdminMessengerOptionsController(
         if (!MessengerTransportRoute.TryParse(transport, out var t)) return NotFound();
         if (!input.PricePerMonth.IsSpecified) return BadRequest(PriceRequired);
         if (!input.ExpectedPricePerMonth.IsSpecified || input.ExpectedIsActive is null)
-            return BadRequest("Укажите expectedPricePerMonth и expectedIsActive: значения, которые администратор видел на экране.");
+            return BadRequest(ExpectedRequired);
         var newPrice = input.PricePerMonth.Value;
 
         var snapshot = await FindOptionAsync(t, tracked: false, ct);

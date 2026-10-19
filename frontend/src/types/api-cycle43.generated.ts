@@ -299,8 +299,8 @@ export interface components {
             pricePerMonth: number | null;
             isActive?: boolean | null;
             comment: string;
-            /** @description Цена, от которой считались последствия; отсутствует = null. */
-            expectedPricePerMonth?: number | null;
+            /** @description Цена, которую админ видел на экране (null — цена не была задана). Обязательно. */
+            expectedPricePerMonth: number | null;
             expectedIsActive: boolean;
         };
         /**
