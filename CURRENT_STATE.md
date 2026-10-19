@@ -1,13 +1,23 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-> **Цикл 42 «Бани» (bani.ezbook.ru) в `develop` НЕ влит.** Правка этого файла сделана в worktree задачи `task/c42-doc-2` от
-> Цикл 42 **влит** в `develop` мерджем `04fadcf` (14.10.2026). Ему предшествовал `7b1ca30` (`origin/cycle/042-bani`, CI зелёный). Цикл 40 уже
-> в `develop` (мердж `0bd2225`, фикс Designer `15259d7`, мердж `b6470ba`), а `develop` влит в ветку цикла 42 мерджем `41a9279`. Описание ниже
-> проверялось по коду на `d000673`; с тех пор изменились только условия триала (`baths-2026-10-14`), исправления предупреждений CI,
-> ограничитель рейтинга демо-данных, тесты и документы — смысл разделов не меняется.
+> Цикл 42 «Бани» **влит** в `develop` мерджем `04fadcf` (14.10.2026). Ему предшествовал `7b1ca30` (`origin/cycle/042-bani`, CI зелёный).
+> Цикл 40 уже в `develop` (мердж `0bd2225`, фикс Designer `15259d7`, мердж `b6470ba`), а `develop` влит в ветку цикла 42 мерджем `41a9279`.
+> Большая часть описания проверялась по коду на `d000673`. После этого менялись только условия триала (`baths-2026-10-14`), исправления
+> предупреждений CI, ограничитель рейтинга демо-данных, тесты и документы, поэтому смысл разделов прежний. Область «опции мессенджеров:
+> цена, каталог, тарифы» перепроверена по коду на `12889a7` (§5.18, §9.13).
 
-**Актуально по состоянию на коммит: `04fadcf` (мердж цикла 42 в `develop`; содержание проверено по коду на `d000673`), дата: 2026-10-14.**
-**Следующий diff отсчитывайте от `04fadcf` (мердж цикла 42 в `develop`).**
+**Актуально по состоянию на коммит: `12889a7` (`develop`; код совпадает с мерджем цикла 42 `04fadcf`), дата: 2026-10-19.**
+**Следующий diff отсчитывайте от `12889a7`.**
+
+**Обновление на `12889a7` (19.10.2026, без нового цикла).** ✔ `git diff --stat 04fadcf..HEAD` — изменён только `CURRENT_STATE.md`
+(отметка коммита, `12889a7`), кода нет; `origin/develop` = `HEAD`. Повод — новая задача заказчика: «опции рассылок в MAX и WhatsApp: из админки
+нельзя задать цену, каша с привязкой к тарифам, опции нельзя выбрать отдельно». По ней codebase-analyst точечно перечитал код каталога опций,
+правил «тариф ↔ опция», назначения подписки в админке, подтверждения оплаты номера и экранов владельца. **Ничего не запускалось.**
+Правки: шапка (убран оставшийся от прошлой правки обрывок «в `develop` НЕ влит»), §3 (строка про `PlanOptionRule` — прежняя запись «не
+читаются» неверна), §5.4 (то же), заголовки §5.17 и §9.12 (статус — влит), §5.18 (новый), §9.11 C40-17 (уточнение), §9.13 (новый).
+Остальные разделы не трогались. `docs/history/` в проекте нет, архивировать нечего.
+
+*Ниже — шапка обновления цикла 42 (на `d000673`), сохранена для истории.*
 
 **Обновление на `d000673`** (✔ `git log 4741843..HEAD`: 196 коммитов без мерджей, по первому родителю — мерджи задач `task/c42-*` и
 мердж `41a9279` «origin/develop (цикл 40) → cycle/042-bani»; `git diff --stat 0bd2225...HEAD`: 469 файлов, +50 825/−7 671, из них
@@ -611,7 +621,9 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
   рекордов `EffectivePlan`/`OrdersPlan`/`StaysPlan` поле удалено.*
 - `AccountSubscription`, `SubscriptionOption`, `PlanOptionRule`, `AccountSubscriptionOption`, `SubscriptionChangeLog`. *С цикла 40 для двух
   опций каналов (`notifications.whatsapp`, `notifications.max`) «оплачено» читается только из строки `AccountSubscriptionOption` аккаунта;
-  `PlanOptionRule` этих опций остаются в БД, но не читаются.*
+  `PlanOptionRule` этих опций на «оплачено», маршрутизацию, триал и экран подписки владельца не влияют, **но по-прежнему читаются** в
+  трёх местах отображения сумм и статусов (список и карточка биллинг-аккаунта в админке, `GET /api/profile` — см. §5.18, §9.13 O-2).
+  Строки `PlanOptionRules` для `notifications.max` не создавались ни одной миграцией.*
 - `TrialGrant`, `TrialPhoneRegistration` (HMAC телефона).
 - (цикл 40) `ChannelOptionChangeLog` — журнал изменений двух опций каналов аккаунта (append-only, писатель — `ChannelOptionLog.Write`).
 
@@ -1292,8 +1304,10 @@ dom задеплоен на ту же машину (она и стенд, и б�
   (+ `ChannelRequestModal.test.tsx`), запись `'owner/NotificationsSection'` в `frontend/shared-sources.js`, метод `messengerConsent` в
   `goods/src/api/legalNotice.ts` (правовой текст галочки теперь читает общий `useMessengerLegalText`). Поля цены канала в админке нет — вместо
   него подсказка «цена подключения мессенджера — это цена его опции».
-  **Остались в БД без чтения:** `ChannelCompanyAssignments`, `SubscriptionPlanConfigs.AllowNotificationChannel`, правила `PlanOptionRules` двух
-  опций каналов, настройка `notifications.channel.price-per-month` (поле цены канала в админке сервер принимает и игнорирует).
+  **Остались в БД без чтения:** `ChannelCompanyAssignments`, `SubscriptionPlanConfigs.AllowNotificationChannel`, настройка
+  `notifications.channel.price-per-month` (поле цены канала в админке сервер принимает и игнорирует). Правила `PlanOptionRules` двух опций каналов
+  **читаются частично** (уточнено на `12889a7`): «оплачено» и экран владельца их не учитывают, а суммы и статусы в админке и в профиле —
+  учитывают (§5.18, §9.13 O-2).
 - **Константа без потребителя в продукте** (✔ grep): `OrdersTariffCatalog.FreeHighlights` (три преимущества бесплатного тарифа
   «Заказов») читает только юнит-тест `OrdersTariffCatalogTests`; сидер её в БД не пишет (§5.13, §9.8 C38-2).
 - `openapi-cycle6.yaml` в корне и `contracts/cycle{10,11,15,17}/openapi.yaml` — исторические контракты, в CI не линтуются.
@@ -2749,7 +2763,7 @@ Contract, MigrationRollback) + `Infrastructure/Cycle39TestBase.cs`; 136 атри
 `messengerOptInFallbackRevision`, фикстура `numbersOverview`, `dom/.../NotificationsPage`), правки 8, удалён 1 (`ChannelRequestModal.test.tsx`).
 Раздела цикла 40 в `TEST_CATALOG.md` **нет**; ручные M40-01…08 (гейт выката, `ARCHITECTURE_CYCLE40.md` §40.18.5) **не проходили**.
 
-### 5.17 «Бани» (bani.ezbook.ru) — цикл 42 (✔ по коду на `d000673`, ветка `cycle/042-bani` не влита, ничего не запускалось)
+### 5.17 «Бани» (bani.ezbook.ru) — цикл 42 (✔ по коду на `d000673`; влит в `develop` мерджем `04fadcf`, ничего не запускалось)
 Документы цикла: `BRIEF_CYCLE42_BANI.md`, `SPEC_CYCLE42_BANI.md` (US-42-01…27, A42-1…13, «Решения заказчика от 09.10.2026»),
 `ARCHITECTURE_CYCLE42.md` (§42.0a, §42.0–§42.18), `API_CONTRACT_CYCLE42.md` (§42.20–§42.39), `LEGAL_REVIEW_CYCLE42.md` (Т42-01…17),
 `contracts/cycle42/`, `DEPLOY.md` §32, раздел «Цикл 42» `TEST_CATALOG.md`. Схема — §3, маршруты — §4, задачи — §5.6. Где документы расходятся
@@ -2829,6 +2843,92 @@ CY42-106…109 (`Cycle42LocationChangeTests`) и юнит `BathsLocationChangePo
 **Тесты** (подробно — §7.1, §7.2): функциональные `ServiceBooking.Tests/Tests/Cycle42*.cs` — 15 файлов, 152 атрибута `[Fact]`/`[Theory]`
 (CY42-01…17, 20…28, 30…55, 60…63, 70…72, 80…85, 90…99, 100…115, 130…134, 140); юнит — 13 новых файлов (+100 атрибутов по diff); фронт —
 39 новых файлов `*.test.ts(x)` (+187 `it`/`test` по diff), в т. ч. 32 в `frontend/bani`. Ручные `M42-*` и вердикты QA на стенде — не проводились.
+
+### 5.18 Опции мессенджеров (WhatsApp, MAX): цена, каталог, тарифы, назначение — фактическое состояние (✔ по коду на `12889a7`, ничего не запускалось)
+Точечная перепроверка под задачу заказчика 19.10.2026: «из админки нельзя задать цену, каша с привязкой к тарифам, опции нельзя выбрать отдельно».
+Ниже только факты по коду. Риски и расхождения собраны в §9.13. Устройство «оплачено/маршрутизация» — §5.16.
+
+**Каталог опций в БД** (`SubscriptionOptions`, сущность `ServiceBooking.Core/Entities/SubscriptionOption.cs`). По миграциям в каталоге
+**четыре** строки:
+- `extra-companies` и `extra-employees` — опции-лимиты, выведены из оборота в цикле 19 (`RetiredLimitOptions`, фильтр `WhereNotRetired()`);
+- `notifications.whatsapp` — миграция `20260922121140_SeedBillingCatalog`, `PricePerMonth = NULL`, `IsPublic = false`, `Kind = Quantity`, `UnitName = 'номер'`;
+- `notifications.max` — миграция `20261009100000_Cycle40ChannelOptions`, фиксированный Id `c4000000-0000-4000-8000-000000000040`
+  (`ChannelOptionCodes.MaxOptionSeedId`). **Цена `NULL` намеренно** (Т40-L-01): по комментарию миграции и `DEPLOY.md` §31 п. 3 цену задаёт
+  SuperAdmin после публикации новой редакции оферты.
+
+Других продаваемых опций нет. Поэтому выражение «опции» в продукте сейчас фактически означает две опции каналов. Какая цена сейчас на бою —
+в репозитории не видно (🖥).
+
+**Как задаётся цена опции.**
+- Сервер: `PUT /api/admin/options/{id}` (`AdminOptionsController`, только SuperAdmin) принимает **полное** тело `AdminOptionInput`
+  (`code` — неизменяемый, `name`, `kind`, `unitName` — обязателен для `Quantity`, `pricePerMonth`, `maxQuantity`, `isPublic`, `isActive`,
+  `sortOrder`, `capabilityKey`, `description`). Это полная замена строки, частичного обновления нет. Валидация: цена от 0 до 99 999 999,99.
+  После сохранения вызывается `PricingCatalogCache.Invalidate()`. Журнала изменения цены нет: ни `ChannelOptionChangeLog`, ни журнала
+  настроек платформы. Есть также `POST /api/admin/options` и `DELETE …/{id}` (мягкое `IsActive = false`).
+- Фронт: **экрана каталога опций в админке нет.** В `frontend/src/api/plans.ts` есть только `listOptions` (`GET /api/admin/options`).
+  Вызовов `POST`/`PUT /admin/options` во фронтенде нет (✔ grep по `frontend/src`, `goods`, `dom`, `bani`). Поле «цена канала» во вкладке
+  уведомлений убрано в цикле 40. Вместо него стоит подсказка «Цена подключения мессенджера — это цена его опции (вкладка „Биллинг-аккаунты“ и
+  каталог опций)» (`NotificationsAdminTab.tsx` ~стр. 481) и hint у переключателя MAX «Цена и опубликованная оферта задаются отдельно». Обе
+  ссылаются на экран, которого нет. Значит, цену MAX/WhatsApp можно задать только прямым вызовом API или SQL.
+- Старое поле `channelPricePerMonth` в `GET|PUT /api/admin/platform-settings` сервер принимает и игнорирует (`AdminPlatformController`:
+  `priceChanged = false`). Настройку `notifications.channel.price-per-month` никто, кроме этого контроллера, не читает.
+
+**Что решает цена** (`ChannelOptionAvailability.Sellable = open ∧ IsActive ∧ PricePerMonth ≠ null ∧ оферта TermsOwner опубликована`).
+Опция без цены:
+- не попадает в строки цен под тарифами (`MessengerAddonsProvider` → `/api/pricing` и `GET /api/billing/subscription`);
+- не продаётся в мастере номеров (`Option.Sellable` в `AccountMessagingReader`/`NumbersOverviewBuilder`);
+- **не показывается** в форме назначения подписки в админке: `BillingAccountsAdminTab.tsx` фильтрует каталог по
+  `o.isActive && o.pricePerMonth != null`.
+
+Пробный период «Записей» (`TrialActivationService`) цену не требует, ему достаточно `open` и опубликованной оферты (§5.16).
+«Подтвердить оплату» в карточке номера (`AdminChannelsBuilder.ConfirmPaymentAsync`) цену **не проверяет**: проверяются только наличие опции
+в каталоге и `open`. Поэтому оплату номера MAX можно подтвердить и при `PricePerMonth = NULL`.
+
+**Привязка к тарифам (`PlanOptionRule`: тариф × опция → `Unavailable(0)/Included(1)/Extra(2)` + `IncludedQuantity`).**
+- Правила редактируются матрицей «Доступность опций на тарифе» в `PlansTab.tsx` (`POST|PUT /api/admin/plans`, поле `options` — полная
+  матрица; `ApplyOptionRulesAsync`). Матрица выводит **все** не выведенные из оборота опции каталога, то есть ровно WhatsApp и MAX, и
+  показывается для всех четырёх линеек: «Записи», «Заказы», «Дома», «Бани». Пометки о том, что для опций каналов правило не действует, нет.
+- Засеянные правила: `notifications.whatsapp` = `Extra` на тарифах с `AllowNotificationChannel = true` (`SeedBillingCatalog`; линейка
+  «Заказы» — `Cycle24OrdersTimeNotifyTariffs`, «Дома» — `Cycle37Stays`, «Бани» — `Cycle42Baths`, включая триал «Бань»). Для
+  `notifications.max` правил нет ни в одной миграции и ни в `TariffCatalogSeeder` (демо).
+- **Кто правило НЕ читает для двух опций каналов** (с цикла 40, §40.13):
+  - `ChannelOptionFunding` («оплачено»);
+  - маршрутизация;
+  - `TrialActivationService`;
+  - назначение подписки в админке (`AdminBillingController`: `continue` для `IsChannelOption`, вместо правила — `CheckChannelOptionLinesAsync`);
+  - экран подписки владельца (`OwnerSubscriptionService.ToSubscribedOptionDto`: триальная строка — `Included`, купленная — `Extra`, правило
+    подменяется).
+- **Кто правило ЧИТАЕТ и для опций каналов** (без исключения `IsChannelOption`, отсутствие правила = `Unavailable` = 0 ₽):
+  - `AdminBillingController.GetBillingAccounts` — `totalMonthlyPrice` в списке биллинг-аккаунтов;
+  - `AdminAccountDtoBuilder.BuildAsync` — `options[].pricePerMonth`, `status`/`statusText` («Недоступно на текущем тарифе») в карточке аккаунта;
+  - `ProfileController` (~стр. 317) — `totalMonthlyPrice` в `GET /api/profile`.
+
+  Все три места берут правила только тарифа «Записей» (`AccountSubscription.PlanConfigId`), тарифы «Заказов/Домов/Бань» не учитываются.
+
+**Как владелец выбирает опцию.**
+- В заявке на подписку (`GET /api/billing/subscription` → `availableOptions`, `POST /api/billing/subscription/request`) опции каналов исключены
+  явно для всех линеек (`o.Code != ChannelOptionCodes.WhatsApp && o.Code != ChannelOptionCodes.Max`, §40.13). Других продаваемых опций нет,
+  поэтому `availableOptions` на практике всегда пуст.
+- Каждый мессенджер подключается отдельно в мастере номеров (`ConnectWizard` → шаг `Payment`/`Terms` → `TermsStep` c
+  `paymentRequest = true`). Заявка ждёт «Подтвердить оплату» админом в карточке номера (`POST /api/admin/notification-channels/{id}/confirm-payment`,
+  месяцы и комментарий). Мастер предлагает транспорт, только если он `Sellable`.
+
+**Как админ назначает опцию.**
+1. Карточка номера → «Подтвердить оплату». Продлевает строку `AccountSubscriptionOption` транспорта номера на N месяцев. Нужен уже
+   созданный номер (канал).
+2. Форма подписки во вкладке «Биллинг-аккаунты» (`PUT /api/admin/billing-accounts/{id}/subscription`). Сервер требует для **новой или
+   изменённой** строки канала свою дату `options[].paidUntil` (иначе 400 «Для опций WhatsApp и MAX укажите дату окончания оплаты»). Фронт
+   (`billingAccountsHelpers.optionRowsToPayload`) шлёт только `optionId` и `quantity`, поля даты на строке опции в форме нет. Неизменённая
+   существующая строка проходит (`IsUnchangedChannelOptionLine`). Снять галочку с опции канала в этой форме нельзя: строки каналов при
+   отсутствии в запросе не завершаются (`!IsChannelOption`, стр. ~473 и ~717).
+
+**Кеш.** `AccountMessagingReader` держит каталог опций (цена, `IsActive`) в `IMemoryCache` 60 с. `InvalidateCatalogCache` по комментарию
+«called when an admin edits the options catalog», но в продакшен-коде её никто не вызывает (✔ grep: только `NotificationTestBase` в тестах).
+`AdminOptionsController` сбрасывает только `PricingCatalogCache`.
+
+**Тесты.** Функциональные тесты `/api/admin/options` есть только для опций-лимитов цикла 19 (`Cycle19TariffLimitsTests`) и общие проверки в
+`AdminTests`. Тестов на `PUT` цены опции канала, на суммы и статусы опций каналов в списке и карточке биллинг-аккаунта и в
+`GET /api/profile` не найдено (✔ grep). `Cycle40ChannelsTests` вызывает `PUT …/billing-accounts/{id}/subscription`, но суммы и статусы не проверяет.
 
 ## 6. Конвенции проекта (✔ выборочно по коду; им следовать, а не вводить рядом свои)
 
@@ -4191,12 +4291,13 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 - **C40-16 — «один номер на транспорт аккаунта» держит только код.** Уникального индекса по (`BillingAccountId`, `Transport`) для живых каналов
   нет: создание заявки сериализует advisory-lock `channel-request:{account}:{transport}`, старые дубли становятся «лишними» (`Unfunded`,
   «Отвяжите этот номер»). Сколько аккаунтов с двумя живыми каналами одного транспорта на бою — блок 3 отчёта (не прогонялся).
-- **C40-17 — хвосты схемы.** `ChannelCompanyAssignments`, `SubscriptionPlanConfigs.AllowNotificationChannel`, правила `PlanOptionRules` двух
-  опций и `notifications.channel.price-per-month` остались в БД без чтения (удаление — отдельным циклом); на таблицу назначений опирается
+- **C40-17 — хвосты схемы.** `ChannelCompanyAssignments`, `SubscriptionPlanConfigs.AllowNotificationChannel` и
+  `notifications.channel.price-per-month` остались в БД без чтения (удаление — отдельным циклом). Правила `PlanOptionRules` двух опций —
+  **не «без чтения»**: их читают суммы и статусы админки и профиля (уточнено на `12889a7`, §9.13 O-2); на таблицу назначений опирается
   откат (скрипт `cycle40-rollback-assignments.sql`). Наследное правило «строка опции без даты → срок подписки „Записей“» оставлено в коде
   (О-40-5).
 
-### 9.12 Долг и риски цикла 42 («Бани») — ✔ по коду и документам на `d000673`, ветка `cycle/042-bani` в `develop` не влита, ничего не запускалось
+### 9.12 Долг и риски цикла 42 («Бани») — ✔ по коду и документам на `d000673`; влит в `develop` мерджем `04fadcf`, ничего не запускалось
 Пометка ↪ — со слов документов цикла / `TEST_CATALOG.md`, codebase-analyst не перепроверял; 🖥 — факт о машине. Пункты C42-1…C42-7 —
 мелкие вопросы контракта и кода: исправлять только по решению архитектора (выпущенный контракт тихо не правится).
 - **C42-1 — `BathsConflictDto` в контракте уже, чем ответ.** ✔ Схема `contracts/cycle42/openapi.yaml` описывает `{code, message}`, сервер
@@ -4259,6 +4360,36 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   сеансов, порядок замков) сохранена, но публикация ресурса бани добавила `billing-account` первым замком.
 
 ---
+
+### 9.13 Опции мессенджеров: цена и привязка к тарифам — ✔ по коду на `12889a7`, ничего не запускалось
+Подробности и пути — §5.18. Пункты O-1…O-7 — то, что видно в коде. Как это влияет на бой, зависит от данных в БД (🖥).
+- **O-1 — цену опции WhatsApp/MAX из админки задать нельзя.** Сервер умеет (`PUT /api/admin/options/{id}`), но экрана каталога опций во
+  фронтенде нет, а подсказки в `NotificationsAdminTab` отсылают к нему. MAX засеян с `PricePerMonth = NULL`, и `DEPLOY.md` §31 п. 3 называет
+  цену «единственным рычагом запуска». Значит, запуск продаж MAX возможен только через API или SQL. У `PUT` нет журнала изменения цены, а
+  тело запроса — полная замена строки.
+- **O-2 — правила «тариф ↔ опция» для опций каналов действуют наполовину.** Матрица в `PlansTab` их редактирует, а «оплачено», мастер,
+  триал, назначение подписки и экран владельца их игнорируют (§40.13). При этом суммы и статусы в админке (список и карточка
+  биллинг-аккаунта) и `totalMonthlyPrice` в `GET /api/profile` по-прежнему считаются через правило. Следствия:
+  - у MAX правил нет нигде, поэтому оплаченный MAX в карточке аккаунта будет показан как «Недоступно на текущем тарифе» за 0 ₽ и не войдёт
+    в суммы админки и профиля;
+  - то же для WhatsApp на тарифах без правила `Extra` (например, бесплатный «Записей», если у него не было `AllowNotificationChannel`);
+  - экран владельца для той же строки покажет «Подключена» и цену.
+
+  Три места смотрят только на тариф «Записей» аккаунта. Тестами расхождение не покрыто.
+- **O-3 — в форме подписки админки опции каналов фактически не назначить.** Без цены строка не показывается (фильтр
+  `pricePerMonth != null`). С ценой новая или изменённая строка канала уходит без `paidUntil`, и сервер отвечает 400. Снять опцию канала через
+  эту форму нельзя, сервер такие строки не завершает. Рабочий путь у админа один: «Подтвердить оплату» в карточке уже созданного номера.
+- **O-4 — «Подтвердить оплату» не проверяет цену и `IsActive`.** Проверяется только `open`, поэтому оплату MAX можно подтвердить при
+  `PricePerMonth = NULL`, хотя по `Sellable` MAX не продаётся.
+- **O-5 — кеш каталога в `AccountMessagingReader` (60 с) при правке опции не сбрасывается.** `InvalidateCatalogCache` в продакшен-коде не
+  вызывается. После смены цены или `IsActive` мастер, «оплачено» и `overview` до минуты видят старые значения. `/api/pricing` обновляется
+  сразу.
+- **O-6 — остатки прежней модели цены.** Поле `channelPricePerMonth` в `platform-settings` сервер принимает и молча игнорирует.
+  `SubscriptionPlanConfigs.AllowNotificationChannel` не читается (C40-17). Комментарии в `SubscriptionOption.cs` и
+  `AccountSubscriptionOption.cs` описывают состояние цикла 7 («nothing writes them yet», «only notifications.whatsapp is read») и устарели.
+- **O-7 — «выбрать опции отдельно» владельцу можно только в мастере номеров.** В заявке на подписку опции каналов исключены для всех
+  линеек, а других продаваемых опций нет, поэтому блок «доступные опции» у владельца всегда пуст. Заказчик может воспринимать это как
+  «опции нельзя выбрать».
 
 ## 10. Что уже существует в документации и тест-кейсах (дополнять существующее, параллельных версий не заводить)
 
