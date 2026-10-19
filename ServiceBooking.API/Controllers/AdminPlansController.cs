@@ -25,8 +25,8 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
     {
         var plans = await db.SubscriptionPlanConfigs.OrderBy(p => p.PricePerMonth).ToListAsync(ct);
         var subscriberCounts = await GetActiveSubscriberCountsAsync(plans.Select(p => p.Id));
-        var rules = await db.PlanOptionRules.WhereNotRetired().Where(r => plans.Select(p => p.Id).Contains(r.PlanConfigId)).ToListAsync(ct);
-        var totalOptionsInCatalog = await db.SubscriptionOptions.WhereNotRetired().CountAsync(ct);
+        var rules = await db.PlanOptionRules.WhereNotRetired().WhereNotMessenger().Where(r => plans.Select(p => p.Id).Contains(r.PlanConfigId)).ToListAsync(ct);
+        var totalOptionsInCatalog = await db.SubscriptionOptions.WhereNotRetired().WhereNotMessenger().CountAsync(ct);
         return Ok(new AdminPlansListDto(plans.Select(p =>
             MapAdminPlanDto(p, subscriberCounts.GetValueOrDefault(p.Id), rules.Where(r => r.PlanConfigId == p.Id).ToList(), totalOptionsInCatalog)).ToList()));
     }
@@ -332,8 +332,8 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
     private async Task<AdminPlanDto> BuildAdminPlanDtoAsync(SubscriptionPlanConfig plan, bool isNew = false)
     {
         var subscribedAccounts = isNew ? 0 : await ActiveSubscribersAsync(plan.Id);
-        var rules = await db.PlanOptionRules.WhereNotRetired().Where(r => r.PlanConfigId == plan.Id).ToListAsync();
-        var totalOptionsInCatalog = await db.SubscriptionOptions.WhereNotRetired().CountAsync();
+        var rules = await db.PlanOptionRules.WhereNotRetired().WhereNotMessenger().Where(r => r.PlanConfigId == plan.Id).ToListAsync();
+        var totalOptionsInCatalog = await db.SubscriptionOptions.WhereNotRetired().WhereNotMessenger().CountAsync();
         return MapAdminPlanDto(plan, subscribedAccounts, rules, totalOptionsInCatalog);
     }
 
@@ -396,7 +396,8 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
                 .Select(r => new AdminPlanOptionRuleDto(r.OptionId, r.Availability.ToString(), r.IncludedQuantity)).ToList(),
             subscribedAccounts,
             IsSystemTrial: plan.IsSystemTrial,
-            OptionCoverage: new AdminPlanOptionCoverageDto(configured, total, $"В тариф включено {configured} из {total} опций каталога"),
+            OptionCoverage: new AdminPlanOptionCoverageDto(configured, total,
+                total == 0 ? "Опций, зависящих от тарифа, нет" : $"В тариф включено {configured} из {total} опций каталога"),
             Line: plan.Line, MaxProductsPerShop: plan.MaxProductsPerShop, MaxOrdersPerMonth: plan.MaxOrdersPerMonth, AllowOrders: plan.AllowOrders,
             MaxHouses: plan.MaxHouses, MaxResources: plan.MaxResources);
     }
@@ -497,10 +498,15 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
         var requestRetiredOptionIds = knownOptions.Where(RetiredLimitOptions.IsRetired).Select(o => o.Id).ToHashSet();
         desiredList = desiredList.Where(d => !requestRetiredOptionIds.Contains(d.OptionId)).ToList();
 
+        // ARCHITECTURE_CYCLE43.md §43.5.1 (Д-6) — the messenger options do not depend on the tariff: their elements are dropped without an
+        // error, and their stored rules are never touched, even when a stale client omits them.
+        var requestMessengerOptionIds = knownOptions.Where(o => ChannelOptionLog.IsChannelOption(o.Code)).Select(o => o.Id).ToHashSet();
+        desiredList = desiredList.Where(d => !requestMessengerOptionIds.Contains(d.OptionId)).ToList();
+
         var existing = await db.PlanOptionRules.Include(r => r.Option).Where(r => r.PlanConfigId == planId).ToListAsync();
 
         foreach (var row in existing.Where(e =>
-            desiredList.All(d => d.OptionId != e.OptionId) && !RetiredLimitOptions.IsRetired(e.Option)))
+            desiredList.All(d => d.OptionId != e.OptionId) && !RetiredLimitOptions.IsRetired(e.Option) && !ChannelOptionLog.IsChannelOption(e.Option.Code)))
             db.PlanOptionRules.Remove(row);
 
         foreach (var d in desiredList)

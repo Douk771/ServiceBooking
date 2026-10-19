@@ -101,6 +101,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<ChannelPaymentLog> ChannelPaymentLogs => Set<ChannelPaymentLog>();
     // Cycle 40 (ARCHITECTURE_CYCLE40.md §40.2.3).
     public DbSet<ChannelOptionChangeLog> ChannelOptionChangeLogs => Set<ChannelOptionChangeLog>();
+    // Cycle 43 (ARCHITECTURE_CYCLE43.md §43.2.1).
+    public DbSet<SubscriptionOptionPriceChangeLog> SubscriptionOptionPriceChangeLogs => Set<SubscriptionOptionPriceChangeLog>();
     public DbSet<OutboundNotification> OutboundNotifications => Set<OutboundNotification>();
     public DbSet<CompanyNotificationSettings> CompanyNotificationSettings => Set<CompanyNotificationSettings>();
     public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
@@ -1238,6 +1240,20 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(l => l.OptionCode).HasMaxLength(64).IsRequired();
             e.Property(l => l.Comment).HasMaxLength(500);
             e.HasIndex(l => new { l.BillingAccountId, l.OptionCode, l.ChangedAtUtc });
+            // Cycle 43 (§43.2.2).
+            e.Property(l => l.PricePerMonth).HasPrecision(10, 2);
+            e.Property(l => l.Amount).HasPrecision(10, 2);
+        });
+
+        // Cycle 43 (ARCHITECTURE_CYCLE43.md §43.2.1): the catalog is never deleted physically, so Restrict.
+        builder.Entity<SubscriptionOptionPriceChangeLog>(e =>
+        {
+            e.HasOne(l => l.Option).WithMany().HasForeignKey(l => l.OptionId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(l => l.OptionCode).HasMaxLength(64).IsRequired();
+            e.Property(l => l.OldPricePerMonth).HasPrecision(10, 2);
+            e.Property(l => l.NewPricePerMonth).HasPrecision(10, 2);
+            e.Property(l => l.Comment).HasMaxLength(500);
+            e.HasIndex(l => new { l.OptionId, l.ChangedAtUtc });
         });
 
         builder.Entity<ChannelCompanyAssignment>(e =>

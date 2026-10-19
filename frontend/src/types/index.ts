@@ -6,6 +6,7 @@ import type { components as Cycle33Components } from './api-cycle33.generated'
 import type { components as Cycle37Components } from './api-cycle37.generated'
 import type { components as Cycle25Components } from './api-cycle25.generated'
 import type { components as Cycle40Components } from './api-cycle40.generated'
+import type { components as Cycle43Components } from './api-cycle43.generated'
 
 // ── Cycle 19 (ARCHITECTURE_CYCLE19.md §388.5, API_CONTRACT_CYCLE19.md §413): automatic address checking removed,
 // only the notice-acknowledgement result survives from cycle 13's address types. Read straight off
@@ -63,6 +64,24 @@ export interface NotificationPreferences {
 }
 
 export type CustomerMessagingOffer = Cycle40Components['schemas']['CustomerMessagingOfferDto']
+
+// ── Cycle 43 (API_CONTRACT_CYCLE43.md §43.20–§43.34, contracts/cycle43/openapi.yaml): messenger options — price, billing-account block, owner block.
+type Cycle43Schemas = Cycle43Components['schemas']
+export type MessengerSaleState = Cycle43Schemas['MessengerSaleStateDto']
+export type MessengerPriceChange = Cycle43Schemas['MessengerPriceChangeDto']
+export type AdminMessengerOption = Cycle43Schemas['AdminMessengerOptionDto']
+export type AdminMessengerOptions = Cycle43Schemas['AdminMessengerOptionsDto']
+export type MessengerPriceInput = Cycle43Schemas['MessengerPriceInput']
+export type UpdateMessengerPriceInput = Cycle43Schemas['UpdateMessengerPriceInput']
+export type MessengerPricePreview = Cycle43Schemas['MessengerPricePreviewDto']
+export type MessengerLineStatus = Cycle43Schemas['MessengerLineStatus']
+export type AdminMessengerLine = Cycle43Schemas['AdminMessengerLineDto']
+export type MessengerQuote = Cycle43Schemas['MessengerQuoteDto']
+export type ExtendMessengerInput = Cycle43Schemas['ExtendMessengerInput']
+export type MessengerDisableWhen = Cycle43Schemas['MessengerDisableWhen']
+export type DisableMessengerInput = Cycle43Schemas['DisableMessengerInput']
+export type OwnerMessengerLine = Cycle43Schemas['OwnerMessengerLineDto']
+export type OwnerMessengersBlock = Cycle43Schemas['OwnerMessengersBlockDto']
 
 export interface Company {
   id: string
@@ -403,7 +422,8 @@ export interface AdminChannelSummary {
 export type PricingPublicBlockedReason = 'OfferIsDraft' | 'LegalUnavailable'
 
 export interface PlatformSettings {
-  channelPricePerMonth: number | null
+  /** Retired in cycle 43 (API_CONTRACT_CYCLE43.md §43.34): the server still accepts and ignores it; the frontend no longer sends it. */
+  channelPricePerMonth?: number | null
   channelIdleDays: number
   pricingPublicEnabled: boolean
   pricingPublicBlockedReason: PricingPublicBlockedReason | null

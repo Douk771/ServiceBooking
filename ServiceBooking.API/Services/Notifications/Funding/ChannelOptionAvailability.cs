@@ -22,6 +22,21 @@ public static class ChannelOptionAvailability
     public static bool Sellable(bool open, bool isActive, decimal? pricePerMonth, bool termsOwnerPublished) =>
         open && isActive && pricePerMonth is not null && termsOwnerPublished;
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE43.md §43.0 (Д-1), API_CONTRACT_CYCLE43.md §43.22.1 — the same decision as <see cref="Sellable"/> with the first failed
+    /// check named. <c>Sellable == (Reason == null)</c> always. Vectors: <c>sale</c> in contracts/cycle43/messenger-vectors.json.
+    /// </summary>
+    public static MessengerSaleState Explain(bool open, bool isActive, decimal? pricePerMonth, bool termsOwnerPublished)
+    {
+        MessengerSaleReason? reason =
+            !open ? MessengerSaleReason.Closed :
+            !isActive ? MessengerSaleReason.Inactive :
+            pricePerMonth is null ? MessengerSaleReason.NoPrice :
+            !termsOwnerPublished ? MessengerSaleReason.OfferNotPublished :
+            null;
+        return new MessengerSaleState(reason is null, reason, MessengerTexts.SaleText(reason));
+    }
+
     public static OptionAvailabilityState Evaluate(
         string? settingValue, bool configDefault, bool isActive, decimal? pricePerMonth, bool termsOwnerPublished)
     {
@@ -34,3 +49,8 @@ public static class ChannelOptionAvailability
 }
 
 public readonly record struct OptionAvailabilityState(bool Open, bool Sellable);
+
+/// <summary>Why a messenger is not for sale — the first failed check, in the order of the enum (API_CONTRACT_CYCLE43.md §43.22.1).</summary>
+public enum MessengerSaleReason { Closed, Inactive, NoPrice, OfferNotPublished }
+
+public readonly record struct MessengerSaleState(bool Sellable, MessengerSaleReason? Reason, string Text);

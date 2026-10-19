@@ -21,7 +21,8 @@ public static class ChannelOptionLog
     public static bool Write(
         AppDbContext db, Guid billingAccountId, string optionCode, ChannelOptionChangeSource source,
         DateTime? oldPaidUntilUtc, DateTime? newPaidUntilUtc, DateTime? oldEndsAtUtc, DateTime? newEndsAtUtc,
-        string? changedByUserId, DateTime? changedAtUtc = null, Guid? channelId = null, string? comment = null)
+        string? changedByUserId, DateTime? changedAtUtc = null, Guid? channelId = null, string? comment = null,
+        decimal? pricePerMonth = null, int? months = null, decimal? amount = null)
     {
         if (!IsChannelOption(optionCode)) return false;
         db.ChannelOptionChangeLogs.Add(new ChannelOptionChangeLog
@@ -38,6 +39,10 @@ public static class ChannelOptionLog
             ChangedAtUtc = changedAtUtc ?? DateTime.UtcNow,
             ChannelId = channelId,
             Comment = comment is { Length: > 500 } ? comment[..500] : comment,
+            // Cycle 43 (ARCHITECTURE_CYCLE43.md §43.2.2): the confirmed amount of a connect/extend; null on every other path.
+            PricePerMonth = pricePerMonth,
+            Months = months,
+            Amount = amount,
         });
         return true;
     }

@@ -141,19 +141,4 @@ public class NumbersOverviewBuilderTests
         dto.DisplayStatus.Should().Be(ChannelDisplayStatus.Off);
         dto.DisplayText.Should().Be("Рассылки временно отключены платформой");
     }
-
-    [Fact]
-    public void UnchangedLineOfAChannelOption_IsRecognized_TrialRowAndPaidRowAlike()
-    {
-        var trial = new AccountSubscriptionOption { Quantity = 1, GrantedByTrial = true };
-        var line = new AssignOptionInput(Guid.NewGuid(), 1, null);
-
-        AdminBillingController.IsUnchangedChannelOptionLine(trial, line).Should().BeTrue();
-        AdminBillingController.IsUnchangedChannelOptionLine(trial, line with { Quantity = 2 }).Should().BeFalse("the quantity changed");
-        AdminBillingController.IsUnchangedChannelOptionLine(trial, line with { PaidUntil = new DateOnly(2026, 12, 1) }).Should().BeFalse("a date was given: this is a purchase");
-        // A row the admin confirmed ("Подтвердить оплату") has its own date: the "Назначить подписку" form sends it back without one — unchanged, not a 400.
-        AdminBillingController.IsUnchangedChannelOptionLine(new AccountSubscriptionOption { Quantity = 1, PaidUntilUtc = Now }, line).Should().BeTrue("a paid row sent back as read stays as it is");
-        AdminBillingController.IsUnchangedChannelOptionLine(new AccountSubscriptionOption { Quantity = 1, GrantedByTrial = true, EndsAtUtc = Now }, line).Should().BeFalse("an ending row is not unchanged");
-        AdminBillingController.IsUnchangedChannelOptionLine(null, line).Should().BeFalse("a NEW row needs its date");
-    }
 }

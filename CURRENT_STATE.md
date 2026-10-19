@@ -1,5 +1,27 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
+> **Цикл 43 «Опции мессенджеров: цена из админки, отвязка от тарифов, подключение отдельно» влит в `develop`** мерджем `31a3684`
+> (`cycle/043-messenger-options-pricing`, 19.10.2026). **На стенд (он же бой) цикл 43 НЕ выкачен** (DO-43-04 не делался, `DEPLOY.md` §33:
+> «на машину ничего не выкатывалось»). Цикл 42 «Бани» влит мерджем `04fadcf` (14.10.2026); выкачен 14.10 (🖥 со слов команды, в репозитории не проверяемо). Цикл 40 — в `develop` с `0bd2225`.
+> Большая часть описания проверялась по коду на `d000673`. Область «опции мессенджеров» (§3, §4, §5.18, §9.13) перепроверена по коду на `31a3684`.
+
+**Актуально по состоянию на коммит: `31a3684` (`develop`, мердж цикла 43), дата: 2026-10-19.**
+**Следующий diff отсчитывайте от `31a3684`.**
+
+**Обновление на `31a3684` (цикл 43, режим «обновление»).** ✔ `git log e4670c3..31a3684`: 27 коммитов (документы цикла, BE-43-M/R/1…5,
+FE-43-0…5, DO-43-01…03, QA-43-1…3 и фиксы ревью `68576b8`, `aa65c38`, `c50c453`, `e7d6d2a`); `git diff --stat`: 108 файлов, +20 297/−1 214,
+из них генераты — `20261019085339_Cycle43MessengerOptionPricing.Designer.cs` (7 539), `contracts/cycle43/openapi.json` (1 772),
+`api-cycle43.generated.ts` (1 160). **codebase-analyst ничего не запускал** — ни тесты, ни сборку, ни `redocly`, ни SQL-отчёт. Числа прогонов
+ниже (§7.1) ↪ переданы при постановке задачи. Источник намерения — корневой `SPEC.md` (теперь спека цикла 43; спека цикла 40 заархивирована
+как `SPEC_CYCLE40_SIMPLIFY_NOTIFICATION_CHANNELS.md`), `ARCHITECTURE_CYCLE43.md` (§43.0a — решения заказчика В1–В4 от 19.10.2026),
+`API_CONTRACT_CYCLE43.md` (§43.20–§43.34), `contracts/cycle43/`, раздел «Цикл 43» `TEST_CATALOG.md`, `DEPLOY.md` §33. Где документы расходятся
+с кодом — записано по коду. Обновлены: шапка, §0 (ветки), §1 (фронт), §2 (`Services/Billing/`, `contracts/cycle43/`), §3 (блок «Опции мессенджеров —
+цикл 43»), §4 (блок цикла 40 — строка про форму подписки; новый блок цикла 43, 468 строк эталона), §5.16 (удалённый юнит-тест), §5.18
+(переписан), §7.1, §7.2, §7.3, §9.13 (переписан: O-1…O-7 и долг цикла 43 C43-*), §10.3–§10.5. `CHANGELOG.md` и `README.md` в этой задаче не
+правились (их правит другой агент). `docs/history/` в проекте нет: документы цикла по конвенции лежат в корне (`*_CYCLE43*.md`), переносить нечего.
+
+*Ниже — шапка прежнего обновления (`12889a7`), сохранена для истории.*
+
 > Цикл 42 «Бани» **влит** в `develop` мерджем `04fadcf` (14.10.2026). Ему предшествовал `7b1ca30` (`origin/cycle/042-bani`, CI зелёный).
 > Цикл 40 уже в `develop` (мердж `0bd2225`, фикс Designer `15259d7`, мердж `b6470ba`), а `develop` влит в ветку цикла 42 мерджем `41a9279`.
 > Большая часть описания проверялась по коду на `d000673`. После этого менялись только условия триала (`baths-2026-10-14`), исправления
@@ -278,6 +300,9 @@ GUID тарифов `5a1e0c38…`). Подразделы цикла 38 полу�
 - 🖥 — факт о боевой машине. В репозитории его нет, в этом сканировании он не проверялся (SSH не использовался).
   Источник — прежняя редакция, блок «🚀20», проверено по SSH 30.09.2026.
 
+**Ветки на `31a3684`** (✔ локальные ссылки, 2026-10-19; `git fetch` не делался): `develop` = `origin/develop` = `31a3684` (мердж цикла 43);
+`cycle/043-messenger-options-pricing` = `origin/cycle/043-messenger-options-pricing` = `e7d6d2a` — целиком в `develop`. Ориентиры: 1 754 коммита,
+3 210 отслеживаемых файлов (✔ `git rev-list --count HEAD`, `git ls-files`).
 **Ветки на `d000673`** (✔ локальные ссылки, 2026-10-14; `git fetch` не делался): `origin/develop` = `b6470ba` (мердж цикла 40
 `0bd2225` + фикс Designer миграции `Cycle40ChannelOptions` `15259d7`, мердж `b6470ba`). Ветка `origin/cycle/042-bani` = `d000673` —
 в неё влит весь `develop` (мердж `41a9279`), в `develop` **не влита**; эта правка — worktree `ServiceBooking-c42-doc-2`, ветка
@@ -370,6 +395,8 @@ fast-forward, мерджа нет). Локальная `cycle/035-goods-showcase
 (библиотека и CLI тестовой инфраструктуры), `.UnitTests`, `.Tests`. Файла `global.json` и `Directory.Packages.props` нет.
 
 ### Фронтенд (`frontend/`, один npm-пакет; с цикла 37 — три приложения: ezbook, goods, dom; с цикла 42 — четыре, + bani)
+**С цикла 43** (✔ diff `package.json` на `31a3684`) новых npm- и NuGet-зависимостей нет; добавлен только скрипт `types:api:cycle43`
+(`openapi-typescript ../contracts/cycle43/openapi.yaml -o src/types/api-cycle43.generated.ts`).
 **С цикла 42** (✔ `package.json` на `d000673`) **новых npm-зависимостей нет**; добавлены конфиги четвёртого приложения
 `vite.bani.config.ts` (порт `SB_BANI_WEB_PORT`, по умолчанию 5176), `tsconfig.bani.json`, `tailwind.bani.config.js` (+ `.d.ts`) и скрипты
 `dev:bani`, `build:bani` (`tsc -p tsconfig.bani.json && vite build --config vite.bani.config.ts`), `types:api:cycle42`; `build:release` =
@@ -475,7 +502,7 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | `ServiceBooking.API/Startup/` | Инфраструктура запуска: `ApiExtensions` (MVC/JSON/CORS/Swagger/обработчик 500/раздача загрузок), `AuthenticationExtensions` (JWT, `OnTokenValidated`), `ApplicationServicesExtensions` (DI прикладных сервисов, фоновые задачи, подтверждение телефона), `NotificationServicesExtensions` (транспорты, реестры, Web Push), `RateLimitingExtensions`, `DeploymentValidationExtensions` (fail-fast проверки прод-конфигурации), `HealthEndpointsExtensions` (`/api/health/live`, `/api/health/ready`), `LoggingExtensions`, `StartupSeedingExtensions` (миграции, роли, суперадмин) |
 | `ServiceBooking.API/Controllers/` | 53 контроллера (с циклом 31 — `CompanyCatalogListingController`) и 2 помощника (`BookingEndpointHelpers`, `AdminAccountDtoBuilder`). Мелкие DTO часто лежат в конце файла контроллера |
 | `ServiceBooking.API/DTOs/<Домен>/` | Крупные DTO (`record`), `DTOs/Common/` — `PagedResult<T>`, `Optional<T>` |
-| `ServiceBooking.API/Services/` | Бизнес-логика. В корне 45 файлов общего назначения (слоты, доступ, телефоны, файлы, изображения, проверки деплоя…) и предметные подкаталоги: `Billing/` (36), `Bookings/` (7), `Companies/` (10, с циклом 31 — `SalonListingRules`, `SalonListingQuery`), `Legal/` (20), `Notifications/` (30 + `GreenApi/`, `GreenApiMax/`, `WebPush/`), `Orders/` (23 + `Notifications/`, `Reports/`), `Shops/` (30), `PhoneVerification/` (13 + `Max/` 16), `StaffMax/` (7), `Retention/` (+ `Rules/` 27 правил), `Scheduling/` (+ `Tasks/` 10 задач), `Subjects/` (права субъекта ПДн), `Signals/` (GlitchTip), `PublicSites/`, `Health/`, `Hosting/`. **На `4d65578`** (✔ `ls`): `Notifications/` — 48 файлов в корне + `Funding/` (5: `ChannelOptionCodes`, `ChannelOptionAvailability`, `ChannelOptionFunding`, `TransportFunding`, `MessagingDemand`) + `GreenApi/`, `GreenApiMax/`, `WebPush/`; `Billing/` — 41 (удалены `ChannelEligibility`, `TrialMailingRulePolicy`; добавлены `ChannelOptionLog`, `ChannelOptionAssignmentRules`, `TrialOptionGrantRule`, `MessengerAddonsBuilder`, `MessengerAddonsProvider`); новая задача `Scheduling/Tasks/ChannelTestMessageTask.cs` (§5.16) |
+| `ServiceBooking.API/Services/` | Бизнес-логика. В корне 45 файлов общего назначения (слоты, доступ, телефоны, файлы, изображения, проверки деплоя…) и предметные подкаталоги: `Billing/` (36), `Bookings/` (7), `Companies/` (10, с циклом 31 — `SalonListingRules`, `SalonListingQuery`), `Legal/` (20), `Notifications/` (30 + `GreenApi/`, `GreenApiMax/`, `WebPush/`), `Orders/` (23 + `Notifications/`, `Reports/`), `Shops/` (30), `PhoneVerification/` (13 + `Max/` 16), `StaffMax/` (7), `Retention/` (+ `Rules/` 27 правил), `Scheduling/` (+ `Tasks/` 10 задач), `Subjects/` (права субъекта ПДн), `Signals/` (GlitchTip), `PublicSites/`, `Health/`, `Hosting/`. **На `4d65578`** (✔ `ls`): `Notifications/` — 48 файлов в корне + `Funding/` (5: `ChannelOptionCodes`, `ChannelOptionAvailability`, `ChannelOptionFunding`, `TransportFunding`, `MessagingDemand`) + `GreenApi/`, `GreenApiMax/`, `WebPush/`; `Billing/` — 41 (удалены `ChannelEligibility`, `TrialMailingRulePolicy`; добавлены `ChannelOptionLog`, `ChannelOptionAssignmentRules`, `TrialOptionGrantRule`, `MessengerAddonsBuilder`, `MessengerAddonsProvider`); новая задача `Scheduling/Tasks/ChannelTestMessageTask.cs` (§5.16). **На `31a3684`** (✔ `ls`): `Billing/` — 51 файл: цикл 43 удалил `ChannelOptionAssignmentRules` и добавил 11 (`MessengerLineRule`, `MessengerChargeRules`, `MessengerPriceChangeRules`, `MessengerPaymentService`, `MessengerOptionsReader`, `MessengerCatalogCaches`, `MessengerOptionFilters`, `MessengerTransportRoute`, `OptionPriceLog`, `AdminMessengerLinesBuilder`, `OwnerMessengersBlockBuilder`; §5.18) |
 | `ServiceBooking.API/App_Data/legal/` | **Собранный** артефакт правовых текстов (18 файлов, `legal.json`). Лежит в git, руками не правится |
 | `ServiceBooking.LegalKit/` | CLI `build/check/links/publish/rollback/status` для правовых текстов. Ссылается на API как на библиотеку |
 | `ServiceBooking.TestKit/` | Изоляция тестовых БД (Testcontainers, лизинг баз `sbtest_<key>_<slot>`), CLI `status/sweep/doctor` |
@@ -501,6 +528,7 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | `frontend/bani/` | **Цикл 42.** Приложение **bani.ezbook.ru** («Бани»). Точка входа — `bani/src/main.tsx` → `BaniApp.tsx` (маршруты по `contracts/cycle42/bani-routes.json`, обёртка `SlotVerticalProvider(bathsVertical)`); `bani/index.html` с `noindex`, `bani/public/` (свой `sw.js` без `fetch`/Cache API, манифест «EZBOOK Бани», иконки). Внутри `bani/src/`: `vertical.ts`, `api/`, `landing/` (конфиг главной и FAQ), `components/` (каталог), `cabinet/` (тексты кабинета, `providerForm`, `trialOutcome` — дубли dom, C42-6), `hooks/`, `pages/` (7 страниц) и `pages/cabinet/` (15 страниц, в т. ч. `SchedulePage` банщика), `utils/` (`baniTexts.ts` — запасные правовые тексты, `guestStorage.ts`), guard-тесты (`guestCopy`, `brand`, `legalKeys`, `sharedSources`, `workerRouting`, `baniRoutes`, `baniApp.routes`); 32 файла `*.test.ts(x)` |
 | `frontend/src/components/slots/`, `src/utils/slots/`, `src/hooks/slots/`, `src/api/slots.ts` | **Цикл 42** (FE-42-1a/1b): общий код услуг, **перенесённый** из dom: контекст `SlotVerticalContext.tsx` (`SlotVerticalProvider`, без провайдера — понятная ошибка), `ui/`, `services/`, `views/` (тела страниц как компоненты), утилиты (`businessClock`, `serviceDay`, `serviceForms`, `serviceGuests`, `slotTexts`, `ownerWarnings`…), фабрика API `createSlotApi('/stays' | '/baths')`. В dom остались тонкие реэкспорты-прокладки и специфика домов |
 | `contracts/cycle42/` | **Цикл 42.** `openapi.yaml` (OpenAPI 3.0.3, 2 925 строк: 57 путей `/api/baths/*` + 7 изменённых существующих путей) + `openapi.json`; `bani-routes.json` (маршруты bani, политика адресов компании и ресурса, резерв — встраивается в API); `bani-vectors.json` (эталон `sessionReminder`, `guests`, `restrictedItems` + `stems`, `ownerText`, `gate` для C# и TS) |
+| `contracts/cycle43/` | **Цикл 43.** `openapi.yaml` (OpenAPI 3.0.3, 1 260 строк: 6 новых маршрутов и 4 существующих с изменённой формой) + `openapi.json` (генерат, читает `OpenApiContract.Load("cycle43")`); `messenger-vectors.json` (эталон чистых правил: `line`, `sale`, `consequences`, `priceValidation`, `quote`, `disable`, `ownerAction`; читают юнит-тесты `ServiceBooking.UnitTests/Cycle43/`). `contracts/cycle40/` не менялся. Отчёт выката — `deploy/checks/cycle43-messenger-options.sql` (только чтение) |
 | `deploy/nginx/bani.ezbook.conf`, `test-bani-masking.sh` | **Цикл 42** (DO-42-01): vhost четвёртого сайта (корень `current/__bani`, лог `bani.access.log` с маской токенов с первого коммита, `noindex`), скрипт проверки маскирования (идёт в CI). В `ezbook.conf` и `demo.visit.ezbook.conf` — `/__bani/` → 404, в `dom.ezbook.conf` маска дополнена `api/baths/service-orders/public` |
 | `tools/bench/cycle39/` | **Цикл 39** (US-39-23): `bench_catalog.py` + `README.md` — замер p95 каталога dom на 500 домах; **ни разу не прогонялся** (§9.10) |
 | `frontend/scripts/contracts-to-json.mjs` | Цикл 31: `npm run contracts:json` — `contracts/<цикл>/openapi.yaml` → `openapi.json` через `js-yaml`. Список циклов в скрипте на `2834e00` — `['cycle31', 'cycle32']`; **`cycle33` в нём нет** (§5.10, §9.1 C33-1) |
@@ -827,6 +855,26 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
   вместимость у опубликованного — BUG-C42-QA-3 исправлен); `Capacity` задана ⇒ `1 ≤ GuestsCount ≤ Capacity` при создании; у ресурса бани
   `AvailableForHouseBookings = false`; строки услуг бывают только у компаний `Stays` и `Baths` (`SlotVerticals.IsSlotKind`).
 
+**Опции мессенджеров — цикл 43, миграция `20261019085339_Cycle43MessengerOptionPricing`** (✔ по миграции, `Entities/`, `AppDbContext`,
+`ShowcaseOwnership` на `31a3684`; форма — `ARCHITECTURE_CYCLE43.md` §43.2). Миграция одна, **только добавления**, данные не меняет
+(ни цен, ни строк опций, ни `PlanOptionRules`):
+- **Новая таблица `SubscriptionOptionPriceChangeLogs`** (сущность `SubscriptionOptionPriceChangeLog`, append-only журнал цены опции):
+  `OptionId` (FK → `SubscriptionOptions`, `Restrict`), `OptionCode varchar(64)`, `Old/NewPricePerMonth numeric(10,2) NULL`,
+  `Old/NewIsActive`, `Source int` (новое перечисление `OptionPriceChangeSource`: `MessengerPriceScreen = 0`, `OptionsCatalogApi = 1`),
+  `ActivePaidAccounts int NULL` (снимок числа аккаунтов с действующей не пробной оплатой), `ChangedByUserId` (без FK), `ChangedAtUtc`,
+  `Comment varchar(500) NULL`; индекс `(OptionId, ChangedAtUtc)`. Единственный писатель — `Services/Billing/OptionPriceLog.Write`.
+  В `ShowcaseOwnership.NeverWritten` — **теперь 31 таблица** (держит `ShowcaseOwnershipCoverageTests`, `HaveCount(31)`); в `DemoResetTables.Kept` не входит.
+- **`ChannelOptionChangeLogs`** + `PricePerMonth numeric(10,2) NULL`, `Months int NULL`, `Amount numeric(10,2) NULL` — цена, срок и сумма
+  при подключении/продлении (из карточки аккаунта и «Подтвердить оплату»); у триала, отключения и старых строк — `NULL`.
+  Существовавшая колонка `ChannelPaymentLogs.Amount` (раньше всегда `NULL`) теперь заполняется при «Подтвердить оплату».
+- Перечисления `ChannelOptionChangeSource`, `SubscriptionChangeKind`, `NotificationTransport` — без новых значений (подключение из карточки
+  аккаунта пишется как `AdminBillingAccount`, отключение — `AdminOptionEnded`, история — `SubscriptionChangeKind.Options`).
+- **Не тронуто:** `PlanOptionRules` мессенджеров (остаются в БД, код их больше не читает и не пишет, §5.18), `AllowNotificationChannel`,
+  `ChannelCompanyAssignments`, настройка `notifications.channel.price-per-month` — хвосты C40-17, удаление отдельным циклом.
+- **Откат `Down()`**: `DropTable` + `DropColumn ×3` — теряет журнал цены и суммы; по `DEPLOY.md` §33 схему не откатывают, только код.
+  Накат → откат → накат на отдельной базе — **CY43-81** (`Cycle43MigrationRollbackTests`; там же CY43-82 — инварианты «пути денег не трогают
+  правила тарифа, журналы только пополняются»).
+
 ---
 
 ## 4. Реальные API-эндпоинты (✔ по атрибутам контроллеров)
@@ -1131,7 +1179,8 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
   `working`, `actionRequired`, `off`. `GET|PUT /api/admin/platform-settings` — `customerMessagingEnabled`, `whatsAppOptionOpen`,
   `maxOptionOpen` (GET — всегда значение; PUT — `null` = не менять; смена пишется в журнал, сбрасывает кеш настроек и кеш цен).
   «Биллинг-аккаунты» (`PUT /api/admin/billing-accounts/{id}/subscription`): для двух опций каналов дата `PaidUntil` обязательна, правило тарифа
-  не проверяется, создание/продление строки закрытой опции → 409 (`ChannelOptionAssignmentRules`), запись в `ChannelOptionChangeLog`.
+  не проверяется, создание/продление строки закрытой опции → 409, запись в `ChannelOptionChangeLog`. ⚠️ **Устарело с цикла 43**
+  (✔ на `31a3684`): форма подписки строки мессенджеров молча игнорирует, `ChannelOptionAssignmentRules` удалён — см. блок «Цикл 43» ниже.
 - **Цены:** `GET /api/pricing` и `GET /api/billing/subscription` (линейка «Записи») — в конце `messengerAddons[] {transport, label,
   pricePerMonth, text, footnote}` и `messengerAddonsNote {conditionsUrl: "/offer-channel", conditionsLabel, taxNote}`; строка есть только у
   продаваемой опции (открыта, активна, с ценой, `TermsOwner` опубликован); у WhatsApp — сноска об ограничении доступа. В общем списке опций
@@ -1166,6 +1215,26 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
   400 на «задаток/невозвратн/депозит», `contentWarnings[]`; `PUT …/setup` принимает `capacity`; публичные ответы услуг «Домов» + `cityName`,
   `localTimeNote`, `sessionReminder` (у «Домов» всегда null), `bookAgainUrl` (null у «Домов»); `GET /api/profile/export` — в
   `stayServiceOrders[]` + `guestsCount`, `site` (`Stays`/`Baths`), ссылка на сайт вертикали; `/api/pricing` линейку «Бани» не отдаёт (CY42-28).
+
+
+**Опции мессенджеров — цикл 43** (✔ атрибуты контроллеров и эталон `Cycle22RouteTable.golden.txt` на `31a3684`: **+6 маршрутов**, все
+`[Authorize(Roles = "SuperAdmin")]`, прежние строки не менялись — **итого 468 строк** эталона). Форма — `contracts/cycle43/openapi.yaml`,
+словами — `API_CONTRACT_CYCLE43.md` §43.20–§43.34; в `API_DOCUMENTATION.md` — §4.24 (помечен «НЕ ВЫПУЩЕНО»). `{transport}` — `WhatsApp`/`Max`
+без учёта регистра (`MessengerTransportRoute.TryParse`), иное — 404 с пустым телом.
+- `AdminMessengerOptionsController` (`api/admin`): `GET messenger-options` (обе опции: цена, активность, «открыто», итог продажи с причиной,
+  число аккаунтов с действующей оплатой, журнал цены, тексты `planMatrixNote`/`priceHint`); `POST messenger-options/{transport}/price/preview`
+  (последствия без записи); `PUT messenger-options/{transport}/price` (тело `UpdateMessengerPriceInput`: `pricePerMonth`, `isActive`,
+  обязательные `comment`, `expectedPricePerMonth`, `expectedIsActive`; расхождение `expected*` → 409).
+- `AdminAccountMessengersController` (`api/admin`): `GET billing-accounts/{accountId}/messengers/{transport}/quote?months=N`,
+  `POST …/extend` (`ExtendMessengerInput`: `months` 1…24, `comment`, `expectedPricePerMonth`), `POST …/disable` (`DisableMessengerInput`:
+  `when` = `Now`/`PeriodEnd`, обязательный `comment`). Несуществующий аккаунт → 404.
+- **Изменённые существующие:** `GET /api/admin/billing-accounts/{id}` — `options[]` без мессенджеров, в конце `messengers[]` (всегда две
+  строки) и `messengersMonthlyTotal`; `PUT …/billing-accounts/{id}/subscription` — строки WhatsApp/MAX игнорируются во всех линейках (400 про
+  дату оплаты и 409 «закрыта» больше не выдаются); `POST /api/admin/notification-channels/{id}/confirm-payment` — необязательный
+  `expectedPricePerMonth`, новые 409 «не продаётся» (неактивна, нет цены, оферта не опубликована) и «цена изменилась»; `GET /api/billing/subscription?line=…`
+  — `options[]`/`totalMonthlyPrice` без мессенджеров, новое поле `messengers` (`OwnerMessengersBlockDto | null`); `GET /api/admin/billing-accounts`
+  и `GET /api/profile` — смысл `totalMonthlyPrice` (мессенджеры по `MessengerLineRule`); `GET|POST|PUT /api/admin/plans` — правила мессенджеров
+  не отдаются и не пишутся; `POST|PUT|DELETE /api/admin/options…` — журнал цены и сброс кешей (форма та же).
 
 **Маршруты фронтенда** (✔ `App.tsx`, `GoodsApp.tsx`; dom — ✔ `DomApp.tsx` на `a7e3168`):
 - dom (цикл 37; эталон — `contracts/cycle37/dom-routes.json`, его сверяет `dom/src/domRoutes.test.ts`, бэкенд читает как ресурс
@@ -2771,7 +2840,7 @@ Contract, MigrationRollback) + `Infrastructure/Cycle39TestBase.cs`; 136 атри
 `PendingRebindTests` и др. (§40.16) **нет**; в `OpenApiContractValidatorTests` строки `[InlineData("cycle40")]` нет. Юнит — каталог
 `ServiceBooking.UnitTests/Cycle40/` (17 файлов: `AccountMessagingReaderTests`, `ChannelVectorsTests` по всем 8 разделам векторов,
 `NotificationGateCycle40Tests`, `MessagingQueueingTests`, `CompanyMessagingStatusTests`, `NumbersOverviewBuilderTests`, `PendingRebindKeyTests`,
-`ChannelTestMessageRuleTests`, `ChannelOptionAssignmentRulesTests`, `MessengerTextsTests`, `MessengerTextsForbiddenWordsTests`,
+`ChannelTestMessageRuleTests`, `ChannelOptionAssignmentRulesTests` (✔ удалён в цикле 43 вместе с правилом), `MessengerTextsTests`, `MessengerTextsForbiddenWordsTests`,
 `PlatformSettingsOptionDefaultsTests`, `ServerCountryByTransportTests`, `TransportFundingTests`, `TrialOptionGrantRuleTests`,
 `MessagingDemandTests`, `ChannelOptionLogTests`; 135 атрибутов) + стражи `Cycle40EnumAppendOnlyTests`, `AllowNotificationChannelReadGuardTests`,
 `AssignmentReadGuardTests` (11) и правки ~15 старых файлов. Фронт (vitest) — 10 новых файлов (~47 `it`: `channelRules.test.ts` по векторам,
@@ -2860,91 +2929,118 @@ CY42-106…109 (`Cycle42LocationChangeTests`) и юнит `BathsLocationChangePo
 (CY42-01…17, 20…28, 30…55, 60…63, 70…72, 80…85, 90…99, 100…115, 130…134, 140); юнит — 13 новых файлов (+100 атрибутов по diff); фронт —
 39 новых файлов `*.test.ts(x)` (+187 `it`/`test` по diff), в т. ч. 32 в `frontend/bani`. Ручные `M42-*` и вердикты QA на стенде — не проводились.
 
-### 5.18 Опции мессенджеров (WhatsApp, MAX): цена, каталог, тарифы, назначение — фактическое состояние (✔ по коду на `12889a7`, ничего не запускалось)
-Точечная перепроверка под задачу заказчика 19.10.2026: «из админки нельзя задать цену, каша с привязкой к тарифам, опции нельзя выбрать отдельно».
-Ниже только факты по коду. Риски и расхождения собраны в §9.13. Устройство «оплачено/маршрутизация» — §5.16.
+### 5.18 Опции мессенджеров (WhatsApp, MAX): цена, каталог, тарифы, подключение — цикл 43 (✔ по коду на `31a3684`; влит в `develop`, на стенд НЕ выкачен, ничего не запускалось)
+Цикл 43 закрыл задачу заказчика от 19.10.2026: «из админки нельзя задать цену, каша с привязкой к тарифам, опции нельзя выбрать отдельно».
+Решения заказчика В1–В4 (`ARCHITECTURE_CYCLE43.md` §43.0a): мессенджеры от тарифа не зависят (одна цена за мессенджер на аккаунт); чинятся
+и админка, и «Подписка» владельца; смена цены не трогает оплаченные периоды и уведомлений не шлёт; риск открытия продаж MAX вводом цены
+принят. Устройство «оплачено/маршрутизация» (`ChannelOptionFunding`, `ChannelOptionAvailability.Sellable`, мастер) **не менялось** — §5.16;
+`contracts/cycle40/` заморожен. Риски и долг — §9.13. Состояние до цикла (на `12889a7`) — в истории git этого файла (`e4670c3`).
 
-**Каталог опций в БД** (`SubscriptionOptions`, сущность `ServiceBooking.Core/Entities/SubscriptionOption.cs`). По миграциям в каталоге
-**четыре** строки:
-- `extra-companies` и `extra-employees` — опции-лимиты, выведены из оборота в цикле 19 (`RetiredLimitOptions`, фильтр `WhereNotRetired()`);
-- `notifications.whatsapp` — миграция `20260922121140_SeedBillingCatalog`, `PricePerMonth = NULL`, `IsPublic = false`, `Kind = Quantity`, `UnitName = 'номер'`;
-- `notifications.max` — миграция `20261009100000_Cycle40ChannelOptions`, фиксированный Id `c4000000-0000-4000-8000-000000000040`
-  (`ChannelOptionCodes.MaxOptionSeedId`). **Цена `NULL` намеренно** (Т40-L-01): по комментарию миграции и `DEPLOY.md` §31 п. 3 цену задаёт
-  SuperAdmin после публикации новой редакции оферты.
+**Каталог опций в БД** — как раньше: четыре строки `SubscriptionOptions` (`extra-companies`, `extra-employees` — выведены из оборота в
+цикле 19; `notifications.whatsapp`; `notifications.max`, засеян с `PricePerMonth = NULL`). Миграция цикла 43 цены не задаёт. Какая цена
+на бою — в репозитории не видно (🖥). Модель данных цикла (журнал цены, суммы в журнале опций) — §3.
 
-Других продаваемых опций нет. Поэтому выражение «опции» в продукте сейчас фактически означает две опции каналов. Какая цена сейчас на бою —
-в репозитории не видно (🖥).
+**Экран цены мессенджеров** (`AdminMessengerOptionsController` + `MessengerOptionsReader`; фронт — `MessengerOptionsPanel.tsx` во вкладке
+уведомлений админки, `NotificationsAdminTab.tsx` стр. ~637; помощники `messengerOptionsHelpers.ts`, хук `useMessengerOptions.ts`).
+- `GET /api/admin/messenger-options` — две строки (WhatsApp, MAX): цена или «не задана», активность, «открыто», итог продажи
+  (`ChannelOptionAvailability.Explain` — новая функция: причина «не продаётся» в порядке «закрыт → неактивна → цена не задана → оферта
+  не опубликована»; юнит-тест сверяет её с `Sellable` по замороженным векторам cycle40), число аккаунтов с действующей **не пробной**
+  оплатой (в памяти через `AccountMessagingReader.LoadAsync` по всем аккаунтам с живой строкой опции), последние записи журнала,
+  тексты `planMatrixNote`/`priceHint`.
+- `POST …/{transport}/price/preview` — последствия (`MessengerPriceChangeRules.Consequences`: «начнёт продаваться», «продажи остановятся»,
+  «оплата действует у N аккаунтов», «цена 0 ₽», «не продаётся по иной причине») без записи.
+- `PUT …/{transport}/price` — валидация (`MessengerPriceChangeRules`: 0…99 999 999,99, не больше двух знаков, причина 1…500, «ничего не
+  меняется» → 400; тексты 400 без имён полей), транзакция + `AdvisoryLock` `subscription-option:{optionId}`, строка опции из БД, сверка
+  обязательных `expectedPricePerMonth`/`expectedIsActive` (расхождение → 409), запись **только** `PricePerMonth`, `IsActive` (если передан)
+  и `UpdatedAtUtc`, строка `SubscriptionOptionPriceChangeLogs` (`Source = MessengerPriceScreen`, снимок `ActivePaidAccounts`), коммит,
+  **после коммита** — сброс кешей.
+- **Сброс кешей** — `MessengerCatalogCaches.Invalidate(PricingCatalogCache, IMemoryCache)`: `PricingCatalogCache.Invalidate()` +
+  `AccountMessagingReader.InvalidateCatalogCache`. Вызывается в `PUT …/price` и в `POST`/`PUT`/`DELETE /api/admin/options…`
+  (`AdminOptionsController`). Кеш — память процесса (на бою один контейнер API, R43-6).
+- **Старые пути** сохранены: `PUT /api/admin/options/{id}` (полная замена) теперь при смене цены/активности опции мессенджера пишет строку
+  журнала `Source = OptionsCatalogApi` без причины; `DELETE` по опции мессенджера — тоже. `channelPricePerMonth` в `platform-settings` сервер
+  по-прежнему принимает и игнорирует; фронт его больше не шлёт. Две старые подсказки во вкладке уведомлений заменены текстом `priceHint` сервера.
 
-**Как задаётся цена опции.**
-- Сервер: `PUT /api/admin/options/{id}` (`AdminOptionsController`, только SuperAdmin) принимает **полное** тело `AdminOptionInput`
-  (`code` — неизменяемый, `name`, `kind`, `unitName` — обязателен для `Quantity`, `pricePerMonth`, `maxQuantity`, `isPublic`, `isActive`,
-  `sortOrder`, `capabilityKey`, `description`). Это полная замена строки, частичного обновления нет. Валидация: цена от 0 до 99 999 999,99.
-  После сохранения вызывается `PricingCatalogCache.Invalidate()`. Журнала изменения цены нет: ни `ChannelOptionChangeLog`, ни журнала
-  настроек платформы. Есть также `POST /api/admin/options` и `DELETE …/{id}` (мягкое `IsActive = false`).
-- Фронт: **экрана каталога опций в админке нет.** В `frontend/src/api/plans.ts` есть только `listOptions` (`GET /api/admin/options`).
-  Вызовов `POST`/`PUT /admin/options` во фронтенде нет (✔ grep по `frontend/src`, `goods`, `dom`, `bani`). Поле «цена канала» во вкладке
-  уведомлений убрано в цикле 40. Вместо него стоит подсказка «Цена подключения мессенджера — это цена его опции (вкладка „Биллинг-аккаунты“ и
-  каталог опций)» (`NotificationsAdminTab.tsx` ~стр. 481) и hint у переключателя MAX «Цена и опубликованная оферта задаются отдельно». Обе
-  ссылаются на экран, которого нет. Значит, цену MAX/WhatsApp можно задать только прямым вызовом API или SQL.
-- Старое поле `channelPricePerMonth` в `GET|PUT /api/admin/platform-settings` сервер принимает и игнорирует (`AdminPlatformController`:
-  `priceChanged = false`). Настройку `notifications.channel.price-per-month` никто, кроме этого контроллера, не читает.
+**Одно правило суммы и статуса строки мессенджера — `MessengerLineRule`** (`Services/Billing/MessengerLineRule.cs`, чистый статический
+класс поверх неизменного `ChannelOptionFunding`). Статусы (первое совпадение): `Ending` «Отключается {дата}» → `Trial` «Пробный период
+[до …]» (0 ₽) → `Paid` «Оплачено [до …]» (цена опции) → `PendingPayment` «Ожидает подтверждения оплаты» → `NotConnected` «Не подключён» →
+`Expired` «Пробный период закончился …» / «Оплата закончилась …». В сумму идут только `Ending`/`Trial`/`Paid`. «Недоступно на текущем
+тарифе» для мессенджеров не возвращается нигде. Тексты — `MessengerTexts` (под стражем `MessengerTextsForbiddenWordsTests`). Наследная строка
+без своей даты живёт по подписке «Записей» (правило О-40-5 сохранено) и показывается как «Оплачено до {срок подписки}» / «Оплата закончилась …».
+Кто зовёт правило:
+- список биллинг-аккаунтов `GET /api/admin/billing-accounts` → `totalMonthlyPrice` (`AdminMessengerLinesBuilder.Total` по уже загруженному
+  `messagingByAccount`);
+- карточка аккаунта `GET /api/admin/billing-accounts/{id}` (`AdminAccountDtoBuilder`): `options[]` **без** мессенджеров
+  (`WhereNotMessenger()`), в конце `messengers[]` (всегда две строки: статус, цена или «Цена не задана», номер с маской телефона, итог
+  продажи, `canExtend`/`canDisable` и тексты подтверждений) и `messengersMonthlyTotal`; `totalMonthlyPrice = тариф + опции + мессенджеры`;
+- `GET /api/profile` → `plan.totalMonthlyPrice` (`ProfileController` ~стр. 337: `MessengerLineRule.FactsOf` + `Amount`);
+- «Подписка» владельца — через `AccountMessagingReader` (`TransportState` получил поле `Row`, `TransportOptionState` — `IsActive`,
+  `TermsOwnerPublished`).
+Правила тарифа (`PlanOptionRule`) для мессенджеров больше не читаются ни в одном из этих мест; итог больше не зависит от тарифа «Записей»,
+поэтому оплаченный мессенджер у аккаунта без подписки «Записей» (например, только «Бани») теперь в цене и в сумме (И-4 из долгов цикла 42,
+CY43-28).
 
-**Что решает цена** (`ChannelOptionAvailability.Sellable = open ∧ IsActive ∧ PricePerMonth ≠ null ∧ оферта TermsOwner опубликована`).
-Опция без цены:
-- не попадает в строки цен под тарифами (`MessengerAddonsProvider` → `/api/pricing` и `GET /api/billing/subscription`);
-- не продаётся в мастере номеров (`Option.Sellable` в `AccountMessagingReader`/`NumbersOverviewBuilder`);
-- **не показывается** в форме назначения подписки в админке: `BillingAccountsAdminTab.tsx` фильтрует каталог по
-  `o.isActive && o.pricePerMonth != null`.
+**Мессенджеры вне тарифов.**
+- `AdminPlansController`: `GET /api/admin/plans` не отдаёт правила мессенджеров (`WhereNotMessenger()`), `optionCoverage` считает только
+  опции, зависящие от тарифа (при нуле — «Опций, зависящих от тарифа, нет»); `POST|PUT` молча отбрасывают строки мессенджеров и никогда не
+  удаляют существующие правила мессенджеров (они остаются в БД мёртвыми данными, C40-17/C42-9). Фронт `PlansTab.tsx` исключает id опций
+  мессенджеров (берёт из `GET /api/admin/messenger-options`) и показывает `planMatrixNote`.
+- Форма подписки (`AdminBillingController.AssignSubscription` и `AssignOrdersSubscriptionAsync`, все линейки): строки мессенджеров
+  отбрасываются сразу (`DropMessengerLines`, вызовы стр. ~315 и ~544), не создаются, не продлеваются; цикл «завершить отсутствующие строки» мессенджеры не
+  трогает (условие `!ChannelOptionLog.IsChannelOption(...)` стр. ~443 и ~683 — восстановлено фиксом `aa65c38` после BUG-C43-QA-1). 400 «укажите
+  дату окончания оплаты» и 409 «закрыта для подключения» больше не выдаются. `ChannelOptionAssignmentRules`, `CheckChannelOptionLinesAsync`,
+  `IsUnchangedChannelOptionLine` и юнит-тест `ChannelOptionAssignmentRulesTests` **удалены** (✔ grep: упоминаний в коде нет). Фронт
+  `BillingAccountsAdminTab.tsx` фильтрует каталог формы так же (`excludeMessengerOptions`).
+- Общий фильтр — `MessengerOptionFilters.WhereNotMessenger()` для `SubscriptionOption`, `PlanOptionRule`, `AccountSubscriptionOption`;
+  признак в памяти — `ChannelOptionLog.IsChannelOption(code)`.
 
-Пробный период «Записей» (`TrialActivationService`) цену не требует, ему достаточно `open` и опубликованной оферты (§5.16).
-«Подтвердить оплату» в карточке номера (`AdminChannelsBuilder.ConfirmPaymentAsync`) цену **не проверяет**: проверяются только наличие опции
-в каталоге и `open`. Поэтому оплату номера MAX можно подтвердить и при `PricePerMonth = NULL`.
+**Подключение, продление, отключение из карточки аккаунта** (`AdminAccountMessengersController` → `MessengerPaymentService`, scoped;
+чистые части — `MessengerChargeRules`; фронт — `AccountMessengersBlock.tsx` в карточке `BillingAccountsAdminTab.tsx`).
+- `QuoteAsync` — расчёт без записи и без замка: «3 мес. × 490 ₽ = 1470 ₽», новая дата, «Подключить/Продлить на N мес.», `pricePerMonth`
+  (фронт возвращает его как `expectedPricePerMonth`).
+- `ExtendAsync` — транзакция + замок `billing-account:{accountId}` (тот же, что у формы подписки); строка каталога из БД; не продаётся
+  (`Explain`) → 409 с причиной; `expectedPricePerMonth` ≠ цене → 409 «Цена … изменилась»; база = `max(now, оплачено до)`; строка опции
+  создаётся без канала или обновляется (`PaidUntilUtc`, `EndsAtUtc = null`, `ActivatedAtUtc = now`, `GrantedByTrial = false`, заявка
+  снимается); журналы в той же транзакции: `ChannelOptionChangeLogs` (цена, месяцы, сумма), `SubscriptionChangeLogs` (`ChangeKind = Options`,
+  C40-7), при пути номера — ещё `ChannelPaymentLogs` с `Amount`. Месяцы: карточка аккаунта 1…24.
+- `DisableAsync` (`Now` → `EndsAtUtc = now`; `PeriodEnd` → `EndsAtUtc = оплачено до`, только если есть дата) — денег не возвращает; «нечего
+  отключать» и «уже назначено» → 409; журналы как выше. Повторное подключение — обычное продление.
+- Подключение без номера: владелец в мастере начинает с «Условий» без шага оплаты, заявка номера закрывается продлением (CY43-48/49);
+  код мастера не менялся.
 
-**Привязка к тарифам (`PlanOptionRule`: тариф × опция → `Unavailable(0)/Included(1)/Extra(2)` + `IncludedQuantity`).**
-- Правила редактируются матрицей «Доступность опций на тарифе» в `PlansTab.tsx` (`POST|PUT /api/admin/plans`, поле `options` — полная
-  матрица; `ApplyOptionRulesAsync`). Матрица выводит **все** не выведенные из оборота опции каталога, то есть ровно WhatsApp и MAX, и
-  показывается для всех четырёх линеек: «Записи», «Заказы», «Дома», «Бани». Пометки о том, что для опций каналов правило не действует, нет.
-- Засеянные правила: `notifications.whatsapp` = `Extra` на тарифах с `AllowNotificationChannel = true` (`SeedBillingCatalog`; линейка
-  «Заказы» — `Cycle24OrdersTimeNotifyTariffs`, «Дома» — `Cycle37Stays`, «Бани» — `Cycle42Baths`, включая триал «Бань»). Для
-  `notifications.max` правил нет ни в одной миграции и ни в `TariffCatalogSeeder` (демо).
-- **Кто правило НЕ читает для двух опций каналов** (с цикла 40, §40.13):
-  - `ChannelOptionFunding` («оплачено»);
-  - маршрутизация;
-  - `TrialActivationService`;
-  - назначение подписки в админке (`AdminBillingController`: `continue` для `IsChannelOption`, вместо правила — `CheckChannelOptionLinesAsync`);
-  - экран подписки владельца (`OwnerSubscriptionService.ToSubscribedOptionDto`: триальная строка — `Included`, купленная — `Extra`, правило
-    подменяется).
-- **Кто правило ЧИТАЕТ и для опций каналов** (без исключения `IsChannelOption`, отсутствие правила = `Unavailable` = 0 ₽):
-  - `AdminBillingController.GetBillingAccounts` — `totalMonthlyPrice` в списке биллинг-аккаунтов;
-  - `AdminAccountDtoBuilder.BuildAsync` — `options[].pricePerMonth`, `status`/`statusText` («Недоступно на текущем тарифе») в карточке аккаунта;
-  - `ProfileController` (~стр. 317) — `totalMonthlyPrice` в `GET /api/profile`.
+**«Подтвердить оплату» в карточке номера** (`AdminChannelsBuilder.ConfirmPaymentAsync`) — теперь тонкая обёртка над
+`MessengerPaymentService.ExtendAsync(…, channelId)`: прежние проверки `Replaced` и «У номера нет аккаунта — оплату подтвердить нельзя»,
+дальше то же правило «продаётся» **целиком** (открыт, активен, цена задана, оферта `TermsOwner` опубликована — четвёртое условие сверх SPEC,
+§43.16 п. 1), необязательный `expectedPricePerMonth`, те же журналы. Месяцы — по-прежнему 1…12. Фронт (окно в `NotificationsAdminTab.tsx`)
+берёт `billingAccountId` из карточки номера и показывает расчёт `messengerQuote`; при ошибке карточки суммы нет, но подтверждение не
+блокируется; 409 выводится дословно; для номера без аккаунта показывается причина (фикс `68576b8`).
 
-  Все три места берут правила только тарифа «Записей» (`AccountSubscription.PlanConfigId`), тарифы «Заказов/Домов/Бань» не учитываются.
+**«Подписка» владельца** (`OwnerSubscriptionService`, все четыре линейки; `GET /api/billing/subscription?line=…`): `options[]` и
+`totalMonthlyPrice` линейки — без мессенджеров (инвариант cycle7 «итог = тариф + Σ options»); новый блок `messengers`
+(`OwnerMessengersBlockBuilder`): заголовок «Сообщения клиентам в мессенджеры», «Общие для всех ваших компаний», строки (статус и текст по
+`MessengerLineRule`, цена только если продаётся или оплачено, сноска WhatsApp), `monthlyTotal`/«Мессенджеры: N ₽/мес», ссылка на условия;
+`null`, если показывать нечего. Кнопка — `MessengerChargeRules.OwnerAction`: «Подключить» при `NotConnected` или истёкшем триале, «Продлить»
+при истёкшей оплате, иначе нет; «Продлить» до окончания оплаты владельцу не предлагается (только админ из карточки аккаунта). `targetCompanyId`
+— первая компания аккаунта вида этой линейки, иначе «Сначала создайте компанию». Фронт: общий `BillingPage.tsx` рисует
+`components/billing/MessengersBlock.tsx`, проп `notificationsHref` (ezbook — `/owner/company/{id}?tab=notifications&connect={t}`; goods, dom,
+bani — `/cabinet/{id}/notifications?connect={t}` через свои `SubscriptionPage.tsx`); `MessengerAddonLines` с `BillingPage` убран (на `/pricing`
+остался); пустой `availableOptions` не рисуется. Общий `NumbersBlock.tsx` открывает `ConnectWizard` по `?connect=WhatsApp|Max`
+(`connectParam.ts`) и убирает параметр из URL. `availableOptions` по-прежнему без мессенджеров. `/api/pricing` («Записи») — как в цикле 40;
+`GET /api/pricing/orders` строк мессенджеров не получает (Q43-1, Ю-6).
 
-**Как владелец выбирает опцию.**
-- В заявке на подписку (`GET /api/billing/subscription` → `availableOptions`, `POST /api/billing/subscription/request`) опции каналов исключены
-  явно для всех линеек (`o.Code != ChannelOptionCodes.WhatsApp && o.Code != ChannelOptionCodes.Max`, §40.13). Других продаваемых опций нет,
-  поэтому `availableOptions` на практике всегда пуст.
-- Каждый мессенджер подключается отдельно в мастере номеров (`ConnectWizard` → шаг `Payment`/`Terms` → `TermsStep` c
-  `paymentRequest = true`). Заявка ждёт «Подтвердить оплату» админом в карточке номера (`POST /api/admin/notification-channels/{id}/confirm-payment`,
-  месяцы и комментарий). Мастер предлагает транспорт, только если он `Sellable`.
+**Что не менялось.** Пробный период «Записей» (`TrialActivationService`) по-прежнему выдаёт мессенджер без цены при открытой опции и
+опубликованной оферте (R43-9); мастер номеров, «оплачено», маршрутизация — как в цикле 40.
 
-**Как админ назначает опцию.**
-1. Карточка номера → «Подтвердить оплату». Продлевает строку `AccountSubscriptionOption` транспорта номера на N месяцев. Нужен уже
-   созданный номер (канал).
-2. Форма подписки во вкладке «Биллинг-аккаунты» (`PUT /api/admin/billing-accounts/{id}/subscription`). Сервер требует для **новой или
-   изменённой** строки канала свою дату `options[].paidUntil` (иначе 400 «Для опций WhatsApp и MAX укажите дату окончания оплаты»). Фронт
-   (`billingAccountsHelpers.optionRowsToPayload`) шлёт только `optionId` и `quantity`, поля даты на строке опции в форме нет. Неизменённая
-   существующая строка проходит (`IsUnchangedChannelOptionLine`). Снять галочку с опции канала в этой форме нельзя: строки каналов при
-   отсутствии в запросе не завершаются (`!IsChannelOption`, стр. ~473 и ~717).
-
-**Кеш.** `AccountMessagingReader` держит каталог опций (цена, `IsActive`) в `IMemoryCache` 60 с. `InvalidateCatalogCache` по комментарию
-«called when an admin edits the options catalog», но в продакшен-коде её никто не вызывает (✔ grep: только `NotificationTestBase` в тестах).
-`AdminOptionsController` сбрасывает только `PricingCatalogCache`.
-
-**Тесты.** Функциональные тесты `/api/admin/options` есть только для опций-лимитов цикла 19 (`Cycle19TariffLimitsTests`) и общие проверки в
-`AdminTests`. Тестов на `PUT` цены опции канала, на суммы и статусы опций каналов в списке и карточке биллинг-аккаунта и в
-`GET /api/profile` не найдено (✔ grep). `Cycle40ChannelsTests` вызывает `PUT …/billing-accounts/{id}/subscription`, но суммы и статусы не проверяет.
+**Тесты** (↪ статусы — по постановке задачи и `TEST_CATALOG.md`, codebase-analyst не запускал): функциональные `ServiceBooking.Tests/Tests/Cycle43*.cs`
+(8 классов, 56 атрибутов: `Price` 13, `AccountActions` 14, `Matrix` 10, `ConfirmPayment` 7, `TariffForm` 4, `OwnerBlock` 4, `Contract` 2,
+`MigrationRollback` 2; общий помощник `Infrastructure/Cycle43TestBase.cs`; ID CY43-01…82), `[InlineData("cycle43")]` в
+`OpenApiContractValidatorTests`, +6 строк эталона маршрутов, CY18L-23 в `Cycle18TrialLifecycleTests` переписан на `…/messengers/WhatsApp/extend`.
+Юнит — `ServiceBooking.UnitTests/Cycle43/` (7 файлов + `MessengerVectors.cs`, 39 атрибутов: `MessengerRulesVectorsTests` по
+`messenger-vectors.json`, `ChannelOptionAvailabilityExplainTests`, `MessengerPriceChangeRulesTests`, `MessengerBlocksTests`,
+`MessengerHistoryTextsTests`, `OptionPriceLogTests`, `AdminPlanCoverageTextTests`), расширены `Cycle40/MessengerTextsForbiddenWordsTests`,
+`ShowcaseOwnershipCoverageTests`; из `Cycle40/NumbersOverviewBuilderTests` убраны 15 строк. Vitest — новые `MessengerOptionsPanel.test.tsx`,
+`messengerOptionsHelpers.test.ts`, `AccountMessengersBlock.test.tsx`, `MessengersBlock.test.tsx`, дополнены `NotificationsAdminTab`, `PlansTab`,
+`PlansTabLine`, `BillingAccountsAdminTab`, `BillingPage`, `NumbersBlock`, `connectParam`.
 
 ### 5.19 Сайты продуктов, адреса и межсайтовые ссылки — фактическое состояние (✔ по коду на `e4670c3`, ничего не запускалось)
 Перепроверка под задачу цикла 44 («общая информационная страница про все продукты, отдельный фронт, со ссылками на каждый продукт»).
@@ -3319,6 +3415,15 @@ CY37-140 (`Cycle37MigrationRollbackTests`) создаёт и удаляет **о
 фронт — 324 файла `*.test.ts(x)` (+39 новых, 5 перенесены из dom в `src/*/slots` без правки, 2 перенесены с правкой, 3 изменены). Эталон
 маршрутов — 462 строки. Накат→откат→накат миграции — CY42-140. Ручных `M42-*` в каталоге нет (только упоминание в `DEPLOY.md` §32).
 
+
+**На `31a3684` (цикл 43, влит)** (✔ `ls`, `grep` атрибутов; **ничего не запускалось**): `ServiceBooking.Tests/Tests/` — 144 файла `.cs`
+(+8 `Cycle43*.cs`, 56 атрибутов, + `Infrastructure/Cycle43TestBase.cs`); `ServiceBooking.UnitTests` — 256 файлов `.cs` в git (+ каталог
+`Cycle43/` из 8 файлов, 39 атрибутов; удалён `Cycle40/ChannelOptionAssignmentRulesTests.cs`); фронт — 329 файлов `*.test.ts(x)`. Эталон
+маршрутов — 468 строк. **Прогон цикла (↪ числа переданы при постановке задачи, codebase-analyst не проверял):** юнит — **3 864+**, функциональные —
+**1 876** (в т. ч. CY43-01…82), vitest — **2 862**; все зелёные, кроме известного красного
+`Cycle39ContractTests.CabinetServiceRoutes_MatchContract` (зависел от даты прогона; исправлен после цикла, §9.13 C43-9 ✔).
+8 тестов `BookingPanel.test.tsx` в этом прогоне зелёные (в этом файле как долг они не числились).
+
 Прогоны различаются по объёму: в прогоне считаются и наборы `[Theory]`, поэтому число прогонов больше числа атрибутов.
 Были ли в отчёте цикла 31 зелёные `tsc`, `lint`, `typecheck:node`, `build:release` и сколько тестов упало, в этом
 обновлении не проверялось: переданы только общие числа.
@@ -3462,6 +3567,14 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   `bash deploy/nginx/test-bani-masking.sh` (нужен локальный `nginx`). Побочные эффекты — как у всего набора (`Notifications:Provider=logging`,
   фоновые задачи в `Testing` выключены). Ручные `M42-*` (полночь на iOS/Android, 360 px, push на реальном телефоне, маскирование в
   `bani.access.log` на машине — M42-04) — только после выката, `DEPLOY.md` §32.
+- **Точечно цикл 43** (опции мессенджеров; запускает qa-engineer, не codebase-analyst; команда ✔ из раздела «Цикл 43» `TEST_CATALOG.md`):
+  `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle43"` с теми же переменными colima. Затронутый регресс —
+  `--filter "FullyQualifiedName~Cycle40Channels|FullyQualifiedName~Cycle18TrialLifecycle|FullyQualifiedName~Cycle22RouteTable|FullyQualifiedName~OpenApiContractValidator"`
+  (фильтр ↪ составлен по реестру изменённых тестов, в документах не зафиксирован). CY43-81 (`Cycle43MigrationRollbackTests`) создаёт и сносит
+  отдельную базу — только тестовый Postgres. Юнит — `dotnet test ServiceBooking.UnitTests --filter "FullyQualifiedName~Cycle43|FullyQualifiedName~MessengerTexts|FullyQualifiedName~ShowcaseOwnership"`
+  (векторы `contracts/cycle43/messenger-vectors.json` читаются с диска). Vitest — `cd frontend && npm run test:area -- admin billing notifications`
+  (✔ области есть в `contracts/cycle36/test-areas.json`: `admin` — `src/pages/admin/`, `billing` — `src/components/billing/`, `notifications`). Ручные M43-01…05 — только на
+  стенде после выката, `DEPLOY.md` §33. **Schemathesis по `contracts/cycle43/openapi.yaml` (QA-43-4) в репозитории не настроен и не прогонялся.**
 - `npm run contracts:json` — не тест: скрипт **перезаписывает** `contracts/cycle31/openapi.json` и `contracts/cycle32/openapi.json`
   (с цикла 35 — и `contracts/cycle35/openapi.json`, с цикла 37 — и `contracts/cycle37/openapi.json`).
   (с цикла 35 — и `contracts/cycle35/openapi.json`, с цикла 38 — `contracts/cycle38/openapi.json`, с цикла 39 — `contracts/cycle39/openapi.json`).
@@ -3547,6 +3660,10 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   «Type-check bani» (`npx tsc --noEmit -p tsconfig.bani.json`), «Smoke test (bani build in dist/__bani)» (`SMOKE_PROFILE=bani`, включая
   `noindex`), «Check bani nginx log masking» (`deploy/nginx/test-bani-masking.sh`); проверка запрета `fetch`/Cache API в `sw.js` дополнена
   `bani/public/sw.js`. Джоб `backend` не менялся. Результатов CI на `d000673` в этом обновлении не смотрели.
+- **Цикл 43** (✔ diff `ci.yml`, `contracts-to-json.mjs`, `package.json` на `31a3684`, DO-43-01): `cycle43/openapi.yaml` в `redocly lint`
+  (+ строка в `contracts/redocly.yaml`), `npm run types:api:cycle43` + `api-cycle43.generated.ts` в `git diff --exit-code`, `cycle43/openapi.json`
+  в шаге «Contract JSON must match cycle31, …, cycle42 and cycle43 yaml». Новых джобов и шагов нет. Результатов CI на `31a3684` не смотрели.
+  Выкат — `DEPLOY.md` §33 (отчёт `deploy/checks/cycle43-messenger-options.sql` до и после, `deploy/deploy.sh`, откат только кода).
 - **Время CI, цикл 36** (↪ таблицы «CI: до / после» в `docs/testing-isolation.md`; последняя строка — ✔ `gh run view`, только чтение):
 
   | Что | `backend` | Функциональные | `frontend` | vitest | `docker-build` |
@@ -4468,35 +4585,69 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 
 ---
 
-### 9.13 Опции мессенджеров: цена и привязка к тарифам — ✔ по коду на `12889a7`, ничего не запускалось
-Подробности и пути — §5.18. Пункты O-1…O-7 — то, что видно в коде. Как это влияет на бой, зависит от данных в БД (🖥).
-- **O-1 — цену опции WhatsApp/MAX из админки задать нельзя.** Сервер умеет (`PUT /api/admin/options/{id}`), но экрана каталога опций во
-  фронтенде нет, а подсказки в `NotificationsAdminTab` отсылают к нему. MAX засеян с `PricePerMonth = NULL`, и `DEPLOY.md` §31 п. 3 называет
-  цену «единственным рычагом запуска». Значит, запуск продаж MAX возможен только через API или SQL. У `PUT` нет журнала изменения цены, а
-  тело запроса — полная замена строки.
-- **O-2 — правила «тариф ↔ опция» для опций каналов действуют наполовину.** Матрица в `PlansTab` их редактирует, а «оплачено», мастер,
-  триал, назначение подписки и экран владельца их игнорируют (§40.13). При этом суммы и статусы в админке (список и карточка
-  биллинг-аккаунта) и `totalMonthlyPrice` в `GET /api/profile` по-прежнему считаются через правило. Следствия:
-  - у MAX правил нет нигде, поэтому оплаченный MAX в карточке аккаунта будет показан как «Недоступно на текущем тарифе» за 0 ₽ и не войдёт
-    в суммы админки и профиля;
-  - то же для WhatsApp на тарифах без правила `Extra` (например, бесплатный «Записей», если у него не было `AllowNotificationChannel`);
-  - экран владельца для той же строки покажет «Подключена» и цену.
+### 9.13 Опции мессенджеров: цена, тарифы, подключение — ✔ по коду на `31a3684` (цикл 43 влит, на стенд НЕ выкачен), ничего не запускалось
+Подробности и пути — §5.18. Пометка ↪ — со слов документов цикла / постановки задачи, 🖥 — факт о машине (в репозитории не проверяем).
 
-  Три места смотрят только на тариф «Записей» аккаунта. Тестами расхождение не покрыто.
-- **O-3 — в форме подписки админки опции каналов фактически не назначить.** Без цены строка не показывается (фильтр
-  `pricePerMonth != null`). С ценой новая или изменённая строка канала уходит без `paidUntil`, и сервер отвечает 400. Снять опцию канала через
-  эту форму нельзя, сервер такие строки не завершает. Рабочий путь у админа один: «Подтвердить оплату» в карточке уже созданного номера.
-- **O-4 — «Подтвердить оплату» не проверяет цену и `IsActive`.** Проверяется только `open`, поэтому оплату MAX можно подтвердить при
-  `PricePerMonth = NULL`, хотя по `Sellable` MAX не продаётся.
-- **O-5 — кеш каталога в `AccountMessagingReader` (60 с) при правке опции не сбрасывается.** `InvalidateCatalogCache` в продакшен-коде не
-  вызывается. После смены цены или `IsActive` мастер, «оплачено» и `overview` до минуты видят старые значения. `/api/pricing` обновляется
-  сразу.
-- **O-6 — остатки прежней модели цены.** Поле `channelPricePerMonth` в `platform-settings` сервер принимает и молча игнорирует.
-  `SubscriptionPlanConfigs.AllowNotificationChannel` не читается (C40-17). Комментарии в `SubscriptionOption.cs` и
-  `AccountSubscriptionOption.cs` описывают состояние цикла 7 («nothing writes them yet», «only notifications.whatsapp is read») и устарели.
-- **O-7 — «выбрать опции отдельно» владельцу можно только в мастере номеров.** В заявке на подписку опции каналов исключены для всех
-  линеек, а других продаваемых опций нет, поэтому блок «доступные опции» у владельца всегда пуст. Заказчик может воспринимать это как
-  «опции нельзя выбрать».
+**Риски O-1…O-7 (найдены на `12889a7`) — статус после цикла 43.**
+- ~~**O-1 — цену WhatsApp/MAX из админки задать нельзя; у `PUT` нет журнала, тело — полная замена.**~~ **Закрыто в коде:** экран цены во
+  вкладке уведомлений (`GET`/`preview`/`PUT /api/admin/messenger-options…`), меняются только цена и активность, журнал
+  `SubscriptionOptionPriceChangeLogs` пишется и экраном, и старым `PUT /api/admin/options/{id}`. На бою цена MAX по-прежнему не задана, пока
+  админ её не введёт (🖥); порядок запуска продаж — `DEPLOY.md` §33 п. 4 (сначала оферта D3 и Приложение № 1).
+- ~~**O-2 — правила «тариф ↔ опция» для мессенджеров действуют наполовину; суммы админки и профиля считаются через правило.**~~ **Закрыто:**
+  список и карточка аккаунта, `GET /api/profile` и «Подписка» владельца считают через одно `MessengerLineRule`; правила тарифа для мессенджеров
+  никто не читает и не пишет; «Недоступно на текущем тарифе» для мессенджеров не выводится. Строки `PlanOptionRules` мессенджеров остались в БД
+  мёртвыми данными (C40-17, C42-9).
+- ~~**O-3 — в форме подписки опции каналов фактически не назначить.**~~ **Закрыто иначе:** форма подписки мессенджеры теперь игнорирует
+  совсем (Д-6); назначение — блок «Мессенджеры» в карточке аккаунта (подключить/продлить/отключить) или «Подтвердить оплату» номера.
+- ~~**O-4 — «Подтвердить оплату» не проверяет цену и `IsActive`.**~~ **Закрыто:** проверяется «продаётся» целиком, включая опубликованную
+  оферту `TermsOwner`. ⚠️ Следствие (R43-3): если на бою оферта в черновике, подтверждение WhatsApp/MAX после выката начнёт отвечать 409 —
+  до выката проверить манифест (🖥, `DEPLOY.md` §33 п. 1).
+- ~~**O-5 — кеш каталога `AccountMessagingReader` не сбрасывается.**~~ **Закрыто:** `MessengerCatalogCaches.Invalidate` после коммита в
+  экране цены и в `POST|PUT|DELETE /api/admin/options`. Остаётся R43-6: кеш — память процесса, при нескольких экземплярах API не сработает.
+- **O-6 — остатки прежней модели цены — частично.** В `SubscriptionOption.cs`/`AccountSubscriptionOption.cs` добавлены комментарии цикла 43
+  (T-43-04), но старый текст цикла 7 рядом остался (✔ `AccountSubscriptionOption.cs:8` — «nothing writes them yet»).
+  `channelPricePerMonth` в `platform-settings` сервер по-прежнему молча принимает (фронт больше не шлёт); `AllowNotificationChannel`,
+  `ChannelCompanyAssignments`, `notifications.channel.price-per-month`, правила мессенджеров в `PlanOptionRules` — в БД, не читаются (C40-17,
+  удаление — отдельным циклом).
+- ~~**O-7 — «выбрать опции отдельно» владельцу можно только в мастере номеров.**~~ **Закрыто:** блок «Мессенджеры» в «Подписке» всех четырёх
+  линеек с кнопкой «Подключить/Продлить» (ссылка в мастер нужной компании, `?connect=`); пустой «Доступные опции» больше не рисуется.
+  «Продлить» до окончания оплаты владельцу не предлагается (§43.16 п. 2, Q43-3).
+- ~~**И-4 (долг цикла 42) — оплаченный мессенджер у аккаунта без «Записей» не попадал в цену и суммы.**~~ **Закрыто:** итог не зависит от тарифа
+  «Записей» (CY43-28).
+- ~~**BUG-C43-QA-1 — форма подписки завершала строки мессенджеров.**~~ Найден QA в ветке, исправлен до мерджа (`aa65c38`: условие
+  `!ChannelOptionLog.IsChannelOption(...)` в цикле «завершить отсутствующие строки», стр. ~443 и ~683). ⚠️ `TEST_CATALOG.md` по-прежнему
+  числит CY43-32/33 «КРАСНЫЙ: BUG-C43-QA-1», а CY43-82 — в несуществующем классе `Cycle43InvariantTests` (в коде он в
+  `Cycle43MigrationRollbackTests`) — каталог отстаёт от кода (C43-8).
+
+**Долг и открытое цикла 43.**
+- **C43-1 — выкат не делался** (DO-43-04; 🖥 / ↪ `DEPLOY.md` §33 «на машину ничего не выкатывалось»). Миграция `Cycle43MessengerOptionPricing`
+  на бою не применена. Отчёт `deploy/checks/cycle43-messenger-options.sql` до/после выката не снимался.
+- **C43-2 — ручные проверки M43-01…05 не проходили** (в `TEST_CATALOG.md` все «не проверено»; это гейт выката).
+- **C43-3 — правовой трек Ю-1…Ю-6 (`ARCHITECTURE_CYCLE43.md` §43.15) не закрыт:** смена цены без уведомления владельцев, текст предупреждения,
+  досрочное отключение без возврата (до ответа — только по письменному основанию), срок хранения цены и сумм (журналы бессрочны, правила
+  retention нет), публикация D3/Приложения № 1 под MAX до ввода цены, цены мессенджеров на публичной сетке «Заказов». Отдельного
+  `LEGAL_REVIEW_CYCLE43.md` в репозитории нет.
+- **C43-4 — QA-43-4 (schemathesis по `contracts/cycle43/openapi.yaml`) не прогонялся;** соответствие контракту проверено только внутренним
+  валидатором (`OpenApiContractValidatorTests` `cycle43`, `Cycle43ContractTests` CY43-80/80b).
+- **C43-5 — неблокирующее замечание ревью:** в `AdminBillingController` (стр. ~443 и ~683) мессенджеры отсекаются inline-условием
+  `!ChannelOptionLog.IsChannelOption(r.Option.Code)` в LINQ по уже загруженному списку, а не общим `WhereNotMessenger()` — два способа
+  одного фильтра; именно потеря этого условия дала BUG-C43-QA-1.
+- **C43-6 — неблокирующее замечание ревью:** у ветки «номер без аккаунта» в окне «Подтвердить оплату» (`NotificationsAdminTab.tsx`, фикс
+  `68576b8`) нет юнит-теста vitest.
+- **C43-7 — вопросы заказчику Q43-1…3 приняты по умолчанию** (без явного ответа): мессенджеров на публичной сетке «Заказов» нет; выдачи
+  «в подарок» отдельным действием нет (только цена 0 ₽); предупреждения владельцу об окончании оплаты и продления до срока нет.
+- **C43-8 — `TEST_CATALOG.md` расходится с кодом** (✔ grep): CY43-32/33 помечены красными, хотя BUG-C43-QA-1 исправлен; класс CY43-82 указан
+  неверно (см. выше). Абзац «Найденное QA» описывает баг без пометки «исправлено».
+- **C43-9 — ✔ ИСПРАВЛЕН (19.10.2026) `Cycle39ContractTests.CabinetServiceRoutes_MatchContract`.** Причина: расписание в тесте даёт субботе
+  (день 6) пустое окно, а заказ шёл на `InDays(12)` — тест падал, когда «сегодня + 12» выпадало на субботу. Заказ теперь на
+  `NextWeekday(DayOfWeek.Wednesday, 12)`. Белый список полей (C42-7) остаётся.
+- **C43-10 — наследные строки опций** (без своей даты, не триальные) после выката поменяют текст статуса на «Оплачено до {срок подписки
+  „Записей“}»/«Оплата закончилась …» (R43-5); масштаб — блок [3] отчёта DO-43-03, на бою не снимался (🖥).
+- **C43-11 — изменилось поведение для владельца:** мессенджеры ушли из `options[]` и `totalMonthlyPrice` линейки в отдельный блок
+  `messengers` (R43-2); форма подписки больше не выдаёт мессенджеры (R43-4) — если кто-то пользовался ею как обходом, путь теперь карточка аккаунта.
+- **C43-12 — `activePaidAccounts`** считается в памяти по всем аккаунтам с живой строкой опции (R43-11): при росте до тысяч — медленно.
+- **C43-13 — `core.hooksPath=.githooks`, а каталога `.githooks` нет** (✔ `git config --get core.hooksPath`, `ls` на `31a3684`) — тот же
+  C30-3 (§9.1), не исправлен; git-хуки в этом чекауте не выполняются.
 
 ### 9.14 Сайты продуктов и межсайтовые ссылки — ✔ по коду на `e4670c3`, ничего не запускалось
 Подробности и пути — §5.19.
@@ -4720,6 +4871,11 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   изменённых существующих путей частичными схемами), `bani-routes.json`, `bani-vectors.json`; валидатор — `OpenApiContractValidatorTests`
   (`cycle42`) и `Cycle42ContractTests`; в CI — lint, генерат `api-cycle42.generated.ts`, JSON. Словами — `API_CONTRACT_CYCLE42.md` (§42.20–§42.39,
   497 строк). В `API_DOCUMENTATION.md` — **§4.23 «Бани»** (`a864849`, помечен «НЕ ВЫПУЩЕНО»; файл — 4 855 строк).
+- **С цикла 43** (влит, не выкачен) — `contracts/cycle43/openapi.yaml` (1 260 строк: 6 новых маршрутов, 4 существующих с изменённой формой) +
+  `openapi.json` (генерат) + `messenger-vectors.json` (эталон чистых правил); валидатор — `OpenApiContractValidatorTests` (`cycle43`) и
+  `Cycle43ContractTests`; в CI — lint, генерат `api-cycle43.generated.ts`, JSON. Словами — `API_CONTRACT_CYCLE43.md` (§43.20–§43.34, 261 строка).
+  В `API_DOCUMENTATION.md` — **§4.24 «Опции мессенджеров WhatsApp и MAX…»** (стр. ~4751, помечен «НЕ ВЫПУЩЕНО — доступно с ветки
+  `cycle/043-…`»; файл — 4 890 строк).
 
 ### 10.4 Описания тест-кейсов (отдельно от кода автотестов)
 - **`TEST_CATALOG.md`** (6 485 строк на `050816f`, markdown):
@@ -4800,8 +4956,19 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   (строка 7744): таблица областей → ID, таблица `Id | Что проверяет | US / источник | Класс → тесты | Статус` по CY42-01…115 и CY42-140, абзацы
   «Найденное QA» (BUG-C42-QA-1…4, раунды 2–3) и команда прогона с переменными colima. Расхождения с кодом — §9.12 C42-11 (устаревшие «Skip»,
   CY42-29 без теста, ссылка на несуществующий `REVIEW_CYCLE42.md`). Ручных `M42-*` в каталоге нет.
+- **На `31a3684` (цикл 43)** (✔ `grep`, `wc -l`): `TEST_CATALOG.md` — 7 958 строк; последний раздел — «Цикл 43 — опции мессенджеров…»
+  (строка ~7870): вводная, таблица `Id | Что проверяет | US / источник | Класс → тест | Статус` по CY43-01…82 (с CY43-04b, 11b, 80b), команда
+  прогона с переменными colima, **«Реестр изменённых существующих тестов»** (CY18L-23, CY40-ADM-06/07, CY40-CTR-01, эталон маршрутов),
+  «Найденное QA» (BUG-C43-QA-1) и **первая в каталоге таблица ручных кейсов** «Ручные кейсы M43» (M43-01…05, колонка «Вердикт» — все
+  «не проверено»). Расхождения с кодом — §9.13 C43-8.
 
 ### 10.5 Документы циклов
+- **На `31a3684`** (✔ `ls`, `wc -l`, `head`): корневой `SPEC.md` (320 строк) — **спека цикла 43** (дата 2026-10-19, US-43-01…05, T-43-01…06,
+  А1–А8, ответы В1–В4); спека цикла 40 заархивирована как `SPEC_CYCLE40_SIMPLIFY_NOTIFICATION_CHANNELS.md` (938 строк, коммит `8a68e1a`).
+  Добавились `ARCHITECTURE_CYCLE43.md` (703 строки: §43.0a решения заказчика, §43.0 ответы А1–А8 и Д-1…Д-6, §43.1–§43.17 — модель, экран цены,
+  `MessengerLineRule`, вне тарифов, подключение, «Подписка», фронт, тесты, выкат, структура, задачи BE/FE/DO/QA-43-*, риски R43-1…12,
+  правовой трек Ю-1…Ю-6, отклонения от SPEC, вопросы Q43-1…3), `API_CONTRACT_CYCLE43.md` (261 строка), `contracts/cycle43/`, `DEPLOY.md` §33,
+  `API_DOCUMENTATION.md` §4.24. `LEGAL_REVIEW_CYCLE43.md` нет. `docs/history/` нет — архив по конвенции в корне, переносить нечего.
 - **На `d000673`** (✔ `ls`, `wc -l`, `head`; ветка `cycle/042-bani`, не влита): корневой `SPEC.md` (938 строк) — по-прежнему **спека цикла 40**;
   спека цикла 42 лежит только как `SPEC_CYCLE42_BANI.md` (607 строк, US-42-01…27, A42-1…13, «Решения заказчика от 09.10.2026»). Добавились
   `BRIEF_CYCLE42_BANI.md` (62 строки), `ARCHITECTURE_CYCLE42.md` (945 строк, §42.0a решения и таблица Т42 → где закрыто, §42.0–§42.18, задачи

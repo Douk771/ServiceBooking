@@ -1,0 +1,1260 @@
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 43 (опции мессенджеров WhatsApp / MAX: цена, отвязка от тарифов, подключение отдельно).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл, порядок проверок и тексты — API_CONTRACT_CYCLE43.md (§43.20–§43.34),
+# решения — ARCHITECTURE_CYCLE43.md (§43.0–§43.17). При расхождении по ФОРМЕ прав ЭТОТ файл.
+#
+# Рядом:
+#   contracts/cycle43/messenger-vectors.json — эталон правил (строка мессенджера, «продаётся», последствия цены, расчёт, отключение, кнопка владельца)
+#   contracts/cycle40/                        — заморожен, не правится
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle43/openapi.yaml --port 4043
+#             npm run types:api:cycle43   (openapi-typescript -> src/types/api-cycle43.generated.ts)
+#   QA        schemathesis run contracts/cycle43/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle43/openapi.yaml
+#             npm run contracts:json (cycle43 -> openapi.json для ServiceBooking.Tests/Infrastructure/OpenApiContract.cs)
+#
+# Описаны ВСЕ новые маршруты цикла и существующие, у которых меняется форма (запроса или ответа).
+# Маршруты, у которых меняется только поведение (plans, список аккаунтов, профиль, каталог опций, настройки платформы), — только в API_CONTRACT_CYCLE43.md.
+
+openapi: 3.0.3
+info:
+  title: ServiceBooking API — цикл 43 (опции мессенджеров)
+  version: 43.1.0
+  license:
+    name: Proprietary
+  description: |-
+    Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ:
+      * camelCase; enum — строками (имена членов C#); DateTime — ISO-8601 UTC; деньги — number (рубли, до 2 знаков);
+      * тела осознанных 400/409 — ГОЛАЯ СТРОКА (text/plain) по-русски; 401/403/404 — пустое тело;
+      * {transport} — WhatsApp | Max; неизвестное значение — 404 с пустым телом;
+      * новые поля DTO — В КОНЕЦ рекордов; существующие не удаляются и не переименовываются;
+      * текст, который видит человек, собирает СЕРВЕР; фронт ничего не вычисляет.
+
+    Большие существующие DTO (AdminBillingAccountDto, OwnerSubscriptionDto, AdminChannelCardDto) описаны ТОЛЬКО изменившимися и новыми полями
+    (*Cycle43Part, additionalProperties: true). Полная форма — contracts/cycle7, cycle40, cycle42.
+servers:
+- url: http://localhost:5000
+  description: dev (dotnet run)
+- url: http://localhost:4043
+  description: prism mock по этой схеме
+tags:
+- name: admin-messenger-price
+  description: 'Экран цены мессенджеров во вкладке уведомлений админки (SuperAdmin): цена, активность, последствия, журнал.'
+- name: admin-account-messengers
+  description: 'Мессенджеры биллинг-аккаунта в админке (SuperAdmin): расчёт, подключение и продление, отключение, карточка.'
+- name: admin-channels
+  description: Карточка номера в админке — «Подтвердить оплату».
+- name: owner-billing
+  description: «Подписка» владельца — блок мессенджеров.
+paths:
+  /api/admin/messenger-options:
+    get:
+      tags:
+      - admin-messenger-price
+      operationId: adminGetMessengerOptions
+      summary: Обе опции мессенджеров для экрана цены (новый)
+      description: SuperAdmin. Ровно две строки (WhatsApp, Max) + журнал (последние 50) + серверные подсказки.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Опции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMessengerOptionsDto'
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+  /api/admin/messenger-options/{transport}/price/preview:
+    post:
+      tags:
+      - admin-messenger-price
+      operationId: adminPreviewMessengerPrice
+      summary: Последствия изменения цены без записи (новый)
+      description: 'SuperAdmin. Порядок: 404 транспорт; 400 валидация; 409 нет опции в каталоге; 200.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Transport'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessengerPriceInput'
+            example:
+              pricePerMonth: 490
+              isActive: null
+      responses:
+        '200':
+          description: Последствия
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessengerPricePreviewDto'
+        '400':
+          description: Неверные данные
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                negative:
+                  value: Цена не может быть отрицательной
+                tooBig:
+                  value: Цена — не больше 99 999 999,99 ₽
+                decimals:
+                  value: Цена — не больше двух знаков после запятой
+                noChange:
+                  value: Цена и активность не изменились — сохранять нечего
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Неизвестный транспорт (пустое тело).
+        '409':
+          description: Нет опции в каталоге
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Опция MAX отсутствует в каталоге
+  /api/admin/messenger-options/{transport}/price:
+    put:
+      tags:
+      - admin-messenger-price
+      operationId: adminUpdateMessengerPrice
+      summary: Сохранить цену и активность мессенджера (новый)
+      description: 'SuperAdmin. Порядок: 404; 400; 409 нет опции; 409 значения уже изменены (expected*); запись + журнал + сброс кешей; 200 —
+        свежая строка опции. Меняет только pricePerMonth, isActive, updatedAt.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Transport'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMessengerPriceInput'
+            example:
+              pricePerMonth: 490
+              isActive: null
+              comment: Запуск продаж MAX по решению от 20.10.2026
+              expectedPricePerMonth: null
+              expectedIsActive: true
+      responses:
+        '200':
+          description: Сохранено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMessengerOptionDto'
+        '400':
+          description: Неверные данные
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                negative:
+                  value: Цена не может быть отрицательной
+                decimals:
+                  value: Цена — не больше двух знаков после запятой
+                noChange:
+                  value: Цена и активность не изменились — сохранять нечего
+                noComment:
+                  value: Укажите причину изменения цены
+                longComment:
+                  value: Причина — не длиннее 500 символов
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Неизвестный транспорт (пустое тело).
+        '409':
+          description: Отказ
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                noOption:
+                  value: Опция MAX отсутствует в каталоге
+                concurrent:
+                  value: Цену MAX уже изменил другой администратор. Обновите страницу и проверьте последствия ещё раз
+  /api/admin/billing-accounts/{id}/messengers/{transport}/quote:
+    get:
+      tags:
+      - admin-account-messengers
+      operationId: adminQuoteAccountMessenger
+      summary: Расчёт подключения или продления мессенджера (новый)
+      description: 'SuperAdmin. Порядок: 404 аккаунт/транспорт; 400 months; 409 нет опции; 409 не продаётся; 200. Без записи.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/BillingAccountId'
+      - $ref: '#/components/parameters/Transport'
+      - name: months
+        in: query
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 24
+      responses:
+        '200':
+          description: Расчёт
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessengerQuoteDto'
+        '400':
+          description: Неверный срок
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Срок — от 1 до 24 месяцев
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Нет аккаунта или неизвестный транспорт (пустое тело).
+        '409':
+          description: Не продаётся
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                noOption:
+                  value: Опция MAX отсутствует в каталоге
+                closed:
+                  value: Опция MAX закрыта для подключения. Откройте её в блоке „Подключение мессенджеров“
+                inactive:
+                  value: Опция MAX неактивна. Включите её во вкладке уведомлений, блок „Подключение мессенджеров“
+                noPrice:
+                  value: У MAX не задана цена. Задайте её во вкладке уведомлений, блок „Подключение мессенджеров“
+                offer:
+                  value: Оферта для владельцев не опубликована — MAX не продаётся
+  /api/admin/billing-accounts/{id}/messengers/{transport}/extend:
+    post:
+      tags:
+      - admin-account-messengers
+      operationId: adminExtendAccountMessenger
+      summary: Подключить или продлить мессенджер аккаунту (новый)
+      description: 'SuperAdmin. Порядок: 404; 400 months/comment/expectedPricePerMonth; [замок billing-account] 409 нет опции; 409 не продаётся;
+        409 цена изменилась; 200 — карточка аккаунта. Номер не нужен; пробная строка выкупается; повтор — ещё одно продление.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/BillingAccountId'
+      - $ref: '#/components/parameters/Transport'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtendMessengerInput'
+            example:
+              months: 3
+              comment: Счёт 17
+              expectedPricePerMonth: 490
+      responses:
+        '200':
+          description: Карточка аккаунта после записи
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBillingAccountCycle43Part'
+        '400':
+          description: Неверные данные
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                months:
+                  value: Срок — от 1 до 24 месяцев
+                comment:
+                  value: Комментарий — не длиннее 500 символов
+                expected:
+                  value: Не передана ожидаемая цена — обновите расчёт
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Нет аккаунта или неизвестный транспорт (пустое тело).
+        '409':
+          description: Отказ
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                noOption:
+                  value: Опция MAX отсутствует в каталоге
+                closed:
+                  value: Опция MAX закрыта для подключения. Откройте её в блоке „Подключение мессенджеров“
+                noPrice:
+                  value: У MAX не задана цена. Задайте её во вкладке уведомлений, блок „Подключение мессенджеров“
+                priceChanged:
+                  value: 'Цена MAX изменилась: теперь 590 ₽/мес. Проверьте сумму и повторите'
+  /api/admin/billing-accounts/{id}/messengers/{transport}/disable:
+    post:
+      tags:
+      - admin-account-messengers
+      operationId: adminDisableAccountMessenger
+      summary: Отключить мессенджер аккаунта сейчас или по окончании оплаты (новый, P1)
+      description: 'SuperAdmin. Порядок: 404; 400 comment; [замок billing-account] 409 нечего отключать / нет даты / уже назначено; 200 — карточка
+        аккаунта. Деньги не возвращаются; Now = как истёкшая оплата.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/BillingAccountId'
+      - $ref: '#/components/parameters/Transport'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisableMessengerInput'
+            example:
+              when: PeriodEnd
+              comment: Просьба владельца, письмо от 19.10.2026
+      responses:
+        '200':
+          description: Карточка аккаунта после записи
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBillingAccountCycle43Part'
+        '400':
+          description: Неверные данные
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                noComment:
+                  value: Укажите причину отключения
+                longComment:
+                  value: Причина — не длиннее 500 символов
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Нет аккаунта или неизвестный транспорт (пустое тело).
+        '409':
+          description: Отключать нечего или нельзя
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                none:
+                  value: 'Нечего отключать: MAX у аккаунта не подключён'
+                expired:
+                  value: 'Нечего отключать: оплата MAX уже закончилась'
+                noDate:
+                  value: У пробного периода MAX нет даты окончания — отключите сейчас
+                scheduled:
+                  value: Отключение MAX уже назначено на 20.11.2026
+  /api/admin/billing-accounts/{id}:
+    get:
+      tags:
+      - admin-account-messengers
+      operationId: adminGetBillingAccount
+      summary: Карточка биллинг-аккаунта (изменена форма)
+      description: 'SuperAdmin. options[] — без WhatsApp и MAX; новые messengers[] и messengersMonthlyTotal; totalMonthlyPrice = plan + options +
+        messengersMonthlyTotal.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/BillingAccountId'
+      responses:
+        '200':
+          description: Карточка (описаны изменившиеся и новые поля)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBillingAccountCycle43Part'
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Не найдено (пустое тело).
+  /api/admin/billing-accounts/{id}/subscription:
+    put:
+      tags:
+      - admin-account-messengers
+      operationId: adminAssignSubscription
+      summary: Назначить подписку (строки мессенджеров игнорируются)
+      description: 'SuperAdmin, все линейки. Форма запроса без изменений. Строки options[] с WhatsApp/MAX игнорируются: не создаются, не продлеваются,
+        не завершаются, 400 «укажите дату окончания оплаты» и 409 «опция закрыта» по ним не выдаются. Остальные проверки без изменений. Ответ — карточка.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/BillingAccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Форма запроса без изменений (contracts/cycle7 AssignSubscriptionInput + поля следующих циклов).
+      responses:
+        '200':
+          description: Назначено — карточка аккаунта
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBillingAccountCycle43Part'
+        '400':
+          description: Существующие 400 (кроме строк мессенджеров).
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Не найдено (пустое тело).
+        '409':
+          description: Существующие 409 (кроме строк мессенджеров).
+  /api/admin/notification-channels/{id}/confirm-payment:
+    post:
+      tags:
+      - admin-channels
+      operationId: adminConfirmChannelPayment
+      summary: Подтвердить оплату номера (новые проверки и поле)
+      description: 'SuperAdmin. Порядок: 404; 400 months 1..12 / comment; 409 Replaced; 409 нет аккаунта; 409 нет опции; 409 не продаётся (закрыта,
+        неактивна, нет цены, оферта не опубликована); 409 цена изменилась (если передан expectedPricePerMonth); 200 — карточка номера (форма cycle40).'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ChannelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmChannelPaymentCycle43Input'
+            example:
+              months: 1
+              comment: Счёт 17
+              expectedPricePerMonth: 490
+      responses:
+        '200':
+          description: Карточка номера после подтверждения (форма cycle40 AdminChannelCardDto)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminChannelCardCycle43Part'
+        '400':
+          description: Неверные данные
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                months:
+                  value: Срок — от 1 до 12 месяцев
+                comment:
+                  value: Комментарий — не длиннее 500 символов
+        '401':
+          description: Не авторизован (пустое тело).
+        '403':
+          description: Нет прав (пустое тело).
+        '404':
+          description: Не найдено (пустое тело).
+        '409':
+          description: Отказ
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                replaced:
+                  value: Номер заменён — подтвердите оплату в карточке нового номера
+                noOption:
+                  value: Опция MAX отсутствует в каталоге
+                closed:
+                  value: Опция MAX закрыта для подключения. Откройте её в блоке „Подключение мессенджеров“
+                inactive:
+                  value: Опция MAX неактивна. Включите её во вкладке уведомлений, блок „Подключение мессенджеров“
+                noPrice:
+                  value: У MAX не задана цена. Задайте её во вкладке уведомлений, блок „Подключение мессенджеров“
+                offer:
+                  value: Оферта для владельцев не опубликована — MAX не продаётся
+                priceChanged:
+                  value: 'Цена MAX изменилась: теперь 590 ₽/мес. Проверьте сумму и повторите'
+  /api/billing/subscription:
+    get:
+      tags:
+      - owner-billing
+      operationId: getOwnerSubscription
+      summary: «Подписка» владельца (изменена форма)
+      description: 'options[] и totalMonthlyPrice — без WhatsApp и MAX (инвариант cycle7 сохранён); новое поле messengers. Остальное без изменений.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: line
+        in: query
+        schema:
+          type: string
+          enum:
+          - Services
+          - Orders
+          - Stays
+          - Baths
+        description: Линейка подписки; не задана — Services.
+      responses:
+        '200':
+          description: Подписка (описаны изменившиеся и новые поля)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerSubscriptionCycle43Part'
+        '401':
+          description: Не авторизован (пустое тело).
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Transport:
+      name: transport
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/NotificationTransport'
+    BillingAccountId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ChannelId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    NotificationTransport:
+      type: string
+      enum:
+      - WhatsApp
+      - Max
+      description: 'Транспорт. Отображаемые имена: «WhatsApp» / «MAX».'
+    MessengerLabel:
+      type: string
+      enum:
+      - WhatsApp
+      - MAX
+    MessengerSaleReason:
+      type: string
+      enum:
+      - Closed
+      - Inactive
+      - NoPrice
+      - OfferNotPublished
+      description: Первая неуспешная проверка «продаётся» (порядок — как в enum).
+    MessengerSaleStateDto:
+      type: object
+      additionalProperties: false
+      required:
+      - sellable
+      - reason
+      - text
+      properties:
+        sellable:
+          type: boolean
+        reason:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/MessengerSaleReason'
+        text:
+          type: string
+          description: '«Продаётся» | «Не продаётся: закрыт для владельцев» | «… опция неактивна» | «… цена не задана» | «… оферта не опубликована»'
+      example:
+        sellable: false
+        reason: NoPrice
+        text: 'Не продаётся: цена не задана'
+    OptionPriceChangeSource:
+      type: string
+      enum:
+      - MessengerPriceScreen
+      - OptionsCatalogApi
+    MessengerPriceChangeDto:
+      type: object
+      additionalProperties: false
+      required:
+      - changedAt
+      - changedByName
+      - oldPricePerMonth
+      - newPricePerMonth
+      - oldPriceText
+      - newPriceText
+      - oldIsActive
+      - newIsActive
+      - comment
+      - source
+      - activePaidAccounts
+      properties:
+        changedAt:
+          type: string
+          format: date-time
+        changedByName:
+          type: string
+          nullable: true
+        oldPricePerMonth:
+          type: number
+          nullable: true
+        newPricePerMonth:
+          type: number
+          nullable: true
+        oldPriceText:
+          type: string
+          description: «490 ₽/мес» | «не задана»
+        newPriceText:
+          type: string
+        oldIsActive:
+          type: boolean
+        newIsActive:
+          type: boolean
+        comment:
+          type: string
+          nullable: true
+        source:
+          $ref: '#/components/schemas/OptionPriceChangeSource'
+        activePaidAccounts:
+          type: integer
+          nullable: true
+    AdminMessengerOptionDto:
+      type: object
+      additionalProperties: false
+      required:
+      - transport
+      - label
+      - optionId
+      - open
+      - isActive
+      - pricePerMonth
+      - priceText
+      - sale
+      - activePaidAccounts
+      - history
+      properties:
+        transport:
+          $ref: '#/components/schemas/NotificationTransport'
+        label:
+          $ref: '#/components/schemas/MessengerLabel'
+        optionId:
+          type: string
+          format: uuid
+          nullable: true
+        open:
+          type: boolean
+          description: Переключатель «открыто для владельцев» (notifications.option.*.open).
+        isActive:
+          type: boolean
+        pricePerMonth:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 99999999.99
+        priceText:
+          type: string
+        sale:
+          $ref: '#/components/schemas/MessengerSaleStateDto'
+        activePaidAccounts:
+          type: integer
+          minimum: 0
+          description: Аккаунты с действующей НЕ пробной оплатой этой опции.
+        history:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/MessengerPriceChangeDto'
+      example:
+        transport: Max
+        label: MAX
+        optionId: c4000000-0000-4000-8000-000000000040
+        open: true
+        isActive: true
+        pricePerMonth: null
+        priceText: не задана
+        sale:
+          sellable: false
+          reason: NoPrice
+          text: 'Не продаётся: цена не задана'
+        activePaidAccounts: 0
+        history: []
+    AdminMessengerOptionsDto:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - planMatrixNote
+      - priceHint
+      properties:
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/AdminMessengerOptionDto'
+        planMatrixNote:
+          type: string
+          example: Мессенджеры WhatsApp и MAX подключаются отдельно от тарифа. Цена — во вкладке уведомлений
+        priceHint:
+          type: string
+    MessengerPriceInput:
+      type: object
+      additionalProperties: false
+      required:
+      - pricePerMonth
+      properties:
+        pricePerMonth:
+          type: number
+          nullable: true
+          description: 'null — снять цену («не продаётся»); 0..99 999 999,99, не больше двух знаков.'
+        isActive:
+          type: boolean
+          nullable: true
+          description: 'null — не менять.'
+    UpdateMessengerPriceInput:
+      type: object
+      additionalProperties: false
+      required:
+      - pricePerMonth
+      - comment
+      - expectedPricePerMonth
+      - expectedIsActive
+      properties:
+        pricePerMonth:
+          type: number
+          nullable: true
+        isActive:
+          type: boolean
+          nullable: true
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 500
+        expectedPricePerMonth:
+          type: number
+          nullable: true
+          description: Цена, которую админ видел на экране (null — цена не была задана). Обязательно.
+        expectedIsActive:
+          type: boolean
+    MessengerPricePreviewDto:
+      type: object
+      additionalProperties: false
+      required:
+      - transport
+      - currentPricePerMonth
+      - newPricePerMonth
+      - currentIsActive
+      - newIsActive
+      - sellableBefore
+      - sellableAfter
+      - startsSelling
+      - stopsSelling
+      - isZeroPrice
+      - activePaidAccounts
+      - consequences
+      - confirmTitle
+      - confirmButtonText
+      properties:
+        transport:
+          $ref: '#/components/schemas/NotificationTransport'
+        currentPricePerMonth:
+          type: number
+          nullable: true
+        newPricePerMonth:
+          type: number
+          nullable: true
+        currentIsActive:
+          type: boolean
+        newIsActive:
+          type: boolean
+        sellableBefore:
+          type: boolean
+        sellableAfter:
+          type: boolean
+        startsSelling:
+          type: boolean
+        stopsSelling:
+          type: boolean
+        isZeroPrice:
+          type: boolean
+        activePaidAccounts:
+          type: integer
+          minimum: 0
+        consequences:
+          type: array
+          items:
+            type: string
+        confirmTitle:
+          type: string
+        confirmButtonText:
+          type: string
+      example:
+        transport: Max
+        currentPricePerMonth: null
+        newPricePerMonth: 490
+        currentIsActive: true
+        newIsActive: true
+        sellableBefore: false
+        sellableAfter: true
+        startsSelling: true
+        stopsSelling: false
+        isZeroPrice: false
+        activePaidAccounts: 0
+        consequences:
+        - 'MAX начнёт продаваться: цена появится на странице тарифов и в мастере подключения'
+        confirmTitle: Изменить цену MAX?
+        confirmButtonText: Сохранить
+    MessengerLineStatus:
+      type: string
+      enum:
+      - NotConnected
+      - Trial
+      - Paid
+      - Ending
+      - Expired
+      - PendingPayment
+    MessengerNumberState:
+      type: string
+      enum:
+      - None
+      - AwaitingQr
+      - Bound
+    MessengerNumberDto:
+      type: object
+      additionalProperties: false
+      required:
+      - state
+      - text
+      - phoneMasked
+      - channelId
+      properties:
+        state:
+          $ref: '#/components/schemas/MessengerNumberState'
+        text:
+          type: string
+          description: '«Номера нет» | «Номер ожидает привязки по QR» | «Номер +7 9** ***-**-12» | «Номер привязан»'
+        phoneMasked:
+          type: string
+          nullable: true
+        channelId:
+          type: string
+          format: uuid
+          nullable: true
+    AdminMessengerLineDto:
+      type: object
+      additionalProperties: false
+      required:
+      - transport
+      - label
+      - optionId
+      - status
+      - statusText
+      - pricePerMonth
+      - priceText
+      - monthlyPrice
+      - countsInTotal
+      - paidUntil
+      - isTrial
+      - endsAt
+      - number
+      - sale
+      - canExtend
+      - extendActionText
+      - extendDisabledText
+      - canDisable
+      - disableNowConfirmText
+      - disablePeriodEndConfirmText
+      properties:
+        transport:
+          $ref: '#/components/schemas/NotificationTransport'
+        label:
+          $ref: '#/components/schemas/MessengerLabel'
+        optionId:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          $ref: '#/components/schemas/MessengerLineStatus'
+        statusText:
+          type: string
+        pricePerMonth:
+          type: number
+          nullable: true
+        priceText:
+          type: string
+          description: «490 ₽/мес» | «Цена не задана»
+        monthlyPrice:
+          type: number
+          minimum: 0
+        countsInTotal:
+          type: boolean
+        paidUntil:
+          type: string
+          format: date-time
+          nullable: true
+        isTrial:
+          type: boolean
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
+        number:
+          $ref: '#/components/schemas/MessengerNumberDto'
+        sale:
+          $ref: '#/components/schemas/MessengerSaleStateDto'
+        canExtend:
+          type: boolean
+        extendActionText:
+          type: string
+          enum:
+          - Подключить
+          - Продлить
+        extendDisabledText:
+          type: string
+          nullable: true
+        canDisable:
+          type: boolean
+        disableNowConfirmText:
+          type: string
+          nullable: true
+        disablePeriodEndConfirmText:
+          type: string
+          nullable: true
+      example:
+        transport: Max
+        label: MAX
+        optionId: c4000000-0000-4000-8000-000000000040
+        status: Paid
+        statusText: Оплачено до 20.11.2026
+        pricePerMonth: 490
+        priceText: 490 ₽/мес
+        monthlyPrice: 490
+        countsInTotal: true
+        paidUntil: '2026-11-20T09:00:00Z'
+        isTrial: false
+        endsAt: null
+        number:
+          state: None
+          text: Номера нет
+          phoneMasked: null
+          channelId: null
+        sale:
+          sellable: true
+          reason: null
+          text: Продаётся
+        canExtend: true
+        extendActionText: Продлить
+        extendDisabledText: null
+        canDisable: true
+        disableNowConfirmText: Деньги не возвращаются. Сообщения клиентам в MAX перестанут уходить с 20.10.2026
+        disablePeriodEndConfirmText: Деньги не возвращаются. Сообщения клиентам в MAX перестанут уходить с 20.11.2026
+    AdminBillingAccountCycle43Part:
+      type: object
+      description: 'Изменившиеся и новые поля AdminBillingAccountDto. options[] — без WhatsApp и MAX. totalMonthlyPrice = plan.pricePerMonth +
+        Σ options[].pricePerMonth + messengersMonthlyTotal.'
+      additionalProperties: true
+      required:
+      - options
+      - totalMonthlyPrice
+      - messengers
+      - messengersMonthlyTotal
+      properties:
+        options:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            description: AdminSubscribedOptionDto (cycle7), без опций мессенджеров.
+        totalMonthlyPrice:
+          type: number
+        messengers:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/AdminMessengerLineDto'
+        messengersMonthlyTotal:
+          type: number
+          minimum: 0
+    MessengerQuoteDto:
+      type: object
+      additionalProperties: false
+      required:
+      - transport
+      - months
+      - pricePerMonth
+      - amount
+      - amountText
+      - currentPaidUntil
+      - newPaidUntil
+      - newPaidUntilText
+      - actionText
+      properties:
+        transport:
+          $ref: '#/components/schemas/NotificationTransport'
+        months:
+          type: integer
+          minimum: 1
+          maximum: 24
+        pricePerMonth:
+          type: number
+          minimum: 0
+        amount:
+          type: number
+          minimum: 0
+        amountText:
+          type: string
+        currentPaidUntil:
+          type: string
+          format: date-time
+          nullable: true
+        newPaidUntil:
+          type: string
+          format: date-time
+        newPaidUntilText:
+          type: string
+        actionText:
+          type: string
+      example:
+        transport: Max
+        months: 3
+        pricePerMonth: 490
+        amount: 1470
+        amountText: 3 мес. × 490 ₽ = 1470 ₽
+        currentPaidUntil: '2026-10-20T09:00:00Z'
+        newPaidUntil: '2027-01-20T09:00:00Z'
+        newPaidUntilText: Будет оплачено до 20.01.2027
+        actionText: Продлить на 3 мес.
+    ExtendMessengerInput:
+      type: object
+      additionalProperties: false
+      required:
+      - months
+      - expectedPricePerMonth
+      properties:
+        months:
+          type: integer
+          minimum: 1
+          maximum: 24
+        comment:
+          type: string
+          nullable: true
+          maxLength: 500
+        expectedPricePerMonth:
+          type: number
+          minimum: 0
+          description: pricePerMonth из quote; расхождение с текущей ценой — 409.
+    MessengerDisableWhen:
+      type: string
+      enum:
+      - Now
+      - PeriodEnd
+    DisableMessengerInput:
+      type: object
+      additionalProperties: false
+      required:
+      - when
+      - comment
+      properties:
+        when:
+          $ref: '#/components/schemas/MessengerDisableWhen'
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 500
+    ConfirmChannelPaymentCycle43Input:
+      type: object
+      additionalProperties: false
+      required:
+      - months
+      properties:
+        months:
+          type: integer
+          minimum: 1
+          maximum: 12
+        comment:
+          type: string
+          nullable: true
+          maxLength: 500
+        expectedPricePerMonth:
+          type: number
+          nullable: true
+          description: Новое необязательное поле (цикл 43). Передано и не равно цене — 409.
+    AdminChannelCardCycle43Part:
+      type: object
+      description: AdminChannelCardDto — форма contracts/cycle40 без изменений.
+      additionalProperties: true
+    OwnerMessengerAction:
+      type: string
+      enum:
+      - Connect
+      - Renew
+    OwnerMessengerLineDto:
+      type: object
+      additionalProperties: false
+      required:
+      - transport
+      - label
+      - status
+      - statusText
+      - pricePerMonth
+      - priceText
+      - monthlyPrice
+      - paidUntil
+      - isTrial
+      - footnote
+      - action
+      - actionText
+      - targetCompanyId
+      - noCompanyText
+      properties:
+        transport:
+          $ref: '#/components/schemas/NotificationTransport'
+        label:
+          $ref: '#/components/schemas/MessengerLabel'
+        status:
+          $ref: '#/components/schemas/MessengerLineStatus'
+        statusText:
+          type: string
+        pricePerMonth:
+          type: number
+          nullable: true
+        priceText:
+          type: string
+          nullable: true
+        monthlyPrice:
+          type: number
+          minimum: 0
+        paidUntil:
+          type: string
+          format: date-time
+          nullable: true
+        isTrial:
+          type: boolean
+        footnote:
+          type: string
+          nullable: true
+        action:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/OwnerMessengerAction'
+        actionText:
+          type: string
+          nullable: true
+        targetCompanyId:
+          type: string
+          format: uuid
+          nullable: true
+        noCompanyText:
+          type: string
+          nullable: true
+    OwnerMessengersBlockDto:
+      type: object
+      additionalProperties: false
+      required:
+      - title
+      - note
+      - lines
+      - monthlyTotal
+      - monthlyTotalText
+      - conditionsUrl
+      - conditionsLabel
+      properties:
+        title:
+          type: string
+          example: Сообщения клиентам в мессенджеры
+        note:
+          type: string
+          example: Общие для всех ваших компаний
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/OwnerMessengerLineDto'
+        monthlyTotal:
+          type: number
+          minimum: 0
+        monthlyTotalText:
+          type: string
+          example: 'Мессенджеры: 490 ₽/мес'
+        conditionsUrl:
+          type: string
+          example: /offer-channel
+        conditionsLabel:
+          type: string
+          example: Условия
+    OwnerSubscriptionCycle43Part:
+      type: object
+      description: 'Изменившиеся и новые поля OwnerSubscriptionDto. options[] и totalMonthlyPrice — без мессенджеров
+        (totalMonthlyPrice = plan.pricePerMonth + Σ options[].pricePerMonth). messengers — в конец; null, если показывать нечего.'
+      additionalProperties: true
+      required:
+      - options
+      - totalMonthlyPrice
+      - messengers
+      properties:
+        options:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            description: SubscribedOptionDto (cycle7), без опций мессенджеров.
+        totalMonthlyPrice:
+          type: number
+        messengers:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/OwnerMessengersBlockDto'
+      example:
+        options: []
+        totalMonthlyPrice: 990
+        messengers:
+          title: Сообщения клиентам в мессенджеры
+          note: Общие для всех ваших компаний
+          lines:
+          - transport: Max
+            label: MAX
+            status: NotConnected
+            statusText: Не подключён
+            pricePerMonth: 490
+            priceText: 490 ₽/мес
+            monthlyPrice: 0
+            paidUntil: null
+            isTrial: false
+            footnote: null
+            action: Connect
+            actionText: Подключить
+            targetCompanyId: 7b0c2f5e-1d1a-4c9b-9a51-3f0f5a1c2d3e
+            noCompanyText: null
+          monthlyTotal: 0
+          monthlyTotalText: 'Мессенджеры: 0 ₽/мес'
+          conditionsUrl: /offer-channel
+          conditionsLabel: Условия

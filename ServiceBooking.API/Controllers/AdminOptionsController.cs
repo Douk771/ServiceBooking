@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +16,9 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/admin")]
 [Authorize(Roles = "SuperAdmin")]
-public class AdminOptionsController(AppDbContext db, PricingCatalogCache pricingCatalogCache) : ControllerBase
+public class AdminOptionsController(
+    AppDbContext db, PricingCatalogCache pricingCatalogCache, Microsoft.Extensions.Caching.Memory.IMemoryCache cache,
+    MessengerOptionsReader reader) : ControllerBase
 {
     // ── Options catalog (US-66) ───────────────────────────────────────────────────
 
@@ -56,7 +59,7 @@ public class AdminOptionsController(AppDbContext db, PricingCatalogCache pricing
         };
         db.SubscriptionOptions.Add(option);
         await db.SaveChangesAsync();
-        pricingCatalogCache.Invalidate();
+        MessengerCatalogCaches.Invalidate(pricingCatalogCache, cache);
         return StatusCode(StatusCodes.Status201Created, MapOptionDto(option, 0));
     }
 
@@ -78,6 +81,7 @@ public class AdminOptionsController(AppDbContext db, PricingCatalogCache pricing
         var validationError = ValidateOptionInput(dto);
         if (validationError is not null) return validationError;
 
+        var (oldPrice, oldIsActive) = (option.PricePerMonth, option.IsActive);
         option.Name = dto.Name;
         option.Description = dto.Description;
         option.Kind = ParseKind(dto.Kind);
@@ -90,8 +94,10 @@ public class AdminOptionsController(AppDbContext db, PricingCatalogCache pricing
         option.SortOrder = dto.SortOrder;
         option.UpdatedAtUtc = DateTime.UtcNow;
 
+        // ARCHITECTURE_CYCLE43.md §43.3.6: a price/activity change of a messenger option is journalled on this path too (source OptionsCatalogApi).
+        await WritePriceJournalAsync(option, oldPrice, oldIsActive);
         await db.SaveChangesAsync();
-        pricingCatalogCache.Invalidate();
+        MessengerCatalogCaches.Invalidate(pricingCatalogCache, cache);
         var count = await db.AccountSubscriptionOptions.CountAsync(o => o.OptionId == id);
         return Ok(MapOptionDto(option, count));
     }
@@ -102,11 +108,22 @@ public class AdminOptionsController(AppDbContext db, PricingCatalogCache pricing
         var option = await db.SubscriptionOptions.FindAsync(id);
         if (option is null) return NotFound();
 
+        var (oldPrice, oldIsActive) = (option.PricePerMonth, option.IsActive);
         option.IsActive = false;
         option.UpdatedAtUtc = DateTime.UtcNow;
+        await WritePriceJournalAsync(option, oldPrice, oldIsActive);
         await db.SaveChangesAsync();
-        pricingCatalogCache.Invalidate();
+        MessengerCatalogCaches.Invalidate(pricingCatalogCache, cache);
         return NoContent();
+    }
+
+    private async Task WritePriceJournalAsync(SubscriptionOption option, decimal? oldPrice, bool oldIsActive)
+    {
+        if (!OptionPriceLog.ShouldWrite(option.Code, oldPrice, option.PricePerMonth, oldIsActive, option.IsActive)) return;
+        var transport = Services.Notifications.AccountMessagingReader.TransportOf(option.Code)!.Value;
+        var activePaid = await reader.CountActivePaidAccountsAsync(transport, option.Id, DateTime.UtcNow, HttpContext.RequestAborted);
+        OptionPriceLog.Write(db, option, oldPrice, option.PricePerMonth, oldIsActive, option.IsActive, OptionPriceChangeSource.OptionsCatalogApi,
+            activePaid, User.FindFirstValue(ClaimTypes.NameIdentifier), null);
     }
 
     [HttpGet("option-capabilities")]

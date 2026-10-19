@@ -764,6 +764,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<decimal?>("Amount")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
                     b.Property<Guid>("BillingAccountId")
                         .HasColumnType("uuid");
 
@@ -779,6 +783,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<string>("Comment")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<int?>("Months")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("NewEndsAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -796,6 +803,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<decimal?>("PricePerMonth")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
 
                     b.Property<int>("Source")
                         .HasColumnType("integer");
@@ -5621,6 +5632,57 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.ToTable("SubscriptionOptions");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.SubscriptionOptionPriceChangeLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("ActivePaidAccounts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("ChangedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ChangedByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("NewIsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal?>("NewPricePerMonth")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<bool>("OldIsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal?>("OldPricePerMonth")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<string>("OptionCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("OptionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OptionId", "ChangedAtUtc");
+
+                    b.ToTable("SubscriptionOptionPriceChangeLogs");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.SubscriptionPlanConfig", b =>
                 {
                     b.Property<Guid>("Id")
@@ -7303,6 +7365,17 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("BillingAccount");
 
                     b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.SubscriptionOptionPriceChangeLog", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.SubscriptionOption", "Option")
+                        .WithMany()
+                        .HasForeignKey("OptionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Option");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.TrialGrant", b =>

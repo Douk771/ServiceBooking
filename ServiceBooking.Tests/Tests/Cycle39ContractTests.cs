@@ -210,7 +210,8 @@ public class Cycle39ContractTests(TestDatabaseFixture fixture) : Cycle39TestBase
         var second = (await (await c.PostJsonAsync(b + "/services", new ServiceCreateInput("Чан"))).Content.ReadJsonAsync<ServiceManageDto>())!;
         await v.Check("PUT", "/api/stays/companies/{companyId}/services/order", await c.PutJsonAsync(b + "/services/order", new IdsOrderInput([second.Id, svc.Id])), 200);
         // 409 ServiceHasSessions и удаление
-        await OrderOkAsync(svc.Id, InDays(12), 720, 2);
+        // Суббота (день 6) в расписании выше без окон — берём будний день, иначе тест падает, когда «сегодня + 12» выпадает на субботу.
+        await OrderOkAsync(svc.Id, NextWeekday(DayOfWeek.Wednesday, 12), 720, 2);
         await v.Check("DELETE", "/api/stays/companies/{companyId}/services/{serviceId}", await c.DeleteAsync(sp), 409);
         await v.Check("POST", "/api/stays/companies/{companyId}/services/{serviceId}/archive", await c.PostJsonAsync(sp + "/archive", new EmptyInput()), 200);
         await v.Check("POST", "/api/stays/companies/{companyId}/services/{serviceId}/publish", await c.PostJsonAsync(sp + "/publish", new EmptyInput()), 409);

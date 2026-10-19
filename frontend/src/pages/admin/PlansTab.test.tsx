@@ -27,6 +27,12 @@ vi.mock('../../api/plans', () => ({
   },
 }))
 
+// Cycle 43 (§43.5.3): the matrix drops WhatsApp / MAX and points to the notifications tab; the ids come from the messenger-options answer.
+const messengerOptions = vi.fn()
+vi.mock('../../api/adminBilling', () => ({
+  adminBillingApi: { messengerOptions: (...args: unknown[]) => messengerOptions(...args) },
+}))
+
 // A plan literally as a pre-cycle-7 API would have sent it — the four fields the migration added
 // (highlights, options, isSystemFree, photoRetention) are entirely absent, not `null`/`[]`.
 function preCycle7Plan(overrides: Record<string, unknown> = {}): PlanConfig {
@@ -126,6 +132,44 @@ describe('PlansTab — options matrix renders exactly the catalog, no client-sid
     expect(payload.options).toEqual([
       { optionId: 'option-employees', availability: 'Included', includedQuantity: 3 },
     ])
+  })
+})
+
+const MATRIX_NOTE = 'Мессенджеры WhatsApp и MAX подключаются отдельно от тарифа. Цена — во вкладке уведомлений'
+const messengerCatalog = {
+  items: [{ optionId: 'opt-wa' }, { optionId: 'opt-max' }],
+  planMatrixNote: MATRIX_NOTE,
+  priceHint: 'h',
+}
+
+describe('PlansTab — messengers are not a plan feature (cycle 43, US-43-02)', () => {
+  const opt = (id: string, name: string, code: string) =>
+    ({ id, code, name, kind: 'Toggle', capabilityKnown: true, pricePerMonth: 1, currency: 'RUB', isPublic: true, isActive: true }) as unknown as AdminOptionDto
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    listPlans.mockResolvedValue([preCycle7Plan({ highlights: [], options: [], isSystemFree: false })])
+    messengerOptions.mockResolvedValue(messengerCatalog)
+  })
+
+  it('leaves the other options in the matrix, drops WhatsApp / MAX and prints the server note under it', async () => {
+    listOptions.mockResolvedValue([opt('opt-wa', 'WhatsApp', 'notifications.whatsapp'), opt('opt-x', 'Дополнительный отчёт', 'extra.report'), opt('opt-max', 'MAX', 'notifications.max')])
+    renderTab()
+    await userEvent.click(await screen.findByRole('button', { name: /Редактировать/ }))
+    expect(await screen.findByText('Дополнительный отчёт')).toBeInTheDocument()
+    expect(screen.queryByText('WhatsApp')).not.toBeInTheDocument()
+    expect(screen.queryByText('MAX')).not.toBeInTheDocument()
+    expect(screen.getByText(MATRIX_NOTE)).toBeInTheDocument()
+  })
+
+  it('replaces the whole matrix with the note when only messengers are left, and still drops them if the messenger answer failed', async () => {
+    listOptions.mockResolvedValue([opt('opt-wa', 'WhatsApp', 'notifications.whatsapp'), opt('opt-max', 'MAX', 'notifications.max')])
+    messengerOptions.mockRejectedValue(new Error('down'))
+    renderTab()
+    await userEvent.click(await screen.findByRole('button', { name: /Редактировать/ }))
+    expect(await screen.findByText(MATRIX_NOTE)).toBeInTheDocument()
+    expect(screen.queryByText('WhatsApp')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: /WhatsApp/ })).not.toBeInTheDocument()
   })
 })
 

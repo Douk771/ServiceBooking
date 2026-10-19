@@ -9,6 +9,7 @@ using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Bookings;
 using ServiceBooking.API.Services.Demo;
+using ServiceBooking.API.Services.Notifications.Funding;
 using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.API.Services.Subjects;
 using ServiceBooking.Core.Entities;
@@ -328,8 +329,19 @@ public class ProfileController(
             return BillingCalculator.MonthlyPriceFor(availability, row.Quantity, pricePerUnit, rule?.IncludedQuantity);
         }
 
+        // ARCHITECTURE_CYCLE43.md §43.32: the messengers do not depend on the tariff — their part of the total is the one line rule over the
+        // rows already loaded here (the same amount the account card shows); the other options are priced by the tariff's rules as before.
+        var legacySubscription = new LegacySubscriptionFacts(SubscriptionUsability.IsUsable(sub, now), sub?.PaidUntil);
+        decimal MessengerMonthly(AccountSubscriptionOption row)
+        {
+            var facts = MessengerLineRule.FactsOf(row);
+            var payment = ChannelOptionFunding.Evaluate(facts, account.TrialEndsAtUtc, legacySubscription, now);
+            return MessengerLineRule.Amount(payment, facts, row.Option.PricePerMonth).Monthly;
+        }
+
         var planPrice = sub?.PlanConfig?.PricePerMonth ?? 0m;
-        var totalMonthlyPrice = BillingCalculator.TotalMonthlyPrice(planPrice, subscribedOptions.Select(OptionMonthly));
+        var totalMonthlyPrice = BillingCalculator.TotalMonthlyPrice(planPrice, subscribedOptions
+            .Select(o => ChannelOptionLog.IsChannelOption(o.Option.Code) ? MessengerMonthly(o) : OptionMonthly(o)));
 
         var isExpired = sub is not null && sub.PaidUntil.HasValue && sub.PaidUntil.Value < now;
         var expiresInDays = BillingCalculator.ExpiresInDays(sub?.PaidUntil, now);

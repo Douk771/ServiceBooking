@@ -6,6 +6,9 @@ namespace ServiceBooking.Core.Entities;
 /// <see cref="Quantity"/> is read (§47.1's N, "how many notification numbers are paid for"); the
 /// request/approval workflow fields below (US-70) are carried on the entity now so the admin-approval
 /// endpoint — a later slice of this cycle — doesn't need its own migration, but nothing writes them yet.
+/// Cycle 43 (ARCHITECTURE_CYCLE43.md §43.6, T-43-04): the rows of the two messenger options are written ONLY by
+/// MessengerPaymentService (admin account card, «Подтвердить оплату»), the trial services and the owner's number requests —
+/// never by the tariff form. <see cref="PaidUntilUtc"/> is the paid period, <see cref="EndsAtUtc"/> a scheduled or immediate switch-off.
 /// </summary>
 public class AccountSubscriptionOption
 {
