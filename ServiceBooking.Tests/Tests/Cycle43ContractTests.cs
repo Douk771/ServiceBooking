@@ -65,6 +65,17 @@ public class Cycle43ContractTests(TestDatabaseFixture fixture) : NotificationTes
         await v.CheckText("GET", "/api/admin/messenger-options", await ownerClient.GetAsync("/api/admin/messenger-options"), 403, empty: true);
         await v.CheckText("GET", "/api/admin/messenger-options", await Factory.CreateClient().GetAsync("/api/admin/messenger-options"), 401, empty: true);
 
+        // a known starting point: the shared database may keep another test's price, and an unchanged price is a legitimate 400
+        {
+            var items = (await (await admin.GetAsync("/api/admin/messenger-options")).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("items");
+            var seeded = items.EnumerateArray().Single(i => i.GetProperty("transport").GetString() == "Max");
+            var seededPrice = seeded.GetProperty("pricePerMonth").ValueKind == JsonValueKind.Null ? (decimal?)null : seeded.GetProperty("pricePerMonth").GetDecimal();
+            var seededActive = seeded.GetProperty("isActive").GetBoolean();
+            if (seededPrice != 400m || !seededActive)
+                (await admin.PutAsJsonAsync("/api/admin/messenger-options/Max/price",
+                    new { pricePerMonth = 400, isActive = true, comment = "подготовка теста", expectedPricePerMonth = seededPrice, expectedIsActive = seededActive }))
+                    .StatusCode.Should().Be(HttpStatusCode.OK);
+        }
         var preview = "/api/admin/messenger-options/{transport}/price/preview";
         await v.Check("POST", preview, await admin.PostAsJsonAsync("/api/admin/messenger-options/Max/price/preview", new { pricePerMonth = 490, isActive = (bool?)null }), 200);
         await v.Check("POST", preview, await admin.PostAsJsonAsync("/api/admin/messenger-options/Max/price/preview", new { pricePerMonth = (decimal?)null, isActive = false }), 200);

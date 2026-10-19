@@ -116,7 +116,6 @@ public class Cycle43TariffFormTests(TestDatabaseFixture fixture) : Cycle43TestBa
         var admin = await AdminAsync();
         var waId = await OptionIdAsync("WhatsApp");
         var maxId = await OptionIdAsync("Max");
-        var rulesBefore = await DbAsync(db => db.PlanOptionRules.CountAsync(r => r.Option.Code == WhatsAppCode || r.Option.Code == MaxCode));
 
         // an account with no messengers: lines with a date, without a date, with a quantity > 1 — all 200, nothing created
         var empty = await NewAccountAsync();
@@ -149,6 +148,8 @@ public class Cycle43TariffFormTests(TestDatabaseFixture fixture) : Cycle43TestBa
         var endsAt = NoonIn(9);
         await SeedRowAsync(rich.AccountId, "WhatsApp", paidUntil);
         await SeedRowAsync(rich.AccountId, "Max", trialUntil, trial: true);
+        // after the accounts exist: the test helper lazily adds the Extra rules of the shared plan, the form must not add more
+        var rulesBefore = await DbAsync(db => db.PlanOptionRules.CountAsync(r => r.Option.Code == WhatsAppCode || r.Option.Code == MaxCode));
         var waBefore = (await RowAsync(rich.AccountId, "WhatsApp"))!;
         var maxBefore = (await RowAsync(rich.AccountId, "Max"))!;
         var iteration = 0;
