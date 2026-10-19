@@ -67,7 +67,7 @@ public static class TestInfrastructure
 
     /// <summary>Number of demo database slots (<c>DemoDatabaseSlots.All</c> of the test project, checked against it at the start of a run). Demo databases are leased outside the
     /// class gate, at most P at a time (a semaphore in <c>TestRunEnvironment</c>), one host and one pool each.</summary>
-    public const int DemoDatabaseSlotCount = 9;
+    public const int DemoDatabaseSlotCount = 11;
 
     /// <summary>Pool limit applied by <see cref="TestDatabaseLease"/>, via
     /// <see cref="Npgsql.NpgsqlConnectionStringBuilder"/> properties (not string concatenation — a

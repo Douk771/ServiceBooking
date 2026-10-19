@@ -101,11 +101,13 @@ public static class DemoDatabaseSlots
     public const string A35 = "a35_demo";
     public const string B35 = "b35_demo";
     public const string Reset35 = "x35_demo";
+    public const string Determinism35 = "d35_demo";
+    public const string Nightly28 = "n28_demo";
     public const string Template = "tpl_demo";
     public const string GuardReal = "g36_demo";
     public const string GuardClone = "k36_demo";
 
-    public static readonly string[] All = [Salon, SalonMutations, Read35, A35, B35, Reset35, Template, GuardReal, GuardClone];
+    public static readonly string[] All = [Salon, SalonMutations, Read35, A35, B35, Reset35, Determinism35, Nightly28, Template, GuardReal, GuardClone];
 }
 
 /// <summary>

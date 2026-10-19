@@ -508,28 +508,29 @@ public class Cycle28ShowcaseFreshDeleteTests(TestDatabaseFixture fixture) : Cycl
 
 /// <summary>
 /// QA cycle 28, pass A — US-28-06 (create / recreate / delete, isolation of real data, determinism, exit codes, locks) and the retention side of US-28-05.
-/// Own database; every test starts from a normalised state (<c>ops showcase delete --yes</c>).
+/// Own database; every test starts from a normalised state (<c>ops showcase delete --yes</c>). The scenarios are split over two classes
+/// (<see cref="Cycle28ShowcaseLifecycleTests"/>, <see cref="Cycle28ShowcaseCommandsTests"/>), each with its own database, so that they run in parallel: seven
+/// create/delete runs of ~10 thousand rows one after another were the tail of the demo shard.
 /// </summary>
-[Trait("Category", "Heavy")]
-public class Cycle28ShowcaseLifecycleTests(TestDatabaseFixture fixture) : Cycle28GeneratorTestBase(fixture)
+public abstract class Cycle28ShowcaseLifecycleBase(TestDatabaseFixture fixture) : Cycle28GeneratorTestBase(fixture)
 {
-    private static readonly Regex CountsAfter = new(@"создано: (?<c>companies=.*?)( за |$)", RegexOptions.Multiline);
+    protected static readonly Regex CountsAfter = new(@"создано: (?<c>companies=.*?)( за |$)", RegexOptions.Multiline);
 
     /// <summary>
     /// Refreshes planner statistics. Every scenario of this class calls it after a create: <c>ops showcase delete</c> straight after <c>create</c> is 10–15× slower
     /// on stale statistics and can pass the default 30 s command timeout on a busy machine (defect reproduced by CY28-30 in
     /// <see cref="Cycle28ShowcaseFreshDeleteTests"/>); one defect must not turn every test of this class red.
     /// </summary>
-    private Task AnalyzeAsync() => DbAsync(db => db.Database.ExecuteSqlRawAsync("ANALYZE"));
+    protected Task AnalyzeAsync() => DbAsync(db => db.Database.ExecuteSqlRawAsync("ANALYZE"));
 
-    private async Task NormaliseAsync()
+    protected async Task NormaliseAsync()
     {
         await AnalyzeAsync();
         var (exit, output) = await RunOpsAsync("showcase", "delete", "--yes");
         exit.Should().Be(0, output);
     }
 
-    private async Task<(int Exit, string Output)> CreateAsync()
+    protected async Task<(int Exit, string Output)> CreateAsync()
     {
         var result = await RunOpsAsync("showcase", "create", "--yes");
         await AnalyzeAsync();
@@ -537,7 +538,7 @@ public class Cycle28ShowcaseLifecycleTests(TestDatabaseFixture fixture) : Cycle2
     }
 
     /// <summary>A fingerprint of every row that is NOT marked, in the tables the generator touches (platform settings are excluded: the last re-seed stamp is by design).</summary>
-    private async Task<string> RealDataFingerprintAsync() => await DbAsync(async db =>
+    protected async Task<string> RealDataFingerprintAsync() => await DbAsync(async db =>
     {
         var sb = new StringBuilder();
         foreach (var u in await db.Users.AsNoTracking().Where(u => !u.IsShowcase).OrderBy(u => u.Id).Select(u => new { u.Id, u.PhoneNumber, u.FirstName, u.LastName, u.PasswordHash }).ToListAsync()) sb.Append($"U|{u.Id}|{u.PhoneNumber}|{u.FirstName}|{u.LastName}|{u.PasswordHash}\n");
@@ -551,7 +552,12 @@ public class Cycle28ShowcaseLifecycleTests(TestDatabaseFixture fixture) : Cycle2
         foreach (var r in await db.UserRoles.AsNoTracking().Where(r => !db.Users.Any(u => u.Id == r.UserId && u.IsShowcase)).OrderBy(r => r.UserId).ThenBy(r => r.RoleId).ToListAsync()) sb.Append($"R|{r.UserId}|{r.RoleId}\n");
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
     });
+}
 
+/// <summary>CY28-31/33/36: real data untouched by create / recreate / delete, recreate never shows an empty catalog, the lock of a parallel run.</summary>
+[Trait("Category", "Heavy")]
+public class Cycle28ShowcaseLifecycleTests(TestDatabaseFixture fixture) : Cycle28ShowcaseLifecycleBase(fixture)
+{
     [Fact, TestCase("CY28-31")]
     public async Task RealData_IsIdenticalBeforeAndAfterCreateRecreateDelete()
     {
@@ -585,33 +591,6 @@ public class Cycle28ShowcaseLifecycleTests(TestDatabaseFixture fixture) : Cycle2
         (await AnonymousClient().GetAsync($"/api/companies/{company.Slug}")).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [Fact, TestCase("CY28-32")]
-    public async Task Delete_RemovesShowcaseFiles_IncludingPicturesUploadedOutsideTheShowcaseFolder()
-    {
-        await NormaliseAsync();
-        (await CreateAsync()).Exit.Should().Be(0);
-
-        using var scope = Factory.Services.CreateScope();
-        var storage = scope.ServiceProvider.GetRequiredService<FileStorage>();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var bytes = Encoding.UTF8.GetBytes("not really a picture, only a file");
-        await storage.SavePublicNamedAsync(PublicArea.Showcase, "cy28-asset.jpg", bytes);
-        var uploadedUrl = await storage.SavePublicAsync(PublicArea.Companies, bytes, ".jpg");
-        var company = await db.Companies.FirstAsync(c => c.IsShowcase);
-        company.LogoUrl = uploadedUrl;
-        await db.SaveChangesAsync();
-
-        string Physical(string url) => Path.Combine(storage.PublicRootFullPath, url.Replace("/uploads/", "", StringComparison.Ordinal).TrimStart('/'));
-        File.Exists(Physical(uploadedUrl)).Should().BeTrue("precondition: the uploaded logo exists");
-        storage.CountPublicAreaFiles(PublicArea.Showcase).Should().BeGreaterThan(0);
-
-        var (exit, output) = await RunOpsAsync("showcase", "delete", "--yes");
-        exit.Should().Be(0, output);
-
-        storage.CountPublicAreaFiles(PublicArea.Showcase).Should().Be(0, "no file of the showcase folder is left");
-        File.Exists(Physical(uploadedUrl)).Should().BeFalse("a logo uploaded into a showcase company outside the showcase folder is removed too");
-    }
-
     [Fact, TestCase("CY28-33")]
     public async Task Recreate_NeverShowsAnEmptyCatalog_KeepsIdsAndSlugs()
     {
@@ -639,6 +618,65 @@ public class Cycle28ShowcaseLifecycleTests(TestDatabaseFixture fixture) : Cycle2
         var after = await DbAsync(db => db.Companies.AsNoTracking().Where(c => c.IsShowcase).OrderBy(c => c.Slug).Select(c => new { c.Id, c.Slug }).ToListAsync());
         after.Should().BeEquivalentTo(before, "external links and caches survive a re-seed: same ids and slugs");
         (await DbAsync(db => db.PlatformSettings.AnyAsync(s => s.Key == ShowcaseCatalog.LastReseedKey))).Should().BeTrue("the last (re)seed time is stamped for the weekly task");
+    }
+
+    [Fact, TestCase("CY28-36")]
+    public async Task ParallelRun_WhileAnotherHoldsTheLock_Exits4_AndChangesNothing()
+    {
+        await NormaliseAsync();
+        await using var connection = new NpgsqlConnection(ConnectionString);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using (var cmd = new NpgsqlCommand($"SELECT pg_advisory_xact_lock(hashtextextended('{ShowcaseCatalog.LockKey}', 0))", connection, transaction))
+            await cmd.ExecuteNonQueryAsync();
+
+        var (exit, output) = await CreateAsync();
+        exit.Should().Be(4, output);
+        (await DbAsync(db => db.Companies.CountAsync(c => c.IsShowcase))).Should().Be(0);
+
+        await using (var tariffLock = new NpgsqlConnection(ConnectionString))
+        {
+            await tariffLock.OpenAsync();
+            await using var tx2 = await tariffLock.BeginTransactionAsync();
+            await using (var cmd = new NpgsqlCommand($"SELECT pg_advisory_xact_lock(hashtextextended('{ShowcaseCatalog.TariffsLockKey}', 0))", tariffLock, tx2))
+                await cmd.ExecuteNonQueryAsync();
+            (await RunOpsAsync("tariffs", "apply")).Exit.Should().Be(4, "the tariffs command has its own lock");
+        }
+
+        await transaction.RollbackAsync();
+        (await DbAsync(db => db.Companies.CountAsync(c => c.IsShowcase))).Should().Be(0, "a refused run wrote nothing");
+    }
+}
+
+/// <summary>CY28-32/34/35/37: files of the showcase, the plan before execution, exit codes, retention on the showcase.</summary>
+[Trait("Category", "Heavy")]
+public class Cycle28ShowcaseCommandsTests(TestDatabaseFixture fixture) : Cycle28ShowcaseLifecycleBase(fixture)
+{
+    [Fact, TestCase("CY28-32")]
+    public async Task Delete_RemovesShowcaseFiles_IncludingPicturesUploadedOutsideTheShowcaseFolder()
+    {
+        await NormaliseAsync();
+        (await CreateAsync()).Exit.Should().Be(0);
+
+        using var scope = Factory.Services.CreateScope();
+        var storage = scope.ServiceProvider.GetRequiredService<FileStorage>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var bytes = Encoding.UTF8.GetBytes("not really a picture, only a file");
+        await storage.SavePublicNamedAsync(PublicArea.Showcase, "cy28-asset.jpg", bytes);
+        var uploadedUrl = await storage.SavePublicAsync(PublicArea.Companies, bytes, ".jpg");
+        var company = await db.Companies.FirstAsync(c => c.IsShowcase);
+        company.LogoUrl = uploadedUrl;
+        await db.SaveChangesAsync();
+
+        string Physical(string url) => Path.Combine(storage.PublicRootFullPath, url.Replace("/uploads/", "", StringComparison.Ordinal).TrimStart('/'));
+        File.Exists(Physical(uploadedUrl)).Should().BeTrue("precondition: the uploaded logo exists");
+        storage.CountPublicAreaFiles(PublicArea.Showcase).Should().BeGreaterThan(0);
+
+        var (exit, output) = await RunOpsAsync("showcase", "delete", "--yes");
+        exit.Should().Be(0, output);
+
+        storage.CountPublicAreaFiles(PublicArea.Showcase).Should().Be(0, "no file of the showcase folder is left");
+        File.Exists(Physical(uploadedUrl)).Should().BeFalse("a logo uploaded into a showcase company outside the showcase folder is removed too");
     }
 
     [Fact, TestCase("CY28-34")]
@@ -689,33 +727,6 @@ public class Cycle28ShowcaseLifecycleTests(TestDatabaseFixture fixture) : Cycle2
         unknown.Output.Should().Contain("Использование");
 
         (await RunOpsAsync("demo", "reset", "--yes")).Exit.Should().Be(2, "on a production configuration the demo reset refuses");
-    }
-
-    [Fact, TestCase("CY28-36")]
-    public async Task ParallelRun_WhileAnotherHoldsTheLock_Exits4_AndChangesNothing()
-    {
-        await NormaliseAsync();
-        await using var connection = new NpgsqlConnection(ConnectionString);
-        await connection.OpenAsync();
-        await using var transaction = await connection.BeginTransactionAsync();
-        await using (var cmd = new NpgsqlCommand($"SELECT pg_advisory_xact_lock(hashtextextended('{ShowcaseCatalog.LockKey}', 0))", connection, transaction))
-            await cmd.ExecuteNonQueryAsync();
-
-        var (exit, output) = await CreateAsync();
-        exit.Should().Be(4, output);
-        (await DbAsync(db => db.Companies.CountAsync(c => c.IsShowcase))).Should().Be(0);
-
-        await using (var tariffLock = new NpgsqlConnection(ConnectionString))
-        {
-            await tariffLock.OpenAsync();
-            await using var tx2 = await tariffLock.BeginTransactionAsync();
-            await using (var cmd = new NpgsqlCommand($"SELECT pg_advisory_xact_lock(hashtextextended('{ShowcaseCatalog.TariffsLockKey}', 0))", tariffLock, tx2))
-                await cmd.ExecuteNonQueryAsync();
-            (await RunOpsAsync("tariffs", "apply")).Exit.Should().Be(4, "the tariffs command has its own lock");
-        }
-
-        await transaction.RollbackAsync();
-        (await DbAsync(db => db.Companies.CountAsync(c => c.IsShowcase))).Should().Be(0, "a refused run wrote nothing");
     }
 
     [Fact, TestCase("CY28-37")]

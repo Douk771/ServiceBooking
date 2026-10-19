@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
-using ServiceBooking.API.Services.Ops;
 using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
@@ -18,9 +17,12 @@ public class Cycle35DemoContractTests : IAsyncLifetime
     private TestClassDatabaseLease _lease = null!;
     private DemoHostFactory _factory = null!;
 
+    // The reset is only the ARRANGE step here (the form of the answers is the subject): the demo is cloned from the seeded template, not reset (DemoSeededTemplate).
     public async Task InitializeAsync()
     {
-        _lease = await TestRunEnvironment.LeaseClassDatabaseAsync(Cycle35DemoSlots.Read);
+        await DemoSeededTemplate.EnsureAsync();
+        _lease = await TestRunEnvironment.LeaseClassDatabaseAsync(Cycle35DemoSlots.Read, sourceSlot: DemoSeededTemplate.Slot);
+        DemoSeededTemplate.CopyFilesTo(Cycle35DemoSlots.Read);
         _factory = new DemoHostFactory(_lease.ConnectionString);
         _ = _factory.Services;
     }
@@ -42,8 +44,6 @@ public class Cycle35DemoContractTests : IAsyncLifetime
     public async Task DemoStatusForBothProductsAndSixRoleLogin_MatchTheCycle35Contract()
     {
         var http = _factory.CreateClient();
-        var writer = new StringWriter();
-        (await OpsCommandRunner.RunAsync(_factory.Services, OpsCommandLine.Parse(["ops", "demo", "reset", "--yes"])!, writer)).Should().Be(0, writer.ToString());
 
         foreach (var url in new[] { "/api/demo/status", "/api/demo/status?product=services", "/api/demo/status?product=orders" })
         {

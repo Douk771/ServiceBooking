@@ -410,7 +410,9 @@ public abstract class Cycle28DemoMutationBase : Cycle28DemoScenarioBase, IAsyncL
     /// <summary>true: the fresh demo of each test is cloned from the seeded template (arrange only); false: each test runs the real product reset.</summary>
     protected virtual bool Seeded => true;
 
-    public async Task InitializeAsync() => _state = await DemoScenarioState.CreateAsync(DemoDatabaseSlots.SalonMutations, Seeded);
+    protected virtual string DatabaseSlot => DemoDatabaseSlots.SalonMutations;
+
+    public async Task InitializeAsync() => _state = await DemoScenarioState.CreateAsync(DatabaseSlot, Seeded);
 
     public async Task DisposeAsync()
     {
@@ -521,12 +523,12 @@ public class Cycle28DemoMutationTests : Cycle28DemoMutationBase
     }
 }
 
-/// <summary>CY28-49/50/51: the reset (or the nightly task that resets, whose "due" depends on the age of the last reset) is the subject, so these run the real product reset (the others get the demo from the seeded template).</summary>
+/// <summary>CY28-49/50: the reset run INSIDE the test is the subject (what it removes and keeps, the wait answer while it runs, the refusal of a second run); the fresh
+/// demo before it is only the ARRANGE step, so it is cloned from the seeded template (<see cref="DemoSeededTemplate"/>) instead of one more real reset.
+/// CY28-51 (the nightly task) is in <see cref="Cycle28DemoNightlyTests"/>.</summary>
 [Collection("Cycle28DemoMutations")]
 public class Cycle28DemoResetTests : Cycle28DemoMutationBase
 {
-    protected override bool Seeded => false;
-
     [Fact, TestCase("CY28-49")]
     public async Task Reset_RemovesEverythingVisitorsDid_KeepsDirectoriesAndSettings_KeepsRoleTokensAlive()
     {
@@ -624,6 +626,17 @@ public class Cycle28DemoResetTests : Cycle28DemoMutationBase
         (await JsonAsync(await http.GetAsync("/api/demo/status"))).GetProperty("resetting").GetBoolean().Should().BeFalse();
         (await DemoLoginAsync("client")).Roles.Should().Contain("Client");
     }
+}
+
+/// <summary>CY28-51: the nightly task resets when the last reset is older than today, so the age of the demo's OWN first reset is part of the subject: real product reset
+/// in InitializeAsync (no clone of a template made earlier in the run). Own collection and database: it needs no template, so it starts at once, and it does not
+/// stand in one queue with the resets of <see cref="Cycle28DemoResetTests"/>.</summary>
+[Collection("Cycle28DemoNightly")]
+public class Cycle28DemoNightlyTests : Cycle28DemoMutationBase
+{
+    protected override string DatabaseSlot => DemoDatabaseSlots.Nightly28;
+
+    protected override bool Seeded => false;
 
     [Fact, TestCase("CY28-51")]
     public async Task NightlyTask_IsListedOnlyInDemo_SkipsWithoutStamp_ResetsWhenStale_ThenIsNotDue()

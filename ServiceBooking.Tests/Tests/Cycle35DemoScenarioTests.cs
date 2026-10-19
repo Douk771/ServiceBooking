@@ -21,9 +21,9 @@ namespace ServiceBooking.Tests.Tests;
 /// <summary>
 /// QA cycle 35, "Вызов 2" — the demo stand of "Заказы" as a visitor and an operator see it (US-35-02 … US-35-07). Written from SPEC_CYCLE35_GOODS_DEMO_STAND.md and
 /// API_CONTRACT_CYCLE35.md, not from the implementation. One host in demo mode per database "sbtest_&lt;key&gt;_&lt;variant&gt;_demo".
-/// Cycle 36: the scenarios that only READ the generated demo (<see cref="Cycle35DemoScenarioTests"/>) share one real reset per class; the scenarios that write
-/// (<see cref="Cycle35DemoMutationBase"/>) get a fresh demo per test by cloning the seeded template (<see cref="DemoSeededTemplate"/>), except the ones whose subject is the reset
-/// itself (<see cref="Cycle35DemoResetTests"/>), which run the real reset. Every group has its own collection and its own demo database (<see cref="Cycle35DemoSlots"/>).
+/// Cycle 36: the scenarios that only READ the generated demo (<see cref="Cycle35DemoScenarioTests"/>) share one demo per class; the scenarios that write
+/// (<see cref="Cycle35DemoMutationBase"/>) get a fresh demo per test. Both are cloned from the seeded template (<see cref="DemoSeededTemplate"/>); the scenarios whose subject
+/// is the reset itself (<see cref="Cycle35DemoResetTests"/>, <see cref="Cycle35DemoDeterminismTests"/>) run the real reset inside the test. Every group has its own collection and its own demo database (<see cref="Cycle35DemoSlots"/>).
 /// </summary>
 public abstract class Cycle35DemoScenarioBase
 {
@@ -145,13 +145,15 @@ public static class Cycle35DemoSlots
     public const string A = DemoDatabaseSlots.A35;
     public const string B = DemoDatabaseSlots.B35;
     public const string Reset = DemoDatabaseSlots.Reset35;
+    public const string Determinism = DemoDatabaseSlots.Determinism35;
 }
 
 public sealed class Cycle35DemoScenarioFixture : IAsyncLifetime
 {
     public DemoScenarioState State { get; private set; } = null!;
 
-    public async Task InitializeAsync() => State = await DemoScenarioState.CreateAsync(Cycle35DemoSlots.Read);
+    // Read-only scenarios: the fresh demo is their ARRANGE step only, so it is cloned from the seeded template (the reset itself is the subject of Cycle35DemoResetTests).
+    public async Task InitializeAsync() => State = await DemoScenarioState.CreateAsync(Cycle35DemoSlots.Read, seeded: true);
 
     public async Task DisposeAsync()
     {
@@ -159,7 +161,7 @@ public sealed class Cycle35DemoScenarioFixture : IAsyncLifetime
     }
 }
 
-/// <summary>Scenarios that only read the generated demo (no write through the API, no reset): one shared reset per class.</summary>
+/// <summary>Scenarios that only read the generated demo (no write through the API, no reset): one shared demo per class, cloned from the seeded template.</summary>
 [Collection(Cycle35DemoSlots.ReadCollection)]
 public class Cycle35DemoScenarioTests(Cycle35DemoScenarioFixture fixture) : Cycle35DemoScenarioBase, IClassFixture<Cycle35DemoScenarioFixture>
 {
@@ -510,7 +512,8 @@ public class Cycle35DemoScenarioTests(Cycle35DemoScenarioFixture fixture) : Cycl
 /// <summary>
 /// Scenarios that write (orders, settings, visitors, resets): each starts from its own fresh reset. Order of the tests is random. Cycle 36: the 12 scenarios are
 /// spread over classes, each in its own collection with its own demo database (<see cref="Cycle35DemoSlots"/>), so that they run in parallel. The tests whose subject is the reset
-/// itself (CY35-15, 60, 61) are in <see cref="Cycle35DemoResetTests"/> and call the real product reset; the others get the fresh demo by cloning the seeded template.
+/// itself (CY35-15, 60, 61) are in <see cref="Cycle35DemoResetTests"/> and <see cref="Cycle35DemoDeterminismTests"/> and call the real product reset inside the test;
+/// only CY35-15 also starts from a real reset (its first half), every other scenario gets the fresh demo by cloning the seeded template.
 /// </summary>
 public abstract class Cycle35DemoMutationBase : Cycle35DemoScenarioBase, IAsyncLifetime
 {
@@ -859,35 +862,13 @@ public class Cycle35DemoMutationBTests : Cycle35DemoMutationBase
     }
 }
 
+/// <summary>CY35-60/61: the reset run INSIDE the test is the subject (what it removes and keeps, the wait answer while it runs); the fresh demo before it is only the
+/// ARRANGE step, so it is cloned from the seeded template (<see cref="DemoSeededTemplate"/>) instead of one more real reset. CY35-15 (determinism) compares the demo of
+/// its own first reset with a second one and keeps the real reset: <see cref="Cycle35DemoDeterminismTests"/>.</summary>
 [Collection("Cycle35DemoReset")]
 public class Cycle35DemoResetTests : Cycle35DemoMutationBase
 {
     protected override string Slot => Cycle35DemoSlots.Reset;
-
-    protected override bool Seeded => false;
-
-    [Fact, TestCase("CY35-15")]
-    public async Task Determinism_TwoResetsOnOneDate_GiveTheSameShopsProductsPhonesAndOrderCount()
-    {
-        async Task<string> Fingerprint() => await Db(async db =>
-        {
-            var shops = await db.Companies.Where(c => c.IsShowcase && c.Kind == CompanyKind.Orders).OrderBy(c => c.Id)
-                .Select(c => c.Id + "|" + c.Name + "|" + c.Phone + "|" + c.Slug).ToListAsync();
-            var products = await db.Products.Where(p => db.Companies.Any(c => c.Id == p.CompanyId && c.IsShowcase)).OrderBy(p => p.Id).Select(p => p.Id + "|" + p.Name + "|" + p.Price).ToListAsync();
-            var orders = await db.Orders.CountAsync();
-            var items = await db.OrderItems.CountAsync();
-            return string.Join(";", shops) + "#" + string.Join(";", products) + "#" + orders + "/" + items;
-        });
-
-        // What is claimed: the generator is deterministic for ONE moment. The second reset is the product service (DemoResetService, the code behind
-        // «ops demo reset --yes») called with the moment the first reset recorded in demo.last-reset-utc, so the two generations differ in nothing but the run.
-        // The route through the «ops» command line (and its argument parsing) is covered by CY35-60/61, which call it. Resets at different moments of the day
-        // legitimately differ (orders «as soon as possible» and the journal are cut at «now»), so a reset at «now» is not compared here.
-        var first = await Fingerprint();
-        var firstMoment = await DemoSeededTemplate.ReadLastResetUtcAsync(_factory);
-        await DemoSeededTemplate.ResetAtAsync(_factory, firstMoment);
-        (await Fingerprint()).Should().Be(first, "the generator is deterministic: same moment, same set");
-    }
 
     [Fact, TestCase("CY35-60")]
     public async Task Reset_RemovesVisitorShopsOrdersAccountsFiles_KeepsTokensOfRoles_AndOrdersTariffExactlyOnce()
@@ -995,5 +976,38 @@ public class Cycle35DemoResetTests : Cycle35DemoMutationBase
         (await first).Exit.Should().Be(0);
         (await J(await Client().GetAsync("/api/goods/catalog"))).GetProperty("totalCount").GetInt32().Should().Be(5);
         (await LoginAsync("shop-owner")).Roles.Should().NotBeEmpty();
+    }
+}
+
+/// <summary>CY35-15: the first reset of the test's own demo is one half of the subject (determinism), so it runs the real product reset in InitializeAsync. Own collection
+/// and database: it needs no template, so it starts at once, and it does not stand in one queue with the resets of <see cref="Cycle35DemoResetTests"/>.</summary>
+[Collection("Cycle35DemoDeterminism")]
+public class Cycle35DemoDeterminismTests : Cycle35DemoMutationBase
+{
+    protected override string Slot => Cycle35DemoSlots.Determinism;
+
+    protected override bool Seeded => false;
+
+    [Fact, TestCase("CY35-15")]
+    public async Task Determinism_TwoResetsOnOneDate_GiveTheSameShopsProductsPhonesAndOrderCount()
+    {
+        async Task<string> Fingerprint() => await Db(async db =>
+        {
+            var shops = await db.Companies.Where(c => c.IsShowcase && c.Kind == CompanyKind.Orders).OrderBy(c => c.Id)
+                .Select(c => c.Id + "|" + c.Name + "|" + c.Phone + "|" + c.Slug).ToListAsync();
+            var products = await db.Products.Where(p => db.Companies.Any(c => c.Id == p.CompanyId && c.IsShowcase)).OrderBy(p => p.Id).Select(p => p.Id + "|" + p.Name + "|" + p.Price).ToListAsync();
+            var orders = await db.Orders.CountAsync();
+            var items = await db.OrderItems.CountAsync();
+            return string.Join(";", shops) + "#" + string.Join(";", products) + "#" + orders + "/" + items;
+        });
+
+        // What is claimed: the generator is deterministic for ONE moment. The second reset is the product service (DemoResetService, the code behind
+        // «ops demo reset --yes») called with the moment the first reset recorded in demo.last-reset-utc, so the two generations differ in nothing but the run.
+        // The route through the «ops» command line (and its argument parsing) is covered by CY35-60/61, which call it. Resets at different moments of the day
+        // legitimately differ (orders «as soon as possible» and the journal are cut at «now»), so a reset at «now» is not compared here.
+        var first = await Fingerprint();
+        var firstMoment = await DemoSeededTemplate.ReadLastResetUtcAsync(_factory);
+        await DemoSeededTemplate.ResetAtAsync(_factory, firstMoment);
+        (await Fingerprint()).Should().Be(first, "the generator is deterministic: same moment, same set");
     }
 }
