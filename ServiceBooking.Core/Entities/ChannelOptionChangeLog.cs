@@ -24,4 +24,9 @@ public class ChannelOptionChangeLog
     // No FK: the channel may be deleted, the record stays.
     public Guid? ChannelId { get; set; }
     public string? Comment { get; set; }
+
+    // Cycle 43 (ARCHITECTURE_CYCLE43.md §43.2.2): the amount confirmed by an admin; null for trial, disable and old rows.
+    public decimal? PricePerMonth { get; set; }
+    public int? Months { get; set; }
+    public decimal? Amount { get; set; }
 }
