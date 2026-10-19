@@ -12,6 +12,8 @@ import { Modal } from '../../components/ui/Modal'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
 import { TRANSPORT_FILTER_OPTIONS, TRANSPORT_LABELS } from '../../utils/notificationTransport'
 import { adminErrorText } from './adminChannelsHelpers'
+import { MessengerOptionsPanel } from './MessengerOptionsPanel'
+import { useMessengerOptions } from './useMessengerOptions'
 import { getPricingPublicBlockedMessage } from '../../utils/legalError'
 import type { NotificationTransport, PricingPublicBlockedReason } from '../../types'
 
@@ -285,7 +287,6 @@ function MessengersCard() {
       // Only the switch (null = "do not change" for everything else): sending the trial fields back would make the server re-check them against the current terms text
       // — and the stop-cock of messaging must not fail on an unrelated validation during an incident.
       adminNotificationsApi.updateSettings({
-        channelPricePerMonth: data?.channelPricePerMonth ?? null,
         channelIdleDays: data?.channelIdleDays ?? 3,
         pricingPublicEnabled: data?.pricingPublicEnabled ?? false,
         pricingPublicBlockedReason: null,
@@ -305,7 +306,7 @@ function MessengersCard() {
     { key: 'whatsAppOptionOpen', label: 'WhatsApp — открыто для владельцев', on: !!data.whatsAppOptionOpen,
       hint: 'Закрытый мессенджер не продаётся, не показывается в мастере и ценах и не выдаётся в пробном периоде; уже оплаченные номера работают до конца срока.' },
     { key: 'maxOptionOpen', label: 'MAX — открыто для владельцев', on: !!data.maxOptionOpen,
-      hint: 'То же правило для MAX. Цена и опубликованная оферта задаются отдельно: без них опция не продаётся и у открытого мессенджера.' },
+      hint: 'То же правило для MAX. Цена задаётся в блоке «Цена мессенджеров» ниже.' },
     { key: 'customerMessagingEnabled', label: 'Рассылки клиентам в мессенджеры', on: data.customerMessagingEnabled !== false,
       hint: 'Общий стоп-кран. Выключен — сообщения не ставятся в очередь, ожидающие не уходят, владельцы видят «временно отключены платформой»; номера не удаляются.' },
   ]
@@ -353,6 +354,7 @@ const PRICING_BLOCKED_LABEL: Record<PricingPublicBlockedReason, string> = {
 function PlatformSettingsCard() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['admin-platform-settings'], queryFn: adminNotificationsApi.getSettings })
+  const { data: messengerOptions } = useMessengerOptions()
   const [idleDays, setIdleDays] = useState('3')
   // Local toggle state so a rejected PUT (409) can be visibly reverted rather than left stuck
   // "on" while the server never applied it (API_CONTRACT_CYCLE11.md §119 п. 1).
@@ -447,8 +449,7 @@ function PlatformSettingsCard() {
       }
 
       return adminNotificationsApi.updateSettings({
-        // Cycle 40 (§40.13): the retired field is accepted and IGNORED by the server; it is sent back as read.
-        channelPricePerMonth: data?.channelPricePerMonth ?? null,
+        // Cycle 43 (§43.3.6): `channelPricePerMonth` is retired — the server ignores it, so it is no longer sent.
         channelIdleDays: parsedIdleDays,
         pricingPublicEnabled: nextPricingPublicEnabled,
         pricingPublicBlockedReason: data?.pricingPublicBlockedReason ?? null,
@@ -477,9 +478,7 @@ function PlatformSettingsCard() {
   return (
     <Card className="p-6 mb-5">
       <h2 className="text-base font-semibold text-ink mb-1">Параметры номеров</h2>
-      <p className="text-sm text-muted mb-4">
-        Цена подключения мессенджера — это цена его опции (вкладка «Биллинг-аккаунты» и каталог опций); без цены и опубликованной оферты опция не продаётся.
-      </p>
+      {messengerOptions && <p className="text-sm text-muted mb-4">{messengerOptions.priceHint}</p>}
       <div className="grid sm:grid-cols-2 gap-4">
         <Input
           label="Срок простоя до отключения номера (дней)"
@@ -595,6 +594,7 @@ export function NotificationsAdminTab() {
     <div>
       <SummaryRow />
       <MessengersCard />
+      <MessengerOptionsPanel />
       <PlatformSettingsCard />
       <ChannelsList />
     </div>

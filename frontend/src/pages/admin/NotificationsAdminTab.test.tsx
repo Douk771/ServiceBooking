@@ -22,6 +22,15 @@ vi.mock('../../api/platformSettings', () => ({
     updateSettings: (...args: unknown[]) => updateSettings(...args),
   },
 }))
+// Cycle 43: the tab embeds the messenger price panel; its own behaviour is covered in MessengerOptionsPanel.test.tsx.
+const messengerOptions = vi.fn()
+const messengerQuote = vi.fn()
+vi.mock('../../api/adminBilling', () => ({
+  adminBillingApi: {
+    messengerOptions: (...args: unknown[]) => messengerOptions(...args),
+    messengerQuote: (...args: unknown[]) => messengerQuote(...args),
+  },
+}))
 vi.mock('../../api/notificationNumbers', () => ({
   adminNumbersApi: {
     list: (...args: unknown[]) => listChannels(...args),
@@ -110,6 +119,9 @@ beforeEach(() => {
   updateSettings.mockReset()
   summary.mockResolvedValue(emptySummary())
   getSettings.mockResolvedValue(platformSettings())
+  messengerOptions.mockReset()
+  messengerOptions.mockResolvedValue({ items: [], planMatrixNote: 'note', priceHint: 'Цена действует для всех аккаунтов и всех линеек.' })
+  messengerQuote.mockReset()
 })
 
 describe('NotificationsAdminTab — trial settings (API_CONTRACT_CYCLE18.md §367)', () => {
@@ -253,6 +265,17 @@ describe('NotificationsAdminTab — the table, «Подтвердить опла
     await waitFor(() => expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
       whatsAppOptionOpen: true, trialDurationDays: null, trialMailingWindowDays: null, trialWarningThresholdsDays: null,
     })))
+  })
+
+  it('does not send the retired channelPricePerMonth and prints the server priceHint instead of the old hint', async () => {
+    const user = userEvent.setup()
+    listChannels.mockResolvedValue(channelsPage([]))
+    updateSettings.mockResolvedValue(platformSettings())
+    renderTab()
+    await user.click(await screen.findByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(updateSettings).toHaveBeenCalled())
+    expect(updateSettings.mock.calls[0][0]).not.toHaveProperty('channelPricePerMonth')
+    expect((await screen.findAllByText('Цена действует для всех аккаунтов и всех линеек.')).length).toBeGreaterThan(0)
   })
 
   it('no longer offers a price field for the «channel» option', async () => {
