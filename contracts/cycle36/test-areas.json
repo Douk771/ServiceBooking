@@ -211,7 +211,9 @@
         "goods/src/goodsRoutes",
         "goods/src/sharedSources",
         "goods/src/assets/",
-        "src/components/sites/"
+        "src/components/sites/",
+        "src/utils/publicSites",
+        "about/src/"
       ]
     }
   ]
