@@ -440,7 +440,7 @@ public class AdminBillingController(
         // and is treated the same as the option staying at its previous quantity until removed outright,
         // see the cycle-07 backend report) end at the close of the current paid period rather than
         // disappearing immediately (contract: "действует до конца оплаченного периода").
-        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null))
+        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null && !ChannelOptionLog.IsChannelOption(r.Option.Code)))
         {
             row.EndsAtUtc = sub.PaidUntil ?? now;
             ChannelOptionLog.Write(db, accountId, row.Option.Code, ChannelOptionChangeSource.AdminOptionEnded,
@@ -680,7 +680,7 @@ public class AdminBillingController(
                         oldOptionPaidUntil, row.PaidUntilUtc, oldOptionEndsAt, row.EndsAtUtc, changedByUserId, now, comment: dto.Comment);
             }
         }
-        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null))
+        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null && !ChannelOptionLog.IsChannelOption(r.Option.Code)))
         {
             row.EndsAtUtc = newPaidUntil ?? now;
             ChannelOptionLog.Write(db, accountId, row.Option.Code, ChannelOptionChangeSource.AdminOptionEnded,

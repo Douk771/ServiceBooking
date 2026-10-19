@@ -26,8 +26,9 @@ public sealed record TransportState(
     OptionRowFacts? Row = null, MessengerLine? EvaluatedLine = null)
 {
     /// <summary>Cycle 43 (§43.4): status, text and monthly amount of the line — computed once by <see cref="MessengerLineRule"/>.</summary>
-    public MessengerLine Line => EvaluatedLine ?? MessengerLineRule.Evaluate(
-        new MessengerLineFacts(Transport, Row, null, default, Option.PricePerMonth, Primary?.RequestedAtUtc, DateTime.UtcNow));
+    public MessengerLine Line => EvaluatedLine ?? (Row is not null
+        ? throw new InvalidOperationException("TransportState with a subscription row needs EvaluatedLine: the line cannot be computed without the account's subscription facts.")
+        : MessengerLineRule.Evaluate(new MessengerLineFacts(Transport, Row, null, default, Option.PricePerMonth, Primary?.RequestedAtUtc, DateTime.UtcNow)));
 
     public bool Paid => Payment.Paid;
 }

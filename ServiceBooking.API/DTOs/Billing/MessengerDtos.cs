@@ -27,7 +27,7 @@ public sealed record AdminMessengerOptionsDto(IReadOnlyList<AdminMessengerOption
 public sealed record MessengerPriceInput(Optional<decimal?> PricePerMonth, bool? IsActive);
 
 public sealed record UpdateMessengerPriceInput(
-    Optional<decimal?> PricePerMonth, bool? IsActive, string? Comment, decimal? ExpectedPricePerMonth, bool ExpectedIsActive);
+    Optional<decimal?> PricePerMonth, bool? IsActive, string? Comment, Optional<decimal?> ExpectedPricePerMonth, bool? ExpectedIsActive);
 
 public sealed record MessengerPricePreviewDto(
     NotificationTransport Transport, decimal? CurrentPricePerMonth, decimal? NewPricePerMonth, bool CurrentIsActive, bool NewIsActive,

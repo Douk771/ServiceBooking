@@ -57,6 +57,8 @@ public class AdminMessengerOptionsController(
     {
         if (!MessengerTransportRoute.TryParse(transport, out var t)) return NotFound();
         if (!input.PricePerMonth.IsSpecified) return BadRequest(PriceRequired);
+        if (!input.ExpectedPricePerMonth.IsSpecified || input.ExpectedIsActive is null)
+            return BadRequest("Укажите expectedPricePerMonth и expectedIsActive: значения, которые администратор видел на экране.");
         var newPrice = input.PricePerMonth.Value;
 
         var snapshot = await FindOptionAsync(t, tracked: false, ct);
@@ -71,7 +73,7 @@ public class AdminMessengerOptionsController(
         // Under the lock the row is read again, from the database: the screen's numbers must be the ones the change is made over.
         var option = await db.SubscriptionOptions.FirstOrDefaultAsync(o => o.Id == snapshot.Id, ct);
         if (option is null) return Conflict(MessengerTexts.CatalogMissing(t));
-        if (input.ExpectedPricePerMonth != option.PricePerMonth || input.ExpectedIsActive != option.IsActive)
+        if (input.ExpectedPricePerMonth.Value != option.PricePerMonth || input.ExpectedIsActive.Value != option.IsActive)
             return Conflict(MessengerTexts.PriceChangedByOtherAdmin(t));
         if (MessengerPriceChangeRules.Validate(newPrice, input.IsActive, Current(option), true, comment) is { } lateError) return BadRequest(lateError);
 
