@@ -112,7 +112,7 @@ export function LandingScreenshotCarousel({ carousel, className }: { carousel: C
                 <LandingScreenshotFigure
                   shot={shot}
                   className="[&_figcaption]:sr-only"
-                  imgClassName="!w-auto max-w-full h-[min(60vh,540px)] object-contain !rounded-[28px] border-[6px] !border-ink/90"
+                  imgClassName="!w-auto max-w-full !h-[min(60vh,540px)] object-contain !rounded-[28px] border-[6px] !border-ink/90"
                 />
               </div>
             )
