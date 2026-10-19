@@ -96,9 +96,14 @@ Chrome DevTools -> Device Toolbar 390 и 1280, DPR 2 -> «Capture node screensho
 
 | Файл | Где на главной | Что |
 |---|---|---|
-| `booking-slots-1x/2x.webp` | «Для клиентов» | окно записи на «Женскую стрижку», шаг «Выберите время» (телефон, день без записей) |
+| `booking-{services,master,date,slots,contacts,done}-2x.webp` | «Для клиентов», карусель | весь путь записи гостя на «Женскую стрижку»: услуга → мастер → день → время (первые 4 ряда) → имя и телефон → «Запись подтверждена» |
 | `bookings-desktop-1x/2x.webp` | «Для бизнеса», от `md` | «Мои записи» владелицы на 1024 px, две записи на завтра |
 | `bookings-phone-2x.webp` | «Для бизнеса», телефон | то же на 390 px |
+
+Карусель (`components/landing/LandingScreenshotCarousel.tsx`) листается сама каждые 4,5 с, останавливается при наведении,
+фокусе и по кнопке паузы; при «уменьшить движение» в системе не листается. Последний шаг съёмки создаёт настоящую запись гостя
+(«Анна Петрова», `+7 (900) 000-01-30`) на самое позднее свободное время дня кадра: повторный запуск возьмёт следующий
+поздний слот, а первые 4 ряда в кадре не меняются. Анонимных записей — не больше 10 в час с одного адреса (лимит API).
 
 Переснимать после правок `components/booking/BookingModal.tsx`, `pages/MyBookingsPage.tsx`, `components/layout/Navbar.tsx`, палитры `tailwind.config.js`.
 
@@ -109,7 +114,7 @@ Chrome DevTools -> Device Toolbar 390 и 1280, DPR 2 -> «Capture node screensho
 ```
 bash scripts/screenshots/stack.sh reset      # чистая база sb-shots, API на :55000
 npm run shots:zapis:seed                     # салон, услуги, мастера, график, 7 записей на завтра; .state/zapis-seed.json
-npm run shots:zapis:capture                  # 5 WebP + screenshots.json в src/assets/screenshots/zapis/
+npm run shots:zapis:capture                  # 9 WebP + screenshots.json в src/assets/screenshots/zapis/
 npm run test:run -- src/assets/screenshots/zapis src/components/landing src/pages/HomePage.test.tsx
 ```
 
@@ -120,7 +125,8 @@ npm run test:run -- src/assets/screenshots/zapis src/components/landing src/page
 
 Если Vite уже запущен на :55173 (например, превью), передайте `SHOTS_WEB_URL=http://localhost:55173`.
 
-Что убирается из кадра «Мои записи» и почему: метка доставки напоминания. На стенде у салона нет каналов уведомлений, и сервер
+Что меняется в кадрах и почему. На шаге времени скрыты слоты после четвёртого ряда — чтобы кадр не вытягивался.
+Из кадра «Мои записи» убирается метка доставки напоминания. На стенде у салона нет каналов уведомлений, и сервер
 пишет «напоминание пропущено» — у салона с подключённым каналом там «ожидает отправки». Скрипт убирает ровно эти метки (и падает
 с кодом 5, если их число не совпало с числом записей), всё остальное снимается как есть. Окно записи снимается на ровном
 кремовом фоне вместо размытой страницы под ним.

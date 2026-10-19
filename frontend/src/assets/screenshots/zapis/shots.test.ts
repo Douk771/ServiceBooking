@@ -3,13 +3,15 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync, existsSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { zapisLanding } from '../../../pages/home/zapisLanding'
-import { bookingSlotsShot, bookingsShot } from './shots'
+import { bookingFlowCarousel, bookingsShot } from './shots'
 
 // Кадры главной «Записи» (scripts/screenshots/capture-zapis-screenshots.mjs) — те же проверки, что у goods (T30-15…17).
 const dir = (f: string) => fileURLToPath(new URL(`./${f}`, import.meta.url))
 const manifest = JSON.parse(readFileSync(dir('screenshots.json'), 'utf8'))
 const KB = 1024
-const FILES = ['booking-slots-1x.webp', 'booking-slots-2x.webp', 'bookings-desktop-1x.webp', 'bookings-desktop-2x.webp', 'bookings-phone-2x.webp']
+const FLOW = ['services', 'master', 'date', 'slots', 'contacts', 'done']
+const FLOW_FILES = FLOW.map((k) => `booking-${k}-2x.webp`)
+const FILES = [...FLOW_FILES, 'bookings-desktop-1x.webp', 'bookings-desktop-2x.webp', 'bookings-phone-2x.webp']
 const size = (f: string) => statSync(dir(f)).size
 
 function webpSize(buf: Buffer): { w: number; h: number } {
@@ -28,14 +30,18 @@ describe('zapis screenshots', () => {
     expect(manifest.schemaVersion).toBe(1)
     expect(manifest.capturedAt).toBeTruthy()
     expect(manifest.sourceCommit).toBeTruthy()
-    expect(manifest.bookingSlots.cssWidth).toBeLessThanOrEqual(390)
+    expect(manifest.bookingFlow.slides.map((x: { key: string }) => x.key)).toEqual(FLOW)
+    for (const sl of manifest.bookingFlow.slides) {
+      expect(sl.cssWidth).toBeLessThanOrEqual(390)
+      expect(Number.isInteger(sl.cssHeight) && sl.cssHeight > 0 && sl.cssHeight <= 720).toBe(true)
+    }
     expect(manifest.bookingsDesktop.cssWidth).toBe(1024)
     expect(manifest.bookingsPhone.cssWidth).toBe(390)
-    for (const k of ['bookingSlots', 'bookingsDesktop', 'bookingsPhone'] as const) {
+    for (const k of ['bookingsDesktop', 'bookingsPhone'] as const) {
       const h = manifest[k].cssHeight
       expect(Number.isInteger(h) && h > 0 && h <= 1300).toBe(true)
     }
-    expect(manifest.bookingSlots.serviceName).toBeTruthy()
+    expect(manifest.bookingFlow.serviceName).toBeTruthy()
     for (const f of FILES) expect(existsSync(dir(f)), f).toBe(true)
   })
 
@@ -45,17 +51,15 @@ describe('zapis screenshots', () => {
       expect(head.toString('ascii', 0, 4), f).toBe('RIFF')
       expect(head.toString('ascii', 8, 12), f).toBe('WEBP')
     }
-    expect(size('booking-slots-2x.webp')).toBeLessThanOrEqual(80 * KB)
+    for (const f of FLOW_FILES) expect(size(f), f).toBeLessThanOrEqual(90 * KB)
     expect(size('bookings-desktop-2x.webp')).toBeLessThanOrEqual(200 * KB)
     expect(size('bookings-phone-2x.webp')).toBeLessThanOrEqual(140 * KB)
-    expect(size('booking-slots-1x.webp')).toBeLessThanOrEqual(size('booking-slots-2x.webp'))
     expect(size('bookings-desktop-1x.webp')).toBeLessThanOrEqual(size('bookings-desktop-2x.webp'))
   })
 
   it('pixel size equals CSS size times density', () => {
     const cases: [string, { cssWidth: number; cssHeight: number }, number][] = [
-      ['booking-slots-1x.webp', manifest.bookingSlots, 1],
-      ['booking-slots-2x.webp', manifest.bookingSlots, 2],
+      ...manifest.bookingFlow.slides.map((sl: { file: string; cssWidth: number; cssHeight: number }) => [sl.file, sl, 2] as [string, typeof sl, number]),
       ['bookings-desktop-1x.webp', manifest.bookingsDesktop, 1],
       ['bookings-desktop-2x.webp', manifest.bookingsDesktop, 2],
       ['bookings-phone-2x.webp', manifest.bookingsPhone, 2],
@@ -65,10 +69,15 @@ describe('zapis screenshots', () => {
     }
   })
 
-  it('the landing shows both shots instead of the placeholder', () => {
-    expect(zapisLanding.clients.screenshot).toBe(bookingSlotsShot)
+  it('the landing shows the booking flow carousel and the bookings shot instead of the placeholder', () => {
+    expect(zapisLanding.clients.screenshot).toBe(bookingFlowCarousel)
     expect(zapisLanding.business.screenshot).toBe(bookingsShot)
-    expect(bookingSlotsShot.alt).toContain(manifest.bookingSlots.serviceName)
+    expect(bookingFlowCarousel.slides).toHaveLength(FLOW.length)
+    bookingFlowCarousel.slides.forEach((sl, i) => {
+      expect(sl.caption.startsWith(`${i + 1}. `)).toBe(true)
+      expect(sl.alt).toBeTruthy()
+      expect(sl.src).toBeTruthy()
+    })
     expect(bookingsShot.sources?.[0].width).toBe(manifest.bookingsDesktop.cssWidth)
   })
 })

@@ -32,7 +32,7 @@ const KB = 1024
 const DESKTOP_WIDTH = 1024
 // Две записи дня: на главной десктопный кадр идёт во всю ширину секции, с четырьмя он выходит выше экрана.
 const BOOKING_ROWS = 2
-const FILES = ['booking-slots-1x', 'booking-slots-2x', 'bookings-desktop-1x', 'bookings-desktop-2x', 'bookings-phone-2x']
+const FILES = [...['services', 'master', 'date', 'slots', 'contacts', 'done'].map((k) => `booking-${k}-2x`), 'bookings-desktop-1x', 'bookings-desktop-2x', 'bookings-phone-2x']
 
 class Exit extends Error {
   constructor(code, message) {
@@ -85,7 +85,7 @@ function missingShotsPlugin() {
       if (!id.startsWith(prefix)) return null
       if (id.endsWith('.webp.js')) return 'export default ""'
       return `export default ${JSON.stringify({
-        bookingSlots: { cssWidth: 390, cssHeight: 600 },
+        bookingFlow: { serviceName: '', masterName: '', slides: [] },
         bookingsDesktop: { cssWidth: 1024, cssHeight: 800 },
         bookingsPhone: { cssWidth: 390, cssHeight: 800 },
       })}`
@@ -152,7 +152,7 @@ async function visibleTextIn(page, clip) {
       const left = rect.left + window.scrollX
       if (top < c.y + c.height && top + rect.height > c.y && left < c.x + c.width && left + rect.width > c.x) out.push(n.textContent)
     }
-    return out.join(' ')
+    return out.join(' ').replace(/\s+/g, ' ')
   }, clip)
 }
 
@@ -194,20 +194,15 @@ async function encode(page, { name, clip, dpr, budget }) {
 const dayAria = (ymd) =>
   new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${ymd}T12:00:00Z`))
 
-/** Открывает запись на услугу и доходит до шага «Выберите время». Возвращает прямоугольник кадра. */
-async function openSlotStep(page, webUrl, state) {
-  await page.goto(`${webUrl}/company/${state.company.slug}`)
-  const card = page.locator('h3', { hasText: state.clientShot.serviceName }).first()
-  await card.waitFor()
-  await page.getByRole('button', { name: 'Записаться' }).first().click()
-  const proceed = page.getByRole('button', { name: 'Продолжить' })
-  if (await proceed.isVisible().catch(() => false)) await proceed.click()
-  await page.getByRole('button', { name: dayAria(state.clientDate), exact: true }).click()
-  await page.getByRole('heading', { name: 'Выберите время' }).waitFor()
-  await page.waitForFunction(() => document.querySelectorAll('.animate-pulse').length === 0)
-  // Фон под окном — ровный кремовый вместо размытой страницы: в кадр идёт только само окно записи.
-  await page.addStyleTag({ content: '.fixed.inset-0{background:#F6F1EA!important;backdrop-filter:none!important}' })
-  await page.mouse.move(0, 0) // курсор остался над слотом после клика по дате: без этого один слот снимется в ховере
+// Карусель клиента: весь путь записи, по кадру на шаг окна записи. Высота экрана 720: окно записи (max-h 88vh) не выше 634 px,
+// длинные шаги (услуги, контакты) снимаются как на телефоне — верхняя часть окна, остальное прокручивается.
+const FLOW_VIEWPORT = { width: 390, height: 720 }
+// На шаге времени — только первые четыре ряда слотов, чтобы кадр не вытягивался.
+const SLOT_ROWS = 4
+
+/** Прямоугольник окна записи с полем вокруг; фон под окном — ровный кремовый вместо размытой страницы. */
+async function panelClip(page) {
+  await page.mouse.move(0, 0) // курсор после клика остаётся над кнопкой: без этого она снимется в ховере
   await settle(page)
   const box = await page.evaluate(() => {
     const panel = document.querySelector('.fixed.inset-0 > div')
@@ -220,26 +215,67 @@ async function openSlotStep(page, webUrl, state) {
   const pad = 14
   const x = Math.max(0, Math.floor(box.x - pad))
   const y = Math.max(0, Math.floor(box.y - pad))
-  return { x, y, width: 390 - 2 * x, height: Math.ceil(box.height + 2 * pad) }
+  return { x, y, width: FLOW_VIEWPORT.width - 2 * x, height: Math.ceil(box.height + 2 * pad) }
 }
 
-async function shootSlots(browser, state, webUrl, tmp) {
-  const res = {}
-  let clip = null
-  let slotCount = 0
-  for (const dpr of [1, 2]) {
-    const ctx = await newContext(browser, state, 390, 844, dpr)
-    const page = await ctx.newPage()
-    clip = await openSlotStep(page, webUrl, state)
-    slotCount = await page.locator('.grid.grid-cols-3 > button').count()
-    if (slotCount < 6) throw new Exit(5, `Свободных слотов в кадре ${slotCount}, ожидалось не меньше 6.`)
-    const text = await checkForbidden(page, 'booking-slots', clip)
-    if (!text.includes(state.clientShot.serviceName)) throw new Exit(5, `В кадре нет услуги «${state.clientShot.serviceName}».`)
-    res[`${dpr}x`] = await encode(page, { name: `booking-slots-${dpr}x`, clip, dpr, budget: 80 * KB })
-    await ctx.close()
+/**
+ * Проходит запись гостя от услуги до подтверждения и снимает каждый шаг (2x). Последний шаг создаёт настоящую запись
+ * на самое позднее свободное время дня кадра — первые ряды слотов, которые попадают в кадр, она не трогает.
+ */
+async function shootFlow(browser, state, webUrl, tmp) {
+  const ctx = await newContext(browser, state, FLOW_VIEWPORT.width, FLOW_VIEWPORT.height, 2)
+  const page = await ctx.newPage()
+  const slides = []
+  const shoot = async (key, mustContain) => {
+    const clip = await panelClip(page)
+    const text = await checkForbidden(page, `booking-${key}`, clip)
+    for (const s of mustContain) if (!text.includes(s)) throw new Exit(5, `В кадре «${key}» нет «${s}».`)
+    const buf = await encode(page, { name: `booking-${key}-2x`, clip, dpr: 2, budget: 90 * KB })
+    writeFileSync(join(tmp, `booking-${key}-2x.webp`), buf)
+    slides.push({ key, cssWidth: clip.width, cssHeight: clip.height, bytes: buf.length })
   }
-  for (const k of ['1x', '2x']) writeFileSync(join(tmp, `booking-slots-${k}.webp`), res[k])
-  return { cssWidth: clip.width, cssHeight: clip.height, bytes: { '1x': res['1x'].length, '2x': res['2x'].length }, slotCount }
+
+  await page.goto(`${webUrl}/company/${state.company.slug}`)
+  await page.locator('h3', { hasText: state.clientShot.serviceName }).first().waitFor()
+  await page.addStyleTag({
+    content: `.fixed.inset-0{background:#F6F1EA!important;backdrop-filter:none!important}
+      .grid.grid-cols-3>button:nth-child(n+${SLOT_ROWS * 3 + 1}){display:none!important}`,
+  })
+  await page.getByRole('button', { name: 'Записаться' }).first().click()
+  await page.getByRole('button', { name: 'Продолжить' }).waitFor()
+  await shoot('services', [state.clientShot.serviceName, 'Добавить услугу'])
+
+  await page.getByRole('button', { name: 'Продолжить' }).click()
+  await page.getByRole('heading', { name: 'Выберите мастера' }).waitFor()
+  await shoot('master', state.clientShot.masterNames)
+
+  await page.getByRole('button', { name: new RegExp(state.clientShot.masterName) }).click()
+  const day = page.getByRole('button', { name: dayAria(state.clientDate), exact: true })
+  await day.waitFor()
+  await shoot('date', ['Выберите дату'])
+
+  await day.click()
+  await page.getByRole('heading', { name: 'Выберите время' }).waitFor()
+  await page.waitForFunction(() => document.querySelectorAll('.animate-pulse').length === 0)
+  const slotButtons = page.locator('.grid.grid-cols-3 > button')
+  const slotCount = await slotButtons.count()
+  if (slotCount < SLOT_ROWS * 3 + 1) throw new Exit(5, `Свободных слотов ${slotCount}, нужно больше ${SLOT_ROWS * 3}.`)
+  await shoot('slots', ['Выберите время'])
+
+  // Последний слот дня скрыт стилем выше — нажимаем его из скрипта страницы.
+  const lastSlot = (await slotButtons.last().textContent())?.trim() ?? ''
+  await slotButtons.last().evaluate((el) => el.click())
+  await page.getByPlaceholder('Иван Иванов').fill(state.clientGuest.name)
+  await page.getByPlaceholder('+7 (900) 000-00-00').fill(state.clientGuest.phone)
+  await page.evaluate(() => document.activeElement?.blur()) // без курсора в поле телефона
+  await shoot('contacts', [state.clientShot.serviceName, lastSlot])
+
+  await page.getByRole('button', { name: 'Подтвердить запись' }).click()
+  await page.getByText('Запись подтверждена').waitFor({ timeout: 10000 })
+  await shoot('done', ['Запись подтверждена', lastSlot])
+
+  await ctx.close()
+  return slides
 }
 
 async function signIn(page, webUrl, state) {
@@ -277,7 +313,8 @@ async function openBookings(page, webUrl, state, width, rows) {
     chips.forEach((el) => el.remove())
     return chips.length
   })
-  if (removed !== state.ownerBookingCount) throw new Exit(5, `Меток напоминания ${removed}, ожидалось ${state.ownerBookingCount}: разметка «Мои записи» изменилась, проверьте скрипт.`)
+  // Не меньше, чем записей владелицы из засева: съёмка карусели добавляет ещё одну запись на послезавтра.
+  if (removed < state.ownerBookingCount) throw new Exit(5, `Меток напоминания ${removed}, ожидалось не меньше ${state.ownerBookingCount}: разметка «Мои записи» изменилась, проверьте скрипт.`)
   const bottom = await page.evaluate((n) => {
     const h = [...document.querySelectorAll('h3')].find((x) => x.textContent === 'Завтра')
     const list = h?.nextElementSibling
@@ -336,20 +373,17 @@ async function main() {
   let browser
   try {
     browser = await launch()
-    const slots = await shootSlots(browser, state, web.url, tmp)
+    const flow = await shootFlow(browser, state, web.url, tmp)
     const lists = await shootBookings(browser, state, web.url, tmp)
     const manifest = {
       schemaVersion: 1,
       capturedAt: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
       sourceCommit: sourceCommit(),
       browser: lists.browserVersion.startsWith('Chrome') ? lists.browserVersion : `Chrome/${lists.browserVersion}`,
-      bookingSlots: {
-        cssWidth: slots.cssWidth,
-        cssHeight: slots.cssHeight,
-        files: { '1x': 'booking-slots-1x.webp', '2x': 'booking-slots-2x.webp' },
-        bytes: slots.bytes,
+      bookingFlow: {
         serviceName: state.clientShot.serviceName,
-        slotCount: slots.slotCount,
+        masterName: state.clientShot.masterName,
+        slides: flow.map((f) => ({ key: f.key, file: `booking-${f.key}-2x.webp`, cssWidth: f.cssWidth, cssHeight: f.cssHeight, bytes: f.bytes })),
       },
       bookingsDesktop: {
         cssWidth: DESKTOP_WIDTH,

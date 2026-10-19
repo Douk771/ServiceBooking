@@ -1,5 +1,5 @@
 import type { LandingConfig } from '../../components/landing/types'
-import { bookingSlotsShot, bookingsShot } from '../../assets/screenshots/zapis/shots'
+import { bookingFlowCarousel, bookingsShot } from '../../assets/screenshots/zapis/shots'
 import { zapisPricingLine } from '../../components/pricing/zapisPricingLine'
 import { zapisFaq } from './zapisFaq'
 
@@ -50,7 +50,7 @@ export const zapisLanding: LandingConfig = {
       ],
       note: 'Оплата — в салоне.',
     },
-    screenshot: bookingSlotsShot,
+    screenshot: bookingFlowCarousel,
   },
   business: {
     eyebrow: 'Для бизнеса',
