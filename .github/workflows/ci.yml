@@ -15,10 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     # Цикл 36 (DO-36-02): запас по времени, медленный раннер шёл до 10 минут при прежних 15.
     timeout-minutes: 20
-    # Функциональный набор разрезан на три шарда, у каждого свой раннер и свой Postgres: целиком он шёл ~6 минут
+    # Функциональный набор разрезан на четыре шарда, у каждого свой раннер и свой Postgres: целиком он шёл ~6 минут
     # и был критическим путём всего CI. Демо/витрина (Cycle28/35 — сброс демо, ~10 тыс. записей) — самая длинная
-    # цепочка, её держит DemoGate (не больше P демо-баз), поэтому она идёт отдельно. Фильтры — разбиение по построению:
-    # demo = A, cycle = не A и B, rest = не A и не B, так что ни один тест не теряется и не идёт дважды.
+    # цепочка, её держит DemoGate (не больше P демо-баз), поэтому она идёт отдельно и с P=4 (см. env ниже).
+    # Фильтры — разбиение по построению: demo = A, cycle-old = B и не A и не N, cycle-new = B и не A и N,
+    # rest = не A и не B, так что ни один тест не теряется и не идёт дважды. N — классы Cycle32 и новее (19.10 это
+    # ~376 с суммарного времени против ~377 у Cycle15–31); новые циклы копятся в cycle-new — когда он заметно
+    # перерастёт cycle-old, сдвиньте границу.
     # Юнит-тесты и проверки без БД (пины образов, снапшоты миграций, правовые документы) — только в самом коротком шарде rest.
     strategy:
       fail-fast: false
@@ -26,8 +29,12 @@ jobs:
         shard:
           - name: demo
             filter: "FullyQualifiedName~Demo|FullyQualifiedName~Showcase"
-          - name: cycle
-            filter: "FullyQualifiedName~.Cycle&FullyQualifiedName!~Demo&FullyQualifiedName!~Showcase"
+            p: "4"
+            classes: "3"
+          - name: cycle-old
+            filter: "FullyQualifiedName~.Cycle&FullyQualifiedName!~Demo&FullyQualifiedName!~Showcase&FullyQualifiedName!~.Cycle32&FullyQualifiedName!~.Cycle33&FullyQualifiedName!~.Cycle34&FullyQualifiedName!~.Cycle35&FullyQualifiedName!~.Cycle36&FullyQualifiedName!~.Cycle37&FullyQualifiedName!~.Cycle38&FullyQualifiedName!~.Cycle39&FullyQualifiedName!~.Cycle4&FullyQualifiedName!~.Cycle5&FullyQualifiedName!~.Cycle6&FullyQualifiedName!~.Cycle7&FullyQualifiedName!~.Cycle8&FullyQualifiedName!~.Cycle9"
+          - name: cycle-new
+            filter: "FullyQualifiedName~.Cycle&FullyQualifiedName!~Demo&FullyQualifiedName!~Showcase&(FullyQualifiedName~.Cycle32|FullyQualifiedName~.Cycle33|FullyQualifiedName~.Cycle34|FullyQualifiedName~.Cycle35|FullyQualifiedName~.Cycle36|FullyQualifiedName~.Cycle37|FullyQualifiedName~.Cycle38|FullyQualifiedName~.Cycle39|FullyQualifiedName~.Cycle4|FullyQualifiedName~.Cycle5|FullyQualifiedName~.Cycle6|FullyQualifiedName~.Cycle7|FullyQualifiedName~.Cycle8|FullyQualifiedName~.Cycle9)"
           - name: rest
             filter: "FullyQualifiedName!~.Cycle&FullyQualifiedName!~Demo&FullyQualifiedName!~Showcase"
             checks: true
@@ -53,12 +60,13 @@ jobs:
       # Цикл 36 (DO-36-03, ARCHITECTURE_CYCLE36.md §36.11 п.1): P задан ОДНИМ числом — здесь. Шаг
       # функциональных тестов берёт его отсюда же (`-- xUnit.MaxParallelThreads=$SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS`),
       # а бюджет соединений (ARCHITECTURE_CYCLE8_PHASE2.md §93.4) читает эту же переменную, так что расхождения нет.
-      SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS: "2"
+      # Шард demo — P=4 (на раннере 4 ядра): демо-классы почти всё время ждут в DemoGate, а не считают.
+      SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS: ${{ matrix.shard.p || '2' }}
       # ClassConcurrencyGate (цикл 36): одновременно живых классов по умолчанию 3 x P. Бюджет соединений в тестах (N4)
       # считается по этому пределу плюс min(P, 9) демо-баз (9 слотов; не больше P одновременно через DemoGate, по одному хосту, пул 8):
       # N классов x 2 хоста x пул 8 + 2 x 8 + 4 <= 90 (90 % от max_connections=100 у postgres:16) -> N <= 4.
-      # При смене P пересчитайте: N = floor((90 - 4 - min(P, 9) x 8) / 16).
-      SERVICEBOOKING_TEST_CLASS_CONCURRENCY: "4"
+      # При смене P пересчитайте: N = floor((90 - 4 - min(P, 9) x 8) / 16). Шард demo, P=4 -> N = 3.
+      SERVICEBOOKING_TEST_CLASS_CONCURRENCY: ${{ matrix.shard.classes || '4' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -255,28 +263,23 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Type-check
-        run: npx tsc --noEmit
-
-      # ARCHITECTURE_CYCLE23.md §401.4 — goods.ezbook.ru is a second app in the same package with its own
-      # tsconfig; the ezbook tsconfig above does not include frontend/goods/.
-      - name: Type-check goods
-        run: npx tsc --noEmit -p tsconfig.goods.json
-
-      # ARCHITECTURE_CYCLE37.md §37.15.4 — dom.ezbook.ru is a third app in the same package with its own tsconfig.
-      - name: Type-check dom
-        run: npx tsc --noEmit -p tsconfig.dom.json
-
-      # ARCHITECTURE_CYCLE42.md §42.13.3 — bani.ezbook.ru is a fourth app in the same package with its own tsconfig.
-      - name: Type-check bani
-        run: npx tsc --noEmit -p tsconfig.bani.json
-
-      # ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.9.2 — about.ezbook.ru is a fifth app (static page, no client JS) with its own tsconfig.
-      - name: Type-check about
-        run: npx tsc --noEmit -p tsconfig.about.json
-
-      - name: Type-check node (shots)
-        run: npm run typecheck:node
+      # Пять приложений одного пакета (ezbook, goods — §401.4 цикла 23, dom — §37.15.4, bani — §42.13.3,
+      # about — §44.9.2 цикла 44) и node-конфиг скриншотов: у каждого свой tsconfig. Проверки независимы
+      # и шли подряд ~55 с, поэтому идут параллельно; лог каждой печатается целиком, шаг падает, если упала любая.
+      - name: Type-check (all apps, in parallel)
+        run: |
+          set +e
+          mkdir -p /tmp/tsc
+          for cfg in tsconfig.json tsconfig.goods.json tsconfig.dom.json tsconfig.bani.json tsconfig.about.json tsconfig.node.json; do
+            npx tsc --noEmit -p "$cfg" > "/tmp/tsc/$cfg.log" 2>&1 &
+            pids="$pids $!:$cfg"
+          done
+          failed=0
+          for pc in $pids; do
+            cfg="${pc#*:}"
+            if wait "${pc%%:*}"; then echo "ok   $cfg"; else echo "::error::tsc -p $cfg failed"; cat "/tmp/tsc/$cfg.log"; failed=1; fi
+          done
+          exit $failed
 
       # ARCHITECTURE_CYCLE17.md §310 п.4 / API_CONTRACT_CYCLE17.md §328 п.9 (долг C15-10).
       # Генераты лежат в репозитории, поэтому расходятся со схемой молча: контракт правят,
@@ -332,28 +335,6 @@ jobs:
               exit 1
             fi
           done
-
-      - name: Unit tests
-        run: npm run test:run -- --reporter=default --reporter=json --outputFile.json=../TestResults/ci/vitest.json
-
-      # Цикл 36 (DO-36-04): та же сводка для vitest; предупреждения не роняют шаг.
-      - name: Slow tests summary (vitest)
-        if: always()
-        working-directory: .
-        run: |
-          if [ -f TestResults/ci/vitest.json ]; then
-            python3 tools/test-timing/analyze.py --ci-summary TestResults/ci/vitest.json \
-              --thresholds tools/test-timing/thresholds.json >> "$GITHUB_STEP_SUMMARY" || echo "::warning::slow tests summary failed"
-          fi
-
-      - name: Upload vitest results
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: frontend-test-results-${{ github.sha }}
-          path: TestResults/
-          retention-days: 14
-          if-no-files-found: ignore
 
       # SmartCaptcha SITE key (not the secret key — site keys are meant to be public, they're baked into
       # every page that shows the widget) is a build-time Vite variable (CURRENT_STATE.md §1), so it has
@@ -454,6 +435,48 @@ jobs:
           name: frontend-dist-${{ github.sha }}
           path: frontend/dist
           retention-days: 30
+
+  # Vitest (~2 мин) — самый долгий шаг фронта, ни от чего в джобе frontend не зависит и ничего ему не отдаёт,
+  # поэтому идёт отдельным джобом параллельно сборке и проверкам.
+  frontend-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm run test:run -- --reporter=default --reporter=json --outputFile.json=../TestResults/ci/vitest.json
+
+      # Цикл 36 (DO-36-04): та же сводка для vitest; предупреждения не роняют шаг.
+      - name: Slow tests summary (vitest)
+        if: always()
+        working-directory: .
+        run: |
+          if [ -f TestResults/ci/vitest.json ]; then
+            python3 tools/test-timing/analyze.py --ci-summary TestResults/ci/vitest.json \
+              --thresholds tools/test-timing/thresholds.json >> "$GITHUB_STEP_SUMMARY" || echo "::warning::slow tests summary failed"
+          fi
+
+      - name: Upload vitest results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-test-results-${{ github.sha }}
+          path: TestResults/
+          retention-days: 14
+          if-no-files-found: ignore
 
   # Builds the image AND actually runs it (T-D1, US-41, ARCHITECTURE.md §12.2) — plain `dotnet
   # build`/`dotnet run` never touches the published container, so nothing here previously caught either

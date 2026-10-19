@@ -250,10 +250,12 @@ US-25), `ServicesTests.cs` (`POST /api/services/{id}/image`, US-25), `CompaniesT
 **CI:** `.github/workflows/ci.yml` (T-B18) гоняет оба .NET-набора (сначала `ServiceBooking.UnitTests` —
 без БД, быстрее падает при поломке; затем `ServiceBooking.Tests` против эфемерного `postgres:16` в
 GitHub Actions service-контейнере) и фронтовый `npx tsc --noEmit` + `npm run build` в отдельном
-параллельном джобе — независимо от бэкенда. С 19.10 `ServiceBooking.Tests` в CI разрезан на три шарда
+параллельном джобе — независимо от бэкенда. С 19.10 `ServiceBooking.Tests` в CI разрезан на четыре шарда
 (матрица джоба `backend`, у каждого свой раннер и Postgres, фильтр по `FullyQualifiedName`): `demo` —
-классы с Demo/Showcase в имени, `cycle` — прочие `Cycle*`, `rest` — всё остальное плюс юнит-тесты и
-проверки без БД. Новый класс попадает в шард по имени сам, править фильтры не нужно.
+классы с Demo/Showcase в имени (с P=4), `cycle-old` — прочие `Cycle15`–`Cycle31`, `cycle-new` — прочие
+`Cycle32` и новее, `rest` — всё остальное плюс юнит-тесты и проверки без БД. Новый класс попадает в шард
+по имени сам; новые циклы копятся в `cycle-new`, и когда он заметно перерастёт `cycle-old`, границу
+в `ci.yml` надо сдвинуть. Vitest идёт отдельным джобом `frontend-tests`, параллельно сборке фронта.
 
 ## Юнит-тесты (без БД)
 
