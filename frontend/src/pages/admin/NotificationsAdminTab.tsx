@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { fmtDate } from '../../utils/dateFormat'
 import { adminNotificationsApi } from '../../api/platformSettings'
+import { adminBillingApi } from '../../api/adminBilling'
 import { adminNumbersApi, type AdminChannelCardDto, type AdminChannelDto } from '../../api/notificationNumbers'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
@@ -12,6 +13,7 @@ import { Modal } from '../../components/ui/Modal'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
 import { TRANSPORT_FILTER_OPTIONS, TRANSPORT_LABELS } from '../../utils/notificationTransport'
 import { adminErrorText } from './adminChannelsHelpers'
+import { parseMonths } from './messengerOptionsHelpers'
 import { MessengerOptionsPanel } from './MessengerOptionsPanel'
 import { useMessengerOptions } from './useMessengerOptions'
 import { getPricingPublicBlockedMessage } from '../../utils/legalError'
@@ -72,14 +74,39 @@ function ConfirmPaymentModal({ channel, onClose }: { channel: AdminChannelDto; o
   const qc = useQueryClient()
   const [months, setMonths] = useState('1')
   const [comment, setComment] = useState('')
+  const monthsValue = parseMonths(months, 12)
+
+  // Cycle 43 (§43.30, US-43-04): the amount comes from the account's quote — the same calculation the account card shows; the channel row has no account id, the card does.
+  const card = useQuery({ queryKey: ['admin-channel-card', channel.id], queryFn: () => adminNumbersApi.card(channel.id), retry: false })
+  const accountId = card.data?.billingAccountId
+  const quote = useQuery({
+    queryKey: ['admin-messenger-quote', accountId, channel.transport, monthsValue],
+    queryFn: () => adminBillingApi.messengerQuote(accountId as string, channel.transport, monthsValue as number),
+    enabled: !!accountId && monthsValue != null,
+    retry: false,
+    gcTime: 0,
+  })
+  const quoteReady = !!quote.data && !quote.isFetching
+  // The card failing to load must not make the payment impossible: the server checks everything again, only the shown amount is missing then.
+  const noQuoteAvailable = card.isError
+
   const mut = useMutation({
-    mutationFn: () => adminNumbersApi.confirmPayment(channel.id, { months: Number(months), comment: comment.trim() || null }),
+    mutationFn: () =>
+      adminNumbersApi.confirmPayment(channel.id, {
+        months: Number(months),
+        comment: comment.trim() || null,
+        ...(quote.data ? { expectedPricePerMonth: quote.data.pricePerMonth } : {}),
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin-channels'] })
       void qc.invalidateQueries({ queryKey: ['admin-channel-summary'] })
       void qc.invalidateQueries({ queryKey: ['admin-channel-card', channel.id] })
+      void qc.invalidateQueries({ queryKey: ['admin-billing-account'] })
+      void qc.invalidateQueries({ queryKey: ['admin-billing-accounts'] })
       onClose()
     },
+    // 409 «цена изменилась» — the calculation shown is stale: take a fresh one.
+    onError: () => { void qc.invalidateQueries({ queryKey: ['admin-messenger-quote'] }) },
   })
   return (
     <Modal title="Подтвердить оплату" onClose={onClose} dismissible={!mut.isPending}>
@@ -87,13 +114,25 @@ function ConfirmPaymentModal({ channel, onClose }: { channel: AdminChannelDto; o
         {TRANSPORT_LABELS[channel.transport]} · {channel.ownerName}. Срок продлевается от конца текущего оплаченного периода (или от сегодняшнего дня).
       </p>
       <div className="grid gap-4">
-        <Input label="На сколько месяцев (1–12)" type="number" min={1} max={12} value={months} onChange={(e) => setMonths(e.target.value)} />
+        <Input label="На сколько месяцев (1–12)" type="number" min={1} max={12} value={months} onChange={(e) => { setMonths(e.target.value); mut.reset() }} />
         <Input label="Комментарий (счёт, платёж)" value={comment} maxLength={500} onChange={(e) => setComment(e.target.value)} />
       </div>
-      {mut.isError && <p className="text-sm text-danger mt-3">{adminErrorText(mut.error)}</p>}
+      <div className="mt-4 rounded-xl bg-cream-deep px-4 py-3 text-sm min-h-[3.5rem]" aria-live="polite" data-testid="confirm-payment-quote">
+        {monthsValue == null ? <span className="text-muted">Укажите срок от 1 до 12 месяцев</span>
+          : card.isError ? <span className="text-muted">Расчёт суммы недоступен — сервер проверит условия при подтверждении</span>
+          : card.isLoading || quote.isLoading || quote.isFetching ? <span className="text-muted">Считаем…</span>
+          : quote.isError ? <span role="alert" className="text-danger">{adminErrorText(quote.error)}</span>
+          : quote.data ? (
+            <>
+              <p className="font-medium text-ink">{quote.data.amountText}</p>
+              <p className="text-ink-soft">{quote.data.newPaidUntilText}</p>
+            </>
+          ) : null}
+      </div>
+      {mut.isError && <p role="alert" className="text-sm text-danger mt-3">{adminErrorText(mut.error)}</p>}
       <div className="flex justify-end gap-2 mt-5">
         <Button variant="secondary" onClick={onClose} disabled={mut.isPending}>Отмена</Button>
-        <Button loading={mut.isPending} disabled={!(Number(months) >= 1 && Number(months) <= 12)} onClick={() => mut.mutate()}>Подтвердить</Button>
+        <Button loading={mut.isPending} disabled={monthsValue == null || !(quoteReady || noQuoteAvailable)} onClick={() => mut.mutate()}>Подтвердить</Button>
       </div>
     </Modal>
   )
