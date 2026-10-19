@@ -42,6 +42,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    // Cycle 44: the shared footer (src/components/layout) imports `@/...` like the other apps' aliases (tsconfig paths `@/*` -> src/*).
+    resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
     server: {
       port: webPort,
       // Never strictPort (US-89): if SB_WEB_PORT is taken by a neighboring Vite instance, Vite

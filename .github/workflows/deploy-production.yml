@@ -73,6 +73,7 @@ jobs:
         working-directory: frontend
         env:
           VITE_SMARTCAPTCHA_SITEKEY: ${{ vars.VITE_SMARTCAPTCHA_SITEKEY }}
+          VITE_PRODUCTS_PAGE_LINK: ${{ vars.VITE_PRODUCTS_PAGE_LINK }}
         # ARCHITECTURE_CYCLE23.md §401.3 — ezbook in dist/ plus goods.ezbook.ru in dist/__goods/, one release.
         run: npm run build:release
 

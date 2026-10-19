@@ -21,6 +21,10 @@
 # SMOKE_PROFILE=bani (ARCHITECTURE_CYCLE42.md §42.13.3) checks the bani.ezbook.ru build in dist/__bani: the same checks as dom
 # plus <meta name="robots"> with noindex in index.html.
 #
+# SMOKE_PROFILE=about (ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.9.3, CY44-04) checks the static page in dist/__about: ready HTML
+# (one h1, title, description, canonical), no script/noindex/SPA root//api/, product cards with links, robots.txt, sitemap.xml, 404.html.
+# Not a PWA: no manifest, apple-touch-icon or sw.js.
+#
 # Any failed step exits 1.
 set -euo pipefail
 
@@ -56,6 +60,41 @@ favicon_ico_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/favicon.ico
 favicon_svg_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/favicon.svg")
 [ "$favicon_svg_code" = "200" ] || fail "GET /favicon.svg returned $favicon_svg_code (expected 200)"
 log "favicon OK"
+
+if [ "$SMOKE_PROFILE" = "about" ]; then
+  index_html=$(curl -sf "$BASE_URL/index.html") || fail "GET /index.html failed"
+  grep -q 'lang="ru"' <<<"$index_html" || fail "about index.html has no lang=\"ru\""
+  [ "$(grep -o '<h1' <<<"$index_html" | wc -l | tr -d ' ')" = "1" ] || fail "about index.html must have exactly one <h1"
+  grep -q '<title>' <<<"$index_html" || fail "about index.html has no <title>"
+  grep -q '<meta name="description"' <<<"$index_html" || fail "about index.html has no meta description"
+  grep -q '<link rel="canonical" href="https://' <<<"$index_html" || fail "about index.html has no https canonical"
+  grep -q '<script' <<<"$index_html" && fail "about index.html contains <script (CSP has no script-src)"
+  grep -q 'noindex' <<<"$index_html" && fail "about index.html contains noindex (the page must be indexable)"
+  grep -q '<div id="root">' <<<"$index_html" && fail "about index.html has the SPA root: it must be ready HTML"
+  grep -q '/api/' <<<"$index_html" && fail "about index.html references /api/"
+  python3 - "$index_html" <<'PY' || fail "about index.html: need >=2 data-product cards, each with an absolute href"
+import re, sys
+html = sys.argv[1]
+cards = [c.split('</article>')[0] for c in html.split('<article')[1:] if 'data-product="' in c.split('>')[0]]
+assert len(cards) >= 2, "fewer than 2 data-product cards"
+assert all('href="http' in c for c in cards), "card without href=http"
+PY
+  canonical=$(sed -n 's/.*<link rel="canonical" href="\([^"]*\)".*/\1/p' <<<"$index_html" | head -n1)
+  robots=$(curl -sf "$BASE_URL/robots.txt") || fail "GET /robots.txt failed"
+  grep -q 'Allow: /' <<<"$robots" || fail "robots.txt has no Allow: /"
+  grep -q 'Sitemap: https://' <<<"$robots" || fail "robots.txt has no Sitemap: https://"
+  ! grep -qE '^Disallow:[[:space:]]*/[[:space:]]*$' <<<"$robots" || fail "robots.txt disallows the whole site"
+  curl -sf "$BASE_URL/sitemap.xml" -o /tmp/smoke-frontend-about-sitemap.xml || fail "GET /sitemap.xml failed"
+  python3 - /tmp/smoke-frontend-about-sitemap.xml "$canonical" <<'PY' || fail "sitemap.xml must be XML with exactly one <loc> equal to the canonical"
+import sys, xml.etree.ElementTree as ET
+locs = [e.text.strip() for e in ET.parse(sys.argv[1]).iter() if e.tag.endswith('loc')]
+assert len(locs) == 1 and locs[0] == sys.argv[2], (locs, sys.argv[2])
+PY
+  nf=$(curl -sf "$BASE_URL/404.html") || fail "GET /404.html failed"
+  grep -q 'href="/"' <<<"$nf" || fail "404.html has no link to /"
+  log "ALL FRONTEND SMOKE CHECKS PASSED ($SMOKE_PROFILE)"
+  exit 0
+fi
 
 if [ "$SMOKE_PROFILE" = "goods" ] || [ "$SMOKE_PROFILE" = "dom" ] || [ "$SMOKE_PROFILE" = "bani" ]; then
   index_html=$(curl -sf "$BASE_URL/index.html") || fail "GET /index.html failed"

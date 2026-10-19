@@ -46,6 +46,12 @@ BANI_HOST="${BANI_HOST:-bani.ezbook.ru}"
 BANI_SMOKE="${BANI_SMOKE:-1}"
 BANI_VHOST="${BANI_VHOST:-/etc/nginx/sites-enabled/bani.ezbook.conf}"
 
+# ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.9.4 — about.ezbook.ru: static page from current/__about, no API (smoke only if the vhost is installed).
+# ABOUT_SMOKE=0 is the emergency off switch.
+ABOUT_HOST="${ABOUT_HOST:-about.ezbook.ru}"
+ABOUT_SMOKE="${ABOUT_SMOKE:-1}"
+ABOUT_VHOST="${ABOUT_VHOST:-/etc/nginx/sites-enabled/about.ezbook.conf}"
+
 NEW_RELEASE_DIR="$RELEASES_DIR/$RELEASE_TS"
 [ -d "$NEW_RELEASE_DIR" ] || { echo "ERROR: $NEW_RELEASE_DIR does not exist — did deploy.sh finish uploading it?" >&2; exit 1; }
 
@@ -386,6 +392,35 @@ else
     exit 1
   }
   echo "    bani OK"
+fi
+
+if [ "$ABOUT_SMOKE" = "0" ]; then
+  echo "==> about smoke skipped (ABOUT_SMOKE=0)"
+elif [ ! -e "$ABOUT_VHOST" ]; then
+  echo "WARNING: about vhost not installed ($ABOUT_VHOST), smoke skipped (DEPLOY.md §33)" >&2
+else
+  echo "==> about smoke: https://$ABOUT_HOST/ via local nginx"
+  [ -f "$CURRENT_LINK/__about/index.html" ] || {
+    echo "ERROR: $CURRENT_LINK/__about/index.html is missing — the release was built without about (build:release includes it)" >&2
+    rollback_hint
+    exit 1
+  }
+  about_index=$(curl -sf --max-time 10 --resolve "$ABOUT_HOST:443:127.0.0.1" "https://$ABOUT_HOST/") || {
+    echo "ERROR: https://$ABOUT_HOST/ did not answer 200 via local nginx — is the about vhost installed and does it have a certificate? (DEPLOY.md §33)" >&2
+    rollback_hint
+    exit 1
+  }
+  grep -q '<h1' <<<"$about_index" && ! grep -q '<div id="root">' <<<"$about_index" || {
+    echo "ERROR: https://$ABOUT_HOST/ answered, but not with the ready about page (<h1 missing or SPA root present)" >&2
+    rollback_hint
+    exit 1
+  }
+  if curl -sI --max-time 10 --resolve "$ABOUT_HOST:443:127.0.0.1" "https://$ABOUT_HOST/" | grep -qi '^x-robots-tag:'; then
+    echo "ERROR: https://$ABOUT_HOST/ sends X-Robots-Tag — the about page must be indexable" >&2
+    rollback_hint
+    exit 1
+  fi
+  echo "    about OK"
 fi
 
 echo "==> Pruning old releases (keeping $KEEP_RELEASES most recent)"

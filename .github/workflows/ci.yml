@@ -247,6 +247,10 @@ jobs:
       - name: Type-check bani
         run: npx tsc --noEmit -p tsconfig.bani.json
 
+      # ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.9.2 — about.ezbook.ru is a fifth app (static page, no client JS) with its own tsconfig.
+      - name: Type-check about
+        run: npx tsc --noEmit -p tsconfig.about.json
+
       - name: Type-check node (shots)
         run: npm run typecheck:node
 
@@ -337,6 +341,7 @@ jobs:
       - name: Build
         env:
           VITE_SMARTCAPTCHA_SITEKEY: ${{ vars.VITE_SMARTCAPTCHA_SITEKEY }}
+          VITE_PRODUCTS_PAGE_LINK: ${{ vars.VITE_PRODUCTS_PAGE_LINK }}
         run: npm run build:release
 
       # US-112 (ARCHITECTURE_CYCLE9.md §103.2): proves the tab icon is actually reachable over HTTP from
@@ -375,6 +380,15 @@ jobs:
           SMOKE_PROFILE: bani
           PORT: "4176"
 
+      # ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.9.3 (CY44-04) — the about page (fifth site) in dist/__about: ready HTML, robots, sitemap, 404.
+      - name: Smoke test (about build in dist/__about)
+        working-directory: .
+        run: bash deploy/ci/smoke-frontend.sh
+        env:
+          DIST_DIR: frontend/dist/__about
+          SMOKE_PROFILE: about
+          PORT: "4177"
+
       # Цикл 39 (S1): токены /b/, /s/ и API public/<token> не должны попадать в access log dom.
       - name: Check dom nginx log masking
         working-directory: .
@@ -388,6 +402,13 @@ jobs:
         working-directory: .
         run: |
           PATH=/usr/sbin:$PATH bash deploy/nginx/test-bani-masking.sh
+
+      # ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.9.2 (DO-44-5): the real about vhost over the built page — CSP without script-src,
+      # no X-Robots-Tag, /index.html -> 301, 404 page, /api/ -> 404, immutable assets.
+      - name: Check about nginx vhost
+        working-directory: .
+        run: |
+          PATH=/usr/sbin:$PATH DIST_DIR=frontend/dist/__about bash deploy/nginx/test-about-vhost.sh
 
       # Frontend build moves off the production server entirely (T-D3, US-44, ARCHITECTURE.md §12.3):
       # deploy/deploy.sh downloads this artifact and ships it to the VPS instead of running `npm ci &&
