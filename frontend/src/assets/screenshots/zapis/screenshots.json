@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-10-19T20:02:14Z",
+  "sourceCommit": "096e689f-dirty",
+  "browser": "Chrome/155.0.8059.84",
+  "bookingSlots": {
+    "cssWidth": 378,
+    "cssHeight": 622,
+    "files": {
+      "1x": "booking-slots-1x.webp",
+      "2x": "booking-slots-2x.webp"
+    },
+    "bytes": {
+      "1x": 13344,
+      "2x": 27330
+    },
+    "serviceName": "Женская стрижка",
+    "slotCount": 19
+  },
+  "bookingsDesktop": {
+    "cssWidth": 1024,
+    "cssHeight": 698,
+    "files": {
+      "1x": "bookings-desktop-1x.webp",
+      "2x": "bookings-desktop-2x.webp"
+    },
+    "bytes": {
+      "1x": 27600,
+      "2x": 61900
+    },
+    "bookingCount": 4
+  },
+  "bookingsPhone": {
+    "cssWidth": 390,
+    "cssHeight": 1007,
+    "files": {
+      "2x": "bookings-phone-2x.webp"
+    },
+    "bytes": {
+      "2x": 56040
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import type { LandingConfig } from '../../components/landing/types'
+import { bookingSlotsShot, bookingsShot } from '../../assets/screenshots/zapis/shots'
 import { zapisPricingLine } from '../../components/pricing/zapisPricingLine'
 import { zapisFaq } from './zapisFaq'
 
@@ -49,6 +50,7 @@ export const zapisLanding: LandingConfig = {
       ],
       note: 'Оплата — в салоне.',
     },
+    screenshot: bookingSlotsShot,
   },
   business: {
     eyebrow: 'Для бизнеса',
@@ -66,6 +68,7 @@ export const zapisLanding: LandingConfig = {
       'Отчёты по выручке и комиссиям мастеров — на платных тарифах.',
       'Форма записи для своего сайта.',
     ],
+    screenshot: bookingsShot,
     stepsPanel: {
       title: 'Как начать принимать записи',
       titleId: 'biz-steps-title',

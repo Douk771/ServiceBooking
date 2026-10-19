@@ -29,7 +29,7 @@ swagger.json не годится: в Development он отдаёт 500 из-за
 Development; 4 время магазина вне [07:00, 20:30]; 5 ответ сервера не тот или самопроверка не прошла.
 `
 
-class ExitError extends Error {
+export class ExitError extends Error {
   constructor(code, message) {
     super(message)
     this.code = code
@@ -101,7 +101,7 @@ function assertShootingWindow(timeZone) {
 
 // ---------- HTTP ----------
 
-function makeClient(base) {
+export function makeClient(base) {
   return async function call(method, path, { body, token, expected = null } = {}) {
     const headers = { Accept: 'application/json' }
     if (body !== undefined) headers['Content-Type'] = 'application/json'
@@ -129,7 +129,7 @@ function makeClient(base) {
   }
 }
 
-async function waitReady(call) {
+export async function waitReady(call) {
   const deadline = Date.now() + 120_000
   for (;;) {
     try {
