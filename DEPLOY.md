@@ -2670,6 +2670,29 @@ Up — только добавления (вид компании «Бани», 
 **Локальный стенд.** `docker compose up` (API, БД) и `npm run dev:bani` в `frontend/` (порт 5176, прокси `/api` и `/uploads`). Без бэкенда — `npx @stoplight/prism mock contracts/cycle42/openapi.yaml --port 4042`
 и `VITE_API_TARGET=http://localhost:4042 npm run dev:bani`.
 
+## 33. about.ezbook.ru — страница «Все продукты EZBOOK» (цикл 44, ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.9)
+
+Статическая страница без JS и без API: готовый HTML собирается на этапе `npm run build:release` в `current/__about`, отдаёт её отдельный vhost `deploy/nginx/about.ezbook.conf`. Миграций и новых секретов нет. Агенты DNS, vhost и certbot не трогают — шаги 1, 3, 4, 6 выполняет заказчик.
+
+**Первый выкат (по порядку).**
+1. DNS: запись `A about.ezbook.ru` на ту же машину; дождаться ответа `dig +short about.ezbook.ru`.
+2. Обычный деплой. Сборка ляжет в `current/__about`; смоук `about` в `deploy-remote.sh` пропустится с `WARNING` (vhost ещё не установлен) — это штатно, деплой от DNS `about` не зависит.
+3. vhost: `sudo cp deploy/nginx/about.ezbook.conf /etc/nginx/sites-available/`, `sudo ln -s /etc/nginx/sites-available/about.ezbook.conf /etc/nginx/sites-enabled/`, `sudo nginx -t && sudo systemctl reload nginx`, **сразу** `sudo certbot --nginx -d about.ezbook.ru`. Предупреждение: повторное копирование файла поверх установленного стирает 443-блок certbot — после любого копирования запускать certbot заново.
+4. `ezbook.conf` и `demo.visit.ezbook.conf` на машине: дописать строку `location ^~ /__about/ { return 404; }` **вручную** (рядом с `/__bani/`), не затирая блоки certbot; `nginx -t`, reload. Иначе `ezbook.ru/__about/` отдаст страницу с чужого origin.
+5. Проверка: `curl -s https://about.ezbook.ru/ | grep -c '<h1'` (1); `curl -sI https://about.ezbook.ru/ | grep -i x-robots-tag` (пусто); `curl -s -o /dev/null -w '%{http_code}' https://about.ezbook.ru/api/health/ready` (404); `curl -s -o /dev/null -w '%{http_code}' https://ezbook.ru/__about/` (404). Повторный деплой должен вывести `about OK`.
+6. **Только после п. 5:** Variable репозитория `VITE_PRODUCTS_PAGE_LINK=on` (Settings -> Secrets and variables -> Actions -> Variables), затем обычный деплой: в подвалах четырёх сайтов появится ссылка «Все продукты EZBOOK». Выключение — удалить Variable и задеплоить.
+7. Необязательно: добавить сайт в Яндекс Вебмастер и отправить `https://about.ezbook.ru/sitemap.xml`.
+
+**Переменные.** `ABOUT_HOST` (по умолчанию `about.ezbook.ru`), `ABOUT_VHOST` (путь установленного vhost, по умолчанию `/etc/nginx/sites-enabled/about.ezbook.conf`), `ABOUT_SMOKE=0` — аварийное отключение смоука. Build-time Variables репозитория: `VITE_PRODUCTS_PAGE_LINK` (`on` включает ссылку в подвалах), необязательные `VITE_SITE_URL_*` (адреса сайтов).
+
+**Ограничения.**
+- Если на машине переопределён `PublicSites__*`, тот же адрес нужно задать в `VITE_SITE_URL_*` (Variables), иначе ссылки страницы и подвалов разойдутся с адресами в уведомлениях: согласованность с `appsettings.json` проверяет тест, но не переопределения на машине (§44.3.3).
+- Статусы продуктов на странице меняются правкой `frontend/about/src/content/products.ts` и деплоем. Бани показывать (`hidden` -> `testing`) только после выката bani и открытия `https://bani.ezbook.ru/`.
+
+**Откат.** `deploy/rollback.sh` (симлинк `current`): страница откатывается вместе со всеми, правки не нужны. Убрать страницу совсем — удалить симлинк vhost'а, reload nginx и снять Variable `VITE_PRODUCTS_PAGE_LINK`.
+
+**Локальная проверка.** `npm run build:about` и `npm run dev:about` в `frontend/` (порт 5177, без прокси `/api`); `deploy/nginx/test-about-vhost.sh` прогоняет настоящий vhost над собранной страницей.
+
 ## Почему так сделано
 
 ### Docker не из snap
