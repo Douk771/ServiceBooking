@@ -41,6 +41,9 @@ export default defineConfig(({ mode }) => {
   const webPort = parsePort(env('SB_WEB_PORT'), 5173)
 
   return {
+    // The repo-root `.env` feeds import.meta.env (VITE_* only), the same as goods/dom/bani/about — so a
+    // VITE_SITE_URL_* override set there reaches this footer's "all products" link too (cycle 44 review).
+    envDir: repoRoot,
     plugins: [react()],
     // Cycle 44: the shared footer (src/components/layout) imports `@/...` like the other apps' aliases (tsconfig paths `@/*` -> src/*).
     resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },

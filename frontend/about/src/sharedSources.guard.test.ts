@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
+import { posix } from 'node:path'
 import { ABOUT_SHARED_SOURCES, aboutTailwindContent, appTailwindContent } from '../../shared-sources.js'
 import aboutTailwindConfig from '../../tailwind.about.config.js'
 
@@ -15,6 +16,16 @@ describe('about shared sources', () => {
     const allowed = ABOUT_SHARED_SOURCES.map((f) => f.replace(/^src\//, ''))
     for (const spec of used) {
       expect(allowed.some((f) => f === spec || f.replace(/\.tsx?$/, '') === spec), `${spec} is not in ABOUT_SHARED_SOURCES`).toBe(true)
+    }
+  })
+
+  it('no relative import leaves about/src (it would bypass the whitelist and the Tailwind content list)', () => {
+    const RELATIVE_RE = /(?:import|export)\s+(?:type\s+)?(?:[^'"()]*?\sfrom\s+)?['"](\.{1,2}\/[^'"]+)['"]/g
+    for (const [file, src] of Object.entries(raw)) {
+      for (const m of src.matchAll(RELATIVE_RE)) {
+        const resolved = posix.normalize(posix.join('about/src', posix.dirname(file), m[1]))
+        expect(resolved.startsWith('about/src/'), `${file}: ${m[1]} resolves to ${resolved}`).toBe(true)
+      }
     }
   })
 

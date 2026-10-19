@@ -134,6 +134,11 @@ export default tseslint.config(
               regex: `^@/(?!(${ABOUT_SHARED_SOURCES.map((f) => f.replace(/^src\//, '').replace(/\.tsx?$/, '')).join('|')})$)`,
               message: `about may import from src/ only: ${ABOUT_SHARED_SOURCES.join(', ')} (shared-sources.js).`,
             },
+            {
+              // A relative path into src/ bypasses the whitelist above, and Tailwind (aboutTailwindContent) would not scan that file.
+              regex: '(^|/)\\.\\./(\\.\\./)*src/',
+              message: 'about imports shared code only as "@/..." from ABOUT_SHARED_SOURCES, never by a relative path into src/.',
+            },
           ],
         },
       ],

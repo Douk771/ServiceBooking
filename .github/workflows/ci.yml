@@ -345,6 +345,12 @@ jobs:
         env:
           VITE_SMARTCAPTCHA_SITEKEY: ${{ vars.VITE_SMARTCAPTCHA_SITEKEY }}
           VITE_PRODUCTS_PAGE_LINK: ${{ vars.VITE_PRODUCTS_PAGE_LINK }}
+          # Cycle 44 (DEPLOY.md §34): optional site-address overrides; unset Variable -> empty -> production default.
+          VITE_SITE_URL_ZAPIS: ${{ vars.VITE_SITE_URL_ZAPIS }}
+          VITE_SITE_URL_GOODS: ${{ vars.VITE_SITE_URL_GOODS }}
+          VITE_SITE_URL_DOM: ${{ vars.VITE_SITE_URL_DOM }}
+          VITE_SITE_URL_BANI: ${{ vars.VITE_SITE_URL_BANI }}
+          VITE_SITE_URL_ABOUT: ${{ vars.VITE_SITE_URL_ABOUT }}
         run: npm run build:release
 
       # US-112 (ARCHITECTURE_CYCLE9.md §103.2): proves the tab icon is actually reachable over HTTP from
