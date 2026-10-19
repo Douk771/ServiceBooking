@@ -45,6 +45,9 @@ if (/noindex/i.test(html)) fail('index.html: contains noindex')
 for (const key of report.hiddenProducts) {
   if (html.includes(`data-product="${key}"`)) fail(`index.html: hidden product "${key}" is rendered`)
 }
+for (const host of report.hiddenHosts) {
+  if (html.includes(host)) fail(`index.html: address of a hidden product (${host}) is present`)
+}
 if (count(/data-product="/g) !== report.visibleProducts.length) fail('index.html: number of data-product cards differs from the visible products')
 if (html.includes('/api/')) fail('index.html: contains /api/')
 

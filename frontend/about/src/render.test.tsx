@@ -27,6 +27,8 @@ describe('CY44-02 renderSite', () => {
     expect(cards(html)).toEqual(['zapis', 'goods', 'dom'])
     expect(report.visibleProducts).toEqual(['zapis', 'goods', 'dom'])
     expect(report.hiddenProducts).toEqual(['bani'])
+    expect(report.hiddenHosts).toEqual(['bani.ezbook.ru'])
+    for (const host of report.hiddenHosts) expect(html).not.toContain(host)
     expect(html).not.toContain('bani.ezbook.ru')
     expect(html).not.toContain('#product-bani')
     expect(html).not.toContain('EZBOOK Бани')
