@@ -5,3 +5,5 @@ export const SHARED_EZBOOK_FILES: readonly string[]
 export const SECONDARY_APPS: readonly string[]
 export function appTailwindContent(app: 'goods' | 'dom' | 'bani'): string[]
 export function appAllowedPagesRegex(): string
+export const ABOUT_SHARED_SOURCES: string[]
+export function aboutTailwindContent(): string[]

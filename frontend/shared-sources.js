@@ -40,3 +40,16 @@ export function appAllowedPagesRegex() {
   const alt = `(${SHARED_EZBOOK_PAGES.join('|')})`
   return `(^@/pages/(?!${alt}$))|(src/pages/(?!${alt}$))`
 }
+
+// ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.5, §44.6.1 — about.ezbook.ru is a static page, not a "secondary app with shared pages":
+// it is deliberately NOT in SECONDARY_APPS (appTailwindContent('about') still throws). Its allowed ezbook imports are this whitelist.
+export const ABOUT_SHARED_SOURCES = [
+  'src/components/ui/Icon.tsx',
+  'src/components/landing/classes.ts',
+  'src/utils/publicSites.ts',
+]
+
+/** Tailwind `content` of `about`: its own sources plus the whitelist only (keeps the CSS small). */
+export function aboutTailwindContent() {
+  return ['./about/index.html', './about/src/**/*.{js,ts,jsx,tsx}', ...ABOUT_SHARED_SOURCES.map((f) => `./${f}`)]
+}

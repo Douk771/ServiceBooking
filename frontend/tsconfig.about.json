@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@about/*": ["about/src/*"]
+    }
+  },
+  "include": ["about/src", "src/components/ui/Icon.tsx", "src/components/landing/classes.ts", "src/utils/publicSites.ts", "src/vite-env.d.ts"]
+}

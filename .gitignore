@@ -82,6 +82,8 @@ ServiceBooking.API/logs/
 frontend/dist-goods/
 frontend/dist-dom/
 frontend/dist-bani/
+frontend/dist-about/
+frontend/dist-about-ssr/
 
 # Демо-стенд (цикл 28, DEPLOY.md §25): локальные секреты и данные машины
 .env.demo

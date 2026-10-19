@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  html {
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+  body {
+    margin: 0;
+    @apply bg-cream text-ink;
+  }
+  a {
+    color: #8f6c46;
+  }
+  a:hover {
+    color: #2b2420;
+  }
+  ::selection {
+    background: #e6dccb;
+  }
+}

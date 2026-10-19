@@ -5,7 +5,7 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import globals from 'globals'
 import prettierConfig from 'eslint-config-prettier'
-import { SHARED_EZBOOK_PAGES, appAllowedPagesRegex } from './shared-sources.js'
+import { SHARED_EZBOOK_PAGES, ABOUT_SHARED_SOURCES, appAllowedPagesRegex } from './shared-sources.js'
 
 // US-50 (T-F6). Rules are picked to describe the codebase's already-established conventions
 // (CURRENT_STATE.md §6) rather than to introduce a new style: named exports (only App.tsx has a
@@ -14,7 +14,7 @@ import { SHARED_EZBOOK_PAGES, appAllowedPagesRegex } from './shared-sources.js'
 // is last in the array so it can turn off any formatting rule that would otherwise fight Prettier.
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'dist-goods/**', 'dist-dom/**', 'dist-bani/**', 'coverage/**', 'node_modules/**'],
+    ignores: ['dist/**', 'dist-goods/**', 'dist-dom/**', 'dist-bani/**', 'dist-about/**', 'dist-about-ssr/**', 'coverage/**', 'node_modules/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -63,6 +63,7 @@ export default tseslint.config(
               message: `goods may import only these ezbook pages: ${SHARED_EZBOOK_PAGES.join(', ')} (single list: shared-sources.js, ARCHITECTURE_CYCLE31.md §31.7, ARCHITECTURE_CYCLE37.md §37.14.1). Shared components live in src/components/.`,
             },
             { regex: '(^@dom/)|(/dom/)|(^dom/)', message: 'goods must not import from dom/ (ARCHITECTURE_CYCLE37.md §37.14.4).' },
+            { regex: '(^@about/)|(/about/)|(^about/)', message: 'goods must not import from about/ (ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.6.1).' },
             { regex: '(^@bani/)|(/bani/)|(^bani/)', message: 'goods must not import from bani/ (ARCHITECTURE_CYCLE42.md §42.13.2).' },
           ],
         },
@@ -83,6 +84,7 @@ export default tseslint.config(
               message: `dom may import only these ezbook pages: ${SHARED_EZBOOK_PAGES.join(', ')} (single list: shared-sources.js, ARCHITECTURE_CYCLE37.md §37.14.4). Shared components live in src/components/.`,
             },
             { regex: '(^@goods/)|(/goods/)|(^goods/)', message: 'dom must not import from goods/ (ARCHITECTURE_CYCLE37.md §37.14.4).' },
+            { regex: '(^@about/)|(/about/)|(^about/)', message: 'dom must not import from about/ (ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.6.1).' },
             { regex: '(^@bani/)|(/bani/)|(^bani/)', message: 'dom must not import from bani/ (ARCHITECTURE_CYCLE42.md §42.13.2).' },
           ],
         },
@@ -104,6 +106,34 @@ export default tseslint.config(
             },
             { regex: '(^@goods/)|(/goods/)|(^goods/)', message: 'bani must not import from goods/ (ARCHITECTURE_CYCLE42.md §42.13.2).' },
             { regex: '(^@dom/)|(/dom/)|(^dom/)', message: 'bani must not import from dom/ (ARCHITECTURE_CYCLE42.md §42.13.2).' },
+            { regex: '(^@about/)|(/about/)|(^about/)', message: 'bani must not import from about/ (ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.6.1).' },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.5, §44.6.1 — about.ezbook.ru is a static page: no router, no API client, no stores,
+    // and from the shared code only the whitelist ABOUT_SHARED_SOURCES (single list: shared-sources.js).
+    files: ['about/src/**/*.{ts,tsx}'],
+    ignores: ['about/src/**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: ['react-router-dom', 'axios', '@tanstack/react-query', 'zustand'].map((name) => ({
+            name,
+            message: 'about is a static page without client JS (ARCHITECTURE_CYCLE44 §44.5).',
+          })),
+          patterns: [
+            { group: ['@/App', '**/src/App'], message: 'about must not import the ezbook app shell.' },
+            { regex: '(^@goods/)|(/goods/)|(^goods/)', message: 'about must not import from goods/.' },
+            { regex: '(^@dom/)|(/dom/)|(^dom/)', message: 'about must not import from dom/.' },
+            { regex: '(^@bani/)|(/bani/)|(^bani/)', message: 'about must not import from bani/.' },
+            {
+              regex: `^@/(?!(${ABOUT_SHARED_SOURCES.map((f) => f.replace(/^src\//, '').replace(/\.tsx?$/, '')).join('|')})$)`,
+              message: `about may import from src/ only: ${ABOUT_SHARED_SOURCES.join(', ')} (shared-sources.js).`,
+            },
           ],
         },
       ],
@@ -119,6 +149,7 @@ export default tseslint.config(
             { regex: '(^@goods/)|(/goods/)|(^goods/)', message: 'ezbook (src/) must not import from goods/.' },
             { regex: '(^@dom/)|(/dom/)|(^dom/)', message: 'ezbook (src/) must not import from dom/ (ARCHITECTURE_CYCLE37.md §37.14.4).' },
             { regex: '(^@bani/)|(/bani/)|(^bani/)', message: 'ezbook (src/) must not import from bani/ (ARCHITECTURE_CYCLE42.md §42.13.2).' },
+            { regex: '(^@about/)|(/about/)|(^about/)', message: 'ezbook (src/) must not import from about/ (ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.6.1).' },
           ],
         },
       ],
