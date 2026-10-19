@@ -397,7 +397,7 @@ fi
 if [ "$ABOUT_SMOKE" = "0" ]; then
   echo "==> about smoke skipped (ABOUT_SMOKE=0)"
 elif [ ! -e "$ABOUT_VHOST" ]; then
-  echo "WARNING: about vhost not installed ($ABOUT_VHOST), smoke skipped (DEPLOY.md §33)" >&2
+  echo "WARNING: about vhost not installed ($ABOUT_VHOST), smoke skipped (DEPLOY.md §34)" >&2
 else
   echo "==> about smoke: https://$ABOUT_HOST/ via local nginx"
   [ -f "$CURRENT_LINK/__about/index.html" ] || {
@@ -406,7 +406,7 @@ else
     exit 1
   }
   about_index=$(curl -sf --max-time 10 --resolve "$ABOUT_HOST:443:127.0.0.1" "https://$ABOUT_HOST/") || {
-    echo "ERROR: https://$ABOUT_HOST/ did not answer 200 via local nginx — is the about vhost installed and does it have a certificate? (DEPLOY.md §33)" >&2
+    echo "ERROR: https://$ABOUT_HOST/ did not answer 200 via local nginx — is the about vhost installed and does it have a certificate? (DEPLOY.md §34)" >&2
     rollback_hint
     exit 1
   }
