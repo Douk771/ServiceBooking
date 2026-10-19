@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { ProductsPageLink } from '@/components/sites/ProductsPageLink'
 import { bathsVertical } from '../vertical'
 
 /** Legal links stay on this domain (real <Link>s to the bani routes of the shared legal pages). */
@@ -25,6 +26,7 @@ export function BaniFooter() {
         <Link to="/data-request" className={link}>
           Обращение по своим данным
         </Link>
+        <ProductsPageLink />
       </div>
     </footer>
   )

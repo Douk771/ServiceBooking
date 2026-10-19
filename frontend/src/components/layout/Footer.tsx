@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { ProductsPageLink } from '@/components/sites/ProductsPageLink'
 
 /**
  * Site-wide footer. Legal links required by US-36 п. 4 and, from cycle 5, API_CONTRACT_CYCLE5.md §43
@@ -32,6 +33,7 @@ export function Footer() {
         <Link to="/data-request" className="hover:text-ink-soft transition-colors">
           Обращение по своим данным
         </Link>
+        <ProductsPageLink />
       </div>
     </footer>
   )

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { ProductsPageLink } from '@/components/sites/ProductsPageLink'
 
 /** Legal links stay on this domain (real <Link>s to the dom routes of the shared legal pages). */
 export function DomFooter() {
@@ -21,6 +22,7 @@ export function DomFooter() {
         <Link to="/data-request" className="hover:text-ink-soft transition-colors">
           Обращение по своим данным
         </Link>
+        <ProductsPageLink />
       </div>
     </footer>
   )

@@ -9,6 +9,7 @@ import { LandingPanelHero } from './LandingPanelHero'
 import { LandingPricingSection } from './LandingPricingSection'
 import { CONTAINER } from './classes'
 import type { LandingConfig, LandingPanelConfig } from './types'
+import { useInitialHashScroll } from './useInitialHashScroll'
 
 /**
  * Пропсы: обычный конфиг не принимает heroAside, конфиг с шапкой-панелью требует его
@@ -46,6 +47,7 @@ function LandingSections({ config, catalog }: { config: LandingConfig | LandingP
  * Футер в шаблон не входит.
  */
 export function ServiceLanding(props: ServiceLandingProps) {
+  useInitialHashScroll() // «<сайт>/#biz-title» с страницы «Все продукты» (ARCHITECTURE_CYCLE44 §44.7)
   if (isPanelProps(props)) {
     return (
       <main className="pb-10">
