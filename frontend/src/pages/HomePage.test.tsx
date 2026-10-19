@@ -157,4 +157,20 @@ describe('HomePage — единый шаблон (T38-10)', () => {
     expect(buttons).toHaveLength(8)
     buttons.forEach((b) => expect(b.getAttribute('aria-expanded')).toBe('false'))
   })
+
+  it('карусель «Как проходит запись»: шаги кликабельны и синхронизированы с кадрами; «Что ещё можно» — сетка карточек', async () => {
+    const { container } = renderPage()
+    await screen.findByText(LONG)
+    const region = screen.getByRole('region', { name: /Как проходит запись|Как записаться/ })
+    const steps = region.querySelectorAll('ol button[aria-current], ol button')
+    expect(steps.length).toBeGreaterThan(2)
+    expect(steps[0]).toHaveAttribute('aria-current', 'true')
+    await userEvent.click(steps[2])
+    expect(steps[2]).toHaveAttribute('aria-current', 'true')
+    expect(region.querySelectorAll('[data-testid="carousel-slide"][data-active]')).toHaveLength(1)
+    const list = container.querySelector('ul[aria-labelledby="clients-list-title"]') as HTMLElement
+    expect(list.className).toContain('grid')
+    expect(list.querySelectorAll('li').length).toBeGreaterThanOrEqual(4)
+    expect(container.scrollWidth).toBeLessThanOrEqual(container.clientWidth || Infinity)
+  })
 })

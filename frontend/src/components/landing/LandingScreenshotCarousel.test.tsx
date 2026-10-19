@@ -87,4 +87,35 @@ describe('LandingScreenshotCarousel', () => {
     expect(screen.getByRole('button', { name: 'Кадр 2: 2. Шаг 2' })).toHaveAttribute('aria-current', 'true')
     expect(screen.getByRole('button', { name: 'Кадр 1: 1. Шаг 1' })).not.toHaveAttribute('aria-current')
   })
+
+  it('desktop layout: two columns, step list with description of the current step only', () => {
+    render(<LandingScreenshotCarousel carousel={carousel} />)
+    const region = screen.getByRole('region')
+    expect(region.className).toMatch(/md:grid-cols-\[/)
+    const steps = region.querySelectorAll('ol > li')
+    expect(steps).toHaveLength(3)
+    expect(steps[0].textContent).toContain('alt 1')
+    expect(steps[1].textContent).not.toContain('alt 2')
+    fireEvent.click(screen.getByRole('button', { name: 'Кадр 2: 2. Шаг 2' }))
+    expect(steps[1].textContent).toContain('alt 2')
+    expect(steps[0].textContent).not.toContain('alt 1')
+  })
+
+  it('screenshot height is capped (<=560px and <=60-65vh)', () => {
+    render(<LandingScreenshotCarousel carousel={carousel} />)
+    const img = screen.getAllByRole('img', { hidden: true })[0]
+    const m = img.className.match(/h-\[min\((\d+)vh,(\d+)px\)\]/)
+    expect(m).not.toBeNull()
+    expect(Number(m![1])).toBeLessThanOrEqual(65)
+    expect(Number(m![2])).toBeLessThanOrEqual(560)
+  })
+
+  it('pause toggle and arrows keep the active step highlighted', () => {
+    render(<LandingScreenshotCarousel carousel={carousel} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Следующий кадр' }))
+    expect(screen.getByRole('button', { name: 'Кадр 2: 2. Шаг 2' })).toHaveAttribute('aria-current', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Предыдущий кадр' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Предыдущий кадр' }))
+    expect(screen.getByRole('button', { name: 'Кадр 3: 3. Шаг 3' })).toHaveAttribute('aria-current', 'true')
+  })
 })
