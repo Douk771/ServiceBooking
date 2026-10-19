@@ -1,12 +1,36 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
+**Актуально по состоянию на коммит: `69bafa0` (`develop` = `origin/develop` = `cycle/044-products-landing`, цикл 44 влит fast-forward), дата: 2026-10-19.**
+**Следующий diff отсчитывайте от `69bafa0`.**
+
+> **Цикл 44 «Все продукты EZBOOK» (`about.ezbook.ru`) влит в `develop`**: `develop` перемотан на конец ветки `cycle/044-products-landing`
+> (`69bafa0`, отдельного merge-коммита нет; `develop` влит в ветку цикла мерджем `20126d2`). **На машину цикл 44 НЕ выкачен**, прод-релиза
+> нет; DNS, vhost, certbot и Variable `VITE_PRODUCTS_PAGE_LINK` — ручные шаги заказчика (`DEPLOY.md` **§34**; §33 занят циклом 43).
+> Цикл 43 — в `develop` с `31a3684`, на стенд тоже не выкачен.
+
+**Обновление на `69bafa0` (цикл 44, режим «обновление»).** ✔ `git log 31a3684..69bafa0`: 15 коммитов — `5f3639e` (CURRENT_STATE под цикл 44,
+сделан на ветке от `e4670c3`), `04e154c` (закрытие цикла 43, пришёл мерджем `20126d2`), документы цикла `404dc11`, FE-44-1…6 (`163fff7`,
+`f2a1ec7`, `7f2d740`, `1e6749f`), фикс `613cdc9`, стабилизация `0de3b6f` (`Cycle39ContractTests` — заказ в среду вместо «сегодня + 12»),
+DO-44-1…5 (`b7bf82c`, `1be2dcc`, `65d8774`), после мерджа — `5e3f485` (§33→§34), `9405ad3` (redocly), `69bafa0` (`test-about-vhost.sh`).
+`git diff --stat 31a3684..69bafa0`: 78 файлов, +4 039/−137 (с учётом документов цикла 43 из `04e154c`). **Бэкенд, БД, миграции и HTTP API
+ServiceBooking не менялись** (единственная правка в `.cs` — тест `Cycle39ContractTests`). **codebase-analyst ничего не запускал** — ни
+vitest, ни сборку, ни `prerender-about`, ни смоуки, ни `test-about-vhost.sh`, ни `redocly`. Источник намерения — `SPEC_CYCLE44_PRODUCTS_LANDING.md`
+(решение заказчика 19.10.2026: Q44-1 `about.ezbook.ru`, Q44-2 статусы, Q44-3 готовый HTML), `ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md`
+(§44.0–§44.17), `API_CONTRACT_CYCLE44_PRODUCTS_LANDING.md` (§44.20–§44.29), `contracts/cycle44/`, `DEPLOY.md` §34. Корневые `SPEC.md`,
+`ARCHITECTURE.md`, `API_CONTRACT.md` цикл не трогал (`SPEC.md` — по-прежнему спека цикла 43). Обновлены: шапка, §0 (ветки), §1 (фронт),
+§2, §5.5, §5.19 (пометка «после цикла 44»), **§5.20 (новый)**, §6.2, §7.1–§7.4, §9.14 (статусы P-1…P-12), **§9.15 (новый)**, §10.1–§10.5.
+**Не в коммите:** в рабочей копии на момент правки лежат незакоммиченные результаты QA цикла 44 — `frontend/about/src/qa.acceptance.test.ts`
+(untracked, 18 тестов `CY44-QA`) и раздел «Цикл 44» в `TEST_CATALOG.md` (+12 строк, CY44-QA-1…7, все «зелёный»); на `69bafa0` их нет
+(§9.15 C44-1). `docs/history/` в проекте нет: документы цикла по конвенции лежат в корне под суффиксом `*_CYCLE44_PRODUCTS_LANDING.md`, переносить нечего.
+
+*Ниже — шапка прежнего обновления (`31a3684`), сохранена для истории.*
+
 > **Цикл 43 «Опции мессенджеров: цена из админки, отвязка от тарифов, подключение отдельно» влит в `develop`** мерджем `31a3684`
 > (`cycle/043-messenger-options-pricing`, 19.10.2026). **На стенд (он же бой) цикл 43 НЕ выкачен** (DO-43-04 не делался, `DEPLOY.md` §33:
 > «на машину ничего не выкатывалось»). Цикл 42 «Бани» влит мерджем `04fadcf` (14.10.2026); выкачен 14.10 (🖥 со слов команды, в репозитории не проверяемо). Цикл 40 — в `develop` с `0bd2225`.
 > Большая часть описания проверялась по коду на `d000673`. Область «опции мессенджеров» (§3, §4, §5.18, §9.13) перепроверена по коду на `31a3684`.
 
-**Актуально по состоянию на коммит: `31a3684` (`develop`, мердж цикла 43), дата: 2026-10-19.**
-**Следующий diff отсчитывайте от `31a3684`.**
+*(было: «Актуально по состоянию на коммит: `31a3684` (`develop`, мердж цикла 43), дата: 2026-10-19».)*
 
 **Обновление на `31a3684` (цикл 43, режим «обновление»).** ✔ `git log e4670c3..31a3684`: 27 коммитов (документы цикла, BE-43-M/R/1…5,
 FE-43-0…5, DO-43-01…03, QA-43-1…3 и фиксы ревью `68576b8`, `aa65c38`, `c50c453`, `e7d6d2a`); `git diff --stat`: 108 файлов, +20 297/−1 214,
@@ -300,6 +324,9 @@ GUID тарифов `5a1e0c38…`). Подразделы цикла 38 полу�
 - 🖥 — факт о боевой машине. В репозитории его нет, в этом сканировании он не проверялся (SSH не использовался).
   Источник — прежняя редакция, блок «🚀20», проверено по SSH 30.09.2026.
 
+**Ветки на `69bafa0`** (✔ после `git fetch`, 2026-10-19): `develop` = `origin/develop` = `cycle/044-products-landing` =
+`origin/cycle/044-products-landing` = `69bafa0` (цикл 44 целиком в `develop`). Ориентиры: 1 770 коммитов, 3 259 отслеживаемых файлов
+(✔ `git rev-list --count HEAD`, `git ls-files`). Рабочая копия не чистая — незакоммиченные правки QA (шапка документа).
 **Ветки на `31a3684`** (✔ локальные ссылки, 2026-10-19; `git fetch` не делался): `develop` = `origin/develop` = `31a3684` (мердж цикла 43);
 `cycle/043-messenger-options-pricing` = `origin/cycle/043-messenger-options-pricing` = `e7d6d2a` — целиком в `develop`. Ориентиры: 1 754 коммита,
 3 210 отслеживаемых файлов (✔ `git rev-list --count HEAD`, `git ls-files`).
@@ -395,6 +422,13 @@ fast-forward, мерджа нет). Локальная `cycle/035-goods-showcase
 (библиотека и CLI тестовой инфраструктуры), `.UnitTests`, `.Tests`. Файла `global.json` и `Directory.Packages.props` нет.
 
 ### Фронтенд (`frontend/`, один npm-пакет; с цикла 37 — три приложения: ezbook, goods, dom; с цикла 42 — четыре, + bani)
+**С цикла 44** (✔ diff `package.json` на `69bafa0`) — **пятое приложение `about`** (`about.ezbook.ru`, §5.20), новых npm- и NuGet-зависимостей
+нет: готовый HTML строится уже имеющимся `react-dom/server` (`renderToStaticMarkup`) и SSR-сборкой Vite. Скрипты `dev:about`
+(`vite --config vite.about.config.ts`, порт `SB_ABOUT_WEB_PORT`, по умолчанию 5177) и `build:about` (`tsc -p tsconfig.about.json && vite build
+--config vite.about.config.ts && vite build --config vite.about.config.ts --ssr && node scripts/prerender-about.mjs`); `build:release` = `build` +
+`build:goods` + `build:dom` + `build:bani` + `build:about` + `merge-site-dist.mjs goods dom bani about`. Новые конфиги — `vite.about.config.ts` (без
+`@vitejs/plugin-react`), `tsconfig.about.json`, `tailwind.about.config.js` (+ `.d.ts`). Новые переменные сборки (`src/vite-env.d.ts`):
+`VITE_PRODUCTS_PAGE_LINK`, `VITE_SITE_URL_{ZAPIS,GOODS,DOM,BANI,ABOUT}`. В `vite.config.ts` (ezbook) добавлен алиас `@` → `src` (раньше его не было).
 **С цикла 43** (✔ diff `package.json` на `31a3684`) новых npm- и NuGet-зависимостей нет; добавлен только скрипт `types:api:cycle43`
 (`openapi-typescript ../contracts/cycle43/openapi.yaml -o src/types/api-cycle43.generated.ts`).
 **С цикла 42** (✔ `package.json` на `d000673`) **новых npm-зависимостей нет**; добавлены конфиги четвёртого приложения
@@ -526,6 +560,11 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | `ServiceBooking.API/Services/Baths/` | **Цикл 42.** 9 файлов: `BathsCatalogService` (кеш «базы» 30 с), `BathsCompanyService`, `BathsScheduleService` (расписание банщика), `BathsMyOrdersService` («Мои брони»), `BathsPublishGate` (402 при публикации ресурса сверх тарифа), `BathsSlugPolicy` (по `bani-routes.json`), `BathsLocationChangePolicy`, `BathsTrialTerms`, `BathsOptions`. `Services/Companies/CompanyKindTraits.cs` — таблица свойств всех четырёх видов компании |
 | `ServiceBooking.API/Controllers/Slots/`, `Controllers/Baths/` | **Цикл 42.** Пять **абстрактных** баз без атрибутов класса (`SlotServicesPublicControllerBase`, `SlotServiceOrdersPublicControllerBase`, `SlotServicesCabinetControllerBase`, `SlotSessionsControllerBase`, `SlotCompanySettingsControllerBase`; `protected abstract SlotVertical Vertical`). Наследники «Домов» — прежние классы `Controllers/Stays/` с прежними `[Route]`; наследники «Бань» — `Controllers/Baths/` (7 классов: `BathsServicesPublicController`, `BathServiceOrdersPublicController`, `BathsServicesController`, `BathsSessionsController`, `BathsCompaniesController` + не наследники `BathsPublicController`, `BathsTrialController`). DTO — `DTOs/Baths/` (`BathsCompanyDtos.cs`, `BathsPublicDtos.cs`) |
 | `frontend/bani/` | **Цикл 42.** Приложение **bani.ezbook.ru** («Бани»). Точка входа — `bani/src/main.tsx` → `BaniApp.tsx` (маршруты по `contracts/cycle42/bani-routes.json`, обёртка `SlotVerticalProvider(bathsVertical)`); `bani/index.html` с `noindex`, `bani/public/` (свой `sw.js` без `fetch`/Cache API, манифест «EZBOOK Бани», иконки). Внутри `bani/src/`: `vertical.ts`, `api/`, `landing/` (конфиг главной и FAQ), `components/` (каталог), `cabinet/` (тексты кабинета, `providerForm`, `trialOutcome` — дубли dom, C42-6), `hooks/`, `pages/` (7 страниц) и `pages/cabinet/` (15 страниц, в т. ч. `SchedulePage` банщика), `utils/` (`baniTexts.ts` — запасные правовые тексты, `guestStorage.ts`), guard-тесты (`guestCopy`, `brand`, `legalKeys`, `sharedSources`, `workerRouting`, `baniRoutes`, `baniApp.routes`); 32 файла `*.test.ts(x)` |
+| `frontend/about/` | **Цикл 44** (§5.20). Пятое приложение — статическая страница **about.ezbook.ru** «Все продукты EZBOOK», **без клиентского JS**. `about/index.html` — шаблон с маркерами `<!--about:head-->`/`<!--about:body-->`; `about/public/` — только иконки (без `sw.js` и манифеста). `about/src/`: `prerender.tsx` (`renderSite` → `index.html`, `404.html`, `robots.txt`, `sitemap.xml`), `content/` (`products.ts` — карточки и статусы, `page.ts` — тексты, `types.ts`, `visible.ts`), `components/` (10 компонентов: `AboutPage`, `SiteHeader`, `HeroSection`, `ProductCard`, `AccountSection`, `ChooserSection`, `SiteFooter`, `ExternalLink`, `Head`, `NotFoundPage`), `styles.css`, тесты (`products.config`, `render`, `about.guard`, `sharedSources.guard`, `targets.guard`). Алиас `@about` |
+| `frontend/src/utils/publicSites.ts` | **Цикл 44.** Единственное место во фронте с адресами пяти сайтов (`zapis`, `goods`, `dom`, `bani`, `about`): боевые `PRODUCTION_SITE_URLS`, dev `DEV_SITE_URLS` (`localhost:5173…5177`), переопределение `VITE_SITE_URL_<KEY>`, `resolveSiteUrls`, `productsPageHref`. Сверка с `PublicSites` в `appsettings.json` — `publicSites.consistency.test.ts` (CY44-07) |
+| `frontend/src/components/sites/ProductsPageLink.tsx` | **Цикл 44.** Ссылка «Все продукты EZBOOK» в подвалах `Footer`, `GoodsFooter`, `DomFooter`, `BaniFooter` (в dev — всегда, в релизе — только при `VITE_PRODUCTS_PAGE_LINK=on`) |
+| `frontend/scripts/prerender-about.mjs` | **Цикл 44.** Заполняет шаблон `dist-about/index.html` результатом `dist-about-ssr/prerender.js`, пишет четыре файла и делает самопроверки (§5.20) |
+| `contracts/cycle44/` | **Цикл 44.** `openapi.yaml` (168 строк: HTTP-поверхность `about.ezbook.ru` и явное «API ServiceBooking не меняется») и `frontend-apps.json` (реестр пяти фронтенд-приложений для guard `src/test/appRegistry.guard.test.ts`, CY44-06; сборкой не управляет) |
 | `frontend/src/components/slots/`, `src/utils/slots/`, `src/hooks/slots/`, `src/api/slots.ts` | **Цикл 42** (FE-42-1a/1b): общий код услуг, **перенесённый** из dom: контекст `SlotVerticalContext.tsx` (`SlotVerticalProvider`, без провайдера — понятная ошибка), `ui/`, `services/`, `views/` (тела страниц как компоненты), утилиты (`businessClock`, `serviceDay`, `serviceForms`, `serviceGuests`, `slotTexts`, `ownerWarnings`…), фабрика API `createSlotApi('/stays' | '/baths')`. В dom остались тонкие реэкспорты-прокладки и специфика домов |
 | `contracts/cycle42/` | **Цикл 42.** `openapi.yaml` (OpenAPI 3.0.3, 2 925 строк: 57 путей `/api/baths/*` + 7 изменённых существующих путей) + `openapi.json`; `bani-routes.json` (маршруты bani, политика адресов компании и ресурса, резерв — встраивается в API); `bani-vectors.json` (эталон `sessionReminder`, `guests`, `restrictedItems` + `stems`, `ownerText`, `gate` для C# и TS) |
 | `contracts/cycle43/` | **Цикл 43.** `openapi.yaml` (OpenAPI 3.0.3, 1 260 строк: 6 новых маршрутов и 4 существующих с изменённой формой) + `openapi.json` (генерат, читает `OpenApiContract.Load("cycle43")`); `messenger-vectors.json` (эталон чистых правил: `line`, `sale`, `consequences`, `priceValidation`, `quote`, `disable`, `ownerAction`; читают юнит-тесты `ServiceBooking.UnitTests/Cycle43/`). `contracts/cycle40/` не менялся. Отчёт выката — `deploy/checks/cycle43-messenger-options.sql` (только чтение) |
@@ -1401,6 +1440,13 @@ dom задеплоен на ту же машину (она и стенд, и б�
 - ↪ C22-1: восемь навигационных свойств EF без ссылок в коде.
 
 ### 5.5 Что сделали последние циклы
+
+**Цикл 44 — «Все продукты EZBOOK» (about.ezbook.ru)** (✔ `git diff 31a3684..69bafa0`; влит в `develop`, на машину не выкачен). Подробно — §5.20,
+долг — §9.15. Коротко: пятое фронтенд-приложение `frontend/about` — одна страница со ссылками на продукты, отдаётся готовым HTML без JS
+(SSR-сборка Vite + `renderToStaticMarkup` на этапе сборки); статусы продуктов в `about/src/content/products.ts` (Запись, Заказы — `live`,
+Дома — `testing`, Бани — `hidden`); единый модуль адресов `src/utils/publicSites.ts`; ссылка «Все продукты EZBOOK» в подвалах четырёх сайтов
+за флагом сборки; прокрутка к `location.hash` в `ServiceLanding`; guard реестра приложений; vhost `about.ezbook.conf`, смоуки CI и деплоя,
+`DEPLOY.md` §34. Бэкенд и API не менялись.
 
 **Цикл 42 — «Бани» (bani.ezbook.ru)** (✔ `git diff 0bd2225...d000673`; ветка `cycle/042-bani`, **в `develop` не влита**). Подробно —
 §5.17, схема — §3, маршруты — §4, долг — §9.12. Коротко: четвёртый вид компании `Baths = 3` и четвёртое приложение `frontend/bani`;
@@ -3043,6 +3089,11 @@ bani — `/cabinet/{id}/notifications?connect={t}` через свои `Subscrip
 `PlansTabLine`, `BillingAccountsAdminTab`, `BillingPage`, `NumbersBlock`, `connectParam`.
 
 ### 5.19 Сайты продуктов, адреса и межсайтовые ссылки — фактическое состояние (✔ по коду на `e4670c3`, ничего не запускалось)
+> **После цикла 44 (✔ на `69bafa0`) часть фактов ниже устарела:** страница «про все продукты» теперь есть — `frontend/about`
+> (§5.20); пререндер появился, но **только** в `about` (четыре SPA по-прежнему отдают пустую оболочку); в подвалах четырёх сайтов есть
+> ссылка «Все продукты EZBOOK» (за флагом `VITE_PRODUCTS_PAGE_LINK`); список приложений к перечню мест P-7 добавил реестр
+> `contracts/cycle44/frontend-apps.json` и guard; адреса сайтов во фронте — `src/utils/publicSites.ts`. Межсайтовые ссылки в кабинетах,
+> `PublicSitesOptions` и эндпоинты не менялись — эта часть раздела в силе. Статусы рисков — §9.14.
 Перепроверка под задачу цикла 44 («общая информационная страница про все продукты, отдельный фронт, со ссылками на каждый продукт»).
 Только факты по коду и конфигам. Риски и расхождения — §9.14.
 
@@ -3132,6 +3183,74 @@ bani — `/cabinet/{id}/notifications?connect={t}` через свои `Subscrip
 **Тесты.** На межсайтовые строки есть vitest-тесты только у ezbook (`src/components/company/GoodsShopsNotice.test.tsx`) и goods
 (`goods/src/pages/cabinet/CabinetHomePage.test.tsx`, `goods/src/pages/GoodsProfilePage.test.tsx`); у кабинетов dom и bani тестов, которые
 касались бы `kinds-summary`, не найдено (✔ grep), а `data-testid` `stays-notice`/`stays-line` ни в одном тесте не используются. Функциональных тестов фронта (e2e/браузерных) в проекте нет — только vitest + jsdom (§7.1). Смоук собранных сайтов — `smoke-frontend.sh` в CI.
+
+### 5.20 «Все продукты EZBOOK» — about.ezbook.ru, пятое фронтенд-приложение — цикл 44 (✔ по коду на `69bafa0`; влит в `develop`, на машину НЕ выкачен, ничего не запускалось)
+Источник намерения — `SPEC_CYCLE44_PRODUCTS_LANDING.md`, `ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md`, `API_CONTRACT_CYCLE44_PRODUCTS_LANDING.md`;
+ниже — по коду. Долг и риски — §9.15.
+
+**Что это.** Одна статическая страница: шапка с якорями на карточки, первый экран (`h1`), карточки продуктов, блок «Один аккаунт на всех
+сайтах», блок «Какой продукт выбрать», подвал (ссылки на продукты, «Правовая информация» → `https://ezbook.ru/privacy`, год). Нет форм, входа,
+цен, счётчиков, cookie/localStorage, service worker, манифеста и запросов к `/api` (guard-тесты и самопроверки сборки). Бэкенд, БД, `PublicSitesOptions`
+и эндпоинты **не менялись**; на сервере страница никак не представлена — только nginx-vhost над статикой.
+
+**Конвейер сборки (`npm run build:about`, входит в `build:release`).** 1) `tsc -p tsconfig.about.json`; 2) клиентская сборка Vite
+(`vite.about.config.ts`, `root: 'about'`) → `dist-about/` — шаблон `index.html` с маркерами и `assets/*.css` (Tailwind с пресетом
+`tailwind.config.js`, `content` — только `about/` + белый список); 3) `vite build --ssr` → `dist-about-ssr/prerender.js`; 4)
+`scripts/prerender-about.mjs` вызывает `renderSite({template, env: process.env, mode: 'production', year})` и пишет в `dist-about/`
+`index.html`, `404.html` (с `noindex`), `robots.txt` (`Allow: /` + `Sitemap:`), `sitemap.xml` (одна `<loc>` = canonical). **Самопроверки (выход 1):**
+маркер шаблона в выводе, `<script` или атрибут `style=` в HTML, не ровно один `h1`/`canonical`/`description`/`title`, `noindex` в
+`index.html`, карточка или **хост** скрытого продукта в HTML (`613cdc9`), число `data-product` ≠ числу видимых, `/api/` в HTML. Затем
+`merge-site-dist.mjs` кладёт `dist-about` в `dist/__about`. **Dev** (`npm run dev:about`, порт 5177): плагин `about-dev-render` рендерит тот же
+`renderSite` в `transformIndexHtml`, отдаёт `robots.txt`/`sitemap.xml`, без прокси `/api`; `@vitejs/plugin-react` не подключён.
+
+**Содержимое — только конфигурация** (`about/src/content/`): `products.ts` — массив `PRODUCTS` (порядок = порядок на странице; поля `key`, `name`,
+`status: 'live' | 'testing' | 'hidden'`, `icon`, `forWhom`, `features` (3–5), `forClients`, `clientAction`, `businessAction` (только не у `testing`
+— на уровне типа), `testingNote`, `chooserRows`); `page.ts` — `PAGE_COPY` (meta, бренд, `h1`, тексты блоков, 404). **Текущие статусы:**
+Запись — `live`, Заказы — `live`, Дома — `testing` (пометка «Тестовый режим» + `testingNote`, нет «Для бизнеса»), Бани — `hidden` (нет нигде:
+карточки, якоря, «Какой продукт выбрать», подвал, sitemap). Названия — «EZBOOK Запись/Заказы/Дома/Бани». Переходы: «Найти мастера»/«Найти
+магазин»/«Смотреть дома» → корень сайта продукта; «Для бизнеса» → `<сайт>/#biz-title`. Все ссылки — обычные `<a href>` с абсолютным адресом,
+без `target`. Тексты — черновики команды на вычитку заказчиком (Q44-11), не вычитаны (по документам).
+
+**Адреса — `src/utils/publicSites.ts`.** Боевые адреса закоммичены (`https://ezbook.ru`, `goods.`, `dom.`, `bani.`, `about.ezbook.ru`), dev —
+`http://localhost:5173…5177`; переопределение — `VITE_SITE_URL_<KEY>` (проверка: абсолютный origin без пути/запроса/слэша, в проде `https`
+кроме localhost; ошибка роняет сборку `about`). Проверка согласованности с бэкендом — `publicSites.consistency.test.ts` сравнивает **закоммиченные**
+адреса четырёх продуктов с `PublicSites:*BaseUrl` в `ServiceBooking.API/appsettings.json` (у `about` пары на бэкенде нет).
+
+**Изменения в четырёх SPA.** `ProductsPageLink` (одна строка в каждом подвале: `Footer`, `GoodsFooter`, `DomFooter`, `BaniFooter`) — `productsPageHref`:
+в dev ссылка всегда (`http://localhost:5177/`), в релизе — только при переменной сборки `VITE_PRODUCTS_PAGE_LINK=on` (GitHub Variable,
+проброшена в `ci.yml`, `deploy-staging.yml`, `deploy-production.yml`), иначе ссылки нет; ошибка адреса → ссылки нет. В шапки и навигацию
+ссылка не добавлялась. `ServiceLanding` вызывает новый хук `useInitialHashScroll` (одноразовый `scrollIntoView` к `location.hash` после
+монтирования) — влияет на главные всех четырёх продуктов. Межсайтовые ссылки в кабинетах (§5.19) не менялись.
+
+**Границы кода.** `about` **не** входит в `SECONDARY_APPS` (`appTailwindContent('about')` по-прежнему бросает); импорт из `src/` разрешён только
+по белому списку `ABOUT_SHARED_SOURCES` в `shared-sources.js` (`Icon.tsx`, `landing/classes.ts`, `utils/publicSites.ts`); ESLint-блок
+`about/src/**` запрещает `react-router-dom`, `axios`, `@tanstack/react-query`, `zustand`, `@/App` и импорт из `goods/dom/bani`; во все
+остальные блоки добавлен запрет импорта из `about/`.
+
+**Реестр приложений и guard (CY44-06).** `contracts/cycle44/frontend-apps.json` — пять приложений (`ezbook`, `goods`, `dom`, `bani`, `about`) с
+полями `siteKey`, `sourceDir`, `distSubdir`, `vhost`, `host`, `devPort`, `devPortEnv`, `smokeProfile`, `serviceWorker`, `apiProxy`, `publicSitesKey`,
+`deploySmoke`. `src/test/appRegistry.guard.test.ts` читает как текст `eslint.config.js`, `vitest.config.ts`, `package.json`, `.gitignore`,
+`scripts/test-area.mjs`, `testAreas.guard.test.ts`, `ci.yml`, `smoke-frontend.sh`, `deploy-remote.sh`, `deploy/nginx/*.conf`, `test-areas.json` и
+падает, если приложение с непустым `distSubdir` пропущено. Сборкой реестр **не управляет** — списки по-прежнему продублированы по местам.
+Попутно: `bani/src` и `about/src` добавлены в glob `testAreas.guard.test.ts` (раньше `bani` там не было), `about/src/` и `src/utils/publicSites`
+— в область `contracts/cycle36/test-areas.json` (та же область, что `src/components/sites/`).
+
+**Инфраструктура.** vhost `deploy/nginx/about.ezbook.conf`: только `listen 80` (443 добавит certbot), `root /var/www/ezbook/current/__about`,
+`/api/` и `/uploads/` → 404, `/index.html` → 301 на `/`, `error_page 404 /404.html`, `/assets/` immutable, CSP `default-src 'none'; style-src
+'self'; img-src 'self' data:; …` (**без `script-src`**), `X-Frame-Options DENY`, HSTS, `nosniff`, `Referrer-Policy`, **без `X-Robots-Tag`**
+(страница индексируется — отличие от dom/bani). В `ezbook.conf` и `demo.visit.ezbook.conf` — `location ^~ /__about/ { return 404; }` (в
+`dom/bani/goods`-vhost'ах такой строки нет — там свой `root`). `deploy-remote.sh`: `ABOUT_HOST`, `ABOUT_SMOKE` (0 — выключить), `ABOUT_VHOST`;
+без установленного vhost — `WARNING` и пропуск, с ним — обязательны `current/__about/index.html`, ответ 200 с `<h1` без `<div id="root">` и
+отсутствие `X-Robots-Tag`, иначе деплой падает. Ручные шаги — `DEPLOY.md` §34 (DNS, vhost + сразу certbot, строка `/__about/` в
+`ezbook.conf`/`demo.visit.ezbook.conf` на машине, проверка `curl`, затем Variable `VITE_PRODUCTS_PAGE_LINK=on`).
+
+**Тесты (vitest, ✔ по файлам; не запускались):** `about/src/` — `products.config.test.ts` (CY44-01, 6), `render.test.tsx` (CY44-02, 11),
+`about.guard.test.ts` (CY44-03), `targets.guard.test.ts`, `sharedSources.guard.test.ts`; `src/utils/publicSites.test.ts` (11),
+`publicSites.consistency.test.ts` (CY44-07), `src/components/sites/ProductsPageLink.test.tsx` (CY44-05), подвалы `Footer/GoodsFooter/DomFooter/
+BaniFooter.test.tsx` (по 2), `useInitialHashScroll.test.tsx` (2), `appRegistry.guard.test.ts` (CY44-06). Смоук собранной страницы — CI, профиль
+`about` (CY44-04), vhost — `test-about-vhost.sh` (DO-44-5). Приёмочные тесты QA (`qa.acceptance.test.ts`, 18) — **в рабочей копии, не в коммите**.
+CI: прогон 39272740300 по `69bafa0` на ветке цикла — `success` (✔ `gh run list`, только чтение); прогон на `develop` по тому же коммиту
+на момент правки — `in_progress`.
 
 ## 6. Конвенции проекта (✔ выборочно по коду; им следовать, а не вводить рядом свои)
 
@@ -3282,6 +3401,12 @@ bani — `/cabinet/{id}/notifications?connect={t}` через свои `Subscrip
   обязан давать прежние строки и адреса), а не веткой по виду. Модули dom, переехавшие в общий код, — тонкие реэкспорты; новое писать сразу в
   `slots`. Тексты гостя bani держат guard-тесты (`guestCopy`, `landing/configs.guard`, `legalKeys`, `brand`); область vitest — `stays`
   (префиксы `bani/src/`, `src/*/slots` в `contracts/cycle36/test-areas.json`).
+- **about (цикл 44)** — иной тип приложения: статический HTML на этапе сборки, без клиентского JS, без роутера, API-клиента и сторов (запрет
+  в ESLint). Компоненты — чистые функции от пропсов (без хуков, `window`, `Date.now()`); тексты и статусы — только в `about/src/content/*`,
+  разметка их не содержит; из общего кода — только белый список `ABOUT_SHARED_SOURCES`. Адреса сайтов во фронте брать **из
+  `src/utils/publicSites.ts`**, не зашивать `https://…ezbook.ru` в компоненты (guard CY44-03). **Новое фронтенд-приложение начинается со строки
+  в `contracts/cycle44/frontend-apps.json`**, затем — все места регистрации (`ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md` §44.6.1); guard
+  `appRegistry.guard.test.ts` проверяет, что ни одно не пропущено.
 
 ### 6.3 Правовые тексты
 Правится только `legal-drafts/`, потом `dotnet run --project ServiceBooking.LegalKit -- build` и коммит обоих деревьев
@@ -3415,6 +3540,12 @@ CY37-140 (`Cycle37MigrationRollbackTests`) создаёт и удаляет **о
 фронт — 324 файла `*.test.ts(x)` (+39 новых, 5 перенесены из dom в `src/*/slots` без правки, 2 перенесены с правкой, 3 изменены). Эталон
 маршрутов — 462 строки. Накат→откат→накат миграции — CY42-140. Ручных `M42-*` в каталоге нет (только упоминание в `DEPLOY.md` §32).
 
+
+**На `69bafa0` (цикл 44, влит)** (✔ `git ls-files`; **ничего не запускалось**): бэкенд-наборов цикл не добавлял (правка одного
+теста `Cycle39ContractTests` — §9.15 C44-8). Фронт — **343** файла `*.test.ts(x)` в git (новые: 6 в `about/src/` без QA-файла, `publicSites.test.ts`,
+`publicSites.consistency.test.ts`, `ProductsPageLink.test.tsx`, `useInitialHashScroll.test.tsx`, `appRegistry.guard.test.ts`, тесты четырёх
+подвалов); плюс незакоммиченный `about/src/qa.acceptance.test.ts`. Новый bash-тест — `deploy/nginx/test-about-vhost.sh`. Числа прогонов при
+постановке задачи не передавались.
 
 **На `31a3684` (цикл 43, влит)** (✔ `ls`, `grep` атрибутов; **ничего не запускалось**): `ServiceBooking.Tests/Tests/` — 144 файла `.cs`
 (+8 `Cycle43*.cs`, 56 атрибутов, + `Infrastructure/Cycle43TestBase.cs`); `ServiceBooking.UnitTests` — 256 файлов `.cs` в git (+ каталог
@@ -3575,6 +3706,14 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   (векторы `contracts/cycle43/messenger-vectors.json` читаются с диска). Vitest — `cd frontend && npm run test:area -- admin billing notifications`
   (✔ области есть в `contracts/cycle36/test-areas.json`: `admin` — `src/pages/admin/`, `billing` — `src/components/billing/`, `notifications`). Ручные M43-01…05 — только на
   стенде после выката, `DEPLOY.md` §33. **Schemathesis по `contracts/cycle43/openapi.yaml` (QA-43-4) в репозитории не настроен и не прогонялся.**
+- **Точечно цикл 44** (страница `about`; запускает qa-engineer, не codebase-analyst; команды ✔ по `TEST_CATALOG.md` рабочей копии и
+  `DEPLOY.md` §34): vitest — `cd frontend && npm run test:area -- platform` (✔ `about/src/` и `src/utils/publicSites`
+  добавлены в область `platform` `contracts/cycle36/test-areas.json`, где уже был `src/components/sites/`; область шире цикла) или
+  `npx vitest run about/src src/utils/publicSites src/components/sites src/test/appRegistry.guard.test.ts`; сборка — `npm run build:about`
+  (пишет `dist-about/`, `dist-about-ssr/`); смоук — `npm run build && npm run build:about && node scripts/merge-site-dist.mjs about`, затем из корня
+  `DIST_DIR=frontend/dist/__about SMOKE_PROFILE=about PORT=4177 bash deploy/ci/smoke-frontend.sh` (пишет `/tmp/smoke-frontend-about-sitemap.xml`);
+  vhost — `DIST_DIR=frontend/dist/__about bash deploy/nginx/test-about-vhost.sh` (нужен локальный `nginx`, поднимает его на порту 18091). Сеть,
+  БД и API не нужны. Ручные (360 px, клавиатура, `curl` боя, переходы) — только после выката, `DEPLOY.md` §34.
 - `npm run contracts:json` — не тест: скрипт **перезаписывает** `contracts/cycle31/openapi.json` и `contracts/cycle32/openapi.json`
   (с цикла 35 — и `contracts/cycle35/openapi.json`, с цикла 37 — и `contracts/cycle37/openapi.json`).
   (с цикла 35 — и `contracts/cycle35/openapi.json`, с цикла 38 — `contracts/cycle38/openapi.json`, с цикла 39 — `contracts/cycle39/openapi.json`).
@@ -3664,6 +3803,12 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   (+ строка в `contracts/redocly.yaml`), `npm run types:api:cycle43` + `api-cycle43.generated.ts` в `git diff --exit-code`, `cycle43/openapi.json`
   в шаге «Contract JSON must match cycle31, …, cycle42 and cycle43 yaml». Новых джобов и шагов нет. Результатов CI на `31a3684` не смотрели.
   Выкат — `DEPLOY.md` §33 (отчёт `deploy/checks/cycle43-messenger-options.sql` до и после, `deploy/deploy.sh`, откат только кода).
+- **Цикл 44** (✔ diff `ci.yml` на `69bafa0`, DO-44-2/5): `cycle44/openapi.yaml` в `redocly lint` (генерата типов и JSON нет — API не меняется);
+  **новые шаги** джоба `frontend`: «Type-check about» (`npx tsc --noEmit -p tsconfig.about.json`), «Smoke test (about build in dist/__about)»
+  (`SMOKE_PROFILE=about`, `PORT=4177`; ready HTML, один `h1`, canonical `https://`, нет `<script`/`noindex`/`<div id="root">`/`/api/`, ≥ 2 карточки
+  `data-product` с абсолютными ссылками, `robots.txt`, `sitemap.xml` = canonical, `404.html`; проверка через `python3`), «Check about nginx vhost»
+  (`deploy/nginx/test-about-vhost.sh`). Шаг «Build» получает `VITE_PRODUCTS_PAGE_LINK: ${{ vars.VITE_PRODUCTS_PAGE_LINK }}` (так же в
+  `deploy-staging.yml`, `deploy-production.yml`). Джоб `backend` не менялся. Прогон по `69bafa0` на ветке цикла — `success`, на `develop` — шёл.
 - **Время CI, цикл 36** (↪ таблицы «CI: до / после» в `docs/testing-isolation.md`; последняя строка — ✔ `gh run view`, только чтение):
 
   | Что | `backend` | Функциональные | `frontend` | vitest | `docker-build` |
@@ -3730,6 +3875,13 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   `rollback.sh` правок не требует (все сайты — один symlink `current`). ⚠️ Миграция `Cycle42Baths` применится при любом деплое кода цикла;
   откат миграции — только с `pg_dump` и после удаления компаний `Kind = 3`. `BusinessDayStartMinute` не менять (общий с «Домами», C39-11),
   `noindex` снимать только по решению заказчика, реальные бани не приглашать до юриста (Т42-17). Новых обязательных переменных боя нет.
+- **Цикл 44** (✔ `DEPLOY.md` §34 «about.ezbook.ru — страница «Все продукты EZBOOK»» на `69bafa0`): на машину ничего не выкатывалось.
+  Сборка `about` едет в общем релизе (`current/__about`) с первым же деплоем кода цикла; vhost `about.ezbook.conf`, DNS `A about.ezbook.ru`,
+  `certbot --nginx -d about.ezbook.ru`, ручная строка `location ^~ /__about/ { return 404; }` в установленных `ezbook.conf` и `demo.visit.ezbook.conf`
+  — за заказчиком. Смоук `about` в `deploy-remote.sh` (`ABOUT_HOST`, `ABOUT_SMOKE=0`, `ABOUT_VHOST`) пропускается без vhost и роняет деплой при
+  установленном vhost и неправильном ответе. Ссылки в подвалах четырёх сайтов появятся только после Variable `VITE_PRODUCTS_PAGE_LINK=on` и
+  нового деплоя. Миграций, секретов, новых переменных API нет; `rollback.sh` не менялся. Статус продукта на странице меняется правкой
+  `about/src/content/products.ts` и деплоем.
 - **Демо-стек** (✔ по файлам): `docker-compose.demo.yml` + `.env.demo.example`, vhost-ы `deploy/nginx/demo.visit.ezbook.conf` и
   `deploy/nginx/demo.zakaz.ezbook.conf` (ставятся руками), смоуки `deploy/ci/demo-smoke.sh` и `deploy/ci/demo-zakaz-smoke.sh`.
   `deploy-remote.sh` в шаге демо гоняет `demo-smoke.sh`, а `demo-zakaz-smoke.sh` — только при `DEMO_ZAKAZ_ENABLED=true`; сбой демо —
@@ -4651,6 +4803,14 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 
 ### 9.14 Сайты продуктов и межсайтовые ссылки — ✔ по коду на `e4670c3`, ничего не запускалось
 Подробности и пути — §5.19.
+> **Статусы после цикла 44 (✔ по коду на `69bafa0`).** P-1 — в силе (страница вынесена на поддомен `about.ezbook.ru`, корень не тронут).
+> P-2 — в силе для кабинетов (цикл их не трогал, Q44-8); для анонимного посетителя появилась ссылка «Все продукты EZBOOK» в подвалах (за флагом).
+> P-3 — в силе (адрес `about` на бэкенде не заведён, `PublicSitesOptions` не менялся). P-4 — обойдён: адреса берутся при сборке из
+> `publicSites.ts`, анонимного эндпоинта по-прежнему нет. P-5 — обойдён: `about` не использует `ServiceLanding`, свои компоненты. P-6 — снят
+> **только для `about`**; четыре SPA — по-прежнему пустая оболочка. P-7 — мест стало больше (пятое приложение), но пропуск ловит guard
+> `appRegistry.guard.test.ts` по `contracts/cycle44/frontend-apps.json`. P-8 — в силе, `about` едет в том же релизе. P-9 — на странице `about`
+> бренд единый («EZBOOK …»), в самих приложениях — по-прежнему разнобой. P-10 — учтён статусами (`dom` — `testing`, `bani` — `hidden`).
+> P-11 — снят для страницы (цен на ней нет). P-12 — снят: цикл 44 писал в `*_CYCLE44_PRODUCTS_LANDING.md`, корневой `SPEC.md` — спека цикла 43.
 - **P-1 — ezbook.ru занят приложением Записи.** Корень `ezbook.ru` — SPA салонов (`App.tsx`, `/` → `HomePage` = главная Записи, root-scope
   `public/sw.js` с push), а `BRIEF_BRAND_AND_DOMAINS.md` Р3 отводит его под витрину бренда при переезде Записи на `visit.ezbook.ru` (Р2).
   Ни Р2, ни переадресаций в коде нет; старые адреса `ezbook.ru/company/<slug>` и `/embed/:slug` уже раздаются салонам (бриф прямо требует
@@ -4683,6 +4843,39 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   без выключателя, Дома и Бани — анонимного эндпоинта нет.
 - **P-12 — параллельный цикл 43 переписывает корневой `SPEC.md`** в своей ветке (`origin/cycle/043-messenger-options-pricing`, не влита).
   Если цикл 44 тоже пишет в корневой `SPEC.md`, при слиянии в `develop` будет конфликт документа.
+
+### 9.15 Долг и риски цикла 44 («Все продукты EZBOOK», about.ezbook.ru) — ✔ по коду на `69bafa0` (влит, на машину НЕ выкачен), ничего не запускалось
+Подробности и пути — §5.20.
+- **C44-1 — результаты QA не закоммичены.** `frontend/about/src/qa.acceptance.test.ts` (untracked, 18 тестов CY44-QA) и раздел «Цикл 44» в
+  `TEST_CATALOG.md` (+12 строк, CY44-QA-1…7 «зелёный») есть только в рабочей копии; на `69bafa0` раздела цикла 44 в `TEST_CATALOG.md` нет.
+- **C44-2 — нет раздела цикла 44 в `CHANGELOG.md` и упоминания `about.ezbook.ru` в `README.md`** (✔ `grep` на `69bafa0`; самый верхний раздел
+  CHANGELOG — «Не выпущено — цикл 43»).
+- **C44-3 — на боевом адресе страницы нет.** DNS, vhost, certbot, строка `/__about/` в установленных vhost'ах и Variable
+  `VITE_PRODUCTS_PAGE_LINK` — ручные шаги заказчика (`DEPLOY.md` §34), их статус в репозитории не виден. Пока строка `/__about/` не дописана в
+  установленный `ezbook.conf`, после первого деплоя `ezbook.ru/__about/` отдаст страницу с чужого origin (её код в репозитории есть, на машине — нет).
+- **C44-4 — тексты страницы не вычитаны и частично не следуют за статусами.** Карточки строятся из `PRODUCTS`, но `PAGE_COPY.meta`
+  (`title`, `description`) и `hero` написаны текстом и перечисляют «онлайн-запись, заказы с самовывозом, аренду домов»; `description` содержит
+  «подключите свой бизнес». При смене статусов (показать Бани, скрыть Дома) эти строки надо править отдельно — тест на это не найден. Тексты
+  карточек дублируют главные и README (R44-6): устаревание проверяется только вручную.
+- **C44-5 — согласованность адресов проверяется по закоммиченным умолчаниям.** `publicSites.consistency.test.ts` сравнивает
+  `PRODUCTION_SITE_URLS` с `appsettings.json`; переопределения `PublicSites__*` на машине и `VITE_SITE_URL_*` в Variables не сверяются ничем.
+  Адреса `about` на бэкенде нет совсем.
+- **C44-6 — «Для бизнеса» опирается на якорь `#biz-title`** главных четырёх продуктов и на хук `useInitialHashScroll` в общем `ServiceLanding`
+  (затрагивает все главные). Переименование `titleId` секции сломает переход без ошибки (гость окажется на верху главной); держит его тест
+  `targets.guard.test.ts` (CY44-08).
+- **C44-7 — `test-about-vhost.sh` ищет `mime.types` рядом с бинарником** (`$(dirname nginx)/../etc/nginx/mime.types`, раскладка Homebrew); при
+  отсутствии файла строка `include` удаляется, и CSS отдаётся с `default_type`. Скрипт `Content-Type` не проверяет — проверка заголовков
+  vhost'а этим не ослаблена, но MIME в CI не проверяется (по коду скрипта; поведение на раннере CI не сверялось). `smoke-frontend.sh`
+  (профиль `about`) пишет во фиксированный `/tmp/smoke-frontend-about-sitemap.xml` и требует `python3`.
+- **C44-8 — флейк `Cycle39ContractTests` исправлен в цикле 44** (`0de3b6f`): `CabinetServiceRoutes_MatchContract` заказывал услугу на
+  «сегодня + 12», что падало, если день выпадал на субботу без окон; теперь — ближайшая среда. Для истории: в CI по `04e154c` на `develop`
+  был красный прогон (✔ `gh run list`, причина не смотрелась).
+- **C44-9 — визуальное отличие от продуктов.** Внешних шрифтов на странице нет (заголовки — системный serif вместо Newsreader), отклонение
+  §44.16 п. 5; самохостинг — P2.
+- **C44-10 — `.env.dev.example` не знает `SB_ABOUT_WEB_PORT`** (✔ `grep`): порт 5177 — только умолчание в `vite.about.config.ts` и `publicSites.ts`.
+- **C44-11 — `about` вне общей схемы вторичных приложений.** Не в `SECONDARY_APPS`, свой белый список `ABOUT_SHARED_SOURCES`, своя ветка
+  `smoke-frontend.sh`, свой шаг в `deploy-remote.sh`. Перенос страницы на корень `ezbook.ru` (Р3, §44.10) — правка `publicSites.ts`, vhost и 301,
+  в цикле не делался.
 
 ## 10. Что уже существует в документации и тест-кейсах (дополнять существующее, параллельных версий не заводить)
 
@@ -4757,6 +4950,11 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   другого типа. Вход раздельный»; демо-стенды — строка ~608. `CHANGELOG.md` — 5 865 строк; сверху «Не выпущено — цикл 42…» (строка 19),
   затем цикл 40 (211), цикл 39 (383), цикл 41 (633). **Отдельного раздела или документа про «общую страницу продуктов»/витрину бренда
   в README и CHANGELOG нет**; намерение витрины есть только в `BRIEF_BRAND_AND_DOMAINS.md` (Р3, §5.19).
+- **На `69bafa0` (цикл 44)** (✔ `wc -l`, `grep -n '^## '`, `grep about.ezbook`): `README.md` — 1 078 строк, `CHANGELOG.md` — 6 009 строк; сверху
+  «Не выпущено — цикл 43…» (строка 19), затем цикл 42 (163), цикл 40 (355); во вступлении CHANGELOG — «сорок один» раздел «Не выпущено».
+  **Раздела цикла 44 и упоминания `about.ezbook.ru` нет ни в `CHANGELOG.md`, ни в `README.md`** (§9.15 C44-2). Сама страница `about.ezbook.ru`
+  — новый вид краткой продуктовой информации «про все продукты» (тексты — `frontend/about/src/content/page.ts`, `products.ts`; формат — TS-конфиг,
+  не markdown).
 
 ### 10.2 Развёрнутая пользовательская документация
 - **`docs/`** (markdown, по ролям, только продукт ezbook — запись на услуги):
@@ -4811,6 +5009,8 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   `LEGAL_DECISIONS_CYCLE20.md`, `legal-drafts/README.md`.
 - **Цикл 42** (✔ grep по `docs/`): руководства по bani.ezbook.ru в `docs/` **нет** (ни «Бани», ни `bani`). Справка для пользователей
   bani — только FAQ на главной (`frontend/bani/src/landing/`) и тексты интерфейса/запасные правовые тексты (`bani/src/utils/baniTexts.ts`).
+- **Цикл 44**: развёрнутой пользовательской документации не добавлял; `docs/` не менялся (✔ `git diff --stat 31a3684..69bafa0`). Блоки «Один
+  аккаунт на всех сайтах» и «Какой продукт выбрать» на `about.ezbook.ru` — короткая справка в самой странице.
 
 ### 10.3 Документация API для внешних потребителей
 - **`API_DOCUMENTATION.md`** (4 484 строки на `364cc2b`, markdown, по-русски) — основной справочник:
@@ -4876,6 +5076,10 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   `Cycle43ContractTests`; в CI — lint, генерат `api-cycle43.generated.ts`, JSON. Словами — `API_CONTRACT_CYCLE43.md` (§43.20–§43.34, 261 строка).
   В `API_DOCUMENTATION.md` — **§4.24 «Опции мессенджеров WhatsApp и MAX…»** (стр. ~4751, помечен «НЕ ВЫПУЩЕНО — доступно с ветки
   `cycle/043-…`»; файл — 4 890 строк).
+- **Цикл 44** (влит, не выкачен) — **API ServiceBooking не менялся.** `contracts/cycle44/openapi.yaml` (OpenAPI, 168 строк) описывает не API, а
+  HTTP-поверхность статического сайта `about.ezbook.ru` (`/`, `/robots.txt`, `/sitemap.xml`, 404, заголовки) и фиксирует «изменений API нет»;
+  в CI — только `redocly lint`. `contracts/cycle44/frontend-apps.json` — реестр приложений (JSON, не OpenAPI). Словами — `API_CONTRACT_CYCLE44_PRODUCTS_LANDING.md`
+  (§44.20–§44.29, 365 строк). `API_DOCUMENTATION.md` цикл не трогал (✔ `grep about` — пусто).
 
 ### 10.4 Описания тест-кейсов (отдельно от кода автотестов)
 - **`TEST_CATALOG.md`** (6 485 строк на `050816f`, markdown):
@@ -4961,8 +5165,21 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   прогона с переменными colima, **«Реестр изменённых существующих тестов»** (CY18L-23, CY40-ADM-06/07, CY40-CTR-01, эталон маршрутов),
   «Найденное QA» (BUG-C43-QA-1) и **первая в каталоге таблица ручных кейсов** «Ручные кейсы M43» (M43-01…05, колонка «Вердикт» — все
   «не проверено»). Расхождения с кодом — §9.13 C43-8.
+- **На `69bafa0` (цикл 44)** (✔ `git show HEAD:TEST_CATALOG.md | wc -l`, `git diff`): в коммите `TEST_CATALOG.md` — 7 958 строк, раздела цикла 44
+  **нет**; в коммит цикла вошла только правка статусов CY43 (из `04e154c`). В **рабочей копии** (не закоммичено) — раздел «Цикл 44 — «Все продукты
+  EZBOOK» (about.ezbook.ru), QA» в конце файла: таблица `№ | Сценарий | Критерий | Тест | Статус`, CY44-QA-1…7 (все «зелёный»), ссылки на
+  `frontend/about/src/qa.acceptance.test.ts` и `SMOKE_PROFILE=about`. Кейсы разработчиков CY44-01…08 перечислены в
+  `ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md` §44.14 и в `SPEC_CYCLE44_PRODUCTS_LANDING.md` §9 (в каталоге их нет). Ручных кейсов `M44-*` нет — ручные
+  проверки описаны только в SPEC §9 и `DEPLOY.md` §34 п. 5.
 
 ### 10.5 Документы циклов
+- **На `69bafa0`** (✔ `ls`, `wc -l`): корневой `SPEC.md` — по-прежнему **спека цикла 43** (цикл 44 его не трогал, как и корневые `ARCHITECTURE.md`/
+  `API_CONTRACT.md`). Цикл 44 положил документы сразу под архивными именами: `SPEC_CYCLE44_PRODUCTS_LANDING.md` (288 строк: решение заказчика
+  19.10.2026, Q44-1…11, US-44-01…10, критерии, НФТ, A44-1…7, R44-1…8, кейсы QA), `ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md` (600 строк, §44.0–§44.17:
+  решения, стек, адреса, пререндер, компоненты, чек-лист регистрации §44.6.1, цели переходов, подвалы, DevOps, переезд на корень, задачи
+  FE/DO/QA-44-*, тесты, риски R44-A1…A13, отклонения от SPEC §44.16), `API_CONTRACT_CYCLE44_PRODUCTS_LANDING.md` (365 строк), `contracts/cycle44/`,
+  `DEPLOY.md` §34. В `ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md` раздел выката 10 раз назван «§33» (✔ `grep -c`; писалось до слияния с циклом 43, фактический
+  номер — §34); в коде, vhost, `deploy-remote.sh` и `openapi.yaml` ссылки уже на §34 (`5e3f485`, `9405ad3`). `docs/history/` нет — переносить нечего.
 - **На `31a3684`** (✔ `ls`, `wc -l`, `head`): корневой `SPEC.md` (320 строк) — **спека цикла 43** (дата 2026-10-19, US-43-01…05, T-43-01…06,
   А1–А8, ответы В1–В4); спека цикла 40 заархивирована как `SPEC_CYCLE40_SIMPLIFY_NOTIFICATION_CHANNELS.md` (938 строк, коммит `8a68e1a`).
   Добавились `ARCHITECTURE_CYCLE43.md` (703 строки: §43.0a решения заказчика, §43.0 ответы А1–А8 и Д-1…Д-6, §43.1–§43.17 — модель, экран цены,
