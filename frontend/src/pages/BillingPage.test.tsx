@@ -316,3 +316,37 @@ describe('BillingPage — line Baths (cycle 42)', () => {
     expect(submitRequest).toHaveBeenCalledWith({ line: 'Baths', planId: 'pb1', options: [] })
   })
 })
+
+// Cycle 43 (US-43-05, А5): the messengers have their own block; the empty «Доступные опции» is not drawn.
+describe('BillingPage — messengers block (cycle 43)', () => {
+  const messengers = {
+    title: 'Сообщения клиентам в мессенджеры', note: 'Общие для всех ваших компаний',
+    lines: [{
+      transport: 'Max', label: 'MAX', status: 'NotConnected', statusText: 'Не подключён', pricePerMonth: 490, priceText: '490 ₽/мес', monthlyPrice: 0,
+      paidUntil: null, isTrial: false, footnote: null, action: 'Connect', actionText: 'Подключить', targetCompanyId: 'c7', noCompanyText: null,
+    }],
+    monthlyTotal: 0, monthlyTotalText: 'Мессенджеры: 0 ₽/мес', conditionsUrl: '/offer-channel', conditionsLabel: 'Условия',
+  }
+
+  it('shows the block with the default (ezbook) link and hides «Доступные опции» when there are none', async () => {
+    getSubscription.mockResolvedValueOnce(makeSubscription({ messengers } as Partial<OwnerSubscriptionDto>))
+    renderWithProviders(<BillingPage />)
+    const link = await screen.findByRole('link', { name: 'Подключить MAX' })
+    expect(link).toHaveAttribute('href', '/owner/company/c7?tab=notifications&connect=Max')
+    expect(screen.getByText('Мессенджеры: 0 ₽/мес')).toBeInTheDocument()
+    expect(screen.queryByText('Доступные опции')).not.toBeInTheDocument()
+  })
+
+  it('uses the link of the site when it passes one', async () => {
+    getSubscription.mockResolvedValueOnce(makeSubscription({ messengers } as Partial<OwnerSubscriptionDto>))
+    renderWithProviders(<BillingPage notificationsHref={(id, t) => `/cabinet/${id}/notifications?connect=${t}`} />)
+    expect(await screen.findByRole('link', { name: 'Подключить MAX' })).toHaveAttribute('href', '/cabinet/c7/notifications?connect=Max')
+  })
+
+  it('draws no messengers block when the server sent none', async () => {
+    getSubscription.mockResolvedValueOnce(makeSubscription({ messengers: null } as Partial<OwnerSubscriptionDto>))
+    renderWithProviders(<BillingPage />)
+    await screen.findByText('Basic')
+    expect(screen.queryByTestId('messengers-block')).not.toBeInTheDocument()
+  })
+})

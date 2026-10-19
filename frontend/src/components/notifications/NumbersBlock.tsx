@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { NUMBERS_OVERVIEW_QUERY_KEY, notificationNumbersApi, type TransportNumbersDto } from '../../api/notificationNumbers'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -7,6 +8,7 @@ import { Icon } from '../ui/Icon'
 import { ConnectWizard } from './ConnectWizard'
 import { NumberRow } from './NumberRow'
 import * as T from './numbersTexts'
+import { CONNECT_PARAM, transportFromConnectParam } from './connectParam'
 
 /** Блок «Номера» (US-04/05): общие номера аккаунта для всех компаний. Всё содержимое — поля GET /notification-channels/overview. */
 export function NumbersBlock({ className = '' }: { className?: string }) {
@@ -15,6 +17,19 @@ export function NumbersBlock({ className = '' }: { className?: string }) {
     queryFn: notificationNumbersApi.overview,
   })
   const [wizardFor, setWizardFor] = useState<TransportNumbersDto['transport'] | null>(null)
+
+  // Cycle 43 (§43.8.3): the «Подписка» block links here with ?connect=WhatsApp|Max — open that transport's wizard once the overview is known,
+  // then take the parameter out of the URL (replace) so a reload or «back» does not open it again.
+  const [params, setParams] = useSearchParams()
+  const connectRaw = params.get(CONNECT_PARAM)
+  useEffect(() => {
+    if (connectRaw == null || !data) return
+    const wanted = transportFromConnectParam(connectRaw)
+    if (wanted && data.transports.some((t) => t.transport === wanted)) setWizardFor(wanted)
+    const next = new URLSearchParams(params)
+    next.delete(CONNECT_PARAM)
+    setParams(next, { replace: true })
+  }, [connectRaw, data, params, setParams])
 
   if (isLoading) {
     return <div role="status" aria-label="Загрузка номеров" className={`h-40 bg-cream-deep rounded-2xl animate-pulse ${className}`} />

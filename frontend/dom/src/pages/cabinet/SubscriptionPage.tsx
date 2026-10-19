@@ -6,6 +6,9 @@ import { fmtDate } from '@/utils/dateFormat'
 import { staysCompaniesApi } from '../../api/staysCompanies'
 import { isTrialTermsMismatch, trialErrorMessage } from '../../utils/trialOutcome'
 
+/** Cycle 43 (ARCHITECTURE_CYCLE43.md §43.8.3): the «Мессенджеры» button of the subscription leads to the company's notifications section and opens the wizard of the transport. */
+const notificationsHref = (companyId: string, transport: string) => `/cabinet/${companyId}/notifications?connect=${transport}`
+
 /**
  * `/cabinet/subscription` (owner, US-37-10/11) — «Ваша подписка» of the «Дома» line. The screen is ezbook's own component
  * (ARCHITECTURE_CYCLE37.md §37.14.2): same texts and request flow, `line="Stays"` switches it to houses, the published-houses counter and
@@ -15,7 +18,7 @@ export function SubscriptionPage() {
   return (
     <>
       <StaysTrialSection />
-      <BillingPage line="Stays" />
+      <BillingPage line="Stays" notificationsHref={notificationsHref} />
     </>
   )
 }

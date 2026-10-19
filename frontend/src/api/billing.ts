@@ -6,6 +6,7 @@ import type { components as Cycle20Schemas } from '../types/api-cycle20.generate
 import type { components as Cycle24Schemas } from '../types/api-cycle24.generated'
 import type { components as Cycle37Schemas } from '../types/api-cycle37.generated'
 import type { components as Cycle40Schemas } from '../types/api-cycle40.generated'
+import type { OwnerMessengersBlock } from '../types'
 
 /**
  * Owner "Ваша подписка" screen (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41,
@@ -70,10 +71,13 @@ export type OwnerSubscriptionDtoCycle24Patch = Pick<Cycle24['OwnerSubscriptionDt
 /** Cycle 40 (§40.32): серверные строки мессенджеров в подписке (additive). */
 export type OwnerSubscriptionCycle40Patch = Pick<Cycle40Schemas['schemas']['OwnerSubscriptionCycle40Part'], 'messengerAddons' | 'messengerAddonsNote'>
 
+/** Cycle 43 (§43.31): the owner's messengers block. `options[]`/`totalMonthlyPrice` no longer carry WhatsApp / MAX — the block has its own `monthlyTotal`. `null`/absent = nothing to show. */
+export type OwnerSubscriptionCycle43Patch = { messengers?: OwnerMessengersBlock | null }
+
 export const billingApi = {
   /** GET /api/billing/subscription. 404 means the caller owns no company (not an error state). */
-  getSubscription: (line?: BillingLine): Promise<OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch> & OwnerSubscriptionCycle40Patch> => {
-    type Body = OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch> & OwnerSubscriptionCycle40Patch
+  getSubscription: (line?: BillingLine): Promise<OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch> & OwnerSubscriptionCycle40Patch & OwnerSubscriptionCycle43Patch> => {
+    type Body = OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch> & OwnerSubscriptionCycle40Patch & OwnerSubscriptionCycle43Patch
     // ezbook never sends `line` (server default `Services`): that request is exactly the pre-cycle-24 one, no config object.
     const request = line && line !== 'Services' ? api.get<Body>('/billing/subscription', { params: { line } }) : api.get<Body>('/billing/subscription')
     return request.then((r) => r.data)

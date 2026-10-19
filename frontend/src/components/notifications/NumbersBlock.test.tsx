@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { NumbersBlock } from './NumbersBlock'
 import { maxTransport, maxTrialOnTermsStep, numbersOverview, closedWhatsAppWithNumber } from '../../test/fixtures/numbersOverview'
@@ -19,11 +19,17 @@ vi.mock('../../api/notificationChannels', () => ({
   notificationChannelsApi: { connect: (id: string) => connect(id), getQr: (id: string) => getQr(id), replace: vi.fn(), disconnect: vi.fn() },
 }))
 
-function renderBlock() {
+function Where() {
+  const l = useLocation()
+  return <output data-testid="where">{l.pathname + l.search}</output>
+}
+
+function renderBlock(url = '/') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[url]}>
+        <Where />
         <NumbersBlock />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -105,5 +111,31 @@ describe('NumbersBlock', () => {
     await userEvent.click(screen.getByLabelText('Я прочитал(а) и принимаю риски'))
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Отправить заявку' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Подключение MAX сейчас недоступно')
+  })
+})
+
+describe('NumbersBlock — ?connect= (cycle 43, US-43-05)', () => {
+  it('opens the wizard of the transport and removes only the connect parameter from the URL', async () => {
+    overview.mockResolvedValue(numbersOverview([maxTransport()]))
+    renderBlock('/owner/company/c1?tab=notifications&connect=Max')
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/owner/company/c1?tab=notifications'))
+    expect(screen.getByTestId('where')).not.toHaveTextContent('connect')
+  })
+
+  it('does not open anything for a transport that has no row in the overview, but still cleans the URL', async () => {
+    overview.mockResolvedValue(numbersOverview([maxTransport()]))
+    renderBlock('/cabinet/x/notifications?connect=WhatsApp')
+    await screen.findByRole('button', { name: 'Отправить заявку' })
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/cabinet/x/notifications'))
+    expect(screen.getByTestId('where')).not.toHaveTextContent('connect')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('ignores an unknown value', async () => {
+    overview.mockResolvedValue(numbersOverview([maxTransport()]))
+    renderBlock('/?connect=Telegram')
+    await screen.findByRole('button', { name: 'Отправить заявку' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
