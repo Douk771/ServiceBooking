@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildPreviewBody, buildSaveBody, excludeMessengerOptions, historyLine, parsePriceInput, priceToInput, validateComment } from './messengerOptionsHelpers'
+import { buildPreviewBody, buildSaveBody, excludeMessengerOptions, historyLine, parseMonths, parsePriceInput, priceToInput, validateComment } from './messengerOptionsHelpers'
 import type { AdminMessengerOption, MessengerPriceChange } from '../../types'
 
 const option = (o: Partial<AdminMessengerOption> = {}): AdminMessengerOption => ({
@@ -66,4 +66,13 @@ describe('excludeMessengerOptions', () => {
   it('keeps everything that is not a messenger and ignores null ids', () => {
     expect(excludeMessengerOptions([{ id: 'z', code: 'extra' }], [null])).toHaveLength(1)
   })
+})
+
+describe('parseMonths', () => {
+  it('accepts a whole number within 1..24 only', () => {
+    expect(parseMonths('3')).toBe(3)
+    expect(parseMonths(' 24 ')).toBe(24)
+    for (const bad of ['', '0', '25', '1.5', '-1', 'abc']) expect(parseMonths(bad)).toBeNull()
+  })
+  it('honours another ceiling', () => expect(parseMonths('13', 12)).toBeNull())
 })

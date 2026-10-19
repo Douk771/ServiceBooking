@@ -68,3 +68,11 @@ export function excludeMessengerOptions<T extends { id: string; code?: string | 
   const ids = new Set(messengerOptionIds.filter((x): x is string => !!x))
   return options.filter((o) => !ids.has(o.id) && !MESSENGER_OPTION_CODES.has((o.code ?? '').toLowerCase()))
 }
+
+/** The «months» field of the account-card dialogs (1…24, SPEC cycle 43): a whole number in range, otherwise `null` and the quote is not requested. */
+export function parseMonths(raw: string, max = 24): number | null {
+  const t = raw.trim()
+  if (!/^\d+$/.test(t)) return null
+  const n = Number(t)
+  return n >= 1 && n <= max ? n : null
+}

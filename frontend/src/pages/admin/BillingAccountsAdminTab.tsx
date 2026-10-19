@@ -32,6 +32,7 @@ import {
   type AssignOptionRow,
 } from './billingAccountsHelpers'
 import type { SubscriptionChangeReason } from '../../api/adminBilling'
+import { AccountMessengersBlock } from './AccountMessengersBlock'
 import { excludeMessengerOptions } from './messengerOptionsHelpers'
 import { useMessengerOptions } from './useMessengerOptions'
 import { formatRubRounded } from '../../utils/money'
@@ -569,6 +570,12 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
                   <span className="text-ink">{formatRubRounded(o.pricePerMonth)}</span>
                 </div>
               ))}
+              {!!account.messengersMonthlyTotal && (
+                <div className="flex items-center justify-between px-3 py-2 text-sm">
+                  <span className="text-ink-soft">Мессенджеры (блок ниже)</span>
+                  <span className="text-ink">{formatRubRounded(account.messengersMonthlyTotal)}</span>
+                </div>
+              )}
               <div className="flex items-center justify-between px-3 py-2.5 bg-cream-deep font-semibold text-sm">
                 <span>Итог в месяц</span>
                 <span>{formatRubRounded(account.totalMonthlyPrice)}</span>
@@ -578,6 +585,9 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
               <p className="text-xs text-muted mt-1.5">{account.grandfatheredEmployeeBonusText}</p>
             )}
           </div>
+
+          {/* Cycle 43 (§43.6.6): WhatsApp / MAX are connected separately from the tariff. */}
+          <AccountMessengersBlock account={account} />
 
           {/* Cycle 24 (ARCHITECTURE_CYCLE24.md §462.2 п.3): the account's «Заказы» subscription — a separate block. */}
           {account.ordersSubscription && (
