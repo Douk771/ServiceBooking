@@ -80,3 +80,60 @@ Chrome DevTools -> Device Toolbar 390 и 1280, DPR 2 -> «Capture node screensho
 - просмотр кадров, тесты и коммит: около 10 минут.
 
 Ориентир на свободной машине с прогретым кешем образов: до 15 минут.
+
+---
+
+# Пересъёмка скриншотов главной «Записи» (ezbook.ru)
+
+Тот же подход, что у goods: локальный стенд `sb-shots`, выдуманный салон засевается через обычный HTTP API, съёмка — Playwright
+с установленным Chrome. Кадры лежат в `src/assets/screenshots/zapis/`, подключены в `src/pages/home/zapisLanding.ts` через `shots.ts`.
+
+Данные (`zapis-demo-data.mjs`) — всё выдуманное: «Студия красоты «Лаванда»», ул. Липовая, 7; мастера Алина Воронцова (владелица)
+и Марина Ковалёва; клиенты и телефоны только `+7 (900) 000-01-xx`. Логотип и картинки услуг — нарисованные иллюстрации из
+`ServiceBooking.API/ShowcaseAssets` (без фото и людей). Мастеров двое: столько мест у тарифа «Бесплатный», тариф засев не меняет.
+
+## Кадры
+
+| Файл | Где на главной | Что |
+|---|---|---|
+| `booking-slots-1x/2x.webp` | «Для клиентов» | окно записи на «Женскую стрижку», шаг «Выберите время» (телефон, день без записей) |
+| `bookings-desktop-1x/2x.webp` | «Для бизнеса», от `md` | «Мои записи» владелицы на 1024 px, две записи на завтра |
+| `bookings-phone-2x.webp` | «Для бизнеса», телефон | то же на 390 px |
+
+Переснимать после правок `components/booking/BookingModal.tsx`, `pages/MyBookingsPage.tsx`, `components/layout/Navbar.tsx`, палитры `tailwind.config.js`.
+
+## Шаги
+
+Из каталога `frontend/`:
+
+```
+bash scripts/screenshots/stack.sh reset      # чистая база sb-shots, API на :55000
+npm run shots:zapis:seed                     # салон, услуги, мастера, график, 7 записей на завтра; .state/zapis-seed.json
+npm run shots:zapis:capture                  # 5 WebP + screenshots.json в src/assets/screenshots/zapis/
+npm run test:run -- src/assets/screenshots/zapis src/components/landing src/pages/HomePage.test.tsx
+```
+
+Окна съёмки по часам нет: записи ставятся на завтра по времени салона (Москва). Снимать нужно в тот же день, что засев:
+после полуночи по Москве «Завтра» в кадре не получится, `capture` откажет с кодом 2 — пересейте.
+
+Повторный засев салона на той же базе — код 2, нужен `stack.sh reset`.
+
+Если Vite уже запущен на :55173 (например, превью), передайте `SHOTS_WEB_URL=http://localhost:55173`.
+
+Что убирается из кадра «Мои записи» и почему: метка доставки напоминания. На стенде у салона нет каналов уведомлений, и сервер
+пишет «напоминание пропущено» — у салона с подключённым каналом там «ожидает отправки». Скрипт убирает ровно эти метки (и падает
+с кодом 5, если их число не совпало с числом записей), всё остальное снимается как есть. Окно записи снимается на ровном
+кремовом фоне вместо размытой страницы под ним.
+
+## Если образ API не собирается (нет сети внутри colima)
+
+`stack.sh reset` собирает образ и качает пакеты NuGet внутри VM. Если это падает по таймауту, поднимите только Postgres и
+запустите API на хосте (пакеты берутся из локального кеша):
+
+```
+DOCKER_HOST=unix://$HOME/.colima/default/docker.sock SB_DB_PORT=55432 docker compose -p sb-shots -f ../docker-compose.yml up -d postgres
+cd .. && ASPNETCORE_ENVIRONMENT=Development ConnectionStrings__DefaultConnection="Host=localhost;Port=55432;Database=servicebooking;Username=postgres;Password=postgres" Jwt__Key=CHANGE_ME_TO_A_LONG_SECRET_KEY_AT_LEAST_32_CHARS Jwt__Issuer=ServiceBooking Jwt__Audience=ServiceBookingClient dotnet run --project ServiceBooking.API --no-launch-profile --urls http://localhost:55000
+```
+
+Чистая база в этом режиме: `DROP DATABASE servicebooking; CREATE DATABASE servicebooking;` в контейнере `sb-shots-postgres-1`
+при остановленном API, затем снова `dotnet run` (миграции применятся на старте).

@@ -51,6 +51,7 @@
         "src/pages/HomePage",
         "src/components/landing/",
         "src/pages/home/",
+        "src/assets/screenshots/zapis/",
         "src/pages/EmbedPage",
         "src/utils/company",
         "src/utils/publicAddress",
