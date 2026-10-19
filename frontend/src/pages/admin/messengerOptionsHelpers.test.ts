@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildPreviewBody, buildSaveBody, historyLine, parsePriceInput, priceToInput, validateComment } from './messengerOptionsHelpers'
+import { buildPreviewBody, buildSaveBody, excludeMessengerOptions, historyLine, parsePriceInput, priceToInput, validateComment } from './messengerOptionsHelpers'
 import type { AdminMessengerOption, MessengerPriceChange } from '../../types'
 
 const option = (o: Partial<AdminMessengerOption> = {}): AdminMessengerOption => ({
@@ -55,4 +55,15 @@ describe('historyLine', () => {
     expect(historyLine(h, () => '19.10.2026')).toBe('19.10.2026 · Иван: 490 ₽/мес → 590 ₽/мес; опция выключена · индексация'))
   it('works without author and reason', () =>
     expect(historyLine({ ...h, changedByName: null, comment: null, newIsActive: true }, () => 'd')).toBe('d: 490 ₽/мес → 590 ₽/мес'))
+})
+
+describe('excludeMessengerOptions', () => {
+  const opts = [{ id: 'a', code: 'notifications.whatsapp' }, { id: 'b', code: 'x.y' }, { id: 'c', code: 'Notifications.MAX' }, { id: 'd', code: 'extra.seat' }]
+  it('drops the options by id from the messenger answer and by code as a fallback', () => {
+    expect(excludeMessengerOptions(opts, ['b']).map((o) => o.id)).toEqual(['d'])
+    expect(excludeMessengerOptions(opts, []).map((o) => o.id)).toEqual(['b', 'd'])
+  })
+  it('keeps everything that is not a messenger and ignores null ids', () => {
+    expect(excludeMessengerOptions([{ id: 'z', code: 'extra' }], [null])).toHaveLength(1)
+  })
 })

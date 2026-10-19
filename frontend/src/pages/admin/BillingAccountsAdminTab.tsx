@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { fmtDate, fmtDateTime } from '../../utils/dateFormat'
 import {
@@ -32,6 +32,8 @@ import {
   type AssignOptionRow,
 } from './billingAccountsHelpers'
 import type { SubscriptionChangeReason } from '../../api/adminBilling'
+import { excludeMessengerOptions } from './messengerOptionsHelpers'
+import { useMessengerOptions } from './useMessengerOptions'
 import { formatRubRounded } from '../../utils/money'
 import { formatMonthlyPrice } from '../../utils/pricingFormat'
 
@@ -64,7 +66,13 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
   const qc = useQueryClient()
 
   const { data: plans } = useQuery({ queryKey: ['admin-plans'], queryFn: plansApi.list })
-  const { data: catalogOptions } = useQuery({ queryKey: ['admin-options'], queryFn: plansApi.listOptions })
+  const { data: allCatalogOptions } = useQuery({ queryKey: ['admin-options'], queryFn: plansApi.listOptions })
+  // Cycle 43 (§43.5.3): the subscription form no longer offers WhatsApp / MAX (they are connected from the «Мессенджеры» block of the card; the server ignores such lines).
+  const { data: messengerOptions } = useMessengerOptions()
+  const catalogOptions = useMemo(
+    () => (allCatalogOptions ? excludeMessengerOptions(allCatalogOptions, (messengerOptions?.items ?? []).map((i) => i.optionId)) : undefined),
+    [allCatalogOptions, messengerOptions],
+  )
   // US-20-02 — closed list of reasons; the dropdown only offers `assignableManually: true` entries
   // (§433.3), so a fetch failure just means an empty dropdown, not a broken form.
   const { data: reasons } = useQuery({ queryKey: ['admin-subscription-change-reasons'], queryFn: adminBillingApi.getChangeReasons })

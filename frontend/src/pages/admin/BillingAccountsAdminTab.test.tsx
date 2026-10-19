@@ -30,6 +30,8 @@ vi.mock('../../api/adminBilling', () => ({
     listRequests: (...args: unknown[]) => listRequests(...args),
     getChangeReasons: (...args: unknown[]) => getChangeReasons(...args),
     rejectRequest: vi.fn(),
+    // Cycle 43: ids of the messenger options, to keep them out of the form catalog.
+    messengerOptions: () => Promise.resolve({ items: [{ optionId: 'opt-wa' }, { optionId: 'opt-max' }], planMatrixNote: '', priceHint: '' }),
   },
 }))
 
@@ -174,6 +176,17 @@ describe('BillingAccountsAdminTab — assign subscription modal', () => {
     getHistory.mockResolvedValue([])
     listPlans.mockResolvedValue([paidPlan(), paidPlan({ id: 'plan-no-booking', name: 'Без записи', allowOnlineBooking: false })])
     listOptions.mockResolvedValue([] as AdminOptionDto[])
+  })
+
+  it('does not offer WhatsApp / MAX in the subscription form catalog (cycle 43, US-43-03 кр. 6)', async () => {
+    const opt = (id: string, name: string, code: string) =>
+      ({ id, code, name, kind: 'Toggle', capabilityKnown: true, pricePerMonth: 100, currency: 'RUB', isPublic: true, isActive: true }) as unknown as AdminOptionDto
+    listOptions.mockResolvedValue([opt('opt-wa', 'Мессенджер WhatsApp', 'notifications.whatsapp'), opt('opt-x', 'Дополнительный отчёт', 'extra.report'), opt('opt-max', 'Мессенджер MAX', 'notifications.max')])
+    await renderTab()
+    const modal = await openAssignModal()
+    expect(await modal.findByText(/Дополнительный отчёт/)).toBeInTheDocument()
+    expect(modal.queryByText(/Мессенджер WhatsApp/)).not.toBeInTheDocument()
+    expect(modal.queryByText(/Мессенджер MAX/)).not.toBeInTheDocument()
   })
 
   it('hides the "Оплачено до" field entirely while the free plan is selected', async () => {

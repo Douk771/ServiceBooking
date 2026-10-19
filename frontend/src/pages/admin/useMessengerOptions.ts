@@ -5,5 +5,5 @@ import { adminBillingApi } from '../../api/adminBilling'
 export const MESSENGER_OPTIONS_QUERY_KEY = ['admin', 'messenger-options'] as const
 
 export function useMessengerOptions() {
-  return useQuery({ queryKey: MESSENGER_OPTIONS_QUERY_KEY, queryFn: adminBillingApi.messengerOptions })
+  return useQuery({ queryKey: MESSENGER_OPTIONS_QUERY_KEY, queryFn: () => adminBillingApi.messengerOptions() })
 }

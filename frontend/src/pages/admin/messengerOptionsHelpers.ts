@@ -55,3 +55,16 @@ export function historyLine(h: MessengerPriceChange, fmt: (iso: string) => strin
   const why = h.comment ? ` · ${h.comment}` : ''
   return `${fmt(h.changedAt)}${who}: ${parts.join('; ')}${why}`
 }
+
+/** Codes of the two messenger options (ARCHITECTURE_CYCLE43.md §43.0a): the fallback when the id list of `GET /api/admin/messenger-options` is not available. */
+const MESSENGER_OPTION_CODES = new Set(['notifications.whatsapp', 'notifications.max'])
+
+/**
+ * Cycle 43 (§43.5.3, US-43-02 / US-43-03 кр. 6): the plans matrix and the subscription form catalog no longer carry WhatsApp / MAX — they are not a plan
+ * feature. `GET /api/admin/options` is frozen (cycle19, `additionalProperties: false`), so the messenger ids come from the messenger-options answer;
+ * the code is the second line of defence for the moment that answer is not there (error / not loaded yet).
+ */
+export function excludeMessengerOptions<T extends { id: string; code?: string | null }>(options: T[], messengerOptionIds: readonly (string | null)[]): T[] {
+  const ids = new Set(messengerOptionIds.filter((x): x is string => !!x))
+  return options.filter((o) => !ids.has(o.id) && !MESSENGER_OPTION_CODES.has((o.code ?? '').toLowerCase()))
+}
