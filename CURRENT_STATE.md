@@ -6,8 +6,23 @@
 > предупреждений CI, ограничитель рейтинга демо-данных, тесты и документы, поэтому смысл разделов прежний. Область «опции мессенджеров:
 > цена, каталог, тарифы» перепроверена по коду на `12889a7` (§5.18, §9.13).
 
-**Актуально по состоянию на коммит: `12889a7` (`develop`; код совпадает с мерджем цикла 42 `04fadcf`), дата: 2026-10-19.**
-**Следующий diff отсчитывайте от `12889a7`.**
+**Актуально по состоянию на коммит: `e4670c3` (`develop` = `origin/develop` = начало ветки `cycle/044-products-landing`; код совпадает с мерджем цикла 42 `04fadcf`), дата: 2026-10-19.**
+**Следующий diff отсчитывайте от `e4670c3`.**
+
+**Обновление на `e4670c3` (19.10.2026, старт цикла 44 «общая страница продуктов»).** ✔ `git diff --stat 12889a7..HEAD` — изменён только
+`CURRENT_STATE.md` (коммит `e4670c3`, §5.18/§9.13), кода нет. Повод — задача заказчика: «общая информационная страница про все наши
+продукты, отдельный фронт, со ссылками и переходами на каждый из продуктов». Codebase-analyst точечно перечитал то, на что эта задача
+опирается: четыре фронтенд-приложения и их сборку, `merge-site-dist.mjs`, vhost'ы nginx, смоуки CI и `deploy-remote.sh`, адреса сайтов
+на бэкенде (`PublicSites`), существующие межсайтовые ссылки во фронте, общий шаблон главной, публичные эндпоинты цен,
+`BRIEF_BRAND_AND_DOMAINS.md`. **Ничего не запускалось.** Правки: шапка, §5.1 (статус цикла 42 — влит, не выкачен), §5.19 (новый),
+§9.14 (новый), §10.1 (README/CHANGELOG уже содержат цикл 42 — прежняя запись «нет» устарела). Остальные разделы не трогались.
+`docs/history/` в проекте нет, архивировать нечего.
+- **Параллельный цикл 43** (✔ `git log develop..origin/cycle/043-messenger-options-pricing`): ветка `origin/cycle/043-messenger-options-pricing`
+  (`a6730a3`) в `develop` не влита; в ней 3 коммита только с документами — `SPEC.md` **переписан** под цикл 43 (старая спека цикла 40
+  перенесена в `SPEC_CYCLE40_SIMPLIFY_NOTIFICATION_CHANNELS.md`), `ARCHITECTURE_CYCLE43.md`, `API_CONTRACT_CYCLE43.md`, `contracts/cycle43/`.
+  Кода нет. На `develop` корневой `SPEC.md` — по-прежнему спека цикла 40 (§9.14 P-12).
+
+*Ниже — шапка обновления на `12889a7`, сохранена для истории.*
 
 **Обновление на `12889a7` (19.10.2026, без нового цикла).** ✔ `git diff --stat 04fadcf..HEAD` — изменён только `CURRENT_STATE.md`
 (отметка коммита, `12889a7`), кода нет; `origin/develop` = `HEAD`. Повод — новая задача заказчика: «опции рассылок в MAX и WhatsApp: из админки
@@ -1228,7 +1243,8 @@ dom задеплоен на ту же машину (она и стенд, и б�
 любом деплое кода цикла. Статус по решению заказчика: **WhatsApp закрыт до заключения юриста, MAX открыт** (оба — умолчания конфигурации,
 меняются в админке).
 
-**Цикл 42 («Бани», bani.ezbook.ru)** — **не выкачен и в `develop` не влит** (ветка `cycle/042-bani`, шапка). По `DEPLOY.md` §32 на машину
+**Цикл 42 («Бани», bani.ezbook.ru)** — **влит в `develop` мерджем `04fadcf` (14.10.2026), на бой не выкачен** (✔ на `e4670c3`; прежняя
+запись «в `develop` не влит» устарела). По `DEPLOY.md` §32 на машину
 ничего не выкатывалось; ⚠️ миграция `Cycle42Baths` применится при **любом** деплое кода с циклом 42, даже без vhost bani. Статус вертикали
 по решению заказчика и юриста: стенд под `noindex`, **реальные бани не приглашать** до вычитки живым юристом и публикации правок D1–D4
 (Т42-17, R42-3); все новые правовые тексты — черновые (ключи вне `LegalTextKey.All`, запасные тексты на фронте); цены тарифов — начальные.
@@ -2930,6 +2946,97 @@ CY42-106…109 (`Cycle42LocationChangeTests`) и юнит `BathsLocationChangePo
 `AdminTests`. Тестов на `PUT` цены опции канала, на суммы и статусы опций каналов в списке и карточке биллинг-аккаунта и в
 `GET /api/profile` не найдено (✔ grep). `Cycle40ChannelsTests` вызывает `PUT …/billing-accounts/{id}/subscription`, но суммы и статусы не проверяет.
 
+### 5.19 Сайты продуктов, адреса и межсайтовые ссылки — фактическое состояние (✔ по коду на `e4670c3`, ничего не запускалось)
+Перепроверка под задачу цикла 44 («общая информационная страница про все продукты, отдельный фронт, со ссылками на каждый продукт»).
+Только факты по коду и конфигам. Риски и расхождения — §9.14.
+
+**Что есть сейчас: четыре продукта = четыре SPA, страницы «про все продукты» нет.** Поиск по фронту (`наши продукты`, `другие продукты`,
+`ProductSwitcher` и т. п.) ничего не находит; общего для всех сайтов переключателя продуктов, шапки или подвала со ссылками на соседние
+продукты нет. Подвалы у каждого свои (`src/components/layout/Footer.tsx`, `goods/src/components/GoodsFooter.tsx`,
+`dom/src/components/DomFooter.tsx`, `bani/src/components/BaniFooter.tsx`) и ведут только на правовые страницы.
+
+| Продукт | `CompanyKind` | Боевой адрес (`PublicSites`) | Папка фронта | Точка входа | Сборка → каталог релиза | Dev-порт | Название (манифест / `<title>`) | Индексация |
+|---|---|---|---|---|---|---|---|---|
+| Запись (салоны) | `Services = 0` | `https://ezbook.ru` (корень, + `www`) | `frontend/src/` | `main.tsx` → `App.tsx` | `build` → `dist/` (корень релиза) | `SB_WEB_PORT` 5173 | «EZBOOK — Запись на услуги» / то же | открыт (`public/robots.txt` — только `Allow:`; `noindex` нет) |
+| Заказы (магазины) | `Orders = 1` | `https://goods.ezbook.ru` | `frontend/goods/` | `GoodsApp.tsx` | `build:goods` → `dist-goods` → `dist/__goods` | `SB_GOODS_WEB_PORT` 5174 | «ezbook · Заказы» | без `noindex` в `index.html` |
+| Дома | `Stays = 2` | `https://dom.ezbook.ru` | `frontend/dom/` | `DomApp.tsx` | `build:dom` → `dist/__dom` | `SB_DOM_WEB_PORT` 5175 | «ezbook · Дома» | `noindex` (meta + `X-Robots-Tag` в vhost) |
+| Бани | `Baths = 3` | `https://bani.ezbook.ru` | `frontend/bani/` | `BaniApp.tsx` | `build:bani` → `dist/__bani` | `SB_BANI_WEB_PORT` 5176 | «EZBOOK Бани» | `noindex` (meta + vhost) |
+
+Демо-стенды: `demo.visit.ezbook.ru` (сборка ezbook из `current/`) и `demo.zakaz.ezbook.ru` (сборка goods из `current/__goods`) — vhost'ы
+`deploy/nginx/demo.visit.ezbook.conf`, `demo.zakaz.ezbook.conf`. Написание бренда в названиях разное: «EZBOOK …» у Записи и Бань, «ezbook · …» у
+Заказов и Домов, в `Navbar.tsx` — `aria-label="ezbook · Записи"`.
+
+**Как устроено «отдельное приложение» в этом репозитории (образец — `bani`, цикл 42; так же `dom`, `goods`).** Один npm-пакет `frontend/`,
+новых `package.json` не заводят. На каждое приложение:
+- `vite.<app>.config.ts` (`root: '<app>'`, `outDir: '../dist-<app>'`, алиасы `@<app>` и `@` → `src`, свой Tailwind-конфиг через PostCSS,
+  порт из `SB_<APP>_WEB_PORT`, прокси `/api` и `/uploads` на API), `tsconfig.<app>.json` (extends `tsconfig.json`, include `<app>/src` + `src`),
+  `tailwind.<app>.config.js` (+ `.d.ts`; `presets: [base]` — палитра/шрифты ezbook как единая дизайн-система, `content: appTailwindContent('<app>')`);
+- скрипты `dev:<app>`, `build:<app>`; `build:release` перечисляет все приложения и вызывает `node scripts/merge-site-dist.mjs goods dom bani`
+  (скрипт принимает любые имена `^[a-z]+$`, кладёт `dist-<site>` в `dist/__<site>`);
+- `shared-sources.js`: `SECONDARY_APPS = ['goods', 'dom', 'bani']` (неизвестное имя → исключение в `appTailwindContent`), список
+  разрешённых к импорту страниц ezbook `SHARED_EZBOOK_PAGES`; `eslint.config.js` — отдельный блок `files: ['<app>/src/**']` с
+  запретом импорта чужих приложений и оболочки `@/App`, плюс обратные запреты в блоках остальных приложений; `ignores` — `dist-<app>/**`;
+- `vitest.config.ts`: алиас `@<app>` и glob `<app>/src/**/*.test.{ts,tsx}` в `include`; `.gitignore`: `frontend/dist-<app>/`;
+- `<app>/index.html` (`<div id="root">` — по нему проверяет смоук), `<app>/public/` (иконки, манифест, `sw.js` — у вторичных сайтов
+  без `fetch`/Cache API), guard-тесты в `<app>/src/` (`sharedSources.guard.test.ts`, `brand.guard.test.ts`, `workerRouting.test.ts` у bani);
+- CI (`.github/workflows/ci.yml`): `npx tsc --noEmit -p tsconfig.<app>.json`, проверка `sw.js` (список путей в шаге ~300), `npm run build:release`
+  (~340), смоук `deploy/ci/smoke-frontend.sh` с `DIST_DIR=frontend/dist/__<app>`, `SMOKE_PROFILE=<app>` (профили в скрипте захардкожены:
+  `goods|dom|bani`, строка 60);
+- деплой: `deploy-production.yml` и `deploy-staging.yml` собирают `npm run build:release` и заливают **весь** `frontend/dist` одним tar как
+  релиз; `deploy-remote.sh` переключает симлинк `current` (все сайты переключаются и откатываются вместе) и делает смоук каждого сайта
+  через локальный nginx (`--resolve <host>:443:127.0.0.1`), если vhost установлен (иначе WARNING и пропуск; для bani — строки 43–47, 360–388);
+- nginx: свой vhost `deploy/nginx/<app>.ezbook.conf` с `root /var/www/ezbook/current/__<app>`, проксированием `/api/` и `/uploads/` на
+  `127.0.0.1:5000`, 404 на вебхуки провайдеров, кеш-заголовками (`/assets/` immutable, `index.html`/`sw.js`/манифест — `no-cache`), CSP,
+  `X-Frame-Options DENY`, HSTS; в `ezbook.conf` и `demo.visit.ezbook.conf` — `location ^~ /__<app>/ { return 404; }`, чтобы сборка не
+  открывалась с чужого origin. Сертификат — `certbot --nginx -d <host>` руками; DNS, установка vhost и домен в SmartCaptcha — ручные шаги
+  заказчика (`DEPLOY.md` §28, §32).
+- бэкенд: адрес сайта — `PublicSitesOptions` (`appsettings.json` → `PublicSites:{Services,Orders,Stays,Baths}BaseUrl`, коммитнутые боевые
+  умолчания, переопределение `PublicSites__*`; проверка — `DeploymentSafetyChecks.ValidatePublicSites`); единственное место сборки
+  абсолютных ссылок — `Services/PublicSites/PublicSiteLinks.cs` (`SiteBaseUrl(CompanyKind)`, `switch` с `UnreachableException`). Адреса
+  привязаны к `CompanyKind`: опции «адрес сайта, не являющегося видом компании» в `PublicSitesOptions` нет. CORS — `AllowedOrigins` (список
+  через запятую), но все сайты ходят в API same-origin через свой vhost, поэтому для существующих сайтов CORS не нужен.
+
+**Межсайтовые ссылки, которые уже есть** (✔ grep по `siteUrl`, `ezbook.ru`): все — внутри **кабинета вошедшего пользователя** и только на
+те продукты, где у него есть компании; адрес приходит с сервера, `GET /api/companies/kinds-summary` (**`[Authorize]`**, отдаёт
+`{services, orders, stays, baths}: {count, siteUrl}`):
+
+| Откуда | Компонент | На какие продукты ссылается |
+|---|---|---|
+| ezbook (кабинет) | `src/components/company/GoodsShopsNotice.tsx` | Заказы, Дома (Бань нет) |
+| goods (кабинет) | `goods/src/pages/cabinet/CabinetHomePage.tsx` ~95–115 | Запись, Дома (Бань нет) |
+| dom (кабинет) | `dom/src/pages/cabinet/CabinetHomePage.tsx` ~103–120 | Запись, Заказы (Бань нет) |
+| bani (кабинет) | `bani/src/pages/cabinet/CabinetHomePage.tsx` ~30–33, 112 | Запись, Заказы (Домов нет) |
+| goods/dom/bani (профиль) | `GoodsProfilePage`, `dom/.../ProfilePage`, `bani/.../ProfilePage` | ezbook.ru — выгрузка/удаление аккаунта |
+| демо-баннер | `src/components/demo/DemoBanner.tsx`, `src/utils/demoNeighbour.ts` | соседнее демо (`/api/demo/status` → `siteUrls` только `services`, `orders`) |
+
+Анонимного эндпоинта со списком продуктов/адресов сайтов **нет**: `kinds-summary` и `push/config` (`siteUrls` всех четырёх) требуют входа,
+`demo/status` отдаёт только два адреса. Имена хостов в текстах фронта захардкожены (`'goods.ezbook.ru'`, `'dom.ezbook.ru'` и т. п.,
+`src/utils/staffPushTexts.ts` 52–58), ссылки (`href`) — с сервера.
+
+**Что можно переиспользовать для страницы продуктов (по коду).**
+- Единый шаблон главной `src/components/landing/` (§5.13, §5.14): `ServiceLanding` требует `config: LandingConfig | LandingPanelConfig` и
+  `catalog: ReactNode` (секция каталога обязательна; порядок секций фиксирован внутри компонента), типы в `types.ts` (`LandingConfig` — hero,
+  catalog, clients, business, pricing, FAQ из ≥ 6 вопросов `FaqItems`), отдельные секции `LandingHero`, `LandingPanelHero`, `LandingMedia`,
+  `FaqSection`, `LandingActionLink` (действия `AnchorAction | RouteAction | AuthRouteAction` — внешних абсолютных ссылок в типе нет),
+  `classes.ts`, `landing.guard.test.ts`. Тексты-описания продуктов уже лежат в конфигах главных: `src/pages/home/zapisLanding.ts`,
+  `goods/src/landing/goodsLanding.ts`, `dom/src/landing/stayLanding.ts`, `bani/src/landing/baniLanding.ts` (+ `*Faq.ts`).
+- Публичные цены без входа: `GET /api/pricing` (Запись; **404, пока SuperAdmin не включил `pricing.public-enabled`** и оферта не
+  опубликована) и `GET /api/pricing/orders` (Заказы; без переключателя, 404 если нет активного публичного тарифа). Анонимных эндпоинтов
+  цен «Домов» и «Бань» нет.
+- Иконки — `src/components/ui/Icon.tsx` (в т. ч. `house` для dom); дизайн-токены — `tailwind.config.js` (пресет для всех приложений).
+
+**SSR/пререндера нет ни в одном приложении** (✔ grep `prerender|renderToString|ssr` по `vite*.ts`, `package.json`, `scripts/` — пусто): все
+страницы отдаются как SPA-оболочка `index.html` + JS.
+
+**Намерение заказчика по бренду** (не код; `BRIEF_BRAND_AND_DOMAINS.md`, 30.09.2026, «в работу не отдано»): Р3 — `ezbook.ru` как витрина для
+бизнеса (оба продукта, цены, посадочные `/salons`, `/cafe`, `/shops`, статьи, **готовый HTML для поиска**), Р2 — Запись переезжает на
+`visit.ezbook.ru`, Заказы — на `zakaz.ezbook.ru`, Р4 — единый вход. Бриф написан до «Домов» и «Бань» и говорит о **двух** продуктах. Ничего из
+Р1–Р6 в коде не сделано: Запись на корне `ezbook.ru`, Заказы на `goods.ezbook.ru`, вход раздельный (README строка ~27).
+
+**Тесты.** На межсайтовые строки есть vitest-тесты только у ezbook (`src/components/company/GoodsShopsNotice.test.tsx`) и goods
+(`goods/src/pages/cabinet/CabinetHomePage.test.tsx`, `goods/src/pages/GoodsProfilePage.test.tsx`); у кабинетов dom и bani тестов, которые
+касались бы `kinds-summary`, не найдено (✔ grep), а `data-testid` `stays-notice`/`stays-line` ни в одном тесте не используются. Функциональных тестов фронта (e2e/браузерных) в проекте нет — только vitest + jsdom (§7.1). Смоук собранных сайтов — `smoke-frontend.sh` в CI.
+
 ## 6. Конвенции проекта (✔ выборочно по коду; им следовать, а не вводить рядом свои)
 
 ### 6.1 Бэкенд (C#)
@@ -4391,6 +4498,41 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   линеек, а других продаваемых опций нет, поэтому блок «доступные опции» у владельца всегда пуст. Заказчик может воспринимать это как
   «опции нельзя выбрать».
 
+### 9.14 Сайты продуктов и межсайтовые ссылки — ✔ по коду на `e4670c3`, ничего не запускалось
+Подробности и пути — §5.19.
+- **P-1 — ezbook.ru занят приложением Записи.** Корень `ezbook.ru` — SPA салонов (`App.tsx`, `/` → `HomePage` = главная Записи, root-scope
+  `public/sw.js` с push), а `BRIEF_BRAND_AND_DOMAINS.md` Р3 отводит его под витрину бренда при переезде Записи на `visit.ezbook.ru` (Р2).
+  Ни Р2, ни переадресаций в коде нет; старые адреса `ezbook.ru/company/<slug>` и `/embed/:slug` уже раздаются салонам (бриф прямо требует
+  их не ломать). Абсолютные ссылки в уведомлениях строятся от `ServicesBaseUrl = https://ezbook.ru`.
+- **P-2 — межсайтовые ссылки неполны и несимметричны.** Ни один сайт, кроме самих Бань, не знает про Бани; Бани не ссылаются на Дома
+  (таблица §5.19). Все ссылки — только для вошедших и только на продукты, где у пользователя есть компании.
+- **P-3 — адрес сайта привязан к `CompanyKind`.** `PublicSitesOptions`/`PublicSiteLinks.SiteBaseUrl` перебирают ровно четыре вида с
+  `UnreachableException`; добавить в них «сайт без вида компании» нельзя без изменения этой модели, а страж `CompanyKindTraitsTests`/
+  `CompanyKindExhaustiveTests` перебирает enum.
+- **P-4 — анонимного источника адресов сайтов нет.** Публичная страница без входа не может получить `siteUrl` с сервера существующими
+  эндпоинтами (`kinds-summary`, `push/config` — `[Authorize]`; `demo/status` — только два адреса).
+- **P-5 — общий шаблон главной заточен под страницу одного продукта.** `ServiceLanding` требует секцию каталога, фиксированный порядок
+  секций, FAQ ≥ 6 вопросов; `LandingAction` не умеет внешних абсолютных ссылок (только якорь, маршрут, маршрут с входом).
+- **P-6 — SPA без пререндера.** Любая страница на текущем стеке отдаётся поисковику пустой оболочкой; бриф (Р3) требует готовый HTML.
+- **P-7 — список приложений захардкожен в нескольких местах:** `build:release` и аргументы `merge-site-dist.mjs`, `SECONDARY_APPS` в
+  `shared-sources.js`, блоки `eslint.config.js` (включая обратные запреты в каждом блоке), `include`/алиасы `vitest.config.ts`, `.gitignore`,
+  список `sw.js` в CI (~300), профили `smoke-frontend.sh` (строка 60, отдельные ветки для `bani`), шаги смоука в `ci.yml` и
+  `deploy-remote.sh`, `location ^~ /__<app>/` в `ezbook.conf` и `demo.visit.ezbook.conf`. Пропуск любого места проявится не сразу
+  (например, сборка, доступная с чужого origin, или сайт без смоука).
+- **P-8 — все сайты в одном релизе.** Деплой и откат переключают симлинк `current` для всех сайтов разом; отдельный выкат одного фронта
+  не предусмотрен. Новый vhost, DNS, сертификат certbot — ручные шаги заказчика; повторное копирование vhost поверх установленного
+  стирает 443-блок certbot (комментарии в шапках vhost'ов).
+- **P-9 — бренд пишется по-разному** («EZBOOK — Запись на услуги», «ezbook · Заказы», «ezbook · Дома», «EZBOOK Бани», `aria-label="ezbook · Записи"`).
+  Бриф Р1 предлагает «EZBOOK Запись» / «EZBOOK Заказы» и вынос имени бренда в конфиг — не сделано; товарный знак «easybook» №1556115 —
+  открытый риск брифа (§5).
+- **P-10 — статус выката разный:** Запись — на бою (последний подтверждённый выкат цикла 20), Дома — на машине со слов заказчика, Бани и
+  цикл 40 — не выкачены, demo.zakaz — не выкачен; Дома и Бани под `noindex`, реальных владельцев не приглашать до вычитки юристом (§5.1).
+  Ссылка с открытой страницы на сайт-стенд под `noindex` — факт, который надо учитывать.
+- **P-11 — публичные цены есть не у всех продуктов:** Запись — за выключателем `pricing.public-enabled` (на бою 🖥 не проверялось), Заказы —
+  без выключателя, Дома и Бани — анонимного эндпоинта нет.
+- **P-12 — параллельный цикл 43 переписывает корневой `SPEC.md`** в своей ветке (`origin/cycle/043-messenger-options-pricing`, не влита).
+  Если цикл 44 тоже пишет в корневой `SPEC.md`, при слиянии в `develop` будет конфликт документа.
+
 ## 10. Что уже существует в документации и тест-кейсах (дополнять существующее, параллельных версий не заводить)
 
 ### 10.1 Краткая продуктовая документация
@@ -4458,6 +4600,12 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 - **На `d000673` (цикл 42, ветка не влита)** (✔ `grep -n '^## '`, `git log 4741843..HEAD -- CHANGELOG.md README.md`): раздела цикла 42 в
   `CHANGELOG.md` и упоминания bani в `README.md` **нет** — их правит отдельная задача этого же цикла (в этой правке не трогались). Самый
   верхний раздел `CHANGELOG.md` — «Не выпущено — цикл 40…» (строка 19).
+- **На `e4670c3`** (✔ `wc -l`, `grep -n '^## '`, `git log -- README.md CHANGELOG.md`): запись выше устарела — коммит `b5db440`
+  («CHANGELOG и README „О проекте“ — „Бани“ на bani.ezbook.ru») влит вместе с циклом 42. `README.md` — 1 066 строк, блок
+  **«Бани по часам — `bani.ezbook.ru`»** со строки ~257; во вступлении (строка ~27) — «в кабинете каждого сайта есть строка про компании
+  другого типа. Вход раздельный»; демо-стенды — строка ~608. `CHANGELOG.md` — 5 865 строк; сверху «Не выпущено — цикл 42…» (строка 19),
+  затем цикл 40 (211), цикл 39 (383), цикл 41 (633). **Отдельного раздела или документа про «общую страницу продуктов»/витрину бренда
+  в README и CHANGELOG нет**; намерение витрины есть только в `BRIEF_BRAND_AND_DOMAINS.md` (Р3, §5.19).
 
 ### 10.2 Развёрнутая пользовательская документация
 - **`docs/`** (markdown, по ролям, только продукт ezbook — запись на услуги):
