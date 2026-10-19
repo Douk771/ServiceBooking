@@ -2670,6 +2670,21 @@ Up — только добавления (вид компании «Бани», 
 **Локальный стенд.** `docker compose up` (API, БД) и `npm run dev:bani` в `frontend/` (порт 5176, прокси `/api` и `/uploads`). Без бэкенда — `npx @stoplight/prism mock contracts/cycle42/openapi.yaml --port 4042`
 и `VITE_API_TARGET=http://localhost:4042 npm run dev:bani`.
 
+## 33. Опции мессенджеров: цена, каталог, привязка к тарифам (цикл 43, ARCHITECTURE_CYCLE43.md §43.11)
+
+**Статус.** Подготовлено в репозитории (DO-43-01…03); на машину ничего не выкатывалось (DO-43-04 — только по решению человека, стенд = бой).
+
+**Что в репозитории.** CI: `redocly lint` для `contracts/cycle43/openapi.yaml`, `npm run types:api:cycle43` и `npm run contracts:json` со сверкой `git diff --exit-code` (`api-cycle43.generated.ts`, `contracts/cycle43/openapi.json`). Отчёт: `deploy/checks/cycle43-messenger-options.sql` (только чтение).
+
+**Порядок.**
+1. **До выката** — отчёт на бою, вывод сохранить: `docker compose -f docker-compose.prod.yml --env-file .env exec -T postgres psql -U postgres -d servicebooking -v ON_ERROR_STOP=1 < deploy/checks/cycle43-messenger-options.sql | tee cycle43-before.txt`. Лучше сначала на копии БД. Блок [4] (оплаченный мессенджер без подписки «Записей») и блок [3] (наследные строки) — оценка масштаба смены текстов (R43-5). Если оферта `TermsOwner` на бою в черновике, «Подтвердить оплату» WhatsApp/MAX начнёт отвечать 409 (R43-3) — проверить манифест до выката.
+2. **Выкат** обычным `deploy/deploy.sh`. Миграция `Cycle43MessengerOptionPricing` только добавляет, данные не меняются; до ввода цены поведение продаж не меняется. Перед деплоем — `pg_dump`.
+3. **После выката** — отчёт ещё раз (`cycle43-after.txt`); строки опций (блоки [1]–[3], [5]) должны совпасть с «до».
+4. **Запуск продаж MAX:** опубликовать новую редакцию D3 и Приложения № 1 (юрист, C40-12) -> проверить переключатель «MAX — открыто для владельцев» -> ввести цену на экране (подтверждение покажет «MAX начнёт продаваться»).
+5. **Остановить продажи:** снять цену или закрыть переключатель.
+6. **Откат — только код** (`deploy/rollback.sh`); схему не откатывать.
+7. **Известное изменение:** тексты наследных строк опций (без своей даты) поменяются (§43.4.2, А4); масштаб — блок [3] отчёта.
+
 ## Почему так сделано
 
 ### Docker не из snap
