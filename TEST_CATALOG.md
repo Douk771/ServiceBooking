@@ -7975,7 +7975,7 @@ Vitest разработчиков (не пересобирались QA): раз
 | CY44-QA-6 | Флаг ссылки в подвалах: по умолчанию null, `on` — адрес, dev — localhost:5177, битый адрес — null | US-44-08, R44-4 | `CY44-QA US-44-08…` | зелёный |
 | CY44-QA-7 | Смоук собранного сайта: `npm run build && build:about && merge-site-dist about`, затем `DIST_DIR=frontend/dist/__about SMOKE_PROFILE=about deploy/ci/smoke-frontend.sh` | CY44-04 | `deploy/ci/smoke-frontend.sh` | зелёный |
 
-## Цикл 46 — главная «Записи» под владельца салона, QA (`CY46-QA-`, vitest `frontend/src/pages/HomePage.qa46.test.tsx`, `frontend/goods/src/landing/landing.order.qa46.test.tsx`)
+## Цикл 46 — главная «Записи» под владельца салона, QA (`CY46-QA-`, vitest `frontend/src/pages/HomePage.qa46.test.tsx`, `{goods,dom,bani}/src/landing/landing.order.qa46.test.tsx` (по файлу на сервис — ESLint-границы))
 
 Тексты в тестах продублированы литералами из SPEC.md §4, не берутся из `contracts/cycle46`. Визуальные K1–K8 и замер высот — ручные (M46-02, оркестратор).
 

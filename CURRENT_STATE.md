@@ -3193,7 +3193,7 @@ bani — `/cabinet/{id}/notifications?connect={t}` через свои `Subscrip
   `frontend/scripts/screenshots/{seed-zapis-demo,capture-zapis-screenshots,zapis-demo-data}.mjs` (только через HTTP API локального стенда `sb-shots`; в `frontend/package.json` добавлено 2 скрипта).
   Каталог добавлен в `contracts/cycle36/test-areas.json` (`src/assets/screenshots/zapis/`).
 
-**5.21.2 Тесты цикла 46 (vitest, код есть, ✔ чтением; результаты не получены).** `HomePage.qa46.test.tsx` (QA, CY46-QA-1…14), `goods/src/landing/landing.order.qa46.test.tsx` (порядок «Заказов» не изменился),
+**5.21.2 Тесты цикла 46 (vitest, код есть, ✔ чтением; результаты не получены).** `HomePage.qa46.test.tsx` (QA, CY46-QA-1…14), `{goods,dom,bani}/src/landing/landing.order.qa46.test.tsx` (порядок «Заказов», «Домов», «Бань» не изменился; по файлу на сервис из-за ESLint-границ),
 `zapisLanding.contract.test.tsx`, четыре `*Landing.completeness.test.tsx` (CY46-09: «всё из конфига есть на странице», по одному в `src`, `goods`, `dom`, `bani`; общий помощник
 `collectConfigStrings` в `testConfig.ts`), `classes.test.ts` (CY46-14), правки `ServiceLanding.test.tsx`, `LandingPanelHero.test.tsx`, `HomePage.test.tsx`, `zapisFaq.test.ts`, goods QA27-04/QA30-05
 (осознанная правка инвариантов, §46.11.2). Каталог сценариев — `TEST_CATALOG.md`, раздел «Цикл 46» (CY46-QA-1…14). Ручные M46-01…04 (сверка текстов, замер высот ≤ 3600 px блоков 2–4 на 375 px, класс скриншота
