@@ -62,6 +62,15 @@ export interface LandingScreenshotCarousel {
 }
 export type LandingShot = LandingScreenshot | LandingScreenshotCarousel
 
+/** Порядок секций — данные конфига. Закрытый список: две известные раскладки (ARCHITECTURE_CYCLE46 §46.3). */
+export type LandingOrder = 'catalog-first' | 'business-first'
+
+/** Вторичная строка первого экрана для клиента: «{lead} <a>{action.label}</a>». */
+export interface LandingHeroClientLink {
+  lead: string
+  action: AnchorAction
+}
+
 export interface LandingHeroConfig {
   /** Обычная шапка. Поле есть только для того, чтобы конфиг с layout: 'panel' нельзя было передать как обычный. */
   layout?: never
@@ -69,9 +78,10 @@ export interface LandingHeroConfig {
   /** Строка — одна строка заголовка; объект — «строка + выделенная часть» (выделение с новой строки). */
   title: string | { lead: string; accent: string }
   intro: string
-  primaryAction?: AnchorAction | RouteAction
+  primaryAction?: LandingAction
   /** Якорь на заголовок секции 3 («Как сделать заказ» / «Как записаться»). */
   howTo: AnchorAction
+  clientLink?: LandingHeroClientLink
 }
 
 export interface LandingCatalogFrameConfig {
@@ -95,6 +105,18 @@ export interface LandingClientsConfig {
   text: string
   actions: readonly [LandingAction] | readonly [LandingAction, LandingAction]
   stepsPanel: LandingStepsPanel
+  list: { title: string; titleId: string; items: readonly [string, ...string[]]; note?: string }
+  screenshot?: LandingShot
+}
+
+/** Секция клиентов в раскладке 'business-first': кнопок и панели шагов нет. */
+export interface LandingClientsShowcaseConfig {
+  eyebrow: string
+  title: string
+  titleId: string
+  text: string
+  actions?: never
+  stepsPanel?: never
   list: { title: string; titleId: string; items: readonly [string, ...string[]]; note?: string }
   screenshot?: LandingShot
 }
@@ -126,15 +148,30 @@ export interface FaqItem {
 /** Не меньше 6 — проверяет tsc; не больше 8 — проверяет тест конфига. */
 export type FaqItems = readonly [FaqItem, FaqItem, FaqItem, FaqItem, FaqItem, FaqItem, ...FaqItem[]]
 
-export interface LandingConfig {
-  hero: LandingHeroConfig
+interface LandingConfigCommon {
   catalog: LandingCatalogFrameConfig
-  media?: LandingMediaConfig
-  clients: LandingClientsConfig
   business: LandingBusinessConfig
   pricing?: LandingPricingConfig
   faq: { items: FaqItems }
 }
+
+/** Раскладка «каталог первым» («Заказы», «Дома», «Бани»); order можно не писать. */
+export interface CatalogFirstLandingConfig extends LandingConfigCommon {
+  order?: 'catalog-first'
+  hero: LandingHeroConfig
+  media?: LandingMediaConfig
+  clients: LandingClientsConfig
+}
+
+/** Раскладка «Записи»: герой, бизнес, клиенты, шаги, тарифы, FAQ, каталог. */
+export interface BusinessFirstLandingConfig extends LandingConfigCommon {
+  order: 'business-first'
+  hero: LandingHeroConfig & { primaryAction: LandingAction; clientLink: LandingHeroClientLink }
+  media?: never
+  clients: LandingClientsShowcaseConfig
+}
+
+export type LandingConfig = CatalogFirstLandingConfig | BusinessFirstLandingConfig
 
 /** Закрытый список фоновых рисунков шапки с панелью. Новый мотив = новая строка тут + SVG в LandingHeroBackdrop.tsx. */
 export type HeroBackdrop = 'none' | 'mountains'
@@ -163,5 +200,5 @@ export interface LandingPanelHeroConfig {
   backdrop: HeroBackdrop
 }
 
-/** Конфиг главной с шапкой-панелью: всё как в LandingConfig, кроме hero. */
-export type LandingPanelConfig = Omit<LandingConfig, 'hero'> & { hero: LandingPanelHeroConfig }
+/** Конфиг главной с шапкой-панелью: только раскладка 'catalog-first', кроме hero. */
+export type LandingPanelConfig = Omit<CatalogFirstLandingConfig, 'hero'> & { hero: LandingPanelHeroConfig }

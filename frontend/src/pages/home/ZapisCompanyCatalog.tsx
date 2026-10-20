@@ -63,45 +63,46 @@ export function ZapisCompanyCatalog() {
 
   return (
     <>
-      <div className="flex items-baseline justify-between mb-10 flex-wrap gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-baseline sm:justify-between mb-6 md:mb-10">
         <div>
           <h2 className="font-serif text-[32px] font-medium mb-2 text-ink">
-            Компании и салоны
+            Салоны на EZBOOK
           </h2>
           <p className="text-[15px] text-ink-soft">
-            Проверенные специалисты на платформе
+            Выберите салон и запишитесь онлайн
           </p>
         </div>
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <Icon
             name="search"
             size={17}
             strokeWidth={1.8}
             className="absolute left-4 top-1/2 -translate-y-1/2 text-gold-dark"
+            aria-hidden
           />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Поиск по названию или адресу"
-            className="w-[280px] pl-[42px] pr-4 py-3 rounded-full border border-line bg-white text-sm outline-none text-ink focus:border-gold focus:ring-[3px] focus:ring-cream-deep"
+            className="w-full sm:w-[280px] pl-[42px] pr-4 py-3 rounded-full border border-line bg-white text-sm outline-none text-ink focus:border-gold focus:ring-[3px] focus:ring-cream-deep"
           />
         </div>
       </div>
 
       {isLoading ? (
-        <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-40 bg-cream-deep rounded-[20px] animate-pulse" />
+        <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))' }}>
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="h-32 bg-cream-deep rounded-[20px] animate-pulse" />
           ))}
         </div>
       ) : isError ? (
-        <div className="text-center py-16 text-muted">
-          <Icon name="alert-circle" size={36} strokeWidth={1.4} className="mx-auto mb-3" />
-          <p className="text-lg">Не удалось загрузить список компаний. Попробуйте обновить страницу.</p>
+        <div role="alert" className="flex items-center gap-3 py-4 text-muted">
+          <Icon name="alert-circle" size={20} aria-hidden />
+          <p className="text-[15px]">Не удалось загрузить список компаний. Попробуйте обновить страницу.</p>
         </div>
       ) : companies && companies.length > 0 ? (
         <>
-          <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+          <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))' }}>
             {companies.map((c) => (
               <CompanyCard key={c.id} company={c} />
             ))}
@@ -117,9 +118,9 @@ export function ZapisCompanyCatalog() {
           )}
         </>
       ) : (
-        <div className="text-center py-16 text-muted">
-          <Icon name="store" size={36} strokeWidth={1.4} className="mx-auto mb-3" />
-          <p className="text-lg">Компании пока не добавлены</p>
+        <div className="flex items-center gap-3 py-4 text-muted">
+          <Icon name="store" size={20} aria-hidden />
+          <p className="text-[15px]">Салонов пока нет</p>
         </div>
       )}
     </>

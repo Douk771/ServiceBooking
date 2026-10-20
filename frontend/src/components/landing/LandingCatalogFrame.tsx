@@ -1,10 +1,23 @@
 import type { ReactNode } from 'react'
+import { SECTION } from './classes'
 import type { LandingCatalogFrameConfig } from './types'
 
-/** Секция 2: рамка вокруг каталога сервиса; содержимое рисует сервис. */
-export function LandingCatalogFrame({ config, children }: { config: LandingCatalogFrameConfig; children: ReactNode }) {
+/** Рамка вокруг каталога сервиса; содержимое рисует сервис. 'top' — первым после героя, 'end' — последней секцией. */
+export function LandingCatalogFrame({
+  config,
+  children,
+  placement,
+}: {
+  config: LandingCatalogFrameConfig
+  children: ReactNode
+  placement: 'top' | 'end'
+}) {
   return (
-    <section id={config.id} aria-label={config.ariaLabel} className="mt-8 scroll-mt-24">
+    <section
+      id={config.id}
+      aria-label={config.ariaLabel}
+      className={placement === 'top' ? 'mt-8 scroll-mt-24' : `${SECTION} scroll-mt-24`}
+    >
       {children}
     </section>
   )

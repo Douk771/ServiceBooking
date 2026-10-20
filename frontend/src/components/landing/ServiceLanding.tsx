@@ -7,6 +7,7 @@ import { LandingHero } from './LandingHero'
 import { LandingMedia } from './LandingMedia'
 import { LandingPanelHero } from './LandingPanelHero'
 import { LandingPricingSection } from './LandingPricingSection'
+import { LandingStepsSection } from './LandingStepsSection'
 import { CONTAINER } from './classes'
 import type { LandingConfig, LandingPanelConfig } from './types'
 import { useInitialHashScroll } from './useInitialHashScroll'
@@ -25,17 +26,36 @@ function isPanelProps(p: ServiceLandingProps): p is PanelProps {
   return p.config.hero.layout === 'panel'
 }
 
-/** Секции 2-6: общий фрагмент обеих веток разметки. */
+/** Секции после героя. Порядок задаёт config.order (ARCHITECTURE_CYCLE46 §46.3). */
 function LandingSections({ config, catalog }: { config: LandingConfig | LandingPanelConfig; catalog: ReactNode }) {
+  if (config.order === 'business-first') {
+    // Заглушка скриншота — один раз на страницу, в первом пустом слоте в порядке вывода (бизнес, затем клиенты) — §46.5.4.
+    const slots = ['business', 'clients'] as const
+    const firstEmpty = slots.find((s) => !config[s].screenshot)
+    return (
+      <>
+        <LandingBusinessSection config={config.business} placeholder={firstEmpty === 'business'} steps="none" />
+        <LandingClientsSection config={config.clients} placeholder={firstEmpty === 'clients'} />
+        <LandingStepsSection panel={config.business.stepsPanel} />
+        {config.pricing && <LandingPricingSection config={config.pricing} />}
+        <FaqSection items={config.faq.items} />
+        <LandingCatalogFrame config={config.catalog} placement="end">
+          {catalog}
+        </LandingCatalogFrame>
+      </>
+    )
+  }
   // Заглушка скриншота — один раз на страницу, в первом пустом слоте (секция 3, затем 4) — §38.3.6.
   const clientsPlaceholder = !config.clients.screenshot
   const businessPlaceholder = !clientsPlaceholder && !config.business.screenshot
   return (
     <>
-      <LandingCatalogFrame config={config.catalog}>{catalog}</LandingCatalogFrame>
+      <LandingCatalogFrame config={config.catalog} placement="top">
+        {catalog}
+      </LandingCatalogFrame>
       {config.media && <LandingMedia config={config.media} />}
       <LandingClientsSection config={config.clients} placeholder={clientsPlaceholder} />
-      <LandingBusinessSection config={config.business} placeholder={businessPlaceholder} />
+      <LandingBusinessSection config={config.business} placeholder={businessPlaceholder} steps="inside" />
       {config.pricing && <LandingPricingSection config={config.pricing} />}
       <FaqSection items={config.faq.items} />
     </>

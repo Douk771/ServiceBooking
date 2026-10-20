@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { ServiceLanding } from './ServiceLanding'
 import { makeConfig, makePanelConfig } from './testConfig'
-import { DEFAULT_BRANCH_HTML } from './landingReference'
+import { CYCLE41_DEFAULT_BRANCH_HTML, DEFAULT_BRANCH_HTML } from './landingReference'
 import type { LandingConfig, LandingPanelConfig } from './types'
 
 const aside = (
@@ -135,6 +135,16 @@ describe('type guards (T41-01t)', () => {
   })
 })
 
+// useId зависит от числа предыдущих рендеров в файле, поэтому счётчик в id приводится к одному виду.
+function renderDefault() {
+  const { container } = render(
+    <MemoryRouter>
+      <ServiceLanding config={makeConfig()} catalog={<p>cat</p>} />
+    </MemoryRouter>,
+  )
+  return container.innerHTML.replace(/:r[0-9a-z]+:/g, ':rN:')
+}
+
 describe('default branch regression (T41-02)', () => {
   it('main class literal and structure unchanged', () => {
     const { container } = render(
@@ -151,14 +161,39 @@ describe('default branch regression (T41-02)', () => {
     expect(container.querySelector('.rounded-3xl')).toBeNull()
   })
 
-  it('innerHTML equals the reference captured before the cycle-41 change', () => {
-    const { container } = render(
-      <MemoryRouter>
-        <ServiceLanding config={makeConfig()} catalog={<p>cat</p>} />
-      </MemoryRouter>,
-    )
-    // useId зависит от числа предыдущих рендеров в файле, поэтому счётчик в id приводится к одному виду.
-    const norm = (h: string) => h.replace(/:r[0-9a-z]+:/g, ':rN:')
-    expect(norm(container.innerHTML)).toBe(norm(DEFAULT_BRANCH_HTML))
+  it('innerHTML equals the compact-layout reference of cycle 46', () => {
+    expect(renderDefault()).toBe(DEFAULT_BRANCH_HTML)
+  })
+
+  // CY46-10: компактная раскладка ничего не потеряла — инвентарь разметки равен прежнему эталону цикла 41.
+  // Классы и обёртки div не сравниваются; шаг получил внутреннюю обёртку div, поэтому div исключены.
+  it('markup inventory equals the cycle-41 reference (CY46-10)', () => {
+    const inventory = (html: string) => {
+      const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html')
+      const texts: string[] = []
+      const tags: string[] = []
+      const ids: string[] = []
+      const hrefs: string[] = []
+      const aria: string[] = []
+      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ALL)
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (n.nodeType === Node.TEXT_NODE) {
+          const t = (n.textContent ?? '').trim()
+          if (t) texts.push(t)
+        } else if (n.nodeType === Node.ELEMENT_NODE) {
+          const el = n as Element
+          const tag = el.tagName.toLowerCase()
+          if (tag !== 'div') tags.push(tag)
+          if (/^h[1-6]$/.test(tag)) ids.push(`${tag}#${(el.id ?? '').replace(/:r[0-9a-z]+:/g, ':rN:')}`)
+          if (el.getAttribute('href')) hrefs.push(el.getAttribute('href')!)
+          for (const a of Array.from(el.attributes)) if (a.name.startsWith('aria-')) aria.push(`${tag}:${a.name}=${a.value.replace(/:r[0-9a-z]+:/g, ':rN:')}`)
+        }
+      }
+      return { texts, tags, ids, hrefs, aria, svg: doc.querySelectorAll('svg').length }
+    }
+    const inv = inventory(renderDefault())
+    const ref = inventory(CYCLE41_DEFAULT_BRANCH_HTML)
+    // Заголовки шагов остались h4, но их родитель теперь div: порядок тегов и текстов тот же.
+    expect(inv).toEqual(ref)
   })
 })

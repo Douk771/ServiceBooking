@@ -29,7 +29,8 @@ describe('BuyersBlock QA (cycle 30)', () => {
   it('QA30-05 steps: 3 items, panel styling as BusinessBlock, allowed icons', () => {
     const { container } = setup()
     const ol = container.querySelector('ol') as HTMLElement
-    for (const c of ['list-none', 'md:grid-cols-3', 'gap-10']) expect(ol.className).toContain(c)
+    for (const c of ['list-none', 'md:grid-cols-3']) expect(ol.className).toContain(c)
+    expect(ol.className).not.toContain('gap-10') // K1: компактные шаги цикла 46
     const panel = ol.parentElement as HTMLElement
     expect(panel.className).toContain('bg-cream-deep')
     expect(panel.className).toContain('rounded-[28px]')
@@ -37,9 +38,15 @@ describe('BuyersBlock QA (cycle 30)', () => {
     expect(lis).toHaveLength(3)
     lis.forEach((li) => {
       const svg = li.querySelector('svg') as SVGElement
-      expect(svg.getAttribute('width')).toBe('20')
+      expect(svg.getAttribute('width')).toBe('18')
       expect(svg.getAttribute('stroke-width')).toBe('1.6')
-      expect(li.querySelector('h4')!.className).toContain('text-[21px]')
+      const h4 = li.querySelector('h4')!
+      expect(h4.className).toContain('md:text-[21px]')
+      const circle = svg.parentElement!
+      expect(circle.className).toContain('rounded-full')
+      expect(circle.parentElement).toBe(h4.parentElement) // K1: иконка и заголовок в одной строке
+      expect(h4.parentElement!.className).toContain('flex')
+      expect(h4.parentElement!.className).toContain('items-center')
     })
   })
 

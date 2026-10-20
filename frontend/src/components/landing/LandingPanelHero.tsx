@@ -11,7 +11,7 @@ export function LandingPanelHero({ config, aside }: { config: LandingPanelHeroCo
   return (
     <div className="relative overflow-hidden border-b border-line bg-gradient-to-b from-cream-deep to-cream">
       {backdrop !== 'none' && <LandingHeroBackdrop kind={backdrop} />}
-      <div className={`relative ${CONTAINER} pt-10 md:pt-16 pb-20 md:pb-28 ${grid}`}>
+      <div className={`relative ${CONTAINER} pt-10 md:pt-16 pb-12 md:pb-24 ${grid}`}>
         <div>
           <p className="inline-flex items-center rounded-full border border-line bg-white px-3 py-1 mb-4 text-[13px] font-semibold tracking-[0.14em] uppercase text-gold-dark">
             {config.eyebrow}

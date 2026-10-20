@@ -42,18 +42,22 @@ describe('BusinessBlock QA (cycle 27)', () => {
     const ol = container.querySelector('ol') as HTMLElement
     expect(ol.className).toContain('list-none')
     expect(ol.className).toContain('md:grid-cols-3')
-    expect(ol.className).toContain('gap-10')
+    expect(ol.className).not.toContain('gap-10') // K1: компактные шаги цикла 46
     const lis = ol.querySelectorAll(':scope > li')
     expect(lis).toHaveLength(3)
     lis.forEach((li) => {
-      const circle = li.querySelector('div') as HTMLElement
-      for (const c of ['w-[46px]', 'h-[46px]', 'rounded-full', 'bg-cream', 'border-line-strong']) expect(circle.className).toContain(c)
-      const svg = circle.querySelector('svg') as SVGElement
-      expect(svg.getAttribute('width')).toBe('20')
+      const svg = li.querySelector('svg') as SVGElement
+      const circle = svg.parentElement as HTMLElement
+      for (const c of ['w-9', 'h-9', 'rounded-full', 'bg-cream', 'border-line-strong']) expect(circle.className).toContain(c)
+      expect(svg.getAttribute('width')).toBe('18')
       expect(svg.getAttribute('stroke-width')).toBe('1.6')
       const h = li.querySelector('h4') as HTMLElement
       expect(h.className).toContain('font-serif')
-      expect(h.className).toContain('text-[21px]')
+      expect(h.className).toContain('md:text-[21px]')
+      // K1: иконка и заголовок шага стоят в одной строке, а не иконка отдельной строкой
+      expect(circle.parentElement).toBe(h.parentElement)
+      expect(h.parentElement!.className).toContain('flex')
+      expect(h.parentElement!.className).toContain('items-center')
       expect((li.querySelector('p') as HTMLElement).className).toContain('text-ink-soft')
     })
   })

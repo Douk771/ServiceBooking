@@ -1,22 +1,28 @@
 import { Icon } from '../ui/Icon'
-import { H3 } from './classes'
+import { H3, STEP_ICON } from './classes'
 import type { LandingStepsPanel as Panel } from './types'
 
-/** Панель «3 шага», общая для секций 3 и 4. */
-export function LandingStepsPanel({ panel }: { panel: Panel }) {
+/** Панель «3 шага». headingLevel 3 — внутри секции (h3 + шаги h4), 2 — отдельная секция (h2 + шаги h3). */
+export function LandingStepsPanel({ panel, headingLevel = 3 }: { panel: Panel; headingLevel?: 2 | 3 }) {
+  const Title = headingLevel === 2 ? 'h2' : 'h3'
+  const StepTitle = headingLevel === 2 ? 'h3' : 'h4'
   return (
-    <div className="mt-12 md:mt-16 rounded-[28px] bg-cream-deep px-6 py-10 sm:px-10 md:px-12 md:py-14">
-      <h3 id={panel.titleId} className={`${H3} mb-8 md:mb-10`}>
+    <div
+      className={`${headingLevel === 2 ? '' : 'mt-8 md:mt-12 '}rounded-[28px] bg-cream-deep px-5 py-6 sm:px-8 sm:py-8 md:px-12 md:py-12`}
+    >
+      <Title id={panel.titleId} className={`${H3} mb-5 md:mb-8`}>
         {panel.title}
-      </h3>
-      <ol aria-labelledby={panel.titleId} className="list-none grid md:grid-cols-3 gap-10">
+      </Title>
+      <ol aria-labelledby={panel.titleId} className="list-none grid gap-5 md:grid-cols-3 md:gap-8">
         {panel.steps.map((s) => (
           <li key={s.title}>
-            <div className="w-[46px] h-[46px] rounded-full bg-cream border border-line-strong flex items-center justify-center mb-5">
-              <Icon name={s.icon} size={20} strokeWidth={1.6} className="text-gold-dark" aria-hidden />
+            <div className="flex items-center gap-3">
+              <div className={STEP_ICON}>
+                <Icon name={s.icon} size={18} strokeWidth={1.6} className="text-gold-dark" aria-hidden />
+              </div>
+              <StepTitle className="font-serif text-[19px] md:text-[21px] leading-snug font-medium text-ink">{s.title}</StepTitle>
             </div>
-            <h4 className="font-serif text-[21px] font-medium mb-2.5 text-ink">{s.title}</h4>
-            <p className="text-[15px] leading-[1.6] text-ink-soft">{s.text}</p>
+            <p className="mt-2 text-[15px] leading-[1.55] text-ink-soft">{s.text}</p>
           </li>
         ))}
       </ol>

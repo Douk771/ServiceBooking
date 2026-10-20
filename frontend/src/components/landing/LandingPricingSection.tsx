@@ -21,7 +21,7 @@ export function LandingPricingSection({ config }: { config: LandingPricingConfig
 
   return (
     <section aria-labelledby="pricing-title" className={SECTION}>
-      <div className="flex items-baseline justify-between mb-10 flex-wrap gap-3">
+      <div className="flex items-baseline justify-between mb-6 md:mb-10 flex-wrap gap-3">
         <div>
           <h2 id="pricing-title" className={`${H2} mb-2`}>
             Тарифы
@@ -37,7 +37,7 @@ export function LandingPricingSection({ config }: { config: LandingPricingConfig
           <Icon name="arrow-right" size={15} strokeWidth={1.8} aria-hidden />
         </Link>
       </div>
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid gap-4 md:gap-6 md:grid-cols-3">
         {cards.map((plan) => (
           <div key={plan.id} className="bg-white border border-line rounded-[20px] p-6">
             <h3 className="font-serif text-[19px] font-medium text-ink mb-1">{plan.name}</h3>

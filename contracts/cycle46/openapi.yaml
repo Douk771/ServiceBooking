@@ -1,0 +1,44 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 46
+# (главная «Записи» под владельца салона: порядок блоков, тексты, компактная раскладка общего шаблона главных).
+#
+# ГЛАВНОЕ: HTTP API ServiceBooking в цикле 46 НЕ МЕНЯЕТСЯ. Ни одного нового или изменённого маршрута /api/*, DTO, кода ответа,
+# текста ошибки. Поэтому paths пуст — это и есть утверждение «дельта API = ноль», которое проверяет линт.
+#
+# Главная «Записи» по-прежнему читает два существующих анонимных маршрута, оба без изменений:
+#   GET /api/companies/public  — каталог «Салоны на EZBOOK» (форма — contracts/cycle28/openapi.yaml)
+#   GET /api/pricing           — блок «Тарифы» (форма — контракты циклов 7/18/28/40; 404 = блок скрыт)
+#
+# Контракт, о котором в этом цикле реально должны сойтись разработчики, — фронтенд-внутренний:
+#   * типы конфига шаблона главной (frontend/src/components/landing/types.ts) — API_CONTRACT_CYCLE46_ZAPIS_LANDING.md §46.21;
+#     их проверяет tsc;
+#   * эталон порядка блоков и дословных текстов главной «Записи» — contracts/cycle46/zapis-landing.json;
+#     его проверяет vitest (CY46-08, CY46-13), без ручного написания проверок под каждую строку;
+#   * разметочный контракт (id, aria-*, порядок заголовков) — API_CONTRACT_CYCLE46_ZAPIS_LANDING.md §46.23.
+#
+# Как пользоваться:
+#   cd frontend && npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle46/openapi.yaml
+#   cd frontend && npx vitest run src/pages/home src/components/landing goods/src/landing dom/src bani/src
+
+info:
+  title: ServiceBooking — цикл 46, главная «Записи» (изменений API нет)
+  version: "46.1.0"
+  license:
+    name: Proprietary
+    url: https://ezbook.ru/terms
+  description: >-
+    Цикл 46 меняет только фронтенд: порядок секций главной «Записи», её тексты и раскладку общего шаблона главных четырёх
+    сайтов. HTTP API, БД и миграции не меняются (x-servicebooking-api-changes: none). Фронтенд-контракт цикла —
+    contracts/cycle46/zapis-landing.json и типы конфига шаблона (API_CONTRACT_CYCLE46_ZAPIS_LANDING.md).
+
+x-servicebooking-api-changes: none
+x-servicebooking-frontend-contract: ./zapis-landing.json
+
+servers:
+  - url: https://visit.ezbook.ru
+    description: сайт «Записи» (бывший ezbook.ru); главная — SPA, API — тот же origin, /api/*
+
+paths: {}
+
+components: {}

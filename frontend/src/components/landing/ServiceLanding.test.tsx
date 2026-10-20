@@ -3,8 +3,9 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ServiceLanding } from './ServiceLanding'
-import { makeConfig, shot, steps } from './testConfig'
-import type { LandingConfig, LandingStepsPanel } from './types'
+import { makeBusinessFirstConfig, makeConfig, shot, steps } from './testConfig'
+import { SECTION } from './classes'
+import type { BusinessFirstLandingConfig, LandingConfig, LandingPanelConfig, LandingStepsPanel } from './types'
 import type { PricingGridView, PricingLine } from '../pricing/pricingLine'
 
 const grid: PricingGridView = {
@@ -15,7 +16,7 @@ const grid: PricingGridView = {
 }
 const line: PricingLine = { queryKey: ['public-pricing', 'test'], fetchGrid: vi.fn() }
 
-function renderLanding(config: LandingConfig) {
+function renderLanding(config: LandingConfig | BusinessFirstLandingConfig) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
@@ -119,5 +120,111 @@ describe('compile-time shape (T38-05)', () => {
     // @ts-expect-error — FAQ из пяти пунктов
     const faq5: LandingConfig['faq'] = { items: [{ question: 'q', answer: 'a' }, { question: 'q', answer: 'a' }, { question: 'q', answer: 'a' }, { question: 'q', answer: 'a' }, { question: 'q', answer: 'a' }] }
     expect([two, four, noTitle, faq5]).toHaveLength(4)
+  })
+})
+
+describe('business-first layout (CY46-01t)', () => {
+  it('orders h1, business, clients, steps, pricing, faq, catalog; catalog is last; steps are a separate h2 section', async () => {
+    const { container } = renderLanding(makeBusinessFirstConfig({ pricing: { line, lead: 'Лид' } }))
+    await screen.findByText(/Лид — от/)
+    const els = ['h1', '#b-title', '#c-title', '#b-steps', '#pricing-title', '#faq', '#cat'].map((sel) => container.querySelector(sel)!)
+    els.forEach((e) => expect(e).toBeTruthy())
+    for (let i = 1; i < els.length; i++) expect(before(els[i - 1], els[i])).toBe(true)
+    expect(container.querySelector('#b-steps')!.tagName).toBe('H2')
+    expect(container.querySelectorAll('#b-steps ~ ol li h3')).toHaveLength(3)
+    const sections = container.querySelectorAll('main > section')
+    expect(sections[sections.length - 1].id).toBe('cat')
+    // каталог в конце — обычная секция с ритмом, а не прежний mt-8
+    expect(sections[sections.length - 1].className).toContain(SECTION)
+  })
+
+  it('has no actions or steps panel in the clients section and no ol in the business section', () => {
+    const { container } = renderLanding(makeBusinessFirstConfig())
+    expect(container.querySelector('[aria-labelledby="c-title"] a')).toBeNull()
+    expect(container.querySelector('#c-steps')).toBeNull()
+    expect(container.querySelector('[aria-labelledby="b-title"] ol')).toBeNull()
+  })
+
+  it('hero: primary action is a link, client link points to the catalog id', () => {
+    const { container } = renderLanding(makeBusinessFirstConfig())
+    const first = container.querySelector('main > div') as HTMLElement
+    expect(first.querySelector('a[href="/register"]')).toHaveTextContent('Подключить')
+    const cl = screen.getByRole('link', { name: 'Каталог ссылка' })
+    expect(cl).toHaveAttribute('href', '#cat')
+    expect(cl.className).toContain('min-h-[44px]')
+  })
+})
+
+describe('placeholder slot follows output order (CY46-12)', () => {
+  it('business-first without screenshots: one placeholder, inside the business section', () => {
+    const { container } = renderLanding(makeBusinessFirstConfig())
+    const ph = screen.getAllByTestId('landing-screenshot-placeholder')
+    expect(ph).toHaveLength(1)
+    expect(container.querySelector('[aria-labelledby="b-title"]')!.contains(ph[0])).toBe(true)
+  })
+
+  it('business-first with a screenshot only in business: placeholder moves to clients', () => {
+    const base = makeBusinessFirstConfig()
+    const { container } = renderLanding({ ...base, business: { ...base.business, screenshot: shot } })
+    const ph = screen.getAllByTestId('landing-screenshot-placeholder')
+    expect(ph).toHaveLength(1)
+    expect(container.querySelector('[aria-labelledby="c-title"]')!.contains(ph[0])).toBe(true)
+  })
+})
+
+describe('compile-time shape of layouts (CY46-11)', () => {
+  it('rejects forbidden business-first forms and panel + business-first', () => {
+    const b = makeBusinessFirstConfig()
+    const c = makeConfig()
+    // @ts-expect-error — нет clientLink
+    const noLink: BusinessFirstLandingConfig = { ...b, hero: { ...b.hero, clientLink: undefined } }
+    // @ts-expect-error — нет primaryAction
+    const noAction: BusinessFirstLandingConfig = { ...b, hero: { ...b.hero, primaryAction: undefined } }
+    // @ts-expect-error — actions у клиентов запрещены
+    const withActions: BusinessFirstLandingConfig = { ...b, clients: { ...b.clients, actions: c.clients.actions } }
+    // @ts-expect-error — stepsPanel у клиентов запрещена
+    const withSteps: BusinessFirstLandingConfig = { ...b, clients: { ...b.clients, stepsPanel: c.clients.stepsPanel } }
+    // @ts-expect-error — media запрещено
+    const withMedia: BusinessFirstLandingConfig = { ...b, media: { src: 'x', alt: 'a', width: 1, height: 1 } }
+    // @ts-expect-error — панельная шапка только для catalog-first
+    const panelBF: LandingPanelConfig = { ...c, order: 'business-first', hero: { layout: 'panel' } }
+    expect([noLink, noAction, withActions, withSteps, withMedia, panelBF]).toHaveLength(6)
+    // конфиг без order — валидный catalog-first
+    const goodsLike: LandingConfig = c
+    expect(goodsLike.order).toBeUndefined()
+  })
+})
+
+describe('compact layout invariants (CY46-K)', () => {
+  it('K1: icon and step title share a flex row; ol has no gap-10', () => {
+    const { container } = renderLanding(makeConfig())
+    const ol = container.querySelector('ol')!
+    expect(ol.className).not.toContain('gap-10')
+    ol.querySelectorAll(':scope > li').forEach((li) => {
+      const row = li.querySelector('svg')!.parentElement!.parentElement!
+      expect(row.querySelector('h4')).toBeTruthy()
+      expect(row.className).toContain('flex')
+      expect(row.className).toContain('items-center')
+    })
+  })
+
+  it('K2: action rows wrap and every button is 44px high and nowrap', () => {
+    const { container } = renderLanding(makeConfig())
+    const row = screen.getByRole('link', { name: 'Войти' }).parentElement!
+    expect(row.className).toContain('flex-wrap')
+    row.querySelectorAll('a').forEach((a) => {
+      expect(a.className).toContain('min-h-[44px]')
+      expect(a.className).toContain('whitespace-nowrap')
+    })
+    expect(container.querySelector('a svg')!.getAttribute('class')).toContain('hidden sm:block')
+  })
+
+  it('K3: short lists have no bordered cards', () => {
+    const { container } = renderLanding(makeBusinessFirstConfig())
+    container.querySelectorAll('ul[aria-labelledby="c-list"] li').forEach((li) => expect(li.className).not.toContain('border'))
+  })
+
+  it('K5: section rhythm has no unprefixed mt-20', () => {
+    expect(SECTION.split(' ')).not.toContain('mt-20')
   })
 })
