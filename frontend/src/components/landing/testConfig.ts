@@ -103,3 +103,30 @@ export function makeBusinessFirstConfig(over: Partial<BusinessFirstLandingConfig
     ...over,
   }
 }
+
+const SERVICE_KEYS = new Set([
+  'titleId', 'id', 'href', 'to', 'guestTo', 'authedTo', 'icon', 'src', 'srcSet', 'media', 'kind', 'layout', 'backdrop', 'order',
+  'width', 'height', 'line', 'sources', 'type',
+])
+
+/**
+ * Все строки конфига главной, разложенные по тому, где их искать на странице (CY46-09, K7):
+ * text — в textContent, alt — у img, ariaLabel — у секции каталога и региона карусели. Служебные ключи пропускаются.
+ */
+export function collectConfigStrings(config: unknown): { text: string[]; alt: string[]; ariaLabel: string[] } {
+  const out = { text: [] as string[], alt: [] as string[], ariaLabel: [] as string[] }
+  const walk = (v: unknown, key: string, parent: unknown): void => {
+    if (typeof v === 'string') {
+      if (SERVICE_KEYS.has(key)) return
+      if (key === 'alt') out.alt.push(v)
+      else if (key === 'ariaLabel') out.ariaLabel.push(v)
+      else if (key === 'label' && parent && typeof parent === 'object' && 'slides' in parent) out.ariaLabel.push(v)
+      else out.text.push(v)
+      return
+    }
+    if (Array.isArray(v)) v.forEach((x) => walk(x, key, parent))
+    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) if (!SERVICE_KEYS.has(k)) walk(x, k, v)
+  }
+  walk(config, '', null)
+  return out
+}

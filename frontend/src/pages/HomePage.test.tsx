@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { HomePage } from './HomePage'
 import type { Company } from '../types'
+import { useAuthStore } from '../store/authStore'
+import contract from '../../../contracts/cycle46/zapis-landing.json'
 
 const getPublic = vi.fn()
 
@@ -135,8 +137,8 @@ describe('HomePage — единый шаблон (T38-10)', () => {
     await screen.findByText(LONG)
     const frame = container.querySelector('#companies') as HTMLElement
     expect(frame.contains(screen.getByText(LONG))).toBe(true)
-    expect(screen.getAllByRole('link', { name: 'Найти специалиста' })[0]).toHaveAttribute('href', '#companies')
-    expect(screen.getByRole('link', { name: 'Как записаться' })).toHaveAttribute('href', '#clients-title')
+    expect(screen.getByRole('link', { name: 'Салоны на EZBOOK' })).toHaveAttribute('href', '#companies')
+    expect(screen.getByRole('link', { name: 'Как записываются клиенты' })).toHaveAttribute('href', '#clients-title')
     expect(container.querySelector('footer')).toBeNull()
     expect(container.querySelectorAll('h1')).toHaveLength(1)
   })
@@ -150,7 +152,7 @@ describe('HomePage — единый шаблон (T38-10)', () => {
     expect(h3.className).not.toContain('truncate')
   })
 
-  it('FAQ has 8 collapsed questions', async () => {
+  it('FAQ has 8 collapsed questions (CY46-05)', async () => {
     const { container } = renderPage()
     await screen.findByText(LONG)
     const buttons = container.querySelectorAll('#faq h3 > button')
@@ -158,7 +160,7 @@ describe('HomePage — единый шаблон (T38-10)', () => {
     buttons.forEach((b) => expect(b.getAttribute('aria-expanded')).toBe('false'))
   })
 
-  it('карусель «Как проходит запись»: шаги кликабельны и синхронизированы с кадрами; «Что ещё можно» — сетка карточек', async () => {
+  it('карусель «Как проходит запись»: шаги кликабельны и синхронизированы с кадрами; «Что ещё может клиент» — плотный список без карточек', async () => {
     const { container } = renderPage()
     await screen.findByText(LONG)
     const region = screen.getByRole('region', { name: /Как проходит запись|Как записаться/ })
@@ -170,7 +172,99 @@ describe('HomePage — единый шаблон (T38-10)', () => {
     expect(region.querySelectorAll('[data-testid="carousel-slide"][data-active]')).toHaveLength(1)
     const list = container.querySelector('ul[aria-labelledby="clients-list-title"]') as HTMLElement
     expect(list.className).toContain('grid')
-    expect(list.querySelectorAll('li').length).toBeGreaterThanOrEqual(4)
+    expect(list.querySelectorAll('li')).toHaveLength(5)
+    list.querySelectorAll('li').forEach((li) => expect(li.className).not.toContain('border'))
     expect(container.scrollWidth).toBeLessThanOrEqual(container.clientWidth || Infinity)
+  })
+})
+
+// CY46: главная «Записи» под владельца салона (ARCHITECTURE_CYCLE46_ZAPIS_LANDING.md §46.11.1).
+describe('HomePage — раскладка business-first (CY46)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useAuthStore.setState({ user: null, token: null })
+    getPublic.mockReset().mockResolvedValue({ items: [company()], page: 1, pageSize: 20, total: 1, hasNext: false })
+  })
+
+  it('CY46-01: порядок h1, #biz-title, #clients-title, #biz-steps-title, #faq-title, #companies; все — h2; каталог последний', async () => {
+    const { container } = renderPage()
+    await screen.findByText('Салон красоты')
+    const seq = ['h1', '#biz-title', '#clients-title', '#biz-steps-title', '#faq-title', '#companies'].map(
+      (sel) => container.querySelector(sel) as HTMLElement,
+    )
+    seq.forEach((el) => expect(el).not.toBeNull())
+    for (let i = 1; i < seq.length; i++) {
+      expect(seq[i - 1].compareDocumentPosition(seq[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+    for (const sel of ['#biz-title', '#clients-title', '#biz-steps-title', '#faq-title']) {
+      expect(container.querySelector(sel)!.tagName).toBe('H2')
+    }
+    const sections = container.querySelectorAll('main > section')
+    expect(sections[sections.length - 1].id).toBe('companies')
+  })
+
+  it('CY46-01: в секции клиентов нет ссылок и панели шагов; в бизнес-секции нет ol; шаги — h2 → h3', async () => {
+    const { container } = renderPage()
+    await screen.findByText('Салон красоты')
+    const clients = container.querySelector('[aria-labelledby="clients-title"]') as HTMLElement
+    expect(clients.querySelector('a')).toBeNull()
+    expect(container.querySelector('#clients-steps-title')).toBeNull()
+    expect((container.querySelector('[aria-labelledby="biz-title"]') as HTMLElement).querySelector('ol')).toBeNull()
+    const steps = container.querySelector('[aria-labelledby="biz-steps-title"]') as HTMLElement
+    expect(steps.querySelectorAll('h3')).toHaveLength(3)
+    expect(steps.querySelectorAll('h4')).toHaveLength(0)
+  })
+
+  it('CY46-04: «Подключить салон» в первом экране — гость на /register, вошедший на /cabinet/new', async () => {
+    const { container, unmount } = renderPage()
+    await screen.findByText('Салон красоты')
+    const first = container.querySelector('main > div') as HTMLElement
+    const guestLink = first.querySelector('a[href^="/register"]') as HTMLElement
+    expect(guestLink).toHaveTextContent('Подключить салон')
+    expect(guestLink).toHaveAttribute('href', '/register?returnTo=%2Fcabinet%2Fnew')
+    unmount()
+    useAuthStore.setState({ user: { id: 'u', phone: '7', firstName: 'a', lastName: 'b', roles: ['Client'] }, token: 't' })
+    const again = renderPage()
+    await screen.findByText('Салон красоты')
+    expect((again.container.querySelector('main > div') as HTMLElement).querySelector('a[href="/cabinet/new"]')).toHaveTextContent('Подключить салон')
+  })
+
+  it('CY46-03: переход с #biz-title прокручивает к бизнес-секции', async () => {
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    window.location.hash = '#biz-title'
+    const { container } = renderPage()
+    await screen.findByText('Салон красоты')
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.instances[0]).toBe(container.querySelector('#biz-title'))
+    window.location.hash = ''
+  })
+
+  it('CY46-08: каждая строка контракта (кроме FAQ-ответов в скрытых узлах) видна на странице', async () => {
+    const { container } = renderPage()
+    await screen.findByText('Салон красоты')
+    const text = container.textContent ?? ''
+    for (const t of [contract.hero.eyebrow, contract.hero.intro, contract.business.title, contract.clients.title, contract.steps.title, contract.catalog.subtitle, contract.faq[0].answer]) {
+      expect(text).toContain(t)
+    }
+  })
+
+  it('каталог: загрузка — 2 заглушки', () => {
+    getPublic.mockReset().mockReturnValue(new Promise(() => {}))
+    const { container } = renderPage()
+    expect(container.querySelectorAll('#companies .animate-pulse')).toHaveLength(2)
+  })
+
+  it('каталог: ошибка — одна строка role=alert с текстом контракта', async () => {
+    getPublic.mockReset().mockRejectedValue(new Error('x'))
+    renderPage()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(contract.catalog.error)
+  })
+
+  it('каталог: пусто — «Салонов пока нет»', async () => {
+    getPublic.mockReset().mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
+    renderPage()
+    expect(await screen.findByText(contract.catalog.empty)).toBeInTheDocument()
   })
 })
