@@ -1,4 +1,4 @@
-import type { FaqItems, LandingConfig, LandingPanelConfig, ThreeSteps } from './types'
+import type { BusinessFirstLandingConfig, CatalogFirstLandingConfig, FaqItems, LandingPanelConfig, ThreeSteps } from './types'
 
 /** Конфиг для тестов шаблона (не конфиг сервиса). */
 export const steps = (p: string): ThreeSteps => [
@@ -18,7 +18,7 @@ export const faqItems: FaqItems = [
 
 export const shot = { src: '/x.webp', width: 320, height: 640, alt: 'Скрин', caption: 'Подпись' }
 
-export function makeConfig(over: Partial<LandingConfig> = {}): LandingConfig {
+export function makeConfig(over: Partial<CatalogFirstLandingConfig> = {}): CatalogFirstLandingConfig {
   return {
     hero: {
       eyebrow: 'Эйбро',
@@ -55,7 +55,7 @@ export function makeConfig(over: Partial<LandingConfig> = {}): LandingConfig {
 
 /** Конфиг с шапкой-панелью для тестов шаблона (ARCHITECTURE_CYCLE41.md §41.3). */
 export function makePanelConfig(over: Partial<LandingPanelConfig> = {}): LandingPanelConfig {
-  const rest: Omit<LandingConfig, 'hero'> & { hero?: unknown } = { ...makeConfig() }
+  const rest: Omit<CatalogFirstLandingConfig, 'hero'> & { hero?: unknown } = { ...makeConfig() }
   delete rest.hero
   return {
     ...rest,
@@ -72,6 +72,34 @@ export function makePanelConfig(over: Partial<LandingPanelConfig> = {}): Landing
       ],
       backdrop: 'mountains',
     },
+    ...over,
+  }
+}
+
+/** Конфиг раскладки 'business-first' для тестов шаблона (ARCHITECTURE_CYCLE46 §46.2). */
+export function makeBusinessFirstConfig(over: Partial<BusinessFirstLandingConfig> = {}): BusinessFirstLandingConfig {
+  const base = makeConfig()
+  const buyAction = base.business.actions[0]
+  return {
+    order: 'business-first',
+    hero: {
+      eyebrow: 'Эйбро',
+      title: { lead: 'Заголовок', accent: 'акцент' },
+      intro: 'Интро',
+      primaryAction: buyAction,
+      howTo: { kind: 'anchor', href: '#c-title', label: 'Как' },
+      clientLink: { lead: 'Ищете?', action: { kind: 'anchor', href: '#cat', label: 'Каталог ссылка' } },
+    },
+    catalog: base.catalog,
+    clients: {
+      eyebrow: 'Клиентам',
+      title: 'Клиенты',
+      titleId: 'c-title',
+      text: 'Текст',
+      list: { title: 'Список', titleId: 'c-list', items: ['один', 'два'], note: 'Примечание' },
+    },
+    business: base.business,
+    faq: base.faq,
     ...over,
   }
 }
