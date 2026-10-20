@@ -4,10 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ServiceLanding } from '@/components/landing/ServiceLanding'
 import { goodsLanding } from './goodsLanding'
-import { stayLanding } from '../../../dom/src/landing/stayLanding'
-import { baniLanding } from '../../../bani/src/landing/baniLanding'
 
-// QA CY46-02/03/K8 (US-46-02, US-46-06): у «Заказов», «Домов», «Бань» порядок прежний:
+// QA CY46-02/03/K8 (US-46-02, US-46-06): у «Заказов» порядок прежний (файлы по сервисам — ESLint-границы goods/dom/bani):
 // герой -> каталог -> клиенты -> «для бизнеса» (#biz-title) -> тарифы -> FAQ; шаги внутри бизнес-секции.
 vi.mock('@/api/pricing', () => ({ pricingApi: { getPublicPricing: vi.fn().mockResolvedValue(null) } }))
 
@@ -15,8 +13,6 @@ const follows = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b)
 
 describe.each([
   ['Заказы', goodsLanding],
-  ['Дома', stayLanding],
-  ['Бани', baniLanding],
 ])('%s: порядок блоков не изменился', (_name, config) => {
   it('h1 -> каталог -> клиенты -> #biz-title -> #faq; шаги внутри бизнес-секции', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
