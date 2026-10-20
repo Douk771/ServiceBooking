@@ -230,14 +230,20 @@ describe('HomePage — раскладка business-first (CY46)', () => {
   })
 
   it('CY46-03: переход с #biz-title прокручивает к бизнес-секции', async () => {
+    // jsdom не реализует scrollIntoView: подменяем и возвращаем как было, hash сбрасываем даже при упавшем assert.
+    const original = Element.prototype.scrollIntoView
     const scrollIntoView = vi.fn()
     Element.prototype.scrollIntoView = scrollIntoView
     window.location.hash = '#biz-title'
-    const { container } = renderPage()
-    await screen.findByText('Салон красоты')
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
-    expect(scrollIntoView.mock.instances[0]).toBe(container.querySelector('#biz-title'))
-    window.location.hash = ''
+    try {
+      const { container } = renderPage()
+      await screen.findByText('Салон красоты')
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView.mock.instances[0]).toBe(container.querySelector('#biz-title'))
+    } finally {
+      window.location.hash = ''
+      Element.prototype.scrollIntoView = original
+    }
   })
 
   it('CY46-08: каждая строка контракта (кроме FAQ-ответов в скрытых узлах) видна на странице', async () => {

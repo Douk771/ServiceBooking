@@ -1,6 +1,5 @@
 import { Icon } from '../ui/Icon'
-import { H3 } from './classes'
-import { STEP_ICON } from './classes'
+import { H3, STEP_ICON } from './classes'
 import type { LandingStepsPanel as Panel } from './types'
 
 /** Панель «3 шага». headingLevel 3 — внутри секции (h3 + шаги h4), 2 — отдельная секция (h2 + шаги h3). */
