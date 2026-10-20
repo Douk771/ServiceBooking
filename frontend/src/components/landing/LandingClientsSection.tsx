@@ -1,54 +1,41 @@
 import { Icon } from '../ui/Icon'
-import { CHECK_ITEM, EYEBROW, H2, H3, LEAD, SECTION } from './classes'
+import { ACTIONS_ROW, CHECK_ITEM, DENSE_LIST, EYEBROW, H2, H3, LEAD, SECTION } from './classes'
 import { LandingActionLink } from './LandingActionLink'
 import { LandingScreenshotFigure, LandingScreenshotPlaceholder } from './LandingScreenshot'
 import { LandingScreenshotCarousel } from './LandingScreenshotCarousel'
 import { LandingStepsPanel } from './LandingStepsPanel'
-import type { LandingClientsConfig } from './types'
+import type { LandingClientsConfig, LandingClientsShowcaseConfig } from './types'
 
-/** Секция 3: «Для покупателей / клиентов». Разметка — бывший goods BuyersBlock. */
-export function LandingClientsSection({ config, placeholder }: { config: LandingClientsConfig; placeholder: boolean }) {
-  const { screenshot } = config
+type Config = LandingClientsConfig | LandingClientsShowcaseConfig
+
+/** Секция 3: «Для покупателей / клиентов». Разметка — бывший goods BuyersBlock. Кнопки и панель шагов — только если есть в конфиге. */
+export function LandingClientsSection({ config, placeholder }: { config: Config; placeholder: boolean }) {
+  const { screenshot, actions, stepsPanel } = config
   return (
     <section aria-labelledby={config.titleId} className={SECTION}>
-      <p className={`${EYEBROW} mb-4`}>{config.eyebrow}</p>
+      <p className={`${EYEBROW} mb-3`}>{config.eyebrow}</p>
       <div className="max-w-[720px]">
         <h2 id={config.titleId} tabIndex={-1} className={`${H2} scroll-mt-24 focus:outline-none`}>
           {config.title}
         </h2>
         <p className={LEAD}>{config.text}</p>
-        <div className="mt-7 flex flex-wrap items-center gap-3">
-          {config.actions.map((a, i) => (
-            <LandingActionLink key={a.label} action={a} primary={i === 0} />
-          ))}
-        </div>
+        {actions && (
+          <div className={ACTIONS_ROW}>
+            {actions.map((a, i) => (
+              <LandingActionLink key={a.label} action={a} primary={i === 0} />
+            ))}
+          </div>
+        )}
       </div>
-      <LandingStepsPanel panel={config.stepsPanel} />
+      {stepsPanel && <LandingStepsPanel panel={stepsPanel} />}
       {screenshot && 'slides' in screenshot ? (
         <>
-          <LandingScreenshotCarousel carousel={screenshot} className="mt-12 md:mt-16" />
-          <div className="mt-12 md:mt-16">
-            <h3 id={config.list.titleId} className={`${H3} mb-6`}>
+          <LandingScreenshotCarousel carousel={screenshot} className="mt-8 md:mt-12" />
+          <div className="mt-8 md:mt-12">
+            <h3 id={config.list.titleId} className={`${H3} mb-4`}>
               {config.list.title}
             </h3>
-            <ul aria-labelledby={config.list.titleId} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {config.list.items.map((t) => (
-                <li key={t} className={`${CHECK_ITEM} rounded-2xl border border-line bg-white p-4`}>
-                  <Icon name="check" size={18} className="text-gold-dark shrink-0 mt-[3px]" aria-hidden />
-                  <span>{t}</span>
-                </li>
-              ))}
-            </ul>
-            {config.list.note && <p className="mt-4 text-[13px] text-muted">{config.list.note}</p>}
-          </div>
-        </>
-      ) : (
-        <div className="mt-12 md:mt-16 grid md:grid-cols-[1.05fr_0.95fr] gap-10 md:gap-16 items-start">
-          <div>
-            <h3 id={config.list.titleId} className={`${H3} mb-6`}>
-              {config.list.title}
-            </h3>
-            <ul aria-labelledby={config.list.titleId} className="space-y-4">
+            <ul aria-labelledby={config.list.titleId} className={`${DENSE_LIST} sm:grid-cols-2`}>
               {config.list.items.map((t) => (
                 <li key={t} className={CHECK_ITEM}>
                   <Icon name="check" size={18} className="text-gold-dark shrink-0 mt-[3px]" aria-hidden />
@@ -56,7 +43,24 @@ export function LandingClientsSection({ config, placeholder }: { config: Landing
                 </li>
               ))}
             </ul>
-            {config.list.note && <p className="mt-6 text-[13px] text-muted">{config.list.note}</p>}
+            {config.list.note && <p className="mt-3 text-[13px] text-muted">{config.list.note}</p>}
+          </div>
+        </>
+      ) : (
+        <div className="mt-8 md:mt-12 grid md:grid-cols-[1.05fr_0.95fr] gap-6 md:gap-16 items-start">
+          <div>
+            <h3 id={config.list.titleId} className={`${H3} mb-4`}>
+              {config.list.title}
+            </h3>
+            <ul aria-labelledby={config.list.titleId} className={`${DENSE_LIST} sm:grid-cols-2 md:grid-cols-1`}>
+              {config.list.items.map((t) => (
+                <li key={t} className={CHECK_ITEM}>
+                  <Icon name="check" size={18} className="text-gold-dark shrink-0 mt-[3px]" aria-hidden />
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+            {config.list.note && <p className="mt-3 text-[13px] text-muted">{config.list.note}</p>}
           </div>
           {screenshot ? (
             <LandingScreenshotFigure shot={screenshot} className="mx-auto w-full max-w-[320px] md:max-w-[340px]" />

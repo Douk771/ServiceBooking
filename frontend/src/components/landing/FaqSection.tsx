@@ -24,7 +24,7 @@ export function FaqSection({ items }: { items: FaqItems }) {
       <h2 id="faq-title" className={H2}>
         Частые вопросы
       </h2>
-      <ul role="list" className="mt-8 divide-y divide-line border-y border-line">
+      <ul role="list" className="mt-5 md:mt-8 divide-y divide-line border-y border-line">
         {items.map((item, i) => {
           const isOpen = open.has(i)
           const qId = `${uid}-q${i}`
@@ -39,7 +39,7 @@ export function FaqSection({ items }: { items: FaqItems }) {
                   aria-expanded={isOpen}
                   aria-controls={aId}
                   onClick={() => toggle(i)}
-                  className={`w-full flex items-start justify-between gap-4 py-5 text-left font-serif text-[19px] text-ink ${FOCUS_RING}`}
+                  className={`w-full flex items-start justify-between gap-4 py-4 md:py-5 text-left font-serif text-[19px] text-ink ${FOCUS_RING}`}
                 >
                   <span className="break-words min-w-0">{item.question}</span>
                   <Icon
