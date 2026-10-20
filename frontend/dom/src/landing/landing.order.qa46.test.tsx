@@ -19,7 +19,7 @@ describe.each([
     const { container } = render(
       <QueryClientProvider client={qc}>
         <MemoryRouter>
-          <ServiceLanding config={config} catalog={<div id="stub-cat">каталог</div>} />
+          <ServiceLanding config={config} catalog={<div id="stub-cat">каталог</div>} heroAside={<form aria-label="Панель" />} />
         </MemoryRouter>
       </QueryClientProvider>,
     )
