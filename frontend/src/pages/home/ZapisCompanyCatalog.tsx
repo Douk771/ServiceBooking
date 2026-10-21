@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { companiesApi } from '../../api/companies'
+import { companiesPageQuery } from './companiesPageQuery'
 import { Icon } from '../../components/ui/Icon'
 import { CatalogCard } from '../../components/landing/CatalogCard'
 import { Pagination } from '../../components/ui/Pagination'
 import { ShowcaseBadge } from '../../components/showcase/ShowcaseBadge'
 import type { Company } from '../../types'
 
-const PAGE_SIZE = 20
 
 function CompanyCard({ company }: { company: Company }) {
   // A closed showcase company shows «Онлайн-запись» in the catalog while the server refuses every booking
@@ -50,15 +49,7 @@ export function ZapisCompanyCatalog() {
     data: companiesPage,
     isLoading,
     isError,
-  } = useQuery({
-    queryKey: ['companies-public', debouncedSearch, page],
-    queryFn: () =>
-      companiesApi.getPublic({
-        search: debouncedSearch || undefined,
-        page,
-        pageSize: PAGE_SIZE,
-      }),
-  })
+  } = useQuery(companiesPageQuery(debouncedSearch, page))
   const companies = companiesPage?.items
 
   return (

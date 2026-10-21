@@ -166,7 +166,8 @@ export interface CatalogFirstLandingConfig extends LandingConfigCommon {
 /** Раскладка «Записи»: герой, бизнес, клиенты, шаги, тарифы, FAQ, каталог. */
 export interface BusinessFirstLandingConfig extends LandingConfigCommon {
   order: 'business-first'
-  hero: LandingHeroConfig & { primaryAction: LandingAction; clientLink: LandingHeroClientLink }
+  /** Ссылки «как записаться» в шапке нет: блок клиентов идёт сразу после бизнеса, до него доходят и так. */
+  hero: Omit<LandingHeroConfig, 'howTo'> & { howTo?: never; primaryAction: LandingAction; clientLink: LandingHeroClientLink }
   media?: never
   clients: LandingClientsShowcaseConfig
 }

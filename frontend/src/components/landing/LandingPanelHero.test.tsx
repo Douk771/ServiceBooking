@@ -153,7 +153,7 @@ describe('default branch regression (T41-02)', () => {
       </MemoryRouter>,
     )
     const main = container.querySelector('main')!
-    expect(main.className).toBe('max-w-[1180px] mx-auto px-4 sm:px-8 pt-10 md:pt-16 pb-10')
+    expect(main.className).toBe('max-w-[1180px] mx-auto px-4 sm:px-8 pt-6 md:pt-10 pb-10')
     const first = main.firstElementChild!
     expect(first.className).toContain('max-w-[720px]')
     expect(first.querySelector('h1')).toBeTruthy()

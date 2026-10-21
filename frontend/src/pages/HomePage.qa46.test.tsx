@@ -78,10 +78,10 @@ describe('US-46-01: первый экран для владельца', () => {
     authed.forEach((a) => expect(a).toHaveAttribute('href', '/cabinet/new'))
   })
 
-  it('«Как записываются клиенты» -> #clients-title; строка клиента -> #companies, это ссылка внутри текста, а не кнопка-карточка', async () => {
+  it('ссылки «Как записываются клиенты» нет; строка клиента -> #companies, это ссылка внутри текста, а не кнопка-карточка', async () => {
     const { container } = renderPage()
     await screen.findByText('Салон красоты')
-    expect(screen.getByRole('link', { name: 'Как записываются клиенты' })).toHaveAttribute('href', '#clients-title')
+    expect(screen.queryByRole('link', { name: 'Как записываются клиенты' })).toBeNull()
     const link = screen.getByRole('link', { name: 'Салоны на EZBOOK' })
     expect(link).toHaveAttribute('href', '#companies')
     const line = link.parentElement as HTMLElement
@@ -198,26 +198,26 @@ describe('US-46-03/04: блоки «клиенты» и «как начать»'
     expect(t).toContain('Записи мастера на день: клиент, услуга и время')
   })
 
-  it('«Так к вам записываются клиенты»: обращение к владельцу, нет панели шагов, ссылок и кнопок; карусель на месте', async () => {
+  it('«Клиенту хватит минуты и телефона»: обращение к владельцу, нет панели шагов, ссылок и кнопок; карусель на месте', async () => {
     const { container } = renderPage()
     await screen.findByText('Салон красоты')
     const c = container.querySelector('[aria-labelledby="clients-title"]') as HTMLElement
     const t = c.textContent ?? ''
-    expect(t).toContain('Ваши клиенты')
-    expect(t).toContain('Так к вам записываются клиенты')
-    expect(t).toContain('С телефона и без регистрации: услуга, мастер, день, время — и имя с телефоном. Подтверждение клиент видит сразу.')
+    expect(t).toContain('Для ваших клиентов')
+    expect(t).toContain('Клиенту хватит минуты и телефона')
+    expect(t).toContain('Регистрация не нужна: несколько коротких шагов — и клиент сразу видит подтверждение записи.')
     expect(c.querySelector('a')).toBeNull()
     expect(within(c).queryByText('Найти специалиста')).toBeNull()
     expect(within(c).queryByText('Мои визиты')).toBeNull()
     expect(t).not.toContain('Как записаться')
-    const region = within(c).getByRole('region', { name: 'Как проходит запись' })
+    const region = within(c).getByRole('region', { name: 'Шаг за шагом' })
     expect(region.querySelectorAll('[data-testid="carousel-slide"]').length).toBe(6)
   })
 
   it('карусель: клик по шагу переключает кадр, остаётся один активный', async () => {
     const { container } = renderPage()
     await screen.findByText('Салон красоты')
-    const region = screen.getByRole('region', { name: 'Как проходит запись' })
+    const region = screen.getByRole('region', { name: 'Шаг за шагом' })
     const steps = region.querySelectorAll('ol button')
     expect(steps).toHaveLength(6)
     await userEvent.click(steps[4])
@@ -287,17 +287,11 @@ describe('US-46-05: каталог', () => {
     })
   })
 
-  it('загрузка: не более двух заглушек; ошибка и пусто — одна строка с иконкой', async () => {
+  it('загрузка первой страницы — каталога нет; ошибка — одна строка с иконкой', async () => {
     getPublic.mockReset().mockReturnValue(new Promise(() => {}))
     const first = renderPage()
-    expect(first.container.querySelectorAll('#companies .animate-pulse').length).toBeLessThanOrEqual(2)
+    expect(first.container.querySelector('#companies')).toBeNull()
     first.unmount()
-
-    getPublic.mockReset().mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
-    const empty = renderPage()
-    const msg = await empty.findByText('Салонов пока нет')
-    expect(msg.parentElement!.querySelector('svg')).not.toBeNull()
-    empty.unmount()
 
     getPublic.mockReset().mockRejectedValue(new Error('x'))
     const err = renderPage()

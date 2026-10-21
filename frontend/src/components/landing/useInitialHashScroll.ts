@@ -27,6 +27,9 @@ function hashTarget(): HTMLElement | null {
  * Safari has no scroll anchoring, so «/#companies» — the last section of the business-first layout — would slide away by the
  * height of the pricing. While pinned, every resize of the page that moves the target re-scrolls to it. The pin also starts on
  * an in-page anchor click (`hashchange`), and ends on the first wheel/touch/key/pointer input or after HASH_PIN_MS.
+ *
+ * A target that is not rendered yet («/#companies» before the catalog knows it is not empty) is waited for the same way:
+ * the first resize that brings it in scrolls to it and starts the pin. Input or HASH_PIN_MS ends the wait.
  */
 export function useInitialHashScroll(): void {
   useEffect(() => {
@@ -56,9 +59,28 @@ export function useInitialHashScroll(): void {
     }
 
     const initial = hashTarget()
+    let stopWait: (() => void) | null = null
     if (initial) {
       initial.scrollIntoView({ block: 'start' })
       pin(initial)
+    } else if (window.location.hash.length > 1 && typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => {
+        const target = hashTarget()
+        if (!target) return
+        stop()
+        target.scrollIntoView({ block: 'start' })
+        pin(target)
+      })
+      observer.observe(document.body)
+      const stop = () => {
+        observer.disconnect()
+        window.clearTimeout(timer)
+        USER_SCROLL_EVENTS.forEach((e) => window.removeEventListener(e, stop, true))
+        stopWait = null
+      }
+      const timer = window.setTimeout(stop, HASH_PIN_MS)
+      USER_SCROLL_EVENTS.forEach((e) => window.addEventListener(e, stop, { capture: true, passive: true }))
+      stopWait = stop
     }
 
     // The browser has already jumped to the anchor; only keep it there.
@@ -69,6 +91,7 @@ export function useInitialHashScroll(): void {
     window.addEventListener('hashchange', onHashChange)
     return () => {
       window.removeEventListener('hashchange', onHashChange)
+      stopWait?.()
       stopPin?.()
     }
   }, [])

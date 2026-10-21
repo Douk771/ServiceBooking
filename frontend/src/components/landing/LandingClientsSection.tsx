@@ -11,26 +11,34 @@ type Config = LandingClientsConfig | LandingClientsShowcaseConfig
 /** Секция 3: «Для покупателей / клиентов». Разметка — бывший goods BuyersBlock. Кнопки и панель шагов — только если есть в конфиге. */
 export function LandingClientsSection({ config, placeholder }: { config: Config; placeholder: boolean }) {
   const { screenshot, actions, stepsPanel } = config
+  const head = (
+    <>
+      <p className={`${EYEBROW} mb-3`}>{config.eyebrow}</p>
+      <h2 id={config.titleId} tabIndex={-1} className={`${H2} scroll-mt-24 focus:outline-none`}>
+        {config.title}
+      </h2>
+      <p className={LEAD}>{config.text}</p>
+      {actions && (
+        <div className={ACTIONS_ROW}>
+          {actions.map((a, i) => (
+            <LandingActionLink key={a.label} action={a} primary={i === 0} />
+          ))}
+        </div>
+      )}
+    </>
+  )
+  const carousel = screenshot && 'slides' in screenshot ? screenshot : null
+  const shot = screenshot && !('slides' in screenshot) ? screenshot : null
+  // Панель шагов стоит между шапкой и каруселью — тогда шапка остаётся отдельной строкой.
+  const headInCarousel = carousel !== null && !stepsPanel
   return (
     <section aria-labelledby={config.titleId} className={SECTION}>
-      <p className={`${EYEBROW} mb-3`}>{config.eyebrow}</p>
-      <div className="max-w-[720px]">
-        <h2 id={config.titleId} tabIndex={-1} className={`${H2} scroll-mt-24 focus:outline-none`}>
-          {config.title}
-        </h2>
-        <p className={LEAD}>{config.text}</p>
-        {actions && (
-          <div className={ACTIONS_ROW}>
-            {actions.map((a, i) => (
-              <LandingActionLink key={a.label} action={a} primary={i === 0} />
-            ))}
-          </div>
-        )}
-      </div>
+      {/* С каруселью шапка стоит над шагами в её левой колонке, и кадр справа центруется по обеим. */}
+      {!headInCarousel && <div className="max-w-[720px]">{head}</div>}
       {stepsPanel && <LandingStepsPanel panel={stepsPanel} />}
-      {screenshot && 'slides' in screenshot ? (
+      {carousel ? (
         <>
-          <LandingScreenshotCarousel carousel={screenshot} className="mt-8 md:mt-12" />
+          <LandingScreenshotCarousel carousel={carousel} intro={headInCarousel ? head : undefined} className={headInCarousel ? undefined : 'mt-8 md:mt-12'} />
           <div className="mt-8 md:mt-12">
             <h3 id={config.list.titleId} className={`${H3} mb-4`}>
               {config.list.title}
@@ -62,8 +70,8 @@ export function LandingClientsSection({ config, placeholder }: { config: Config;
             </ul>
             {config.list.note && <p className="mt-3 text-[13px] text-muted">{config.list.note}</p>}
           </div>
-          {screenshot ? (
-            <LandingScreenshotFigure shot={screenshot} className="mx-auto w-full max-w-[320px] md:max-w-[340px]" />
+          {shot ? (
+            <LandingScreenshotFigure shot={shot} className="mx-auto w-full max-w-[320px] md:max-w-[340px]" />
           ) : (
             placeholder && <LandingScreenshotPlaceholder />
           )}

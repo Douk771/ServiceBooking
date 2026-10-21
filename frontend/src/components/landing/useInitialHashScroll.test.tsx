@@ -12,6 +12,11 @@ function Probe() {
   )
 }
 
+function LateProbe({ show }: { show: boolean }) {
+  useInitialHashScroll()
+  return show ? <section id="companies">Салоны на EZBOOK</section> : null
+}
+
 /** jsdom has no layout and no ResizeObserver: the test drives both — the target's top and the «page resized» callback. */
 class FakeResizeObserver {
   static instances: FakeResizeObserver[] = []
@@ -128,6 +133,29 @@ describe('useInitialHashScroll', () => {
     top = 380
     fireResize()
     expect(scrollIntoView).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for a target rendered later (the catalog appears once it is known to be non-empty)', () => {
+    window.location.hash = '#companies'
+    const { rerender } = render(<LateProbe show={false} />)
+    fireResize()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    rerender(<LateProbe show />)
+    fireResize()
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.instances[0]).toBe(document.getElementById('companies'))
+    top = 300 // pinned like a target present from the start
+    fireResize()
+    expect(scrollIntoView).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops waiting for a late target on user input', () => {
+    window.location.hash = '#companies'
+    const { rerender } = render(<LateProbe show={false} />)
+    window.dispatchEvent(new Event('wheel'))
+    rerender(<LateProbe show />)
+    fireResize()
+    expect(scrollIntoView).not.toHaveBeenCalled()
   })
 
   it('works without ResizeObserver: the single mount scroll only', () => {
