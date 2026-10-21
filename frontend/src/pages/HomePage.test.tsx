@@ -132,13 +132,13 @@ describe('HomePage — единый шаблон (T38-10)', () => {
     })
   })
 
-  it('catalog lives in #companies, anchors lead to #companies and #clients-title, no footer', async () => {
+  it('catalog lives in #companies, the client link leads to #companies, no how-to link, no footer', async () => {
     const { container } = renderPage()
     await screen.findByText(LONG)
     const frame = container.querySelector('#companies') as HTMLElement
     expect(frame.contains(screen.getByText(LONG))).toBe(true)
     expect(screen.getByRole('link', { name: 'Салоны на EZBOOK' })).toHaveAttribute('href', '#companies')
-    expect(screen.getByRole('link', { name: 'Как записываются клиенты' })).toHaveAttribute('href', '#clients-title')
+    expect(screen.queryByRole('link', { name: 'Как записываются клиенты' })).toBeNull()
     expect(container.querySelector('footer')).toBeNull()
     expect(container.querySelectorAll('h1')).toHaveLength(1)
   })
@@ -160,10 +160,10 @@ describe('HomePage — единый шаблон (T38-10)', () => {
     buttons.forEach((b) => expect(b.getAttribute('aria-expanded')).toBe('false'))
   })
 
-  it('карусель «Как проходит запись»: шаги кликабельны и синхронизированы с кадрами; «Что ещё может клиент» — плотный список без карточек', async () => {
+  it('карусель «Шаг за шагом»: шаги кликабельны и синхронизированы с кадрами; «Что ещё может клиент» — плотный список без карточек', async () => {
     const { container } = renderPage()
     await screen.findByText(LONG)
-    const region = screen.getByRole('region', { name: /Как проходит запись|Как записаться/ })
+    const region = screen.getByRole('region', { name: 'Шаг за шагом' })
     const steps = region.querySelectorAll('ol button[aria-current], ol button')
     expect(steps.length).toBeGreaterThan(2)
     expect(steps[0]).toHaveAttribute('aria-current', 'true')
@@ -255,10 +255,11 @@ describe('HomePage — раскладка business-first (CY46)', () => {
     }
   })
 
-  it('каталог: загрузка — 2 заглушки', () => {
+  it('каталог: пока список грузится, каталога и строки «Ищете, куда записаться?» нет', () => {
     getPublic.mockReset().mockReturnValue(new Promise(() => {}))
     const { container } = renderPage()
-    expect(container.querySelectorAll('#companies .animate-pulse')).toHaveLength(2)
+    expect(container.querySelector('#companies')).toBeNull()
+    expect(screen.queryByText(contract.hero.clientLink.lead)).toBeNull()
   })
 
   it('каталог: ошибка — одна строка role=alert с текстом контракта', async () => {
@@ -268,9 +269,26 @@ describe('HomePage — раскладка business-first (CY46)', () => {
     expect(alert).toHaveTextContent(contract.catalog.error)
   })
 
-  it('каталог: пусто — «Салонов пока нет»', async () => {
+  it('каталог: салонов нет совсем — нет ни каталога, ни строки «Ищете, куда записаться?»', async () => {
     getPublic.mockReset().mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
-    renderPage()
-    expect(await screen.findByText(contract.catalog.empty)).toBeInTheDocument()
+    const { container } = renderPage()
+    await waitFor(() => expect(getPublic).toHaveBeenCalled())
+    await screen.findByText(contract.faq[0].question)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(container.querySelector('#companies')).toBeNull()
+    expect(screen.queryByText(contract.hero.clientLink.lead)).toBeNull()
+    expect(screen.queryByRole('link', { name: contract.hero.clientLink.action.label })).toBeNull()
   })
+
+  it('каталог: поиск без результатов — «Салонов пока нет», поле поиска на месте', async () => {
+    getPublic.mockImplementation((p: { search?: string }) =>
+      Promise.resolve(p.search ? { items: [], page: 1, pageSize: 20, total: 0, hasNext: false } : { items: [company()], page: 1, pageSize: 20, total: 1, hasNext: false }),
+    )
+    renderPage()
+    await screen.findByText('Салон красоты')
+    await userEvent.type(screen.getByPlaceholderText(contract.catalog.searchPlaceholder), 'нет такого')
+    expect(await screen.findByText(contract.catalog.empty)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(contract.catalog.searchPlaceholder)).toBeInTheDocument()
+  })
+
 })

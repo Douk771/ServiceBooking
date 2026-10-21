@@ -57,9 +57,9 @@ describe('zapisLanding = contracts/cycle46/zapis-landing.json (CY46-08)', () => 
     expect(zapisLanding.hero.primaryAction).toEqual(zapisLanding.business.actions[0])
   })
 
-  it('hero client link leads to the catalog; how-to leads to the clients heading (CY46-01)', () => {
+  it('hero client link leads to the catalog; no how-to link in the first screen (CY46-01)', () => {
     expect(zapisLanding.hero.clientLink.action.href).toBe(`#${zapisLanding.catalog.id}`)
-    expect(zapisLanding.hero.howTo.href).toBe(`#${zapisLanding.clients.titleId}`)
+    expect(zapisLanding.hero.howTo).toBeUndefined()
   })
 })
 

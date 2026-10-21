@@ -87,7 +87,6 @@ export function makeBusinessFirstConfig(over: Partial<BusinessFirstLandingConfig
       title: { lead: 'Заголовок', accent: 'акцент' },
       intro: 'Интро',
       primaryAction: buyAction,
-      howTo: { kind: 'anchor', href: '#c-title', label: 'Как' },
       clientLink: { lead: 'Ищете?', action: { kind: 'anchor', href: '#cat', label: 'Каталог ссылка' } },
     },
     catalog: base.catalog,

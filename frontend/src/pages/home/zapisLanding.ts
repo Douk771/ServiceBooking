@@ -19,7 +19,6 @@ export const zapisLanding: BusinessFirstLandingConfig = {
     intro:
       'Клиент сам выбирает услугу, мастера и свободное время, а запись сразу появляется в расписании. Не нужно отвечать на звонки и сверять тетрадь с мессенджерами.',
     primaryAction: { kind: 'auth-route', guestTo: '/register?returnTo=%2Fcabinet%2Fnew', authedTo: '/cabinet/new', label: 'Подключить салон' },
-    howTo: { kind: 'anchor', href: '#clients-title', label: 'Как записываются клиенты' },
     clientLink: { lead: 'Ищете, куда записаться?', action: { kind: 'anchor', href: '#companies', label: 'Салоны на EZBOOK' } },
   },
   catalog: { id: 'companies', ariaLabel: 'Салоны на EZBOOK' },
@@ -53,10 +52,10 @@ export const zapisLanding: BusinessFirstLandingConfig = {
     },
   },
   clients: {
-    eyebrow: 'Ваши клиенты',
-    title: 'Так к вам записываются клиенты',
+    eyebrow: 'Для ваших клиентов',
+    title: 'Клиенту хватит минуты и телефона',
     titleId: 'clients-title',
-    text: 'С телефона и без регистрации: услуга, мастер, день, время — и имя с телефоном. Подтверждение клиент видит сразу.',
+    text: 'Регистрация не нужна: несколько коротких шагов — и клиент сразу видит подтверждение записи.',
     list: {
       title: 'Что ещё может клиент',
       titleId: 'clients-list-title',

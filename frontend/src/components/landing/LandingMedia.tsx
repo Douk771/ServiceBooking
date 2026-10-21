@@ -7,7 +7,7 @@ import type { LandingMediaConfig } from './types'
  */
 export function LandingMedia({ config }: { config: LandingMediaConfig }) {
   return (
-    <figure className="mt-16 md:mt-20 flex flex-col md:flex-row items-center justify-center gap-6 md:gap-10">
+    <figure className="mt-8 md:mt-12 flex flex-col md:flex-row items-center justify-center gap-6 md:gap-10">
       <img
         src={config.src}
         alt={config.alt}

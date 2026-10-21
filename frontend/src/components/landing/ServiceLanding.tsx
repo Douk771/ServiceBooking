@@ -14,7 +14,7 @@ import { useInitialHashScroll } from './useInitialHashScroll'
 
 /**
  * Пропсы: обычный конфиг не принимает heroAside, конфиг с шапкой-панелью требует его
- * (ARCHITECTURE_CYCLE41.md §41.3.2).
+ * (ARCHITECTURE_CYCLE41.md §41.3.2). `catalog: null` — каталог пуст: секции каталога нет, и строки шапки, ведущей в него, тоже.
  */
 export type ServiceLandingProps =
   | { config: LandingConfig; catalog: ReactNode; heroAside?: undefined }
@@ -39,9 +39,11 @@ function LandingSections({ config, catalog }: { config: LandingConfig | LandingP
         <LandingStepsSection panel={config.business.stepsPanel} />
         {config.pricing && <LandingPricingSection config={config.pricing} />}
         <FaqSection items={config.faq.items} />
-        <LandingCatalogFrame config={config.catalog} placement="end">
-          {catalog}
-        </LandingCatalogFrame>
+        {catalog !== null && (
+          <LandingCatalogFrame config={config.catalog} placement="end">
+            {catalog}
+          </LandingCatalogFrame>
+        )}
       </>
     )
   }
@@ -50,9 +52,11 @@ function LandingSections({ config, catalog }: { config: LandingConfig | LandingP
   const businessPlaceholder = !clientsPlaceholder && !config.business.screenshot
   return (
     <>
-      <LandingCatalogFrame config={config.catalog} placement="top">
-        {catalog}
-      </LandingCatalogFrame>
+      {catalog !== null && (
+        <LandingCatalogFrame config={config.catalog} placement="top">
+          {catalog}
+        </LandingCatalogFrame>
+      )}
       {config.media && <LandingMedia config={config.media} />}
       <LandingClientsSection config={config.clients} placeholder={clientsPlaceholder} />
       <LandingBusinessSection config={config.business} placeholder={businessPlaceholder} steps="inside" />
@@ -79,8 +83,8 @@ export function ServiceLanding(props: ServiceLandingProps) {
     )
   }
   return (
-    <main className="max-w-[1180px] mx-auto px-4 sm:px-8 pt-10 md:pt-16 pb-10">
-      <LandingHero config={props.config.hero} />
+    <main className="max-w-[1180px] mx-auto px-4 sm:px-8 pt-6 md:pt-10 pb-10">
+      <LandingHero config={props.config.hero} showClientLink={props.catalog !== null} />
       <LandingSections config={props.config} catalog={props.catalog} />
     </main>
   )

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../ui/Icon'
 import { LandingScreenshotFigure } from './LandingScreenshot'
 import type { LandingScreenshotCarousel as Carousel } from './types'
@@ -15,8 +15,9 @@ function prefersReducedMotion() {
  * Карусель скриншотов: кадры лежат друг на друге в одной ячейке сетки (по верху), поэтому высота блока — по самому высокому кадру
  * и при смене кадра вёрстка не прыгает. Листается сама; останавливается при наведении, фокусе внутри и по кнопке
  * «Пауза» (WCAG 2.2.2), а при «уменьшить движение» в системе не листается вовсе. Листать можно стрелками, точками и свайпом.
+ * `intro` — шапка секции над шагами в левой колонке: кадр справа центруется по шапке и шагам вместе.
  */
-export function LandingScreenshotCarousel({ carousel, className }: { carousel: Carousel; className?: string }) {
+export function LandingScreenshotCarousel({ carousel, className, intro }: { carousel: Carousel; className?: string; intro?: ReactNode }) {
   const { slides, label } = carousel
   const count = slides.length
   const [index, setIndex] = useState(0)
@@ -50,6 +51,7 @@ export function LandingScreenshotCarousel({ carousel, className }: { carousel: C
       }}
     >
       <div className="min-w-0 md:order-1">
+        {intro && <div className="mb-5 md:mb-8">{intro}</div>}
         <p className="hidden md:block text-[13px] font-semibold tracking-[0.14em] uppercase text-gold-dark mb-4">{label}</p>
         <ol className="list-none flex gap-2 overflow-x-auto md:overflow-visible md:flex-col md:gap-1.5 pb-1 md:pb-0">
           {slides.map((shot, i) => {

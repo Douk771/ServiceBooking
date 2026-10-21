@@ -1,6 +1,7 @@
 {
   "contract": "zapis-landing",
-  "version": "46.1.0",
+  "version": "46.2.0",
+  "changes": "46.2.0 (21.10.2026, решение заказчика): из шапки убрана ссылка howTo; тексты блока клиентов (eyebrow, title, text, подпись карусели) переписаны без повторов.",
   "source": "SPEC.md §1, §4 (цикл 46, коммит bcda4cc5). Тексты утверждены заказчиком 20.10.2026 как окончательные (П5) — переносятся дословно. Единственные типографские правила переноса — T1 и T2 в ARCHITECTURE_CYCLE46_ZAPIS_LANDING.md §46.8; строки ниже уже с их учётом и являются эталоном для кода и для сверки M46-01.",
   "consumers": [
     "frontend/src/pages/home/zapisLanding.contract.test.tsx (CY46-08, CY46-13)",
@@ -23,7 +24,6 @@
       "guestTo": "/register?returnTo=%2Fcabinet%2Fnew",
       "authedTo": "/cabinet/new"
     },
-    "howTo": { "kind": "anchor", "href": "#clients-title", "label": "Как записываются клиенты" },
     "clientLink": {
       "lead": "Ищете, куда записаться?",
       "action": { "kind": "anchor", "href": "#companies", "label": "Салоны на EZBOOK" }
@@ -52,11 +52,11 @@
   },
 
   "clients": {
-    "eyebrow": "Ваши клиенты",
-    "title": "Так к вам записываются клиенты",
+    "eyebrow": "Для ваших клиентов",
+    "title": "Клиенту хватит минуты и телефона",
     "titleId": "clients-title",
-    "text": "С телефона и без регистрации: услуга, мастер, день, время — и имя с телефоном. Подтверждение клиент видит сразу.",
-    "screenshot": { "ref": "bookingFlowCarousel", "label": "Как проходит запись" },
+    "text": "Регистрация не нужна: несколько коротких шагов — и клиент сразу видит подтверждение записи.",
+    "screenshot": { "ref": "bookingFlowCarousel", "label": "Шаг за шагом" },
     "list": {
       "title": "Что ещё может клиент",
       "titleId": "clients-list-title",

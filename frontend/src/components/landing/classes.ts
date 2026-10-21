@@ -1,7 +1,8 @@
 /** Общие классы секций шаблона — одно место для отступов и заголовков (ARCHITECTURE_CYCLE38.md §38.3.2). */
-export const SECTION = 'mt-10 md:mt-20 border-t border-line pt-6 md:pt-12'
+/** Отступ до линии и после неё одинаковый: 32 px на телефоне, 48 px на компьютере. */
+export const SECTION = 'mt-8 md:mt-12 border-t border-line pt-8 md:pt-12'
 /** Отдельная секция с панелью шагов («Запись», блок 4): разделитель — сама панель. */
-export const STEPS_SECTION = 'mt-10 md:mt-20'
+export const STEPS_SECTION = 'mt-8 md:mt-12'
 export const EYEBROW = 'text-[13px] font-semibold tracking-[0.14em] uppercase text-gold-dark'
 export const H2 = 'font-serif text-[32px] sm:text-[40px] leading-[1.1] font-medium text-ink'
 export const H3 = 'font-serif text-[26px] sm:text-[28px] leading-[1.2] font-medium text-ink'

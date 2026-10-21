@@ -47,7 +47,7 @@ const FLOW_TEXT: Record<string, { caption: string; alt: string }> = {
 }
 
 export const bookingFlowCarousel: LandingScreenshotCarousel = {
-  label: 'Как проходит запись',
+  label: 'Шаг за шагом',
   slides: manifest.bookingFlow.slides.map((s) => ({
     src: FLOW_FILES[s.key],
     width: s.cssWidth,

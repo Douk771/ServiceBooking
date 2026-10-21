@@ -18,9 +18,10 @@ export function LandingBusinessSection({
   const { screenshot } = config
   return (
     <section aria-labelledby={config.titleId} className={SECTION}>
-      <p className={`${EYEBROW} mb-3`}>{config.eyebrow}</p>
-      <div className="grid md:grid-cols-[1.05fr_0.95fr] gap-6 md:gap-16 items-start">
+      {/* Надпись — в левой колонке: список справа центруется по всей левой части (надпись, заголовок, текст, кнопки). */}
+      <div className="grid md:grid-cols-[1.05fr_0.95fr] gap-6 md:gap-16 items-start md:items-center">
         <div>
+          <p className={`${EYEBROW} mb-3`}>{config.eyebrow}</p>
           <h2 id={config.titleId} className={H2}>
             {config.title}
           </h2>
@@ -31,7 +32,7 @@ export function LandingBusinessSection({
             ))}
           </div>
         </div>
-        <ul className={`${DENSE_LIST} sm:grid-cols-2 md:grid-cols-1 md:pt-2`}>
+        <ul className={`${DENSE_LIST} sm:grid-cols-2 md:grid-cols-1`}>
           {config.benefits.map((b) => (
             <li key={b} className={CHECK_ITEM}>
               <Icon name="check" size={18} className="text-gold-dark shrink-0 mt-[3px]" aria-hidden />
