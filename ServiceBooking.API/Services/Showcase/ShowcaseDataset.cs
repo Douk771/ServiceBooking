@@ -685,9 +685,9 @@ public static class ShowcaseDataset
             const double MinMean = 3.85, MaxMean = 4.45;
             var (sum, count) = totals.GetValueOrDefault(booking.CompanyId);
             // the guard acts only on visits after the cycle-34 freeze date (the frozen salon fingerprint is computed at that date) and on samples large enough to mean something
-            var guard = count >= 30 && booking.Date > RatingGuardAfter;
+            var guard = count >= 10 && booking.Date > RatingGuardAfter;
             if (guard && rating == 5 && (sum + 5) / (double)(count + 1) > MaxMean) { rating = 4; comment = comment is null ? null : rng.Pick(ReviewComments4); }
-            else if (guard && rating <= 3 && (sum + rating) / (double)(count + 1) < MinMean) { rating = 4; comment = comment is null ? null : rng.Pick(ReviewComments4); }
+            else if (guard && rating < 5 && (sum + rating) / (double)(count + 1) < MinMean) { rating = 5; comment = comment is null ? null : rng.Pick(ReviewComments5); }
             totals[booking.CompanyId] = (sum + rating, count + 1);
             var visitEndUtc = LocalToUtc(booking.Date, booking.EndTime, zones[booking.CompanyId]);
             var createdAt = visitEndUtc.AddHours(rng.Next(2, 72));
