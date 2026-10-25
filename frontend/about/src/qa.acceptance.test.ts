@@ -27,7 +27,8 @@ describe('CY44-QA US-44-01/03 карточки и ссылки', () => {
   it('все внешние ссылки абсолютные https, без пустых и без javascript:', () => {
     for (const h of hrefs(html)) {
       expect(h === '' || h.startsWith('javascript:')).toBe(false)
-      if (!h.startsWith('#') && !h.startsWith('/')) expect(h).toMatch(/^https:\/\/[a-z.]*ezbook\.ru\//)
+      // Cycle 48: tel:/mailto: of the footer requisites line are not links to other pages.
+      if (!h.startsWith('#') && !h.startsWith('/') && !h.startsWith('tel:') && !h.startsWith('mailto:')) expect(h).toMatch(/^https:\/\/[a-z.]*ezbook\.ru\//)
     }
   })
   it('ссылки действий ведут на хост своего продукта', () => {

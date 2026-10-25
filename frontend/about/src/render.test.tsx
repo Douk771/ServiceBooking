@@ -4,6 +4,7 @@ import { PRODUCTS } from './content/products'
 import { PAGE_COPY } from './content/page'
 import type { ProductCard, ProductKey } from './content/types'
 import { DEMO_SITE_URLS, PRODUCTION_SITE_URLS, SiteUrlError } from '@/utils/publicSites'
+import { OPERATOR, telHref } from '@/utils/operatorRequisites'
 
 // CY44-02 (ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md §44.14): renderSite on status fixtures. Pure function, no browser.
 const TEMPLATE = '<!doctype html><html lang="ru"><head><!--about:head--></head><body><!--about:body--></body></html>'
@@ -18,6 +19,8 @@ function withStatuses(statuses: Record<ProductKey, 'live' | 'testing' | 'hidden'
     return { ...p, status } as ProductCard
   })
 }
+// Cycle 48: the footer requisites line has tel:/mailto: links; they are not «external site» links.
+const isContactHref = (h: string) => h.startsWith('tel:') || h.startsWith('mailto:')
 const cards = (html: string) => [...html.matchAll(/data-product="([a-z]+)"/g)].map((m) => m[1])
 const actionLinks = (html: string, action: string) =>
   (html.match(new RegExp(`<a [^>]*data-action="${action}"[^>]*>`, 'g')) ?? []).map((a) => /href="([^"]+)"/.exec(a)![1])
@@ -109,7 +112,7 @@ describe('CY44-02 renderSite', () => {
   it('external links are absolute and belong to the site addresses', () => {
     const html = renderSite(base).files['index.html']
     const origins = new Set([...Object.values(PRODUCTION_SITE_URLS), ...Object.values(DEMO_SITE_URLS)])
-    const hrefs = [...html.matchAll(/ href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('#') && !h.startsWith('/'))
+    const hrefs = [...html.matchAll(/ href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('#') && !h.startsWith('/') && !isContactHref(h))
     expect(hrefs.length).toBeGreaterThan(5)
     for (const h of hrefs) expect(origins.has(new URL(h).origin), h).toBe(true)
     expect(html).toContain('href="https://ezbook.ru/privacy"')
@@ -148,5 +151,18 @@ describe('CY44-02 renderSite', () => {
   it('throws on a bad address and on a template without markers', () => {
     expect(() => renderSite({ ...base, env: { VITE_SITE_URL_ABOUT: 'about.ezbook.ru' } })).toThrow(SiteUrlError)
     expect(() => renderSite({ ...base, template: '<html></html>' })).toThrow('about template: marker <!--about:head--> not found')
+  })
+})
+
+// CY48-12 (ARCHITECTURE_CYCLE48_STOREFRONT.md §48.6.4, A48-8): the requisites lines in the about footer, links absolute to the «Записи» site.
+describe('CY48-12 requisites in the about footer', () => {
+  it('shows the identity line and absolute /contacts and /payment-info links; stays script-free', () => {
+    const html = renderSite(base).files['index.html']
+    expect(html).toContain(`ИНН <span class="whitespace-nowrap">${OPERATOR['ИНН_ОПЕРАТОРА']}</span>`)
+    expect(html).toContain(`href="${PRODUCTION_SITE_URLS.zapis}/contacts"`)
+    expect(html).toContain(`href="${PRODUCTION_SITE_URLS.zapis}/payment-info"`)
+    expect(html).toContain(`href="${telHref()}"`)
+    expect(html).not.toContain('<script')
+    expect(html).not.toContain('style=')
   })
 })

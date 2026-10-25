@@ -47,6 +47,12 @@ export const ABOUT_SHARED_SOURCES = [
   'src/components/ui/Icon.tsx',
   'src/components/landing/classes.ts',
   'src/utils/publicSites.ts',
+  // Cycle 48 (ARCHITECTURE_CYCLE48_STOREFRONT.md §48.6.4, A48-8): requisites lines in the footer. The last two are imported by
+  // OperatorRequisites.tsx and carry Tailwind classes, so the about CSS has to scan them too.
+  'src/utils/operatorRequisites.ts',
+  'src/components/sites/OperatorRequisites.tsx',
+  'src/components/storefront/StorefrontBlocks.tsx',
+  'src/utils/storefrontMarkup.ts',
 ]
 
 /** Tailwind `content` of `about`: its own sources plus the whitelist only (keeps the CSS small). */

@@ -67,7 +67,7 @@ describe('storefront-pages.json parses', () => {
   const strings: string[] = []
   const walkBlocks = (blocks: StorefrontBlock[]) => {
     for (const b of blocks) {
-      if (b.type === 'h2' || b.type === 'p') strings.push(b.text)
+      if ('text' in b) strings.push(b.text)
       else
         for (const it of b.items) {
           if (typeof it === 'string') strings.push(it)
