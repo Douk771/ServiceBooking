@@ -38,16 +38,22 @@ public static class OrdersTariffCatalog
 
     public static readonly OrdersTariff Chain = new(
         ChainId, "Сеть магазинов", 2990m, MaxCompanies: null, MaxEmployees: null, MaxProductsPerShop: 1000, MaxOrdersPerMonth: null, SortOrder: 40,
-        Description: "Для сети от 4 магазинов. Стоимость от 2 990 ₽ в месяц, зависит от числа магазинов.",
+        // Cycle 48 (решение 26.10.2026): a fixed price. Text — contracts/cycle48/storefront-pages.json tariffs.ordersChain.
+        Description: "Для сети магазинов: магазины, участники и заказы без ограничения по количеству. 2 990 ₽ в месяц независимо от числа магазинов.",
         Highlights:
         [
             "Всё, что в «Магазине»",
             "Магазины и участники без ограничения",
-            "Итоговая цена — после заявки, по числу магазинов",
+            "Цена не зависит от числа магазинов",
         ]);
 
     /// <summary>Tariffs created by <c>ops tariffs apply</c>, in creation order.</summary>
     public static readonly IReadOnlyList<OrdersTariff> Grid = [Lavka, Shop, Chain];
+
+    // ── Cycle 48: the previous seed of "Сеть магазинов", byte for byte (SPEC_CYCLE38 §6.2); Highlights joined by '\n' (CY48-B4).
+    public const string LegacyChainDescription = "Для сети от 4 магазинов. Стоимость от 2 990 ₽ в месяц, зависит от числа магазинов.";
+    public const string LegacyChainHighlights =
+        "Всё, что в «Магазине»\nМагазины и участники без ограничения\nИтоговая цена — после заявки, по числу магазинов";
 
     // ── The system free tariff (customer decision Q38-2) ───────────────────────────────────────────────────────
     // Seeded by migration Cycle24OrdersTimeNotifyTariffs, byte for byte; Highlights = NULL, IsPublic = false, SortOrder = -1.

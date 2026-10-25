@@ -71,6 +71,8 @@
     <EmbeddedResource Include="..\contracts\cycle42\bani-routes.json" LogicalName="bani-routes.json" />
     <!-- ARCHITECTURE_CYCLE48_STOREFRONT.md §48.3.2: the single source of public operator requisites (OperatorPublicRequisites). -->
     <EmbeddedResource Include="..\contracts\legal\operator-public.json" LogicalName="operator-public.json" />
+    <!-- ARCHITECTURE_CYCLE48_STOREFRONT.md §48.9.2: the one list of forbidden phrases (shared with the TS guard), read by `ops tariffs plan|apply` (TariffForbiddenPhrases). -->
+    <EmbeddedResource Include="..\contracts\cycle48\forbidden-phrases.json" LogicalName="forbidden-phrases.json" />
   </ItemGroup>
 
   <ItemGroup>

@@ -50,6 +50,7 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
 
         var created = new List<SubscriptionPlanConfig>();
         var existingTargets = new List<SubscriptionPlanConfig>();
+        var warnings = new List<string>();
 
         foreach (var tariff in ZapisTariffCatalog.Grid)
         {
@@ -62,6 +63,8 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
                 lines.Add(differences.Count == 0
                     ? $"уже есть, не трогаю: {existing.Name} — совпадает с сеткой"
                     : $"уже есть, не трогаю: {existing.Name} — {string.Join("; ", differences)}");
+                var texts = AlignGridTexts(existing, ZapisTextRule(tariff.Id), apply, lines);
+                warnings.AddRange(ForbiddenTextWarnings(existing.Name, texts.Description, texts.Highlights));
                 if (tariff.IsSystemTrial && !existing.IsSystemTrial && !services.Any(p => p.IsSystemTrial))
                     lines.Add($"внимание: «{existing.Name}» не помечен как пробный период — пометьте в админке (PUT /api/admin/plans/{{id}}/system-trial), иначе кнопка «Попробовать» не появится");
                 continue;
@@ -86,7 +89,9 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
 
         lines.Add("pricing.public-enabled не меняется: витрину цен включает оператор в админке (PUT /api/admin/platform-settings)");
 
-        var orders = await RunOrdersAsync(apply, lines, ct);
+        var orders = await RunOrdersAsync(apply, lines, warnings, ct);
+        // Cycle 48 (R48-4, M48-07): after the alignment, a forbidden wording left in a field an administrator edited is reported, never silently kept.
+        lines.AddRange(warnings);
         if (apply)
         {
             await db.SaveChangesAsync(ct);
@@ -107,7 +112,7 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
     }
 
     /// <summary>ARCHITECTURE_CYCLE38.md §38.10.2 — the "Заказы" section: same create-only rules as the "Записи" grid, looked up within the Orders line only.</summary>
-    private async Task<(int Created, int Rules, int Aligned)> RunOrdersAsync(bool apply, List<string> lines, CancellationToken ct)
+    private async Task<(int Created, int Rules, int Aligned)> RunOrdersAsync(bool apply, List<string> lines, List<string> warnings, CancellationToken ct)
     {
         var ordersPlans = await db.SubscriptionPlanConfigs.Where(p => p.Line == CompanyKind.Orders).ToListAsync(ct);
         var gridIds = OrdersTariffCatalog.Grid.Select(g => g.Id).ToList();
@@ -126,6 +131,8 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
                 lines.Add(differences.Count == 0
                     ? $"«Заказы»: уже есть, не трогаю: {existing.Name} — совпадает с сеткой"
                     : $"«Заказы»: уже есть, не трогаю: {existing.Name} — {string.Join("; ", differences)}");
+                var texts = AlignGridTexts(existing, OrdersTextRule(tariff.Id), apply, lines);
+                warnings.AddRange(ForbiddenTextWarnings(existing.Name, texts.Description, texts.Highlights));
                 continue;
             }
 
@@ -215,6 +222,92 @@ public class TariffCatalogSeeder(AppDbContext db, ILogger<TariffCatalogSeeder> l
             if (apply) free.SortOrder = OrdersTariffCatalog.FreeSortOrder;
         }
         return changes;
+    }
+
+    // ── Cycle 48: texts of the paid tariffs (ARCHITECTURE_CYCLE48_STOREFRONT.md §48.9) ─────────────────────────────
+
+    public const string DescriptionUpdatedChange = "описание обновлено";
+    public const string HighlightsUpdatedChange = "преимущества обновлены";
+
+    /// <summary>How one existing paid tariff is moved from the legacy text to the new one. <c>LegacyDescription</c>/<c>NewDescription</c> are <c>null</c> when only the highlights change.</summary>
+    private sealed record TextRule(string? LegacyDescription, string? NewDescription, string LegacyHighlights, string NewHighlights, string Label, string? UnchangedLine);
+
+    private static TextRule? ZapisTextRule(Guid tariffId) => tariffId switch
+    {
+        _ when tariffId == ZapisTariffCatalog.NetworkId => new TextRule(
+            ZapisTariffCatalog.LegacyNetworkDescription, ZapisTariffCatalog.Network.Description,
+            ZapisTariffCatalog.LegacyNetworkHighlights, string.Join('\n', ZapisTariffCatalog.Network.Highlights),
+            "«Сеть»: тексты (решение 25.10.2026)", "«Сеть»: тексты уже новые или изменены в админке — не трогаю"),
+        _ when tariffId == ZapisTariffCatalog.TrialId => new TextRule(
+            null, null, ZapisTariffCatalog.LegacyTrialHighlights, string.Join('\n', ZapisTariffCatalog.Trial.Highlights),
+            "«Пробный период»: пункт о сроке сообщений (п. 6.13.17)", "«Пробный период»: пункт о сроке сообщений уже есть или изменён в админке — не трогаю"),
+        _ => null,
+    };
+
+    private static TextRule? OrdersTextRule(Guid tariffId) => tariffId == OrdersTariffCatalog.ChainId
+        ? new TextRule(
+            OrdersTariffCatalog.LegacyChainDescription, OrdersTariffCatalog.Chain.Description,
+            OrdersTariffCatalog.LegacyChainHighlights, string.Join('\n', OrdersTariffCatalog.Chain.Highlights),
+            "«Заказы»: «Сеть магазинов»: тексты (решение 26.10.2026)", "«Заказы»: «Сеть магазинов»: тексты уже новые или изменены в админке — не трогаю")
+        : null;
+
+    /// <summary>Runs <see cref="AlignPaidTariffTexts"/> for a tariff that has a rule, writes the report line, and returns the texts the row has (or, in plan mode, will have) afterwards.</summary>
+    private static (string? Description, string? Highlights) AlignGridTexts(SubscriptionPlanConfig existing, TextRule? rule, bool apply, List<string> lines)
+    {
+        if (rule is null) return (existing.Description, existing.Highlights);
+
+        var changes = AlignPaidTariffTexts(existing, rule.LegacyDescription, rule.NewDescription, rule.LegacyHighlights, rule.NewHighlights, apply);
+        if (changes.Count == 0)
+        {
+            if (rule.UnchangedLine is not null) lines.Add(rule.UnchangedLine);
+            return (existing.Description, existing.Highlights);
+        }
+
+        lines.Add($"{rule.Label}: {(apply ? "изменено" : "будет изменено")} — {string.Join("; ", changes)}");
+        // In plan mode the entity is untouched, so the texts "after" are derived from the reported changes.
+        return (changes.Contains(DescriptionUpdatedChange) ? rule.NewDescription : existing.Description,
+            changes.Contains(HighlightsUpdatedChange) ? rule.NewHighlights : existing.Highlights);
+    }
+
+    /// <summary>
+    /// A paid tariff keeps its text unless it is exactly the previous seed: Description and Highlights are each replaced only while equal (ordinal, whole string) to the legacy
+    /// value — i.e. while no administrator edited them. Returns what was (or, with <paramref name="apply"/> = false, would be) changed; mutates nothing when <paramref name="apply"/> is false.
+    /// Pass <c>null</c> for both description arguments to align the highlights only (the trial).
+    /// </summary>
+    public static List<string> AlignPaidTariffTexts(SubscriptionPlanConfig existing, string? legacyDescription, string? newDescription,
+        string legacyHighlights, string newHighlights, bool apply)
+    {
+        ArgumentNullException.ThrowIfNull(existing);
+        var changes = new List<string>();
+        if (legacyDescription is not null && newDescription is not null && string.Equals(existing.Description, legacyDescription, StringComparison.Ordinal))
+        {
+            changes.Add(DescriptionUpdatedChange);
+            if (apply) existing.Description = newDescription;
+        }
+
+        if (string.Equals(existing.Highlights, legacyHighlights, StringComparison.Ordinal))
+        {
+            changes.Add(HighlightsUpdatedChange);
+            if (apply) existing.Highlights = newHighlights;
+        }
+
+        return changes;
+    }
+
+    /// <summary>Warning lines for forbidden wording (scope <c>tariffTexts</c>) still present in a tariff's description or in any highlight (R48-4).</summary>
+    public static List<string> ForbiddenTextWarnings(string tariffName, string? description, string? highlights)
+    {
+        var warnings = new List<string>();
+        const string Tail = "(поле правили в админке) — поправьте в админке, текст — contracts/cycle48/storefront-pages.json";
+        if (TariffForbiddenPhrases.FindFirst(description) is { } inDescription)
+            warnings.Add($"внимание: «{tariffName}»: в описании осталось «{inDescription}» {Tail}");
+        foreach (var line in (highlights ?? string.Empty).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (TariffForbiddenPhrases.FindFirst(line) is { } inHighlight)
+                warnings.Add($"внимание: «{tariffName}»: в преимуществах осталось «{inHighlight}» {Tail}");
+        }
+
+        return warnings;
     }
 
     /// <summary>Fields of an existing Orders row that differ from the grid, in words.</summary>

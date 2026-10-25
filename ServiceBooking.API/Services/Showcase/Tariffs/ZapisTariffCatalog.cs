@@ -27,7 +27,14 @@ public static class ZapisTariffCatalog
         TrialId, "Пробный период", 0m, MaxCompanies: 3, MaxEmployees: 15, PhotoQuotaMb: 3000, PhotoRetention.TwelveMonths,
         IsPublic: true, SortOrder: 10, IsSystemTrial: true,
         Description: "14 дней возможностей тарифа «Салон» бесплатно.",
-        Highlights: ["14 дней тарифа «Салон»", "Один раз на подтверждённый номер телефона", "Потом — бесплатный тариф, ничего не удаляется"]);
+        Highlights:
+        [
+            "14 дней тарифа «Салон»",
+            "Один раз на подтверждённый номер телефона",
+            "Потом — бесплатный тариф, ничего не удаляется",
+            // Cycle 48 (ТЛ48-07, п. 6.13.17): the real messaging window of the trial. Text — contracts/cycle48/storefront-pages.json tariffs.zapisTrial.
+            "Отправка сообщений клиентам — не дольше 7 дней из 14",
+        ]);
 
     public static readonly ZapisTariff Studio = new(
         StudioId, "Студия", 790m, MaxCompanies: 1, MaxEmployees: 5, PhotoQuotaMb: 1000, PhotoRetention.SixMonths,
@@ -56,13 +63,14 @@ public static class ZapisTariffCatalog
     public static readonly ZapisTariff Network = new(
         NetworkId, "Сеть", 3900m, MaxCompanies: null, MaxEmployees: null, PhotoQuotaMb: 10000, PhotoRetention.TwelveMonths,
         IsPublic: true, SortOrder: 40, IsSystemTrial: false,
-        Description: "Для сети от 4 филиалов. Стоимость от 3 900 ₽ в месяц, зависит от числа филиалов.",
+        // Cycle 48 (ТЛ48-01, решение 25.10.2026): a fixed price, no "от … ₽", no "после заявки". Text — contracts/cycle48/storefront-pages.json tariffs.zapisNetwork.
+        Description: "Для сети салонов: филиалы и сотрудники без ограничения по количеству. 3 900 ₽ в месяц независимо от числа филиалов.",
         Highlights:
         [
             "Всё, что в тарифе «Салон»",
             "Филиалы и сотрудники без ограничения",
             "Фото к заметкам — до 10 ГБ, хранение 12 месяцев",
-            "Итоговая цена — после заявки, по числу филиалов",
+            "Цена не зависит от числа филиалов",
         ]);
 
     /// <summary>Tariffs created by <c>ops tariffs apply</c>, in creation order.</summary>
@@ -75,6 +83,15 @@ public static class ZapisTariffCatalog
         PhotoQuotaMb: null, PhotoRetention.TwelveMonths, IsPublic: false, SortOrder: 900, IsSystemTrial: false,
         Description: "Служебный тариф витринных компаний. Не назначайте его настоящим аккаунтам.",
         Highlights: []);
+
+    // ── Cycle 48: the previous seeds of the paid tariffs, byte for byte (cycle 28, ARCHITECTURE_CYCLE28.md §573.2). Highlights are joined by '\n', as stored.
+    // The seeder replaces a field with the new text only while it still equals the legacy value, i.e. while nobody edited it in the admin panel.
+    // Values — contracts/cycle48/storefront-pages.json legacy* (CY48-B4).
+    public const string LegacyNetworkDescription = "Для сети от 4 филиалов. Стоимость от 3 900 ₽ в месяц, зависит от числа филиалов.";
+    public const string LegacyNetworkHighlights =
+        "Всё, что в тарифе «Салон»\nФилиалы и сотрудники без ограничения\nФото к заметкам — до 10 ГБ, хранение 12 месяцев\nИтоговая цена — после заявки, по числу филиалов";
+    public const string LegacyTrialHighlights =
+        "14 дней тарифа «Салон»\nОдин раз на подтверждённый номер телефона\nПотом — бесплатный тариф, ничего не удаляется";
 
     // ── The system free tariff "Старт" (customer decision Q28-1) ───────────────────────────────────────────────
     // The row was seeded by migration SeedBillingCatalog (cycle 7). Values of the seed, byte for byte: the seeder changes a field
