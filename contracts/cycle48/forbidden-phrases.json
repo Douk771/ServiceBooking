@@ -1,0 +1,54 @@
+{
+  "contract": "forbidden-phrases",
+  "version": "48.0.0",
+  "source": "SPEC.md US-48-04 («ни на одной публичной странице … нет «от <цена> ₽» у «Сети», «итоговая цена — после заявки», «мы свяжемся с вами». Проверяет автотест, а не только глаз»), LEGAL_REVIEW_CYCLE48.md §2.1, §2.6.",
+  "_howToUse": "ОДИН список для двух сторон: C# (ServiceBooking.UnitTests/Cycle48/ForbiddenPhrasesTests.cs, ServiceBooking.Tests/Tests/Cycle48StorefrontContractTests.cs) и TS (frontend/src/test/forbiddenPhrases.guard.test.ts). Регулярные выражения написаны в общем подмножестве ECMAScript и .NET (lookbehind, классы символов, без \\p{..} и без inline-флагов); ignoreCase применяется флагом движка (JS 'i', .NET RegexOptions.IgnoreCase). Новую запрещённую фразу добавлять СЮДА, а не в один из тестов.",
+  "scopes": {
+    "tariffTexts": "Description и Highlights тарифов: константы ZapisTariffCatalog / OrdersTariffCatalog и поля plans[].description / plans[].highlights[] в ответах GET /api/pricing и GET /api/pricing/orders.",
+    "publicCopy": "Всё, что видит гость на публичных страницах: pricing.notice (оба), messengerAddonsNote.taxNote, contracts/cycle48/storefront-pages.json (после подстановки; только выводимые строки — те же, что сверяет CY48-05; ключи legacy*, _*, markup, source, placeholders не проверяются: legacy* — это и есть прежние запрещённые тексты для сидера), конфиги главных и FAQ четырёх сайтов (zapisLanding.ts, zapisFaq.ts, goodsLanding.ts, goodsFaq.ts, stayLanding.ts, stayFaq.ts, baniLanding.ts, baniFaq.ts), contracts/cycle46/zapis-landing.json (после подстановки)."
+  },
+  "patterns": [
+    {
+      "id": "from-price",
+      "regex": "(?<![А-Яа-яЁёA-Za-z])от\\s?\\d[\\d\\s\\u00A0]*₽",
+      "ignoreCase": true,
+      "scopes": ["tariffTexts"],
+      "why": "«от 3 900 ₽» у тарифа — плавающая цена, конфликт с пп. 6.1.4, 6.4.2, 6.13.11. Только для текстов тарифов: строка блока «Тарифы» на главных («— от 690 ₽/мес», минимальная цена линейки) этим не является."
+    },
+    {
+      "id": "after-request",
+      "regex": "после заявки",
+      "ignoreCase": true,
+      "scopes": ["tariffTexts", "publicCopy"],
+      "why": "«Итоговая цена — после заявки» — индивидуальные условия, п. 6.13.11."
+    },
+    {
+      "id": "we-will-contact",
+      "regex": "мы свяжемся с вами",
+      "ignoreCase": true,
+      "scopes": ["tariffTexts", "publicCopy"],
+      "why": "Прежний путь подключения; заменён путём п. 6.12.1 (заявка → счёт → оплата → активация). В т.ч. ловит ошибку taxNote = notice (§2.6)."
+    },
+    {
+      "id": "depends-on-count",
+      "regex": "(?<!не )зависит от числа (филиалов|магазинов)",
+      "ignoreCase": true,
+      "scopes": ["tariffTexts", "publicCopy"],
+      "why": "Цена, зависящая от числа компаний, — п. 6.1.4. Новый пункт «Цена не зависит от числа филиалов» разрешён (lookbehind «не »). «Цена не зависит от числа гостей» (bani) не совпадает по объекту."
+    },
+    {
+      "id": "by-count",
+      "regex": "по числу (филиалов|магазинов)",
+      "ignoreCase": true,
+      "scopes": ["tariffTexts", "publicCopy"],
+      "why": "«…после заявки, по числу филиалов» — тот же конфликт."
+    },
+    {
+      "id": "leftover-placeholder",
+      "regex": "\\{\\{|\\}\\}",
+      "ignoreCase": false,
+      "scopes": ["tariffTexts", "publicCopy"],
+      "why": "Неподставленный {{КЛЮЧ}} на странице — дефект сборки текста (US-48-01 «один источник»)."
+    }
+  ]
+}

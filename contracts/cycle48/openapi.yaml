@@ -1,0 +1,380 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 48 (витрина для эквайера: реквизиты, /contacts, /payment-info, /pricing, «Сеть»).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл, порядок и тексты — API_CONTRACT_CYCLE48_STOREFRONT.md (§48.20–§48.31),
+# решения — ARCHITECTURE_CYCLE48_STOREFRONT.md (§48.0–§48.16). При расхождении по ФОРМЕ прав ЭТОТ файл.
+#
+# ГЛАВНОЕ: новых маршрутов /api/* НЕТ, форма DTO НЕ меняется (поля не добавляются, не удаляются, не переименовываются).
+# Меняются ЗНАЧЕНИЯ трёх групп текстовых полей — поэтому описаны только они, остальная форма — контракты циклов 7/18/28/38/40/43
+# (`additionalProperties: true` у частичных схем *Cycle48Part):
+#   GET /api/pricing                 notice (путь подключения п. 6.12.1), messengerAddonsNote.taxNote (налоговая пометка, не notice),
+#                                    plans[].description / plans[].highlights[] (без «от … ₽», «после заявки», «по числу филиалов»)
+#   GET /api/pricing/orders          notice, plans[].description / plans[].highlights[]
+#   GET /api/billing/subscription    messengerAddonsNote.taxNote (кабинет, ТЛ48-03)
+# Тексты задают шаблоны contracts/cycle48/storefront-pages.json, значения сроков — contracts/legal/operator-public.json.
+# Поэтому здесь не enum с готовой строкой (вторым местом правки значения), а pattern: каркас текста фиксирован, вставки сроков — любые,
+# кроме «{{…}}» (неподставленный ключ). Запрещённые фразы — тот же список, что contracts/cycle48/forbidden-phrases.json.
+#
+# Побочный эффект без изменения формы (в paths не описан, см. API_CONTRACT §48.25):
+#   POST /api/billing/subscription/request и POST /api/notification-channels (paymentRequest: true) после фиксации заявки
+#   шлют «сигнал оператору» (GlitchTip) — US-48-08 / ТЛ48-08. Ответы байт в байт прежние.
+#
+# Не HTTP API, а статические файлы релиза (здесь не описываются; контракт — API_CONTRACT §48.27–§48.28):
+#   /contacts, /payment-info на ezbook.ru, goods., dom., bani. — SPA-маршруты + пререндер <path>/index.html;
+#   <noscript> в index.html четырёх приложений; /payment-terms -> /payment-info.
+#
+# Схема данных contracts/legal/operator-public.json — components.schemas.OperatorPublicRequisites (валидируется тем же
+# OpenApiContract.cs, метод AssertSchema — CY48-B8).
+#
+# Как пользоваться:
+#   CI/QA   cd frontend && npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle48/openapi.yaml
+#           npm run contracts:json  (cycle48 -> openapi.json для ServiceBooking.Tests/Infrastructure/OpenApiContract.cs)
+#   QA      schemathesis run contracts/cycle48/openapi.yaml --base-url http://localhost:5000 --checks all
+#           (после `ops tariffs apply` на чистой базе и при pricing.public-enabled = true)
+#   frontend мок: npx @stoplight/prism mock contracts/cycle48/openapi.yaml --port 4048 (примеры ниже — собранные тексты)
+
+info:
+  title: ServiceBooking API — цикл 48 (витрина для эквайера, только значения текстов)
+  version: 48.0.0
+  license:
+    name: Proprietary
+    url: https://ezbook.ru/terms
+  description: |-
+    Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ: camelCase; деньги — number; 401/403/404 — пустое тело;
+    тела осознанных 400/409 — голая строка text/plain; текст, который видит человек, собирает СЕРВЕР
+    (для API) или берётся из contracts/cycle48/storefront-pages.json (для статичных частей страниц).
+    x-servicebooking-api-changes: values-only — новых маршрутов и полей нет.
+
+x-servicebooking-api-changes: values-only
+x-servicebooking-frontend-contract:
+  - ./storefront-pages.json
+  - ./forbidden-phrases.json
+  - ../legal/operator-public.json
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4048
+    description: prism mock по этой схеме
+
+tags:
+  - name: pricing
+    description: Публичные витрины тарифов «Записи» и «Заказов» (анонимно, кеш 60 с). Форма прежняя, меняются тексты.
+  - name: owner-billing
+    description: «Подписка» владельца — только налоговая пометка строк мессенджеров.
+
+paths:
+  /api/pricing:
+    get:
+      tags: [pricing]
+      operationId: getPublicPricingCycle48
+      summary: Публичная сетка «Записи» (изменены значения notice, taxNote и текстов тарифов)
+      description: |-
+        Форма — контракты циклов 7/18/28/40 без изменений. 404 (пустое тело) — витрина выключена (pricing.public-enabled)
+        или оферта — черновик; это ожидаемое состояние, не ошибка. legalNotice по-прежнему из PlatformSettings
+        pricing.legal-notice; ожидается null (налоговую оговорку под сеткой с цикла 48 рисует фронт из единого источника).
+      security: []
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+          description: ETag прошлого ответа; при совпадении — 304.
+      responses:
+        '200':
+          description: Сетка опубликована. Описаны только поля, у которых меняются значения.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicPricingCycle48Part'
+              example:
+                notice: 'Как подключить платный тариф: зарегистрируйтесь и отправьте в кабинете заявку на тариф и опции → мы пришлём счёт не позднее следующего рабочего дня после дня подачи заявки на e-mail или телефон из профиля → оплатите счёт банковским переводом → тариф включится не позднее 2 рабочих дней после дня, когда оплата зачислена на счёт оператора. Автопродления нет: каждый следующий месяц оплачивается новым счётом.'
+                legalNotice: null
+                plans:
+                  - name: Сеть
+                    description: 'Для сети салонов: филиалы и сотрудники без ограничения по количеству. 3 900 ₽ в месяц независимо от числа филиалов.'
+                    highlights:
+                      - Всё, что в тарифе «Салон»
+                      - Филиалы и сотрудники без ограничения
+                      - Фото к заметкам — до 10 ГБ, хранение 12 месяцев
+                      - Цена не зависит от числа филиалов
+                messengerAddonsNote:
+                  conditionsUrl: /offer-channel
+                  conditionsLabel: Условия
+                  taxNote: 'Без НДС: оператор применяет налог на профессиональный доход'
+        '304':
+          description: If-None-Match совпал с текущим ETag. Пустое тело.
+        '404':
+          description: Витрина не опубликована. Пустое тело.
+
+  /api/pricing/orders:
+    get:
+      tags: [pricing]
+      operationId: getOrdersPricingCycle48
+      summary: Публичная сетка «Заказов» (изменены значения notice и текстов «Сети магазинов»)
+      description: Форма — contracts/cycle38/openapi.yaml (OrdersPublicPricingDto) без изменений. 404 — в линейке нет активного публичного тарифа.
+      security: []
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+          description: ETag прошлого ответа; при совпадении — 304.
+      responses:
+        '200':
+          description: Сетка опубликована. Описаны только поля, у которых меняются значения.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrdersPublicPricingCycle48Part'
+              example:
+                notice: 'Как подключить платный тариф: зарегистрируйтесь и отправьте в кабинете заявку на тариф → мы пришлём счёт не позднее следующего рабочего дня после дня подачи заявки на e-mail или телефон из профиля → оплатите счёт банковским переводом → тариф включится не позднее 2 рабочих дней после дня, когда оплата зачислена на счёт оператора. Автопродления нет: каждый следующий месяц оплачивается новым счётом.'
+                legalNotice: null
+                plans:
+                  - name: Сеть магазинов
+                    description: 'Для сети магазинов: магазины, участники и заказы без ограничения по количеству. 2 990 ₽ в месяц независимо от числа магазинов.'
+                    highlights:
+                      - Всё, что в «Магазине»
+                      - Магазины и участники без ограничения
+                      - Цена не зависит от числа магазинов
+        '304':
+          description: If-None-Match совпал с текущим ETag. Пустое тело.
+        '404':
+          description: Нет активного публичного тарифа «Заказов». Пустое тело.
+
+  /api/billing/subscription:
+    get:
+      tags: [owner-billing]
+      operationId: getOwnerSubscriptionCycle48
+      summary: «Подписка» владельца (изменено значение messengerAddonsNote.taxNote)
+      description: Форма — контракты циклов 7/24/40/43 без изменений. Меняется только taxNote — короткая налоговая пометка вместо notice витрины.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: line
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [Services, Orders, Stays, Baths]
+          description: Линейка подписки; не задана — Services.
+      responses:
+        '200':
+          description: Подписка (описано только поле, у которого меняется значение).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerSubscriptionCycle48Part'
+        '401':
+          description: Не авторизован (пустое тело).
+        '404':
+          description: Нет биллинг-аккаунта (пустое тело).
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    PricingNoticeZapis:
+      type: string
+      description: |-
+        storefront-pages.json pricing.notice.zapis с подставленными СРОК_СЧЁТА и СРОК_АКТИВАЦИИ (LEGAL_REVIEW_CYCLE48.md §2.4).
+        Вставки — любые непустые строки без фигурных скобок.
+      pattern: '^Как подключить платный тариф: зарегистрируйтесь и отправьте в кабинете заявку на тариф и опции → мы пришлём счёт [^{}]+ на e-mail или телефон из профиля → оплатите счёт банковским переводом → тариф включится [^{}]+\. Автопродления нет: каждый следующий месяц оплачивается новым счётом\.$'
+
+    PricingNoticeOrders:
+      type: string
+      description: То же для «Заказов» — «заявку на тариф» вместо «заявку на тариф и опции» (§2.4).
+      pattern: '^Как подключить платный тариф: зарегистрируйтесь и отправьте в кабинете заявку на тариф → мы пришлём счёт [^{}]+ на e-mail или телефон из профиля → оплатите счёт банковским переводом → тариф включится [^{}]+\. Автопродления нет: каждый следующий месяц оплачивается новым счётом\.$'
+
+    # Текст тарифа без запрещённых фраз contracts/cycle48/forbidden-phrases.json (scope tariffTexts): «от <цена> ₽», «после заявки»,
+    # «мы свяжемся с вами», «зависит от числа филиалов/магазинов» (кроме «не зависит»), «по числу филиалов/магазинов», «{{», «}}».
+    # Регистр учтён классами символов (у pattern нет флага i). Один pattern на description и highlights — через YAML-якорь.
+    PublicPlanTextsCycle48:
+      type: object
+      additionalProperties: true
+      required: [name, description, highlights]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          nullable: true
+          pattern: &tariffSafe '^(?![\s\S]*((?<![А-Яа-яЁёA-Za-z])[Оо][Тт]\s?\d[\d\s ]*₽|[Пп]осле заявки|[Мм]ы свяжемся с вами|(?<![Нн]е )[Зз]ависит от числа (филиалов|магазинов)|[Пп]о числу (филиалов|магазинов)|\{\{|\}\}))[\s\S]*$'
+        highlights:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            maxLength: 120
+            pattern: *tariffSafe
+
+    MessengerAddonsNoteCycle48:
+      type: object
+      additionalProperties: false
+      required: [conditionsUrl, conditionsLabel, taxNote]
+      properties:
+        conditionsUrl:
+          type: string
+          enum: [/offer-channel]
+        conditionsLabel:
+          type: string
+          enum: [Условия]
+        taxNote:
+          type: string
+          description: storefront-pages.json pricing.messengerTaxNote (LEGAL_REVIEW_CYCLE48.md §2.6). Константа, не зависит от источника реквизитов. Раньше здесь был notice — дефект ТЛ48-03.
+          enum: ['Без НДС: оператор применяет налог на профессиональный доход']
+
+    PublicPricingCycle48Part:
+      type: object
+      additionalProperties: true
+      required: [notice, legalNotice, plans]
+      properties:
+        notice:
+          $ref: '#/components/schemas/PricingNoticeZapis'
+        legalNotice:
+          type: string
+          nullable: true
+          description: PlatformSettings pricing.legal-notice — без изменений; на бою ожидается null (DO-48-3 отчёт).
+        plans:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/PublicPlanTextsCycle48'
+        messengerAddonsNote:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/MessengerAddonsNoteCycle48'
+
+    OrdersPublicPricingCycle48Part:
+      type: object
+      additionalProperties: true
+      required: [notice, legalNotice, plans]
+      properties:
+        notice:
+          $ref: '#/components/schemas/PricingNoticeOrders'
+        legalNotice:
+          type: string
+          nullable: true
+          description: PlatformSettings pricing.orders.legal-notice — без изменений; на бою ожидается null.
+        plans:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/PublicPlanTextsCycle48'
+
+    OwnerSubscriptionCycle48Part:
+      type: object
+      additionalProperties: true
+      properties:
+        messengerAddonsNote:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/MessengerAddonsNoteCycle48'
+
+    OperatorPublicRequisites:
+      type: object
+      description: |-
+        Форма файла contracts/legal/operator-public.json (не HTTP-ответ). Проверяется OpenApiContract.AssertSchema
+        (CY48-B8) и guard-тестом фронта. Ни одно значение не может содержать «ЗАПОЛНИТЬ», «{{» или быть пустым.
+      additionalProperties: false
+      required: [_comment, contract, version, sharedWithLegalValues, derived, values]
+      properties:
+        _comment:
+          type: string
+        contract:
+          type: string
+          enum: [operator-public]
+        version:
+          type: string
+          pattern: '^\d+\.\d+\.\d+$'
+        sharedWithLegalValues:
+          type: array
+          minItems: 8
+          maxItems: 8
+          description: Ключи, общие с legal.values.json (сверка — только по ним и только целиком, ТЛ48-06).
+          items:
+            type: string
+            enum:
+              - НАИМЕНОВАНИЕ_ОПЕРАТОРА
+              - ИНН_ОПЕРАТОРА
+              - ЮРИДИЧЕСКИЙ_АДРЕС
+              - ПОЧТОВЫЙ_АДРЕС
+              - ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ
+              - ТЕЛЕФОН_ОПЕРАТОРА
+              - СРОК_ОТВЕТА_НА_ОБРАЩЕНИЕ
+              - НДС_ОГОВОРКА
+        derived:
+          type: object
+          additionalProperties: false
+          required: [ТЕЛЕФОН_TEL]
+          properties:
+            ТЕЛЕФОН_TEL:
+              type: string
+        values:
+          type: object
+          additionalProperties: false
+          required:
+            - НАИМЕНОВАНИЕ_ОПЕРАТОРА
+            - ИНН_ОПЕРАТОРА
+            - ЮРИДИЧЕСКИЙ_АДРЕС
+            - ПОЧТОВЫЙ_АДРЕС
+            - ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ
+            - ТЕЛЕФОН_ОПЕРАТОРА
+            - СРОК_ОТВЕТА_НА_ОБРАЩЕНИЕ
+            - НДС_ОГОВОРКА
+            - ПОЧТА_ПОДДЕРЖКИ
+            - ГОРОД_ОПЕРАТОРА
+            - СРОК_СЧЁТА
+            - СРОК_АКТИВАЦИИ
+            - РЕЖИМ_РАБОТЫ
+          properties:
+            НАИМЕНОВАНИЕ_ОПЕРАТОРА:
+              type: string
+              description: Только ФИО полностью, без статуса (статус дописывается в тексте, LEGAL_REVIEW_CYCLE48.md §6.3).
+              pattern: '^[А-ЯЁ][а-яё-]+ [А-ЯЁ][а-яё-]+ [А-ЯЁ][а-яё-]+$'
+            ИНН_ОПЕРАТОРА:
+              type: string
+              description: 12 цифр (физлицо — плательщик НПД).
+              pattern: '^[0-9]{12}$'
+            ЮРИДИЧЕСКИЙ_АДРЕС:
+              $ref: '#/components/schemas/FilledText'
+            ПОЧТОВЫЙ_АДРЕС:
+              $ref: '#/components/schemas/FilledText'
+            ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ:
+              type: string
+              pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+            ТЕЛЕФОН_ОПЕРАТОРА:
+              type: string
+              description: Опубликованный вид; tel-ссылка выводится из него (derived.ТЕЛЕФОН_TEL).
+              pattern: '^\+7[ 0-9()-]{10,16}$'
+            СРОК_ОТВЕТА_НА_ОБРАЩЕНИЕ:
+              $ref: '#/components/schemas/FilledText'
+            НДС_ОГОВОРКА:
+              $ref: '#/components/schemas/FilledText'
+            ПОЧТА_ПОДДЕРЖКИ:
+              type: string
+              pattern: '^[^@\s]+@ezbook\.ru$'
+            ГОРОД_ОПЕРАТОРА:
+              type: string
+              description: Должен совпадать с городом в ЮРИДИЧЕСКИЙ_АДРЕС (проверяет тест CY48-B8, а не схема).
+              pattern: '^г\. [А-ЯЁ][а-яё-]+$'
+            СРОК_СЧЁТА:
+              $ref: '#/components/schemas/FilledText'
+            СРОК_АКТИВАЦИИ:
+              $ref: '#/components/schemas/FilledText'
+            РЕЖИМ_РАБОТЫ:
+              $ref: '#/components/schemas/FilledText'
+
+    FilledText:
+      type: string
+      minLength: 3
+      description: Непустое значение без маркеров незаполненности.
+      pattern: '^(?![\s\S]*(ЗАПОЛНИТЬ|\{\{|\}\}))[\s\S]*\S[\s\S]*$'
