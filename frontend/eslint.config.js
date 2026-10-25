@@ -14,7 +14,7 @@ import { SHARED_EZBOOK_PAGES, ABOUT_SHARED_SOURCES, appAllowedPagesRegex } from 
 // is last in the array so it can turn off any formatting rule that would otherwise fight Prettier.
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'dist-goods/**', 'dist-dom/**', 'dist-bani/**', 'dist-about/**', 'dist-about-ssr/**', 'coverage/**', 'node_modules/**'],
+    ignores: ['dist/**', 'dist-goods/**', 'dist-dom/**', 'dist-bani/**', 'dist-about/**', 'dist-about-ssr/**', 'dist-storefront-ssr/**', 'coverage/**', 'node_modules/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
