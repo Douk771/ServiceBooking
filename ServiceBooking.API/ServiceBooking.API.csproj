@@ -69,6 +69,8 @@
     <EmbeddedResource Include="..\contracts\cycle39\dom-routes.json" LogicalName="dom-routes.json" />
     <!-- ARCHITECTURE_CYCLE42.md §42.10.1: the same for bani.ezbook.ru (BathsSlugPolicy). -->
     <EmbeddedResource Include="..\contracts\cycle42\bani-routes.json" LogicalName="bani-routes.json" />
+    <!-- ARCHITECTURE_CYCLE48_STOREFRONT.md §48.3.2: the single source of public operator requisites (OperatorPublicRequisites). -->
+    <EmbeddedResource Include="..\contracts\legal\operator-public.json" LogicalName="operator-public.json" />
   </ItemGroup>
 
   <ItemGroup>

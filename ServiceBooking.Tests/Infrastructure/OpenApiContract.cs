@@ -89,6 +89,25 @@ public sealed class OpenApiContract
         return Validate(schema, body);
     }
 
+    /// <summary>Validates a non-HTTP document (e.g. contracts/legal/operator-public.json) against
+    /// <c>components.schemas[componentName]</c> — CY48-B8, API_CONTRACT_CYCLE48_STOREFRONT.md §48.31.</summary>
+    public void AssertSchema(string componentName, JsonElement value)
+    {
+        var errors = CollectSchema(componentName, value);
+        errors.Should().BeEmpty("the document must conform to components.schemas.{0}", componentName);
+    }
+
+    public IReadOnlyList<string> CollectSchema(string componentName, JsonElement value)
+    {
+        if (!_root.TryGetProperty("components", out var components) || !components.TryGetProperty("schemas", out var schemas)
+            || !schemas.TryGetProperty(componentName, out var schema))
+        {
+            return [$"schema {componentName} is not in the contract"];
+        }
+
+        return Validate(schema, value);
+    }
+
     public IReadOnlyList<string> Validate(JsonElement schema, JsonElement value)
     {
         var errors = new List<string>();
