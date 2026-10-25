@@ -175,6 +175,7 @@
         "src/pages/ContactsPage",
         "src/pages/PaymentInfoPage",
         "src/pages/storefrontPages",
+        "src/pages/Storefront.qa48",
         "src/storefront/",
         "src/test/operatorSingleSource",
         "src/test/forbiddenPhrases",
