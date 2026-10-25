@@ -1,4 +1,6 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using ServiceBooking.API.Services.Legal;
 
 namespace ServiceBooking.UnitTests.LegalKit;
 
@@ -120,6 +122,28 @@ internal static class LegalKitFixture
           }
         }
         """;
+
+    /// <summary>A values file that `legal publish` accepts after cycle 48 (ТЛ48-06): the eight keys shared with the site carry EXACTLY the site's values
+    /// (<c>contracts/legal/operator-public.json</c>, via <see cref="OperatorPublicRequisites"/>); the two keys only legal.values.json has, and the optional
+    /// registry keys, are test data.</summary>
+    public static string PublishableValuesJson(bool withRknKeys = true)
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var key in OperatorPublicRequisites.SharedWithLegalValues.Take(6)) values[key] = OperatorPublicRequisites.Get(key);
+        values["ОТВЕТСТВЕННЫЙ_ЗА_ОБРАБОТКУ"] = "Иванов И.И.";
+        values["ПОЧТА_ОТВЕТСТВЕННОГО"] = "dpo@example.com";
+        if (withRknKeys)
+        {
+            values["НОМЕР_УВЕДОМЛЕНИЯ_РКН"] = "00-00-000000";
+            values["ДАТА_УВЕДОМЛЕНИЯ_РКН"] = "01.01.2026";
+        }
+        foreach (var key in OperatorPublicRequisites.SharedWithLegalValues.Skip(6)) values[key] = OperatorPublicRequisites.Get(key);
+
+        return JsonSerializer.Serialize(new { values }, new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+    }
+
+    /// <summary>The same without the two optional registry keys (see <see cref="ValidValuesJsonWithoutRknKeys"/>).</summary>
+    public static string PublishableValuesJsonWithoutRknKeys() => PublishableValuesJson(withRknKeys: false);
 
     /// <summary>The exact real-world sentence from legal-drafts/01-privacy-policy.html — one self-contained
     /// &lt;li&gt; naming both Roskomnadzor-registry placeholders, flanked by unrelated bullets that must

@@ -30,9 +30,15 @@ internal static class StatusCommand
         var ready = report["ready"]!.GetValue<bool>();
 
         if (args.Has("json"))
+        {
             Console.WriteLine(StatusReport.ToJsonString(report));
+        }
         else
+        {
             PrintHuman(report);
+            // Cycle 48 (ТЛ48-06): informational only — the exit code does not depend on this block. Not added to --json: its shape is fixed by legal-status.schema.json.
+            if (valuesPath is not null) PrintRequisitesBlock(valuesPath);
+        }
 
         return ready ? 0 : 4;
     }
@@ -61,6 +67,21 @@ internal static class StatusCommand
             Console.Error.WriteLine($"Снимок правовых документов недоступен в '{root}': {errorMessage}");
         }
         return 4;
+    }
+
+    private static void PrintRequisitesBlock(string valuesPath)
+    {
+        Console.WriteLine();
+        try
+        {
+            var values = PlaceholderValues.Load(valuesPath);
+            foreach (var line in RequisitesDrift.StatusLines(values.Values, OperatorPublicRequisites.Values, OperatorPublicRequisites.SharedWithLegalValues))
+                Console.WriteLine(line);
+        }
+        catch (PlaceholderValuesException ex)
+        {
+            Console.WriteLine($"Реквизиты сайта против legal.values.json: сверка невозможна — файл значений не читается ({ex.Problems.FirstOrDefault() ?? ex.Message}).");
+        }
     }
 
     private static void PrintHuman(JsonObject report)

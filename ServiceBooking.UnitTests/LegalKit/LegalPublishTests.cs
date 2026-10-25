@@ -22,7 +22,7 @@ public class LegalPublishTests
         var source = LegalKitFixture.CreateSourceDir();
         var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
         var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
-        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJson());
+        var valuesPath = WriteValuesFile(LegalKitFixture.PublishableValuesJson());
         try
         {
             LegalSourceSet.Build(source, built);
@@ -54,7 +54,7 @@ public class LegalPublishTests
         var source = LegalKitFixture.CreateSourceDir();
         var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
         var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
-        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJson());
+        var valuesPath = WriteValuesFile(LegalKitFixture.PublishableValuesJson());
         try
         {
             LegalSourceSet.Build(source, built);
@@ -108,7 +108,7 @@ public class LegalPublishTests
         File.WriteAllText(Path.Combine(source, "ad.html"), "<p>{{OPERATOR_NAME}}</p>");
         var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
         var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
-        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJson());
+        var valuesPath = WriteValuesFile(LegalKitFixture.PublishableValuesJson());
         try
         {
             LegalSourceSet.Build(source, built);
@@ -134,7 +134,7 @@ public class LegalPublishTests
         var source = LegalKitFixture.CreateSourceDir();
         var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
         var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
-        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJson());
+        var valuesPath = WriteValuesFile(LegalKitFixture.PublishableValuesJson());
         try
         {
             LegalSourceSet.Build(source, built);
@@ -170,7 +170,7 @@ public class LegalPublishTests
         var source = LegalKitFixture.CreateSourceDir();
         var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
         var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
-        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJson());
+        var valuesPath = WriteValuesFile(LegalKitFixture.PublishableValuesJson());
         try
         {
             LegalSourceSet.Build(source, built);
@@ -210,7 +210,7 @@ public class LegalPublishTests
         var source = LegalKitFixture.CreateSourceDir();
         var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
         var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
-        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJson());
+        var valuesPath = WriteValuesFile(LegalKitFixture.PublishableValuesJson());
         try
         {
             LegalSourceSet.Build(source, built);
@@ -242,7 +242,7 @@ public class LegalPublishTests
         var source = LegalKitFixture.CreateSourceDir();
         var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
         var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
-        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJson());
+        var valuesPath = WriteValuesFile(LegalKitFixture.PublishableValuesJson());
         try
         {
             LegalSourceSet.Build(source, built);
@@ -282,7 +282,7 @@ public class LegalPublishTests
         var source = LegalKitFixture.CreateSourceDir(privacyHtml: LegalKitFixture.PrivacyHtmlWithRknBullet);
         var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
         var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
-        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJson());
+        var valuesPath = WriteValuesFile(LegalKitFixture.PublishableValuesJson());
         try
         {
             LegalSourceSet.Build(source, built);
@@ -312,7 +312,7 @@ public class LegalPublishTests
         var source = LegalKitFixture.CreateSourceDir(privacyHtml: LegalKitFixture.PrivacyHtmlWithRknBullet);
         var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
         var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
-        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJsonWithoutRknKeys());
+        var valuesPath = WriteValuesFile(LegalKitFixture.PublishableValuesJsonWithoutRknKeys());
         try
         {
             LegalSourceSet.Build(source, built);
@@ -351,7 +351,7 @@ public class LegalPublishTests
             privacyHtml: "<div>регистрационный номер {{НОМЕР_УВЕДОМЛЕНИЯ_РКН}}</div>");
         var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
         var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
-        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJsonWithoutRknKeys());
+        var valuesPath = WriteValuesFile(LegalKitFixture.PublishableValuesJsonWithoutRknKeys());
         try
         {
             LegalSourceSet.Build(source, built);
@@ -382,7 +382,7 @@ public class LegalPublishTests
                          "<li>bullet after</li>\n</ul>");
         var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
         var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
-        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJsonWithoutRknKeys());
+        var valuesPath = WriteValuesFile(LegalKitFixture.PublishableValuesJsonWithoutRknKeys());
         try
         {
             LegalSourceSet.Build(source, built);
@@ -410,7 +410,7 @@ public class LegalPublishTests
         var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
         // Has НОМЕР_УВЕДОМЛЕНИЯ_РКН but not ДАТА_УВЕДОМЛЕНИЯ_РКН — an in-between state a real operator
         // could plausibly have if the two facts arrive on different days.
-        var json = LegalKitFixture.ValidValuesJsonWithoutRknKeys()
+        var json = LegalKitFixture.PublishableValuesJsonWithoutRknKeys()
             .Replace("\"НДС_ОГОВОРКА\"", "\"НОМЕР_УВЕДОМЛЕНИЯ_РКН\": \"00-00-000000\",\n            \"НДС_ОГОВОРКА\"");
         var valuesPath = WriteValuesFile(json);
         try

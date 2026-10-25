@@ -74,6 +74,13 @@ internal static class PublishCommand
             problems.AddRange(ex.Problems);
         }
 
+        // Cycle 48 (ТЛ48-06): the requisites on the site and in legal.values.json must be one and the same. No bypass flag — a mismatch is listed like any other refusal.
+        if (values is not null)
+        {
+            foreach (var difference in RequisitesDrift.Compare(values.Values, OperatorPublicRequisites.Values, OperatorPublicRequisites.SharedWithLegalValues))
+                problems.Add(RequisitesDrift.RefusalText(difference));
+        }
+
         LegalSnapshot? snapshot = null;
         try
         {
