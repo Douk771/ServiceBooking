@@ -7,6 +7,7 @@ using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Demo;
+using ServiceBooking.API.Services.Signals;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -20,7 +21,8 @@ namespace ServiceBooking.API.Controllers;
 [Authorize]
 public class BillingController(
     AppDbContext db, OwnerSubscriptionService ownerSubscriptionService,
-    TrialStateReader trialStateReader, TrialActivationService trialActivationService) : ControllerBase
+    TrialStateReader trialStateReader, TrialActivationService trialActivationService,
+    IGlitchTipSignalService signals, ILogger<BillingController> logger) : ControllerBase
 {
     // ── Cycle 18 (API_CONTRACT_CYCLE18.md §362-§363.1) ────────────────────────────────────────────
     [HttpGet("trial")]
@@ -162,6 +164,10 @@ public class BillingController(
         account.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
+
+        // Cycle 48 (US-48-08): the operator promised an invoice by the next working day — tell them now. Off the request path; the answer below is unchanged.
+        OperatorSignalDispatcher.FireAndForget(signals, logger, BillingRequestSignal.ForSubscriptionRequest(
+            requestLine, requestedPlan?.Name, lines.Count, account.Id, BillingRequestSignal.InvoiceDueBy(account.RequestedAtUtc!.Value)));
 
         var full = await ownerSubscriptionService.BuildAsync(account, requestLine);
         return Ok(full.PendingRequest);

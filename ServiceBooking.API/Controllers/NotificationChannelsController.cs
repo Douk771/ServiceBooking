@@ -9,6 +9,7 @@ using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.API.Services.Signals;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -39,6 +40,7 @@ public class NotificationChannelsController(
     AccountMessagingReader messagingReader,
     NumbersOverviewBuilder overviewBuilder,
     PendingRebinder pendingRebinder,
+    IGlitchTipSignalService signals,
     ILogger<NotificationChannelsController> logger) : ControllerBase
 {
     private const string DocumentsUnavailableText = "Правовые документы временно недоступны.";
@@ -204,6 +206,10 @@ public class NotificationChannelsController(
         var result = await overviewBuilder.BuildChannelAsync(channel, userId, ct);
         logger.LogInformation("Number {Transport} {Step} for channel {ChannelId} ({Outcome})",
             display, dto.PaymentRequest ? "payment request" : "terms", channel.Id, created ? "created" : "updated");
+        // Cycle 48 (US-48-08): a payment request is a request with a promised invoice term; a repeated one also signals (the fresh one matters to the operator).
+        if (dto.PaymentRequest)
+            OperatorSignalDispatcher.FireAndForget(signals, logger,
+                BillingRequestSignal.ForMessengerPaymentRequest(requestedTransport, ownerAccountId, BillingRequestSignal.InvoiceDueBy(now)));
         return created ? CreatedAtAction(nameof(GetById), new { id = channel.Id }, result) : Ok(result);
     }
 
