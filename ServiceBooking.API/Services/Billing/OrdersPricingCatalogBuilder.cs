@@ -1,4 +1,5 @@
 using ServiceBooking.API.DTOs.Billing;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -11,15 +12,20 @@ namespace ServiceBooking.API.Services.Billing;
 /// </summary>
 public static class OrdersPricingCatalogBuilder
 {
-    public const string DefaultNotice =
-        "Подключение тарифа выполняет администратор платформы — оставьте заявку в кабинете, и мы свяжемся с вами.";
+    /// <summary>Byte-for-byte <c>contracts/cycle48/storefront-pages.json</c> <c>pricing.notice.derivedOrders</c> (CY48-B2).</summary>
+    public const string NoticeTemplate =
+        "Как подключить платный тариф: зарегистрируйтесь и отправьте в кабинете заявку на тариф → мы пришлём счёт {{СРОК_СЧЁТА}} на e-mail или телефон из профиля → оплатите счёт банковским переводом → тариф включится {{СРОК_АКТИВАЦИИ}}. Автопродления нет: каждый следующий месяц оплачивается новым счётом.";
+
+    /// <summary>The notice with the operator's invoice and activation terms substituted (computed, see
+    /// <see cref="PricingCatalogBuilder.DefaultNotice"/>).</summary>
+    public static string DefaultNotice => OperatorPublicRequisites.Fill(NoticeTemplate);
 
     public static OrdersPublicPricingDto Build(
         string version,
         IEnumerable<SubscriptionPlanConfig> plans,
         int productsCeiling,
         string? legalNotice,
-        string notice = DefaultNotice)
+        string? notice = null)
     {
         ArgumentNullException.ThrowIfNull(plans);
 
@@ -47,7 +53,7 @@ public static class OrdersPricingCatalogBuilder
             Version: version,
             Currency: "RUB",
             Plans: publicPlans,
-            Notice: notice,
+            Notice: notice ?? DefaultNotice,
             LegalNotice: string.IsNullOrWhiteSpace(legalNotice) ? null : legalNotice);
     }
 }

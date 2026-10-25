@@ -13,8 +13,19 @@ namespace ServiceBooking.API.Services.Billing;
 /// </summary>
 public static class PricingCatalogBuilder
 {
-    public const string DefaultNotice =
-        "Подключение тарифа и опций выполняет администратор платформы — оставьте заявку, и мы свяжемся с вами.";
+    /// <summary>Text above the price grid, with {{…}} placeholders for the operator requisites. Byte-for-byte
+    /// <c>contracts/cycle48/storefront-pages.json</c> <c>pricing.notice.zapis</c> (CY48-B2); the terms come from
+    /// the single source <c>contracts/legal/operator-public.json</c> (ARCHITECTURE_CYCLE48_STOREFRONT.md §48.8.1).</summary>
+    public const string NoticeTemplate =
+        "Как подключить платный тариф: зарегистрируйтесь и отправьте в кабинете заявку на тариф и опции → мы пришлём счёт {{СРОК_СЧЁТА}} на e-mail или телефон из профиля → оплатите счёт банковским переводом → тариф включится {{СРОК_АКТИВАЦИИ}}. Автопродления нет: каждый следующий месяц оплачивается новым счётом.";
+
+    /// <summary>The notice with the operator's invoice and activation terms substituted. Computed, not a constant: the
+    /// terms are values of the source file, not text in code.</summary>
+    public static string DefaultNotice => OperatorPublicRequisites.Fill(NoticeTemplate);
+
+    /// <summary>Short tax remark of a messenger line ("Условия · {taxNote}") — a constant, NOT the price-list notice
+    /// (ТЛ48-03; <c>storefront-pages.json</c> <c>pricing.messengerTaxNote</c>).</summary>
+    public const string MessengerTaxNote = "Без НДС: оператор применяет налог на профессиональный доход";
 
     /// <summary>contracts/cycle7/openapi.yaml AdminPlanDto/AdminPlanInput.highlights: <c>maxItems: 10</c> — the cap
     /// on how many bullets an admin may SAVE for a plan, shared with
@@ -61,7 +72,7 @@ public static class PricingCatalogBuilder
         IEnumerable<SubscriptionPlanConfig> plans,
         IEnumerable<SubscriptionOption> options,
         string? legalNotice,
-        string notice = DefaultNotice,
+        string? notice = null,
         LegalSnapshot? legalSnapshot = null)
     {
         ArgumentNullException.ThrowIfNull(plans);
@@ -97,7 +108,7 @@ public static class PricingCatalogBuilder
             Currency: "RUB",
             Plans: publicPlans,
             Options: publicOptions,
-            Notice: notice,
+            Notice: notice ?? DefaultNotice,
             LegalNotice: string.IsNullOrWhiteSpace(legalNotice) ? null : legalNotice);
     }
 

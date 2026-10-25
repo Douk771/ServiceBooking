@@ -152,7 +152,7 @@ public class OwnerSubscriptionService(
         // instead of GetAsync (which would reload them and re-resolve the effective plan), removing
         // ~5 avoidable round-trips from the owner's most-visited screen.
         var trial = await trialStateReader.BuildAsync(account, sub, plan);
-        var (addons, addonsNote) = await messengerAddons.BuildAsync(PricingCatalogBuilder.DefaultNotice);
+        var (addons, addonsNote) = await messengerAddons.BuildAsync(PricingCatalogBuilder.MessengerTaxNote);
 
         return new OwnerSubscriptionDto(
             "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays, isExpiringSoon,

@@ -85,7 +85,7 @@ public sealed class PricingCatalogCache(
 
         var dto = PricingCatalogBuilder.Build(version: "pending", plans, options, legalNotice, legalSnapshot: legalDocuments.Current);
         // Cycle 40 (§40.14): the messenger lines come from their own provider (the two options are not repeated in the generic option list — the builder skips them).
-        var (addons, addonsNote) = await messengerAddons.BuildAsync(dto.Notice, ct);
+        var (addons, addonsNote) = await messengerAddons.BuildAsync(PricingCatalogBuilder.MessengerTaxNote, ct);
         dto = dto with { MessengerAddons = addons, MessengerAddonsNote = addonsNote };
         var etag = ComputeETag(dto);
         // version mirrors the ETag per contract ("Совпадает со значением внутри ETag") — rebuild once
