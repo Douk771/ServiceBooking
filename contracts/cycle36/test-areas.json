@@ -169,6 +169,14 @@
         "src/utils/subjectRequestError",
         "src/utils/templateMarkers",
         "src/legalRoutes",
+        "src/utils/operatorRequisites",
+        "src/utils/storefrontMarkup",
+        "src/components/storefront/",
+        "src/pages/ContactsPage",
+        "src/pages/PaymentInfoPage",
+        "src/storefront/",
+        "src/test/operatorSingleSource",
+        "src/test/forbiddenPhrases",
         "src/pages/owner/TemplateAcknowledgementModal"
       ]
     },
