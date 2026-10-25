@@ -6,6 +6,7 @@ export function PricingPage() {
   return (
     <PricingPageBody
       line={zapisPricingLine}
+      site="zapis"
       documentTitle="Тарифы и цены — EZBOOK"
       cta={{ kind: 'auth-route', guestTo: '/register', authedTo: '/register', label: 'Зарегистрировать компанию' }}
     />

@@ -1,15 +1,17 @@
 import type { FaqItems } from '../../components/landing/types'
+import { fillOperatorTemplate } from '../../utils/operatorRequisites'
+import { STOREFRONT_PAGES } from '../../utils/storefrontMarkup'
 
 /**
  * FAQ «Записи» (ARCHITECTURE_CYCLE46_ZAPIS_LANDING.md §46.9). Тексты утверждены заказчиком 20.10.2026 как окончательные,
- * эталон — contracts/cycle46/zapis-landing.json. Сначала вопросы владельца салона, затем клиента. Без цен (они меняются в админке),
- * сроков ответа и юридических обещаний.
+ * эталон — contracts/cycle46/zapis-landing.json. Сначала вопросы владельца салона, затем клиента. Без цен (они меняются в админке)
+ * и юридических обещаний; сроки счёта и активации в первом ответе — значения единого источника (цикл 48).
  */
 export const zapisFaq: FaqItems = [
   {
     question: 'Сколько стоит EZBOOK для салона?',
-    answer:
-      'Начать можно бесплатно: на бесплатном тарифе есть онлайн-запись и страница салона в каталоге. Тарифы для салонов с большим числом сотрудников или филиалов — в разделе «Тарифы». Чтобы сменить тариф, оставьте заявку в кабинете, и мы свяжемся с вами.',
+    // Цикл 48 (Q48-6): сроки — значения единого источника реквизитов; шаблон — contracts/cycle48/storefront-pages.json (faq.zapisPriceAnswer).
+    answer: fillOperatorTemplate(STOREFRONT_PAGES.faq.zapisPriceAnswer),
     link: { to: '/pricing', label: 'Тарифы и цены' },
   },
   {

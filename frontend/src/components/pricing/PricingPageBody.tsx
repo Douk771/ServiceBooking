@@ -6,6 +6,7 @@ import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import type { AuthRouteAction } from '../landing/types'
 import { PlanCard } from './PlanCard'
+import { PricingTermsNote } from './PricingTermsNote'
 import { OptionRow } from './OptionRow'
 import { usePricingGrid, type PricingLine } from './pricingLine'
 
@@ -30,11 +31,13 @@ const gridClass = (count: number) => `${PRICING_GRID_BASE} ${XL_COLS[count] ?? '
  */
 interface Props {
   line: PricingLine
+  /** Сайт, на котором открыта страница: от него зависят ссылки подписи под сеткой (цикл 48). */
+  site: 'zapis' | 'goods'
   documentTitle: string
   cta: AuthRouteAction
 }
 
-export function PricingPageBody({ line, documentTitle, cta }: Props) {
+export function PricingPageBody({ line, site, documentTitle, cta }: Props) {
   const { data, isLoading, isError, error, refetch, isRefetching } = usePricingGrid(line)
   const authed = useAuthStore((s) => s.isAuthenticated())
 
@@ -98,6 +101,8 @@ export function PricingPageBody({ line, documentTitle, cta }: Props) {
           <PlanCard key={plan.id} plan={plan} messengerAddons={data.messengerAddons} messengerAddonsNote={data.messengerAddonsNote} />
         ))}
       </div>
+
+      <PricingTermsNote site={site} />
 
       {sortedOptions.length > 0 && (
         <section className="max-w-[720px]">

@@ -4,6 +4,8 @@ import catalogSource from './ZapisCompanyCatalog.tsx?raw'
 import { collectConfigStrings } from '../../components/landing/testConfig'
 import { zapisLanding } from './zapisLanding'
 import { zapisFaq } from './zapisFaq'
+import { fillOperatorTemplate } from '../../utils/operatorRequisites'
+import storefrontPages from '../../../../contracts/cycle48/storefront-pages.json'
 import { bookingFlowCarousel, bookingsShot } from '../../assets/screenshots/zapis/shots'
 
 // Тексты «Записи» окончательные (цикл 46, П5): конфиг обязан совпадать с contracts/cycle46/zapis-landing.json.
@@ -44,7 +46,16 @@ describe('zapisLanding = contracts/cycle46/zapis-landing.json (CY46-08)', () => 
   })
 
   it('FAQ is deeply equal to the contract (order and wording)', () => {
-    expect(strip(zapisFaq)).toEqual(contract.faq)
+    // Cycle 48 (CY48-08): the contract keeps the first answer as a template; the config fills in the operator values.
+    const filled = contract.faq.map((f) => ({ ...f, answer: fillOperatorTemplate(f.answer) }))
+    expect(strip(zapisFaq)).toEqual(filled)
+  })
+
+  it('CY48-08: contract version 48.0.0; the first answer is the storefront-pages.json template', () => {
+    expect(contract.version).toBe('48.0.0')
+    expect(contract.faq[0].answer).toBe(storefrontPages.faq.zapisPriceAnswer)
+    expect(zapisFaq[0].answer).toBe(fillOperatorTemplate(storefrontPages.faq.zapisPriceAnswer))
+    expect(zapisFaq[0].answer).not.toContain('{{')
   })
 
   it('catalog texts in the component source are the contract texts', () => {

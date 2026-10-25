@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PricingPage } from './PricingPage'
 import { useAuthStore } from '@/store/authStore'
 import type { OrdersPublicPricingDto } from '../api/ordersPricing'
+import { OPERATOR } from '@/utils/operatorRequisites'
 
 const get = vi.fn()
 vi.mock('../api/ordersPricing', () => ({ ordersPricingApi: { get: (...a: unknown[]) => get(...a) } }))
@@ -50,5 +51,25 @@ describe('goods PricingPage (T38-14)', () => {
     useAuthStore.setState({ user: { id: 'u', roles: ['Client'] } as never, token: 't' })
     renderPage()
     expect(await screen.findByRole('link', { name: 'Подключить магазин' })).toHaveAttribute('href', '/cabinet/new')
+  })
+})
+
+// CY48-10: the note under the grid is on the «Заказы» page too (ARCHITECTURE_CYCLE48 §48.8.2, п. 6.13.4).
+describe('goods PricingPage — note under the grid (cycle 48)', () => {
+  it('has the terms links on this domain and the tax reservation; the server notice stays', async () => {
+    renderPage()
+    expect(await screen.findByText('Заявка в кабинете.')).toBeInTheDocument()
+    const note = await screen.findByTestId('pricing-terms-note')
+    expect(within(note).getByRole('link', { name: 'Соглашении с компанией' })).toHaveAttribute('href', '/terms-owner')
+    expect(within(note).getByRole('link', { name: 'Приложении № 1' })).toHaveAttribute('href', '/offer-channel')
+    expect(within(note).getByRole('link', { name: 'Оплата и возврат' })).toHaveAttribute('href', '/payment-info')
+    expect(within(note).getByRole('link', { name: 'Контакты и реквизиты' })).toHaveAttribute('href', '/contacts')
+    expect(note.textContent).toContain(OPERATOR['НДС_ОГОВОРКА'])
+  })
+  it('no note without a grid', async () => {
+    get.mockResolvedValue(null)
+    renderPage()
+    await screen.findByText('Тарифы пока не опубликованы.')
+    expect(screen.queryByTestId('pricing-terms-note')).toBeNull()
   })
 })

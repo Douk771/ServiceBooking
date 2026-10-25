@@ -6,6 +6,7 @@ export function PricingPage() {
   return (
     <PricingPageBody
       line={ordersPricingLine}
+      site="goods"
       documentTitle="Тарифы и цены — EZBOOK Заказы"
       cta={{ kind: 'auth-route', guestTo: '/register?returnTo=%2Fcabinet%2Fnew', authedTo: '/cabinet/new', label: 'Подключить магазин' }}
     />

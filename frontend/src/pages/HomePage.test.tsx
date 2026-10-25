@@ -7,6 +7,7 @@ import { HomePage } from './HomePage'
 import type { Company } from '../types'
 import { useAuthStore } from '../store/authStore'
 import contract from '../../../contracts/cycle46/zapis-landing.json'
+import { fillOperatorTemplate } from '../utils/operatorRequisites'
 
 const getPublic = vi.fn()
 
@@ -250,7 +251,7 @@ describe('HomePage — раскладка business-first (CY46)', () => {
     const { container } = renderPage()
     await screen.findByText('Салон красоты')
     const text = container.textContent ?? ''
-    for (const t of [contract.hero.eyebrow, contract.hero.intro, contract.business.title, contract.clients.title, contract.steps.title, contract.catalog.subtitle, contract.faq[0].answer]) {
+    for (const t of [contract.hero.eyebrow, contract.hero.intro, contract.business.title, contract.clients.title, contract.steps.title, contract.catalog.subtitle, fillOperatorTemplate(contract.faq[0].answer)]) {
       expect(text).toContain(t)
     }
   })

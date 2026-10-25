@@ -4,6 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PricingPage } from './PricingPage'
 import type { PublicPricingDto, PricingPlanDto } from '../types/pricing'
+import { OPERATOR } from '../utils/operatorRequisites'
+import forbidden from '../../../contracts/cycle48/forbidden-phrases.json'
 
 // Cycle 28 (FE-4, API_CONTRACT_CYCLE28.md §601): the page is fed the five-plan catalog exactly as the contract describes it
 // after `ops tariffs apply` + publication (free, trial, Студия, Салон, Сеть; `options: []`).
@@ -29,7 +31,7 @@ const CATALOG: PublicPricingDto = {
   options: [],
   plans: [
     // deliberately out of order: the page sorts by sortOrder
-    plan({ id: 'network', name: 'Сеть', sortOrder: 40, pricePerMonth: 3900, includedCompanies: null, includedEmployees: null, highlights: ['Итоговая цена — после заявки, по числу филиалов'] }),
+    plan({ id: 'network', name: 'Сеть', sortOrder: 40, pricePerMonth: 3900, includedCompanies: null, includedEmployees: null, highlights: ['Цена не зависит от числа филиалов'] }),
     plan({ id: 'trial', name: 'Пробный период', sortOrder: 10, pricePerMonth: 0, isTrial: true, includedCompanies: 3, includedEmployees: 15, highlights: ['14 дней тарифа «Салон»'] }),
     plan({ id: 'salon', name: 'Салон', sortOrder: 30, pricePerMonth: 1890, includedCompanies: 3, includedEmployees: 15 }),
     plan({ id: 'free', name: 'Бесплатный', sortOrder: -1, pricePerMonth: 0, isFree: true }),
@@ -131,5 +133,40 @@ describe('PricingPage — messenger addon lines (cycle 40, Т40-L-11)', () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: 'Студия' })
     expect(screen.queryByTestId('messenger-addon-lines')).toBeNull()
+  })
+})
+
+// CY48-10 (ARCHITECTURE_CYCLE48_STOREFRONT.md §48.8.2, ТЛ48-02): the note under the grid is static and always shown with the grid.
+describe('PricingPage — note under the grid (cycle 48)', () => {
+  it('has the four links to the terms and the tax reservation verbatim, under the grid', async () => {
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: 'Студия' })
+    const note = screen.getByTestId('pricing-terms-note')
+    expect(within(note).getByRole('link', { name: 'Соглашения' })).toHaveAttribute('href', '/terms-owner')
+    expect(within(note).getByRole('link', { name: 'Соглашении с компанией' })).toHaveAttribute('href', '/terms-owner')
+    expect(within(note).getByRole('link', { name: 'Приложении № 1' })).toHaveAttribute('href', '/offer-channel')
+    expect(within(note).getByRole('link', { name: 'Оплата и возврат' })).toHaveAttribute('href', '/payment-info')
+    expect(within(note).getByRole('link', { name: 'Контакты и реквизиты' })).toHaveAttribute('href', '/contacts')
+    expect(note.textContent).toContain(OPERATOR['НДС_ОГОВОРКА'])
+    // after the grid in document order
+    const lastCard = screen.getByRole('heading', { level: 3, name: 'Сеть' })
+    expect(lastCard.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows the server notice as before and the fixtures contain no forbidden phrase', async () => {
+    renderPage()
+    expect(await screen.findByText('Цены указаны в рублях.')).toBeInTheDocument()
+    const re = (forbidden.patterns as Array<{ regex: string; ignoreCase: boolean; scopes: string[] }>)
+      .filter((p) => p.scopes.includes('tariffTexts'))
+      .map((p) => new RegExp(p.regex, p.ignoreCase ? 'i' : ''))
+    const texts = [CATALOG.notice, ...CATALOG.plans.flatMap((p) => [p.description ?? '', ...p.highlights])]
+    for (const t of texts) for (const r of re) expect(t).not.toMatch(r)
+  })
+
+  it('no note without a grid (404 and error)', async () => {
+    getPublicPricing.mockResolvedValue(null)
+    renderPage()
+    await screen.findByText('Тарифы пока не опубликованы.')
+    expect(screen.queryByTestId('pricing-terms-note')).toBeNull()
   })
 })
