@@ -252,7 +252,8 @@ jobs:
             ../contracts/cycle40/openapi.yaml \
             ../contracts/cycle42/openapi.yaml \
             ../contracts/cycle43/openapi.yaml \
-            ../contracts/cycle44/openapi.yaml
+            ../contracts/cycle44/openapi.yaml \
+            ../contracts/cycle48/openapi.yaml
 
       # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
       # (e.g. @redocly/cli's own dependency tree) is explicitly out of scope for this threshold so the
@@ -270,7 +271,11 @@ jobs:
         run: |
           set +e
           mkdir -p /tmp/tsc
-          for cfg in tsconfig.json tsconfig.goods.json tsconfig.dom.json tsconfig.bani.json tsconfig.about.json tsconfig.node.json; do
+          # tsconfig.storefront.json (SSR-вход витрины, ARCHITECTURE_CYCLE48 §48.14 FE-48-4) заводится только если
+          # tsconfig.json его не покрывает; пока файла нет, шаг его пропускает (DO-48-2).
+          cfgs="tsconfig.json tsconfig.goods.json tsconfig.dom.json tsconfig.bani.json tsconfig.about.json tsconfig.node.json"
+          [ -f tsconfig.storefront.json ] && cfgs="$cfgs tsconfig.storefront.json"
+          for cfg in $cfgs; do
             npx tsc --noEmit -p "$cfg" > "/tmp/tsc/$cfg.log" 2>&1 &
             pids="$pids $!:$cfg"
           done
@@ -307,10 +312,10 @@ jobs:
           npm run types:api:cycle43
           git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts src/types/api-cycle24.generated.ts src/types/api-cycle25.generated.ts src/types/api-cycle26.generated.ts src/types/api-cycle29.generated.ts src/types/api-cycle31.generated.ts src/types/api-cycle32.generated.ts src/types/api-cycle35.generated.ts src/types/api-cycle37.generated.ts src/types/api-cycle38.generated.ts src/types/api-cycle39.generated.ts src/types/api-cycle40.generated.ts src/types/api-cycle42.generated.ts src/types/api-cycle43.generated.ts
 
-      - name: Contract JSON must match cycle31, cycle32, cycle35, cycle37, cycle38, cycle39, cycle40, cycle42 and cycle43 yaml
+      - name: Contract JSON must match cycle31, cycle32, cycle35, cycle37, cycle38, cycle39, cycle40, cycle42, cycle43 and cycle48 yaml
         run: |
           npm run contracts:json
-          git diff --exit-code -- ../contracts/cycle31/openapi.json ../contracts/cycle32/openapi.json ../contracts/cycle35/openapi.json ../contracts/cycle37/openapi.json ../contracts/cycle38/openapi.json ../contracts/cycle39/openapi.json ../contracts/cycle40/openapi.json ../contracts/cycle42/openapi.json ../contracts/cycle43/openapi.json
+          git diff --exit-code -- ../contracts/cycle31/openapi.json ../contracts/cycle32/openapi.json ../contracts/cycle35/openapi.json ../contracts/cycle37/openapi.json ../contracts/cycle38/openapi.json ../contracts/cycle39/openapi.json ../contracts/cycle40/openapi.json ../contracts/cycle42/openapi.json ../contracts/cycle43/openapi.json ../contracts/cycle48/openapi.json
 
       # Цикл 17: тексты правовых уведомлений пишет legal-counsel, а каркас кода появляется
       # раньше текста. Заглушка видна владельцу на экране «Ваша подписка», поэтому её нельзя
@@ -400,6 +405,15 @@ jobs:
           DIST_DIR: frontend/dist/__about
           SMOKE_PROFILE: about
           PORT: "4177"
+
+      # ARCHITECTURE_CYCLE48_STOREFRONT.md §48.15 (CY48-D3, DO-48-2): настоящие ezbook.conf и goods.ezbook.conf над собранным dist:
+      # /contacts и /payment-info отдаются 200 (или одним 301 на свой домен), no-cache, CSP на месте.
+      - name: Check storefront pages nginx vhosts (cycle 48)
+        working-directory: .
+        run: |
+          sudo apt-get install -y --no-install-recommends nginx-light >/dev/null
+          sudo systemctl stop nginx || true
+          PATH=/usr/sbin:$PATH bash deploy/nginx/test-storefront-pages.sh
 
       # Цикл 39 (S1): токены /b/, /s/ и API public/<token> не должны попадать в access log dom.
       - name: Check dom nginx log masking

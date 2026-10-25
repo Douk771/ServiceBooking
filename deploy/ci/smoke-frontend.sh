@@ -25,6 +25,10 @@
 # (one h1, title, description, canonical), no script/noindex/SPA root//api/, product cards with links, robots.txt, sitemap.xml, 404.html.
 # Not a PWA: no manifest, apple-touch-icon or sw.js.
 #
+# Cycle 48 (ARCHITECTURE_CYCLE48_STOREFRONT.md §48.15, CY48-D2, DO-48-2): in the ezbook/goods/dom/bani profiles index.html must carry
+# <noscript> with the operator INN (from contracts/legal/operator-public.json) and a link href="/contacts"; if the prerendered
+# contacts/index.html and payment-info/index.html exist, GET /contacts must be 200 with "Контакты и реквизиты" and the INN.
+#
 # Any failed step exits 1.
 set -euo pipefail
 
@@ -60,6 +64,31 @@ favicon_ico_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/favicon.ico
 favicon_svg_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/favicon.svg")
 [ "$favicon_svg_code" = "200" ] || fail "GET /favicon.svg returned $favicon_svg_code (expected 200)"
 log "favicon OK"
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+storefront_checks() {
+  local inn index_html body
+  inn=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1],encoding="utf-8"))["values"]["ИНН_ОПЕРАТОРА"])' \
+    "$REPO_ROOT/contracts/legal/operator-public.json") || fail "cannot read ИНН_ОПЕРАТОРА from contracts/legal/operator-public.json"
+  [ -n "$inn" ] || fail "ИНН_ОПЕРАТОРА is empty in operator-public.json"
+  index_html=$(curl -sf "$BASE_URL/index.html") || fail "GET /index.html failed"
+  python3 -I - "$index_html" "$inn" <<'PY' || fail "$SMOKE_PROFILE index.html: <noscript> must contain the INN and href=\"/contacts\" (CY48-D2)"
+import re, sys
+html, inn = sys.argv[1], sys.argv[2]
+blocks = re.findall(r'<noscript>(.*?)</noscript>', html, re.S)
+assert blocks, "no <noscript>"
+assert any(inn in b and 'href="/contacts"' in b for b in blocks), "no <noscript> with INN and /contacts link"
+PY
+  if [ -f "$DIST_DIR/contacts/index.html" ] && [ -f "$DIST_DIR/payment-info/index.html" ]; then
+    body=$(curl -sfL "$BASE_URL/contacts") || fail "$SMOKE_PROFILE: GET /contacts failed (CY48-D2)"
+    grep -q 'Контакты и реквизиты' <<<"$body" || fail "$SMOKE_PROFILE: /contacts has no 'Контакты и реквизиты'"
+    grep -q "$inn" <<<"$body" || fail "$SMOKE_PROFILE: /contacts has no INN $inn"
+    curl -sfL -o /dev/null "$BASE_URL/payment-info" || fail "$SMOKE_PROFILE: GET /payment-info failed (CY48-D2)"
+    log "storefront pages OK (noscript, /contacts, /payment-info)"
+  else
+    log "storefront pages not prerendered in $DIST_DIR (contacts/ payment-info/): only <noscript> checked"
+  fi
+}
 
 if [ "$SMOKE_PROFILE" = "about" ]; then
   index_html=$(curl -sf "$BASE_URL/index.html") || fail "GET /index.html failed"
@@ -118,6 +147,7 @@ PY
   fi
   sw_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/sw.js")
   [ "$sw_code" = "200" ] || fail "$SMOKE_PROFILE: GET /sw.js returned $sw_code (expected 200)"
+  storefront_checks
   log "ALL FRONTEND SMOKE CHECKS PASSED ($SMOKE_PROFILE)"
   exit 0
 fi
@@ -143,4 +173,5 @@ apple_icon_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/apple-touch-
 [ "$apple_icon_code" = "200" ] || fail "GET /apple-touch-icon.png returned $apple_icon_code (expected 200)"
 log "home screen manifest OK (display=standalone)"
 
+SMOKE_PROFILE=ezbook storefront_checks
 log "ALL FRONTEND SMOKE CHECKS PASSED"
