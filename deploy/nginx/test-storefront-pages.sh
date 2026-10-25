@@ -27,6 +27,8 @@ check_site() {
   grep -q "root $confroot;" "$conf" || fail "$conf: не нашёл 'root $confroot;' — тест надо поправить вместе с vhost"
   { echo "pid $W/n.pid; error_log $W/e.log; events{} http{"
     [ -f "$MIME" ] && echo "include $MIME;"
+    # Без access_log на уровне http nginx -t открывает встроенный /var/log/nginx/access.log — в CI без sudo это 13: Permission denied.
+    echo "access_log $W/a.log;"
     echo "client_body_temp_path $W/b; proxy_temp_path $W/p; fastcgi_temp_path $W/f; uwsgi_temp_path $W/u; scgi_temp_path $W/s;"
     sed -e "s#listen 80;#listen $PORT;#" -e '/listen \[::\]:80;/d' \
         -e "s#root $confroot;#root $dist;#" \
