@@ -414,7 +414,8 @@ public class PricingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var dto = await GetPublicPricingOkAsync();
 
         dto.Notice.Should().NotBeNullOrWhiteSpace();
-        dto.Notice.Should().Contain("администратор");
+        // Cycle 48 (ТЛ48-01, LEGAL_REVIEW_CYCLE48.md §2.4): the notice describes the real path — request, invoice, payment, activation; "администратор" is gone.
+        dto.Notice.Should().Contain("заявку").And.Contain("счёт").And.Contain("оплатите");
     }
 
     [Fact, TestCase("PRC-018")]
