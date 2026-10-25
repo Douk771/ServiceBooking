@@ -55,6 +55,14 @@ ABOUT_VHOST="${ABOUT_VHOST:-/etc/nginx/sites-enabled/about.ezbook.conf}"
 NEW_RELEASE_DIR="$RELEASES_DIR/$RELEASE_TS"
 [ -d "$NEW_RELEASE_DIR" ] || { echo "ERROR: $NEW_RELEASE_DIR does not exist — did deploy.sh finish uploading it?" >&2; exit 1; }
 
+# Value of KEY from an env file (last occurrence, surrounding quotes/whitespace stripped); empty if absent.
+env_file_value() {
+  local v
+  v="$(grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
+  v="${v//[\"\' $'\t\r']/}"
+  printf '%s' "$v"
+}
+
 rollback_hint() {
   echo "ДЕПЛОЙ НЕУСПЕШЕН."
   echo "ssh $(whoami)@$(hostname -f 2>/dev/null || hostname) 'cd $(pwd) && bash deploy/rollback.sh'"
@@ -155,6 +163,87 @@ if ! check_legal_manifest; then
   echo "Nothing has been changed on this host yet — no rollback needed." >&2
   exit 1
 fi
+echo "    OK"
+
+# Cycle 48 (ARCHITECTURE_CYCLE48_STOREFRONT.md §48.3.3, API_CONTRACT_CYCLE48_STOREFRONT.md §48.30.1, DO-48-3): the public operator
+# requisites on the sites (contracts/legal/operator-public.json of this checkout) must equal, byte for byte, the values already
+# published in the legal documents (legal.values.json on the host), and must not hold the 'ЗАПОЛНИТЬ' marker. Runs before anything on
+# the host is touched. No legal.values.json (first-time setup) -> WARNING, skipped; no python3 -> WARNING, as check_legal_manifest.
+check_operator_requisites() {
+  local public="contracts/legal/operator-public.json"
+  local values="legal.values.json"
+  local checker="deploy/checks/cycle48-operator-requisites.py"
+  local py
+  py="$(command -v python3 || true)"
+  if [ -z "$py" ]; then
+    echo "WARNING: python3 not found on this host — skipping the operator-requisites precheck (DEPLOY.md §35.3). Compare $public with $values by hand." >&2
+    return 0
+  fi
+  [ -f "$public" ] || { echo "ERROR: $public is missing in this release checkout." >&2; return 1; }
+  [ -f "$checker" ] || { echo "ERROR: $checker is missing in this release checkout." >&2; return 1; }
+  "$py" -I "$checker" "$public" "$values"
+}
+
+echo "==> Precheck: cycle 48 operator requisites (operator-public.json == legal.values.json)"
+if ! check_operator_requisites; then
+  echo "ERROR: публичные реквизиты на сайте расходятся с опубликованными в документах (или не заполнены). Порядок правки — DEPLOY.md §35.3." >&2
+  echo "Nothing has been changed on this host yet — no rollback needed." >&2
+  exit 1
+fi
+echo "    OK"
+
+# Cycle 48 (R48-3, DO-48-3): the public contact mailbox must be proven to work before the release shows it to everyone.
+check_support_mailbox() {
+  [ "$(env_file_value .env SUPPORT_MAILBOX_VERIFIED)" = "true" ]
+}
+
+echo "==> Precheck: cycle 48 support mailbox verified (SUPPORT_MAILBOX_VERIFIED=true in .env)"
+if ! check_support_mailbox; then
+  echo "ERROR: support@ezbook.ru ещё не проверен (M48-05). После проверки допишите SUPPORT_MAILBOX_VERIFIED=true в .env — DEPLOY.md §35.2." >&2
+  echo "Nothing has been changed on this host yet — no rollback needed." >&2
+  exit 1
+fi
+echo "    OK"
+
+# Cycle 48 (§48.7.4, DO-48-3): /contacts and /payment-info become reserved first segments on goods/dom/bani. A live non-salon company
+# with such an address would lose its page, so the deploy stops until the superadmin renames it. READ-ONLY. Fail-closed: any psql
+# error refuses the deploy. The report is printed to the log on EVERY rollout (the customer reads it without host access).
+check_cycle48_slugs() {
+  local dc=(docker compose -f docker-compose.prod.yml --env-file .env)
+  local report="deploy/checks/cycle48-storefront-report.sql"
+  local live_sql="deploy/checks/cycle48-slugs-live.sql"
+
+  if [ -z "$("${dc[@]}" ps --status running -q postgres 2>/dev/null)" ]; then
+    echo "    SKIPPED: postgres service is not running (first deploy)"
+    return 0
+  fi
+
+  echo "    --- cycle48 report for the customer ---"
+  if ! "${dc[@]}" exec -T postgres psql -U postgres -d servicebooking -v ON_ERROR_STOP=1 < "$report"; then
+    echo "ERROR: could not run $report — refusing to deploy (fail-closed)." >&2
+    echo "Nothing has been changed on this host yet — no rollback needed." >&2
+    return 1
+  fi
+  echo "    --- end of report ---"
+
+  local rows
+  if ! rows="$("${dc[@]}" exec -T postgres psql -U postgres -d servicebooking -v ON_ERROR_STOP=1 -At -F ' | ' < "$live_sql")"; then
+    echo "ERROR: could not run $live_sql — refusing to deploy (fail-closed)." >&2
+    echo "Nothing has been changed on this host yet — no rollback needed." >&2
+    return 1
+  fi
+
+  if [ -n "$rows" ]; then
+    echo "$rows"
+    echo "ERROR: адрес компании совпадает с новым маршрутом /contacts или /payment-info (строки выше) — переименуйте адрес в админке, DEPLOY.md §35.2." >&2
+    echo "Nothing has been changed on this host yet — no rollback needed." >&2
+    return 1
+  fi
+  return 0
+}
+
+echo "==> Precheck: cycle 48 reserved addresses (no live shop/house/bath at /contacts or /payment-info)"
+check_cycle48_slugs || exit 1
 echo "    OK"
 
 # Cycle 19 (ARCHITECTURE_CYCLE19.md §385.3, DO-2): cycle 19 retires the "extra employees / extra
@@ -423,6 +512,46 @@ else
   echo "    about OK"
 fi
 
+# Cycle 48 (API_CONTRACT_CYCLE48_STOREFRONT.md §48.30.2, DO-48-3): every site shows the operator INN in <noscript> and serves the
+# prerendered /contacts. Through the LOCAL nginx (--resolve), like the smokes above. INN comes from this checkout's operator-public.json.
+# goods/dom/bani only when their smoke is enabled and (dom, bani) the vhost is installed; any failure -> rollback_hint.
+storefront_smoke() {   # $1 = host, $2 = label
+  local host="$1" label="$2" inn idx contacts
+  inn="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["values"]["ИНН_ОПЕРАТОРА"])' contracts/legal/operator-public.json 2>/dev/null || true)"
+  if [ -z "$inn" ]; then
+    echo "ERROR: cannot read ИНН_ОПЕРАТОРА from contracts/legal/operator-public.json (python3 missing?) — storefront smoke impossible" >&2
+    rollback_hint
+    exit 1
+  fi
+  idx=$(curl -sf --max-time 10 --resolve "$host:443:127.0.0.1" "https://$host/") || {
+    echo "ERROR: storefront smoke: https://$host/ did not answer 200 via local nginx ($label)" >&2
+    rollback_hint
+    exit 1
+  }
+  { grep -q '<noscript' <<<"$idx" && grep -qF "$inn" <<<"$idx"; } || {
+    echo "ERROR: storefront smoke: https://$host/ has no <noscript> with the operator INN ($label) — was the release built with build:release (prerender-storefront)?" >&2
+    rollback_hint
+    exit 1
+  }
+  contacts=$(curl -sfL --max-time 10 --resolve "$host:443:127.0.0.1" "https://$host/contacts") || {
+    echo "ERROR: storefront smoke: https://$host/contacts did not answer 200 via local nginx ($label)" >&2
+    rollback_hint
+    exit 1
+  }
+  grep -q 'Контакты и реквизиты' <<<"$contacts" || {
+    echo "ERROR: storefront smoke: https://$host/contacts answered, but without «Контакты и реквизиты» ($label)" >&2
+    rollback_hint
+    exit 1
+  }
+  echo "    storefront OK: $label"
+}
+
+echo "==> cycle 48 storefront smoke: <noscript> with INN and /contacts via local nginx"
+storefront_smoke "${EZBOOK_HOST:-ezbook.ru}" ezbook
+if [ "$GOODS_SMOKE" != "0" ]; then storefront_smoke "$GOODS_HOST" goods; fi
+if [ "$DOM_SMOKE" != "0" ] && [ -e "$DOM_VHOST" ]; then storefront_smoke "$DOM_HOST" dom; fi
+if [ "$BANI_SMOKE" != "0" ] && [ -e "$BANI_VHOST" ]; then storefront_smoke "$BANI_HOST" bani; fi
+
 echo "==> Pruning old releases (keeping $KEEP_RELEASES most recent)"
 # shellcheck disable=SC2012
 ls -1t "$RELEASES_DIR" 2>/dev/null | tail -n +$((KEEP_RELEASES + 1)) | while read -r old; do
@@ -435,14 +564,6 @@ done
 # once the stand is installed by hand, §25). It never changes the verdict of a production deploy: any failure here is a
 # WARNING in the log, not a rollback — the production API is already up and verified by this point. The API image is the one
 # just built above (docker-compose.demo.yml has no `build:`), so the demo runs the same code; migrations apply on its start.
-# Value of KEY from an env file (last occurrence, surrounding quotes/whitespace stripped); empty if absent.
-env_file_value() {
-  local v
-  v="$(grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
-  v="${v//[\"\' $'\t\r']/}"
-  printf '%s' "$v"
-}
-
 update_demo_stand() {
   local enabled="${DEMO_ENABLED:-}"
   if [ -z "$enabled" ] && [ -f .env ]; then

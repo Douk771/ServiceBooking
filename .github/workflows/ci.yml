@@ -327,6 +327,12 @@ jobs:
             exit 1
           fi
 
+      # ARCHITECTURE_CYCLE48_STOREFRONT.md §48.15 (CY48-D1, DO-48-3): the deploy precheck that compares operator-public.json with
+      # legal.values.json (deploy/checks/cycle48-operator-requisites.py) on fixtures, plus the real file must hold no 'ЗАПОЛНИТЬ' marker.
+      - name: Operator requisites precheck (cycle 48)
+        working-directory: .
+        run: bash deploy/ci/test-requisites-precheck.sh
+
       # ARCHITECTURE_CYCLE9.md §105.9 (R11) — the staff push service worker must never gain a `fetch`
       # listener or touch the Cache API: that is the mechanical guarantee that it cannot intercept a
       # navigation and strand a browser on a stale build. Three tokens, cheap insurance against a week
