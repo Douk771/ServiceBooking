@@ -11,6 +11,8 @@ import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { SubjectRequestPage } from '@/pages/SubjectRequestPage'
 import { LegalDocumentPage } from '@/pages/LegalDocumentPage'
+import { ContactsPage } from '@/pages/ContactsPage'
+import { PaymentInfoPage } from '@/pages/PaymentInfoPage'
 import { ConsentsPage } from '@/pages/ConsentsPage'
 import { NoticesPage } from '@/pages/NoticesPage'
 import { BaniNavbar } from './components/BaniNavbar'
@@ -53,6 +55,8 @@ const CONSENT_GATE_BYPASS_PATHS = [
   '/offer-channel',
   '/payment-terms',
   '/data-request',
+  '/contacts',
+  '/payment-info',
   '/profile/consents',
 ]
 
@@ -123,7 +127,10 @@ export function BaniApp() {
                 <Route path="/pdn-consent" element={<LegalDocumentPage type="PdnConsent" />} />
                 <Route path="/channel-risk" element={<LegalDocumentPage type="ChannelRiskNotice" />} />
                 <Route path="/offer-channel" element={<Navigate to="/terms-owner#offer-channel" replace />} />
-                <Route path="/payment-terms" element={<Navigate to="/terms-owner#payment-terms" replace />} />
+                <Route path="/contacts" element={<ContactsPage site="bani" />} />
+                <Route path="/payment-info" element={<PaymentInfoPage site="bani" />} />
+                {/* Cycle 48: until Appendix No. 2 is connected (stage B) /payment-terms leads to the summary page, not to the document anchor. */}
+                <Route path="/payment-terms" element={<Navigate to="/payment-info" replace />} />
 
                 {/* /:slug and /:slug/:resourceSlug are the company and the resource; static routes rank higher. */}
                 <Route path="/:slug" element={<CompanyPage />} />

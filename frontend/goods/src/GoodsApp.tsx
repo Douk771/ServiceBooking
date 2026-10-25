@@ -15,6 +15,8 @@ import { RegisterPage } from '@/pages/RegisterPage'
 import { ConsentsPage } from '@/pages/ConsentsPage'
 import { SubjectRequestPage } from '@/pages/SubjectRequestPage'
 import { LegalDocumentPage } from '@/pages/LegalDocumentPage'
+import { ContactsPage } from '@/pages/ContactsPage'
+import { PaymentInfoPage } from '@/pages/PaymentInfoPage'
 import { NoticesPage } from '@/pages/NoticesPage'
 import { GoodsNavbar } from './components/GoodsNavbar'
 import { GoodsFooter } from './components/GoodsFooter'
@@ -59,6 +61,8 @@ const CONSENT_GATE_BYPASS_PATHS = [
   '/offer-channel',
   '/payment-terms',
   '/data-request',
+  '/contacts',
+  '/payment-info',
   '/profile/consents',
   '/pricing',
 ]
@@ -158,7 +162,10 @@ export function GoodsApp() {
                       <Route path="/pdn-consent" element={<LegalDocumentPage type="PdnConsent" />} />
                       <Route path="/channel-risk" element={<LegalDocumentPage type="ChannelRiskNotice" />} />
                       <Route path="/offer-channel" element={<Navigate to="/terms-owner#offer-channel" replace />} />
-                      <Route path="/payment-terms" element={<Navigate to="/terms-owner#payment-terms" replace />} />
+                      <Route path="/contacts" element={<ContactsPage site="goods" />} />
+                      <Route path="/payment-info" element={<PaymentInfoPage site="goods" />} />
+                      {/* Cycle 48: until Appendix No. 2 is connected (stage B) /payment-terms leads to the summary page, not to the document anchor. */}
+                      <Route path="/payment-terms" element={<Navigate to="/payment-info" replace />} />
 
                       {/* /:slug is the shop page; it stays last-resort among single-segment paths (static routes rank higher). */}
                       <Route path="/:slug" element={<StorefrontPage />} />

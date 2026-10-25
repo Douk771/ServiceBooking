@@ -92,3 +92,26 @@ describe('GoodsApp legal routes vs contracts/cycle11/legal-routes.json', () => {
 function esc(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
+
+// CY48-09 (ARCHITECTURE_CYCLE48_STOREFRONT.md §48.7): /contacts and /payment-info on GoodsApp.
+describe('GoodsApp storefront pages (cycle 48)', () => {
+  it('routes /contacts and /payment-info exist, render the pages with site="goods", are in the bypass list and come before the address routes', () => {
+    expect(goodsSource).toMatch(/<Route path="\/contacts" element=\{<ContactsPage site="goods" \/>\} \/>/)
+    expect(goodsSource).toMatch(/<Route path="\/payment-info" element=\{<PaymentInfoPage site="goods" \/>\} \/>/)
+    const m = goodsSource.match(/CONSENT_GATE_BYPASS_PATHS = \[([\s\S]*?)\]/)
+    expect(m).not.toBeNull()
+    expect(m![1]).toContain("'/contacts'")
+    expect(m![1]).toContain("'/payment-info'")
+    const at = (p: string) => goodsSource.indexOf(`path="${p}"`)
+    expect(at('/contacts')).toBeGreaterThan(-1)
+    expect(at('/payment-info')).toBeGreaterThan(-1)
+    expect(at('/contacts')).toBeLessThan(at('/:slug'))
+    expect(at('/payment-info')).toBeLessThan(at('/:slug'))
+  })
+
+  it('/payment-terms leads to /payment-info; payment-info is a reserved address', () => {
+    expect(goodsSource).toMatch(/<Route path="\/payment-terms" element=\{<Navigate to="\/payment-info" replace \/>\} \/>/)
+    expect(routes.spaRoutes).toEqual(expect.arrayContaining(['/contacts', '/payment-info']))
+    expect(routes.reservedSlugs).toEqual(expect.arrayContaining(['contacts', 'payment-info']))
+  })
+})

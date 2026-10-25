@@ -18,6 +18,8 @@ import { ConsentsPage } from './pages/ConsentsPage'
 import { SubjectRequestPage } from './pages/SubjectRequestPage'
 import { AdminPage } from './pages/AdminPage'
 import { LegalDocumentPage } from './pages/LegalDocumentPage'
+import { ContactsPage } from './pages/ContactsPage'
+import { PaymentInfoPage } from './pages/PaymentInfoPage'
 import { PricingPage } from './pages/PricingPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { BillingPage } from './pages/BillingPage'
@@ -48,6 +50,8 @@ const CONSENT_GATE_BYPASS_PATHS = [
   '/offer-channel',
   '/payment-terms',
   '/data-request',
+  '/contacts',
+  '/payment-info',
   '/profile/delete',
   '/profile/consents',
   '/u/',
@@ -215,9 +219,12 @@ export default function App() {
                         {/* §43 — the channel offer (D9) is an appendix inside TermsOwner, not a document
                         of its own; this is a redirect, not a page. */}
                         <Route path="/offer-channel" element={<Navigate to="/terms-owner#offer-channel" replace />} />
+                        <Route path="/contacts" element={<ContactsPage site="zapis" />} />
+                        <Route path="/payment-info" element={<PaymentInfoPage site="zapis" />} />
                         {/* Приложение № 2 (оплата, автопродление, возврат) — тоже приложение внутри
                           TermsOwner, не отдельный документ; редирект по образцу /offer-channel. */}
-                        <Route path="/payment-terms" element={<Navigate to="/terms-owner#payment-terms" replace />} />
+                        {/* Cycle 48: until Appendix No. 2 is connected (stage B) /payment-terms leads to the summary page, not to the document anchor. */}
+                        <Route path="/payment-terms" element={<Navigate to="/payment-info" replace />} />
                         {/* Legacy redirects */}
                         <Route path="/dashboard" element={<Navigate to="/cabinet" replace />} />
                         <Route path="/owner" element={<Navigate to="/cabinet" replace />} />

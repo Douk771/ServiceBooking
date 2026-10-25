@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest'
 import routesJson from '../../../contracts/cycle42/bani-routes.json'
 import legalJson from '../../../contracts/cycle11/legal-routes.json'
 import baniSource from './BaniApp.tsx?raw'
+import { isBathsSlugReserved } from './utils/baniSlug'
 
 // ARCHITECTURE_CYCLE42.md §42.10.1 — bani-routes.json is the SINGLE source of the bani route map and the reserved words.
 interface BaniRoutes {
@@ -67,5 +68,35 @@ describe('BaniApp legal routes vs contracts/cycle11/legal-routes.json', () => {
     const m = baniSource.match(/CONSENT_GATE_BYPASS_PATHS = \[([\s\S]*?)\]/)
     expect(m).not.toBeNull()
     for (const path of [...Object.values(legal.documents), ...Object.keys(legal.aliases)]) expect(m![1]).toContain(`'${path}'`)
+  })
+})
+
+// CY48-09 (ARCHITECTURE_CYCLE48_STOREFRONT.md §48.7): /contacts and /payment-info on BaniApp.
+describe('BaniApp storefront pages (cycle 48)', () => {
+  it('routes /contacts and /payment-info exist, render the pages with site="bani", are in the bypass list and come before the address routes', () => {
+    expect(baniSource).toMatch(/<Route path="\/contacts" element=\{<ContactsPage site="bani" \/>\} \/>/)
+    expect(baniSource).toMatch(/<Route path="\/payment-info" element=\{<PaymentInfoPage site="bani" \/>\} \/>/)
+    const m = baniSource.match(/CONSENT_GATE_BYPASS_PATHS = \[([\s\S]*?)\]/)
+    expect(m).not.toBeNull()
+    expect(m![1]).toContain("'/contacts'")
+    expect(m![1]).toContain("'/payment-info'")
+    const at = (p: string) => baniSource.indexOf(`path="${p}"`)
+    expect(at('/contacts')).toBeGreaterThan(-1)
+    expect(at('/payment-info')).toBeGreaterThan(-1)
+    expect(at('/contacts')).toBeLessThan(at('/:slug'))
+    expect(at('/payment-info')).toBeLessThan(at('/:slug'))
+  })
+
+  it('/payment-terms leads to /payment-info; payment-info is a reserved address', () => {
+    expect(baniSource).toMatch(/<Route path="\/payment-terms" element=\{<Navigate to="\/payment-info" replace \/>\} \/>/)
+    expect(routes.spaRoutes).toEqual(expect.arrayContaining(['/contacts', '/payment-info']))
+    expect(routes.reservedSlugs).toEqual(expect.arrayContaining(['contacts', 'payment-info']))
+  })
+})
+
+describe('bani address validator (cycle 48)', () => {
+  it('payment-info and contacts are reserved words', () => {
+    expect(isBathsSlugReserved('payment-info')).toBe(true)
+    expect(isBathsSlugReserved('Contacts')).toBe(true)
   })
 })

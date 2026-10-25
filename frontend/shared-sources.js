@@ -10,6 +10,8 @@ export const SHARED_EZBOOK_PAGES = [
   'RegisterPage',
   'NoticesPage',
   'BillingPage',
+  'ContactsPage',
+  'PaymentInfoPage',
 ] // paths under src/pages, no extension
 
 export const SCANNED_EZBOOK_DIRS = ['components', 'utils', 'hooks'] // under src/, scanned by the app Tailwind builds

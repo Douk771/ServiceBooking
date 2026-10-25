@@ -67,6 +67,22 @@ describe('legal routes vs App.tsx (contracts/cycle11/legal-routes.json)', () => 
   })
 })
 
+// CY48-09 (ARCHITECTURE_CYCLE48_STOREFRONT.md §48.7): /contacts and /payment-info on ezbook.ru.
+describe('storefront pages on App.tsx (cycle 48)', () => {
+  it('has the /contacts and /payment-info routes with site="zapis" and lists both in the bypass list', () => {
+    expect(appSource).toMatch(/<Route path="\/contacts" element=\{<ContactsPage site="zapis" \/>\}/)
+    expect(appSource).toMatch(/<Route path="\/payment-info" element=\{<PaymentInfoPage site="zapis" \/>\}/)
+    const bypass = appSource.match(/CONSENT_GATE_BYPASS_PATHS = \[([\s\S]*?)\]/)![1]
+    expect(bypass).toContain("'/contacts'")
+    expect(bypass).toContain("'/payment-info'")
+  })
+
+  it('/payment-terms leads to /payment-info until Appendix No. 2 is connected', () => {
+    expect(routes.aliases['/payment-terms']).toBe('/payment-info')
+    expect(appSource).toMatch(/<Route path="\/payment-terms" element=\{<Navigate to="\/payment-info" replace \/>\}/)
+  })
+})
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

@@ -5,3 +5,6 @@ Allow: /terms-owner
 Allow: /pdn-consent
 Allow: /channel-risk
 Allow: /offer-channel
+Allow: /contacts
+Allow: /payment-info
+Allow: /pricing

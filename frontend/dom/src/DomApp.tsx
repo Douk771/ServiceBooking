@@ -10,6 +10,8 @@ import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { SubjectRequestPage } from '@/pages/SubjectRequestPage'
 import { LegalDocumentPage } from '@/pages/LegalDocumentPage'
+import { ContactsPage } from '@/pages/ContactsPage'
+import { PaymentInfoPage } from '@/pages/PaymentInfoPage'
 import { DomNavbar } from './components/DomNavbar'
 import { DomFooter } from './components/DomFooter'
 import { NotFoundPage } from './pages/NotFoundPage'
@@ -59,6 +61,8 @@ const CONSENT_GATE_BYPASS_PATHS = [
   '/offer-channel',
   '/payment-terms',
   '/data-request',
+  '/contacts',
+  '/payment-info',
   '/profile/consents',
 ]
 
@@ -133,7 +137,10 @@ export function DomApp() {
                 <Route path="/pdn-consent" element={<LegalDocumentPage type="PdnConsent" />} />
                 <Route path="/channel-risk" element={<LegalDocumentPage type="ChannelRiskNotice" />} />
                 <Route path="/offer-channel" element={<Navigate to="/terms-owner#offer-channel" replace />} />
-                <Route path="/payment-terms" element={<Navigate to="/terms-owner#payment-terms" replace />} />
+                <Route path="/contacts" element={<ContactsPage site="dom" />} />
+                <Route path="/payment-info" element={<PaymentInfoPage site="dom" />} />
+                {/* Cycle 48: until Appendix No. 2 is connected (stage B) /payment-terms leads to the summary page, not to the document anchor. */}
+                <Route path="/payment-terms" element={<Navigate to="/payment-info" replace />} />
 
                 {/* /:slug, /:slug/:houseSlug and /:slug/uslugi/:serviceSlug are the company, the house and the service; static routes rank higher. */}
                 <Route path="/:slug" element={<CompanyPage />} />
