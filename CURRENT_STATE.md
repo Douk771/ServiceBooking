@@ -1,7 +1,60 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `5bcc4a19` (HEAD ветки `cycle/048-card-payments-storefront` = `develop` в момент отведения ветки цикла 48), дата: 2026-10-25.**
-**Следующий diff отсчитывайте от `5bcc4a19`.**
+**Актуально по состоянию на коммит: `7a7527fa` (HEAD ветки `cycle/048-card-payments-storefront`, цикл 48 — кодовая часть, ревью и QA завершены; `develop` в неё подтянут), дата: 2026-10-26.**
+**Следующий diff отсчитывайте от `7a7527fa`.** (Сам коммит с этой правкой идёт следом и кода не меняет.)
+
+**Обновление на `7a7527fa` (закрытие цикла 48 «Витрина для эквайера», режим «обновление»).** ✔ `git log 5bcc4a19..7a7527fa`: 26 коммитов (BE-48-0…5, FE-48-0…4, DO-48-1…4, QA-48, docs);
+`git diff --stat`: 127 файлов, +7 951/−427. Источник намерения: `SPEC_CYCLE48_STOREFRONT.md` (бывший корневой `SPEC.md`, заархивирован этим коммитом; новый `SPEC.md` в корне
+отсутствует до следующего цикла), `ARCHITECTURE_CYCLE48_STOREFRONT.md` (§48.x), `API_CONTRACT_CYCLE48_STOREFRONT.md` (§48.22–§48.30), `LEGAL_REVIEW_CYCLE48.md`, `BRIEF_CARD_PAYMENTS.md`
+(теперь закоммичен; цикл 48 = только этап A брифа). **codebase-analyst ничего не запускал** (ни vitest, ни `dotnet test`, ни сборку, ни смоуки, ни `redocly`). Корневые `ARCHITECTURE.md`/`API_CONTRACT.md` по-прежнему цикл 3.
+**Оплаты картой в коде НЕТ** (ни Продамус, ни Робокасса, ни вебхуков, ни платёжных сущностей): счета выставляются вручную, цикл только готовит витрину.
+
+**Что изменилось в коде (цикл 48), кратко:**
+- **БД и миграции: не менялись.** Новых сущностей нет. Новых HTTP-эндпоинтов нет; меняется содержимое ответов существующих.
+- **Единый источник реквизитов оператора:** `contracts/legal/operator-public.json` (v48.0.0, 13 значений + список `sharedWithLegalValues` из 8 ключей, равных `legal.values.json`; производный ключ `ТЕЛЕФОН_TEL` не хранится).
+  Читают: бэкенд (`ServiceBooking.API/Services/Legal/OperatorPublicRequisites.cs`, встроенный ресурс `operator-public.json` в csproj; `Get/Fill/TelHref`), фронт (`frontend/src/utils/operatorRequisites.ts`),
+  LegalKit, `deploy-remote.sh`, пререндер. **Значения (ФИО, ИНН, адрес, телефон) лежат в git** (решение Q48-1). Тексты страниц — `contracts/cycle48/storefront-pages.json` (v48.0.0, дословно из LEGAL_REVIEW_CYCLE48).
+- **Фронт, новые страницы `/contacts` («Контакты и реквизиты») и `/payment-info` («Оплата и возврат») на всех четырёх сайтах** (zapis, goods, dom, bani): `frontend/src/pages/ContactsPage.tsx`, `PaymentInfoPage.tsx`
+  (параметр `site`), блоки `components/storefront/StorefrontBlocks.tsx`, мини-разметка `utils/storefrontMarkup.ts` (`**жирный**`, `*курсив*`, `[ссылка](href)`, `{{КЛЮЧ}}`; неизвестный ключ = исключение),
+  строка реквизитов в подвалах (`components/sites/OperatorRequisites.tsx`, `Footer.tsx`, `GoodsFooter`, `DomFooter`, `BaniFooter`, `about/SiteFooter`). Маршруты добавлены в `App.tsx`, `GoodsApp`, `DomApp`, `BaniApp`
+  (bypass-списки), `robots.txt` (Allow `/contacts`, `/payment-info`, `/pricing`). `/payment-terms` теперь ведёт на `/payment-info` (было `/terms-owner#payment-terms`; вернуть, когда подключат Приложение 2 — этап B);
+  `LegalRoutes.Aliases` и `contracts/cycle11/legal-routes.json` обновлены (`/contacts`, `/payment-info` — самоссылки). На `/pricing` под сеткой — подпись (`PricingTermsNote.tsx`); FAQ главной «Записи» (`zapisFaq.ts`) приведён к новому пути подключения (эталон `contracts/cycle46/zapis-landing.json` — новая версия).
+- **Пререндер без JS:** новый SSR-вход `frontend/src/storefront/prerender.tsx`, `vite.storefront.config.ts`, `scripts/prerender-storefront.mjs`; `npm run build:storefront` (входит в `build:release`) подставляет `<noscript>` с реквизитами
+  вместо маркера `<!--storefront:noscript-->` в `index.html` четырёх сборок и пишет `contacts/index.html`, `payment-info/index.html`. Скрипт падает (exit 1) при `style=`/`<script>`/`/api/`/неподставленном `{{`, пропавшем ИНН или `noindex`. `dist-storefront-ssr/` в `.gitignore` и ESLint-ignore.
+  Заметка: `tsconfig.storefront.json` не заведён, CI-шаг tsc его подхватит, только если файл появится.
+- **Бэкенд, тексты тарифов (US-48-04):** «Сеть» («Записи») — фиксированные 3 900 ₽/мес без «от … ₽», «Сеть магазинов» («Заказы») — 2 990 ₽; `Trial` получил пункт «Отправка сообщений клиентам — не дольше 7 дней из 14».
+  `PricingCatalogBuilder.DefaultNotice` / `OrdersPricingCatalogBuilder.DefaultNotice` стали **вычисляемыми** (`NoticeTemplate` + `OperatorPublicRequisites.Fill`; текст: заявка → счёт → банковский перевод → включение);
+  параметр `notice` стал `string?`. Новая константа `PricingCatalogBuilder.MessengerTaxNote` («Без НДС: …») — taxNote опций мессенджеров больше не равен notice.
+  `TariffCatalogSeeder`: `AlignPaidTariffTexts` заменяет Description/Highlights платного тарифа **только если поле равно прежнему сиду побайтно** (правки админа не затираются), `ForbiddenTextWarnings` печатает предупреждения
+  в отчёте `ops tariffs plan|apply`; список запрещённых фраз — `contracts/cycle48/forbidden-phrases.json` (встроенный ресурс, `TariffForbiddenPhrases.cs`; тот же файл читает TS-guard `frontend/src/utils/forbiddenPhrases.ts`).
+- **Сигнал оператору о заявке (US-48-08):** `BillingController` (заявка на подписку) и `NotificationChannelsController` (заявка на оплату мессенджера, `PaymentRequest`) через
+  `OperatorSignalDispatcher.FireAndForget` → `IGlitchTipSignalService` шлют текст из `BillingRequestSignal` (линия, имя тарифа, число опций, первые 8 hex id аккаунта, «счёт выставить до <дата>» = +1 рабочий день по Барнаулу, праздники не учитываются).
+  ПДн в сообщение не попадают; сбой канала проглатывается (warning) и ответ эндпоинта не меняет. Конструкторы обоих контроллеров получили `IGlitchTipSignalService` (+ `ILogger` у `BillingController`).
+- **LegalKit:** `RequisitesDrift` + `legal publish` **отказывает** (без обхода-флага), если общие ключи `operator-public.json` и `legal.values.json` расходятся; `legal status --values` печатает блок сверки (в `--json` не добавлен — схема зафиксирована).
+- **Контракт API:** `contracts/cycle48/openapi.yaml` + сгенерированный `openapi.json` (подключены в CI: redocly lint и «Contract JSON must match»); `OpenApiContract.AssertSchema` (TestKit) для проверки схемы в тестах.
+- **Деплой/CI (`deploy/deploy-remote.sh`, `.github/workflows/ci.yml`, DEPLOY.md §35, `ACQUIRER_CHECKLIST.md`):** новые пре-проверки до любых изменений на хосте: (1) `deploy/checks/cycle48-operator-requisites.py` — `operator-public.json` == `legal.values.json`
+  на хосте и нет маркера «ЗАПОЛНИТЬ»; (2) **гейт `SUPPORT_MAILBOX_VERIFIED=true` в `.env`** — без него выкат цикла 48 и позже отклоняется (см. `.env.production.example`); (3) отчёт `cycle48-storefront-report.sql` + fail-closed проверка
+  `cycle48-slugs-live.sql`: живая компания goods/dom/bani с адресом `contacts`/`payment-info` останавливает выкат; (4) после выката смоук `storefront_smoke` (`<noscript>` с ИНН и `/contacts` через локальный nginx для ezbook/goods/dom/bani).
+  CI: шаг `bash deploy/ci/test-requisites-precheck.sh`, шаг `deploy/nginx/test-storefront-pages.sh` (настоящие vhost-ы над собранным dist), расширение `deploy/ci/smoke-frontend.sh`.
+- **Тесты цикла 48 (не запускались мной):** C# unit `ServiceBooking.UnitTests/Cycle48/*` (BillingRequestSignal, ForbiddenPhrases, MessengerTaxNote, OperatorPublicRequisites, PricingNotice, TariffTextsAlignment), `LegalKit/RequisitesDriftTests.cs`;
+  интеграционные `ServiceBooking.Tests/Tests/Cycle48OperatorRequisitesSchemaTests.cs`, `Cycle48StorefrontQaTests.cs` (CY48-QA-1…8, нужен PostgreSQL/Testcontainers); vitest: `Storefront.qa48.test.tsx`, `*Footer.qa48.test.tsx`, `storefrontPages.test.tsx`,
+  `prerender.test.tsx`, `operatorSingleSource.guard.test.ts`, `forbiddenPhrases.guard.test.ts` (по одному в каждом приложении), `storefrontMarkup.test.ts` и др. Команды запуска те же, что в §7 (vitest `npm run test:run` в `frontend/`; `dotnet test ServiceBooking.UnitTests` / `ServiceBooking.Tests`).
+  Новые тест-области внесены в `contracts/cycle36/test-areas.json`. Каталог — `TEST_CATALOG.md`, раздел «Цикл 48 — витрина для эквайера, QA» (CY48-QA-1…8, CY48-QA-01…03; **CY48-QA-M / M48-01…M48-10 — ручные, «не проверено»**).
+
+**Расхождения и хвосты, видимые из кода/документов (дополняют §9):**
+- **R48-A. Выкат не выполнен, ждёт внешних условий:** рабочий `support@ezbook.ru` (гейт `SUPPORT_MAILBOX_VERIFIED`), правовая оценка строк опций мессенджеров на `/pricing` (Q48-7: строки не скрыты), вычитка страниц юристом, ручные M48-01…10 (вёрстка 375/1280, `curl` на бою, почта, поиск демо-салонов в боевом каталоге).
+- **R48-B. Незакоммиченные правки на момент анализа:** в рабочем дереве `CHANGELOG.md` (+ запись «Не выпущено — цикл 48», счётчик) и `README.md` (+ абзац про цикл 48) изменены, но **не закоммичены** и в этот коммит не включены (зона другого агента). До коммита в ветке цикл 48 в README/CHANGELOG формально не отражён.
+- **R48-C. Реквизиты в git:** ФИО, ИНН, адрес и телефон оператора лежат в открытом репозитории (`contracts/legal/operator-public.json`); сверку с `legal.values.json` делают только `legal publish` и `deploy-remote.sh` (python3 на хосте; без него — WARNING и пропуск).
+- **R48-D. `/payment-terms` → `/payment-info`:** временное поведение до этапа B; в оферте ссылка на Приложение 2 по-прежнему ведёт на страницу-пересказ, а не на якорь документа.
+- **R48-E. QA-тесты цикла 48 дублируют тексты литералами** (а не читают `contracts/cycle48`/`operator-public.json`) — правка текстов потребует правки в двух местах; в `forbidden-phrases.json` упомянут `Cycle48StorefrontContractTests.cs`, такого файла в репозитории нет (есть `Cycle48StorefrontQaTests.cs`).
+- **R48-F. Сигналы fire-and-forget** без повтора и без очереди: потеря сообщения при сбое GlitchTip — только warning в логе; праздничные дни в «+1 рабочий день» не учитываются.
+- **R48-G. Сборки goods/dom/bani/about целиком в цикле не прогонялись** (по CHANGELOG-записи цикла); `build:release` с новым `build:storefront` проверяется только в CI/на выкате.
+
+**Документация цикла (для §10):** корневой `SPEC.md` перенесён в `SPEC_CYCLE48_STOREFRONT.md`; `ARCHITECTURE_CYCLE48_STOREFRONT.md`, `API_CONTRACT_CYCLE48_STOREFRONT.md`, `LEGAL_REVIEW_CYCLE48.md`, `ACQUIRER_CHECKLIST.md` (чек-лист для эквайера), DEPLOY.md §35 — в корне
+(`docs/history/` в проекте по-прежнему нет, архив — суффиксы `*_CYCLEnn*` в корне); `TEST_CATALOG.md` — раздел цикла 48 в конце файла; OpenAPI — `contracts/cycle48/openapi.yaml|json`. Пользовательская документация `docs/*.md` не менялась.
+
+*Ниже — блок предыдущего обновления (`5bcc4a19`), сохранён для истории.*
+
 
 **Обновление на `5bcc4a19` (перед циклом 48, режим «обновление»).** ✔ `git log 76e3f422..5bcc4a19`: 14 коммитов; из них по коду новыми после
 прошлого обновления (`d7c53ca`) являются только три работы, влитые в `develop` вне полных циклов: (а) **цикл 47 (quick)** `8eebe0a`/мердж `5f616a5`
