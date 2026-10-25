@@ -196,6 +196,13 @@ public class NotificationChannelsController(
             await transaction.CommitAsync(ct);
         }
 
+        // Cycle 48 (US-48-08): a payment request is a request with a promised invoice term; a repeated one also signals (the fresh one
+        // matters to the operator). Sent right after the commit: a failure in the consent ledger or the overview below must not
+        // leave a committed request the operator never hears about.
+        if (dto.PaymentRequest)
+            OperatorSignalDispatcher.FireAndForget(signals, logger,
+                BillingRequestSignal.ForMessengerPaymentRequest(requestedTransport, ownerAccountId, BillingRequestSignal.InvoiceDueBy(now)));
+
         // D9 is an APPENDIX to TermsOwner, not a sixth document type (§43.2) — the same DocumentKey as company creation's
         // acceptance, distinguished only by Purpose.
         await ledger.GrantAsync(new ConsentGrant(
@@ -206,10 +213,6 @@ public class NotificationChannelsController(
         var result = await overviewBuilder.BuildChannelAsync(channel, userId, ct);
         logger.LogInformation("Number {Transport} {Step} for channel {ChannelId} ({Outcome})",
             display, dto.PaymentRequest ? "payment request" : "terms", channel.Id, created ? "created" : "updated");
-        // Cycle 48 (US-48-08): a payment request is a request with a promised invoice term; a repeated one also signals (the fresh one matters to the operator).
-        if (dto.PaymentRequest)
-            OperatorSignalDispatcher.FireAndForget(signals, logger,
-                BillingRequestSignal.ForMessengerPaymentRequest(requestedTransport, ownerAccountId, BillingRequestSignal.InvoiceDueBy(now)));
         return created ? CreatedAtAction(nameof(GetById), new { id = channel.Id }, result) : Ok(result);
     }
 
