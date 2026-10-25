@@ -9,11 +9,13 @@
     "ChannelRiskNotice": "/channel-risk"
   },
 
-  "_aliasesComment": "Маршруты, которые существуют во фронтенде, но не являются отдельным типом документа. `/offer-channel` — оферта D9, приложение № 1 к TermsOwner (ARCHITECTURE_CYCLE11.md §102.2): шестого типа документа нет и не будет, поэтому это редирект на якорь. `/payment-terms` — приложение № 2 к TermsOwner (Оплата, автопродление и возврат, legal-drafts/13-payment-terms.html), устроено так же — редирект на якорь. ВНИМАНИЕ: приложение № 2 намеренно не подключено к legal-drafts/legal.json и не приклеено к App_Data/legal/03-terms-owner.html до запуска оплаты картой, поэтому якорь `payment-terms` сознательно числится в `anchorsPending`, а не в `anchors` ниже — требовать его наличия в текущем артефакте было бы ложной тревогой. `/data-request` (ARCHITECTURE_CYCLE20.md §411, §412.6) — не приложение и не документ, а обычный маршрут формы обращения субъекта персональных данных, на который ссылаются новые uiTexts цикла 20 (файлы 14-16); отображён сам на себя (без якоря), потому что это не редирект внутрь другого документа.",
+  "_aliasesComment": "Маршруты, которые существуют во фронтенде, но не являются отдельным типом документа. `/offer-channel` — оферта D9, приложение № 1 к TermsOwner (ARCHITECTURE_CYCLE11.md §102.2): шестого типа документа нет и не будет, поэтому это редирект на якорь. `/payment-terms` — приложение № 2 к TermsOwner (Оплата, автопродление и возврат, legal-drafts/13-payment-terms.html), устроено так же — редирект на якорь. ВНИМАНИЕ: приложение № 2 намеренно не подключено к legal-drafts/legal.json и не приклеено к App_Data/legal/03-terms-owner.html до запуска оплаты картой, поэтому якорь `payment-terms` сознательно числится в `anchorsPending`, а не в `anchors` ниже — требовать его наличия в текущем артефакте было бы ложной тревогой. `/data-request` (ARCHITECTURE_CYCLE20.md §411, §412.6) — не приложение и не документ, а обычный маршрут формы обращения субъекта персональных данных, на который ссылаются новые uiTexts цикла 20 (файлы 14-16); отображён сам на себя (без якоря), потому что это не редирект внутрь другого документа. Цикл 48: `/payment-terms` до этапа B ведёт на страницу-пересказ `/payment-info` (не документ). При подключении Приложения № 2 вернуть `\"/terms-owner#payment-terms\"` и перенести якорь из `anchorsPending` в `anchors`. `/contacts`, `/payment-info` — обычные маршруты фронта, самоотображены по образцу `/data-request`.",
   "aliases": {
     "/offer-channel": "/terms-owner#offer-channel",
-    "/payment-terms": "/terms-owner#payment-terms",
-    "/data-request": "/data-request"
+    "/payment-terms": "/payment-info",
+    "/data-request": "/data-request",
+    "/contacts": "/contacts",
+    "/payment-info": "/payment-info"
   },
 
   "_anchorsComment": "Якоря, которые ОБЯЗАНЫ существовать в отданном HTML. Отсутствие — код возврата 6 у `legal links` и красный CI: без якоря редирект /offer-channel приводит человека на страницу без оферты, которую ему предлагают принять. Именно это состояние и есть сегодня в App_Data/legal/terms-owner.html (ARCHITECTURE_CYCLE11.md §108.1).",
@@ -35,6 +37,8 @@
     "/channel-risk",
     "/offer-channel",
     "/payment-terms",
-    "/data-request"
+    "/data-request",
+    "/contacts",
+    "/payment-info"
   ]
 }

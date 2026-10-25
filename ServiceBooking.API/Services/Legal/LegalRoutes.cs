@@ -33,13 +33,18 @@ public static class LegalRoutes
     public static readonly IReadOnlyDictionary<string, string> Aliases = new Dictionary<string, string>
     {
         ["/offer-channel"] = "/terms-owner#offer-channel",
-        ["/payment-terms"] = "/terms-owner#payment-terms",
+        // Cycle 48: until card payments (stage B) /payment-terms leads to the retelling page /payment-info,
+        // not to Appendix 2. Restore "/terms-owner#payment-terms" when the appendix is wired in.
+        ["/payment-terms"] = "/payment-info",
         // ARCHITECTURE_CYCLE20.md §411, §412.6 (Т20-08) — not a legal document alias in the "spliced-in
         // appendix" sense above: this is the app's own subject-request form route, which cycle 20's new
         // uiTexts (files 14-16) link to. Listed here (self-mapping, no anchor) purely so
         // LegalReadinessReportBuilder.CheckLinks accepts it as a valid internal target — the same
         // mechanism the two real aliases use, reused for the simplest case that needs no anchor.
         ["/data-request"] = "/data-request",
+        // Cycle 48: ordinary frontend routes, self-mapped like /data-request.
+        ["/contacts"] = "/contacts",
+        ["/payment-info"] = "/payment-info",
     };
 
     /// <summary>Route → the in-page anchor(s) its content is required to contain. Used by `legal links`

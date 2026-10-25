@@ -124,6 +124,7 @@ public class StaysPureRulesTests
     {
         StaysSlugPolicy.Validate("kedr-house").Should().Be(SlugCheck.Ok);
         StaysSlugPolicy.Validate("cabinet").Should().Be(SlugCheck.Reserved);
+        StaysSlugPolicy.Validate("payment-info").Should().Be(SlugCheck.Reserved);
         StaysSlugPolicy.Validate("ab").Should().Be(SlugCheck.Invalid);
         StaysSlugPolicy.Validate("primer-x").Should().Be(SlugCheck.Invalid);
         StaysSlugPolicy.IsValidHouseSlug("a1").Should().BeTrue();

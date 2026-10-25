@@ -23,6 +23,7 @@ public class SlugPolicyTests
     [InlineData("CABINET", SlugCheck.Reserved)]
     [InlineData("terms-owner", SlugCheck.Reserved)]
     [InlineData("api", SlugCheck.Reserved)]
+    [InlineData("payment-info", SlugCheck.Reserved)]
     public void Validate(string slug, SlugCheck expected) => SlugPolicy.Validate(slug).Should().Be(expected);
 
     [Fact]

@@ -18,6 +18,7 @@ public class BathsSlugPolicyTests
     [InlineData("sauna", SlugCheck.Reserved)]
     [InlineData("BATHS", SlugCheck.Reserved)]
     [InlineData("cabinet", SlugCheck.Reserved)]
+    [InlineData("payment-info", SlugCheck.Reserved)]
     public void Validate_Company(string slug, SlugCheck expected) => BathsSlugPolicy.Validate(slug).Should().Be(expected);
 
     [Fact]

@@ -51,10 +51,12 @@
     "/channel-risk",
     "/offer-channel",
     "/payment-terms",
+    "/contacts",
+    "/payment-info",
     "/data-request"
   ],
 
-  "_reservedComment": "Слова, которые нельзя занять адресом компании «Бани»: всё из contracts/cycle39/dom-routes.json reservedSlugs (общая платформа) плюс слова bani (bath, baths, sauna, saunas, resources, resource).",
+  "_reservedComment": "Слова, которые нельзя занять адресом компании «Бани»: всё из contracts/cycle39/dom-routes.json reservedSlugs (общая платформа) плюс слова bani (bath, baths, sauna, saunas, resources, resource). Цикл 48: payment-info.",
   "reservedSlugs": [
     "about", "account", "accounts", "admin", "api", "app", "apartments", "assets", "auth",
     "b", "bani", "banya", "bath", "baths", "billing", "board", "book", "booking", "bookings",
@@ -62,7 +64,7 @@
     "company", "companies", "contacts", "data-request", "dom", "doma", "embed", "extras", "ezbook",
     "faq", "favicon", "goods", "guest", "guests", "health", "help", "house", "houses",
     "ical", "index", "legal", "login", "logout", "manifest", "max", "me", "my", "new", "notices",
-    "o", "offer-channel", "order", "orders", "owner", "payment", "payment-terms", "payments",
+    "o", "offer-channel", "order", "orders", "owner", "payment", "payment-info", "payment-terms", "payments",
     "pdn-consent", "pricing", "privacy", "profile", "region", "regions", "register", "resource", "resources", "robots",
     "s", "sauna", "saunas", "schedule", "search", "services", "settings", "sheregesh", "shop", "shops", "signup", "sitemap",
     "static", "status", "stay", "stays", "support", "sw", "terms", "terms-owner",
