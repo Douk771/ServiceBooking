@@ -14,7 +14,7 @@
   `for h in ezbook.ru goods.ezbook.ru dom.ezbook.ru bani.ezbook.ru; do for p in contacts payment-info payment-terms; do curl -s -o /dev/null -L -w "%{http_code} $h/$p\n" https://$h/$p; done; done` (везде 200).
 - [ ] **M48-04.** Реквизиты есть в `<noscript>` без JS (выкат этого и так проверяет смоук `storefront OK`):
   `for h in ezbook.ru goods.ezbook.ru dom.ezbook.ru bani.ezbook.ru; do curl -s https://$h/ | grep -c 'ИНН'; done` (не 0 везде). То же для `/contacts` и `/payment-info`: `curl -sL https://ezbook.ru/contacts | grep -c 'ИНН'`.
-- [ ] **M48-05.** Письмо на `support@ezbook.ru` с внешнего ящика дошло, ответ ушёл с `support@ezbook.ru` и не попал в спам; `tel:` и `mailto:` открываются на телефоне. Только после этого в `.env` стоит `SUPPORT_MAILBOX_VERIFIED=true`.
+- [ ] **M48-05.** Письмо на `ezbook.privacy@yandex.ru` с внешнего ящика дошло, ответ ушёл и не попал в спам; `tel:` и `mailto:` открываются на телефоне.
 - [ ] **M48-06.** `https://ezbook.ru/pricing` на бою открыт (не «Тарифы пока не опубликованы»); у «Сети» 3 900 ₽ без «от» и «после заявки»; есть путь подключения, налоговая оговорка и ссылки на `/payment-info`, `/contacts`, `/terms-owner`, `/offer-channel`. Те же ссылки и оговорка на `https://goods.ezbook.ru/pricing`.
 - [ ] **M48-07.** Текст «Сети» и «Сети магазинов» в админке боя совпадает с новым (`contracts/cycle48/storefront-pages.json`). Если нет, поправить в админке (`ops tariffs plan` показывает строки «внимание:»).
 - [ ] **M48-08.** Реквизиты на сайте совпадают с опубликованными: `https://ezbook.ru/terms-owner` п. 6.13.7 и `https://ezbook.ru/privacy`. Выкат уже сверил восемь общих ключей с `legal.values.json`; здесь глазами сверяем с тем, что видит посетитель.

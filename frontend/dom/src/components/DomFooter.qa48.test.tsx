@@ -14,7 +14,7 @@ describe('QA-48-03 подвал dom (US-48-01)', () => {
     const footer = screen.getByRole('contentinfo')
     expect(footer.textContent).toContain('Коломеец Илья Константинович, самозанятый (плательщик НПД), ИНН 222410420811, г. Барнаул')
     expect(within(footer).getByRole('link', { name: '+7 913 225 89 15' })).toHaveAttribute('href', 'tel:+79132258915')
-    expect(within(footer).getByRole('link', { name: 'support@ezbook.ru' })).toHaveAttribute('href', 'mailto:support@ezbook.ru')
+    expect(within(footer).getByRole('link', { name: 'ezbook.privacy@yandex.ru' })).toHaveAttribute('href', 'mailto:ezbook.privacy@yandex.ru')
     expect(within(footer).getByRole('link', { name: 'Контакты и реквизиты' })).toHaveAttribute('href', '/contacts')
     expect(within(footer).getByRole('link', { name: 'Оплата и возврат' })).toHaveAttribute('href', '/payment-info')
     expect(within(footer).getByRole('link', { name: 'Политика обработки персональных данных' })).toHaveAttribute('href', '/privacy')

@@ -44,7 +44,7 @@ public class Cycle48OperatorRequisitesSchemaTests
 
         V("ИНН_ОПЕРАТОРА").Should().MatchRegex("^[0-9]{12}$");
         V("ТЕЛЕФОН_ОПЕРАТОРА").Should().MatchRegex(@"^\+7[ 0-9()-]{10,16}$");
-        V("ПОЧТА_ПОДДЕРЖКИ").Should().MatchRegex(@"^[^@\s]+@ezbook\.ru$");
+        V("ПОЧТА_ПОДДЕРЖКИ").Should().MatchRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$");
         V("ГОРОД_ОПЕРАТОРА").Should().StartWith("г. ");
         V("ЮРИДИЧЕСКИЙ_АДРЕС").Should().Contain(V("ГОРОД_ОПЕРАТОРА")["г. ".Length..], "the city is part of the legal address");
 

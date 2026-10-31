@@ -33,7 +33,7 @@
 - **LegalKit:** `RequisitesDrift` + `legal publish` **отказывает** (без обхода-флага), если общие ключи `operator-public.json` и `legal.values.json` расходятся; `legal status --values` печатает блок сверки (в `--json` не добавлен — схема зафиксирована).
 - **Контракт API:** `contracts/cycle48/openapi.yaml` + сгенерированный `openapi.json` (подключены в CI: redocly lint и «Contract JSON must match»); `OpenApiContract.AssertSchema` (TestKit) для проверки схемы в тестах.
 - **Деплой/CI (`deploy/deploy-remote.sh`, `.github/workflows/ci.yml`, DEPLOY.md §35, `ACQUIRER_CHECKLIST.md`):** новые пре-проверки до любых изменений на хосте: (1) `deploy/checks/cycle48-operator-requisites.py` — `operator-public.json` == `legal.values.json`
-  на хосте и нет маркера «ЗАПОЛНИТЬ»; (2) **гейт `SUPPORT_MAILBOX_VERIFIED=true` в `.env`** — без него выкат цикла 48 и позже отклоняется (см. `.env.production.example`); (3) отчёт `cycle48-storefront-report.sql` + fail-closed проверка
+  на хосте и нет маркера «ЗАПОЛНИТЬ»; (2) ~~гейт `SUPPORT_MAILBOX_VERIFIED`~~ — снят 31.10.2026 (`fix/support-email-yandex`): почты на домене нет, `ПОЧТА_ПОДДЕРЖКИ` = `ezbook.privacy@yandex.ru`; (3) отчёт `cycle48-storefront-report.sql` + fail-closed проверка
   `cycle48-slugs-live.sql`: живая компания goods/dom/bani с адресом `contacts`/`payment-info` останавливает выкат; (4) после выката смоук `storefront_smoke` (`<noscript>` с ИНН и `/contacts` через локальный nginx для ezbook/goods/dom/bani).
   CI: шаг `bash deploy/ci/test-requisites-precheck.sh`, шаг `deploy/nginx/test-storefront-pages.sh` (настоящие vhost-ы над собранным dist), расширение `deploy/ci/smoke-frontend.sh`.
 - **Тесты цикла 48 (не запускались мной):** C# unit `ServiceBooking.UnitTests/Cycle48/*` (BillingRequestSignal, ForbiddenPhrases, MessengerTaxNote, OperatorPublicRequisites, PricingNotice, TariffTextsAlignment), `LegalKit/RequisitesDriftTests.cs`;
@@ -42,7 +42,7 @@
   Новые тест-области внесены в `contracts/cycle36/test-areas.json`. Каталог — `TEST_CATALOG.md`, раздел «Цикл 48 — витрина для эквайера, QA» (CY48-QA-1…8, CY48-QA-01…03; **CY48-QA-M / M48-01…M48-10 — ручные, «не проверено»**).
 
 **Расхождения и хвосты, видимые из кода/документов (дополняют §9):**
-- **R48-A. Выкат не выполнен, ждёт внешних условий:** рабочий `support@ezbook.ru` (гейт `SUPPORT_MAILBOX_VERIFIED`), правовая оценка строк опций мессенджеров на `/pricing` (Q48-7: строки не скрыты), вычитка страниц юристом, ручные M48-01…10 (вёрстка 375/1280, `curl` на бою, почта, поиск демо-салонов в боевом каталоге).
+- **R48-A. Выкат не выполнен, ждёт внешних условий:** правовая оценка строк опций мессенджеров на `/pricing` (Q48-7: строки не скрыты), вычитка страниц юристом, ручные M48-01…10 (вёрстка 375/1280, `curl` на бою, почта, поиск демо-салонов в боевом каталоге).
 - **R48-B. (закрыто)** `CHANGELOG.md` и `README.md` закоммичены `248a81ac`; `docs/owner.md` §«Тариф» обновлён (DOC-48-1, `988f0ce8`).
 - **R48-C. Реквизиты в git:** ФИО, ИНН, адрес и телефон оператора лежат в открытом репозитории (`contracts/legal/operator-public.json`); сверку с `legal.values.json` делают только `legal publish` и `deploy-remote.sh` (python3 на хосте; без него — WARNING и пропуск).
 - **R48-D. `/payment-terms` → `/payment-info`:** временное поведение до этапа B; в оферте ссылка на Приложение 2 по-прежнему ведёт на страницу-пересказ, а не на якорь документа.

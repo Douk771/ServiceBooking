@@ -114,7 +114,8 @@ describe('CY44-QA содержание: запреты и доступность
     expect(t).toMatch(/войти на одном сайте не значит войти на другом/i)
   })
   it('бренд пишется только EZBOOK', () => {
-    expect(t).not.toMatch(/ezbook(?!\.ru)|Ezbook|EzBook/)
+    // Адрес почты оператора (ezbook.privacy@yandex.ru) — не написание бренда.
+    expect(t.replace(/[\w.+-]+@[\w.-]+/g, '')).not.toMatch(/ezbook(?!\.ru)|Ezbook|EzBook/)
   })
   it('нет truncate, иконки декоративные, кнопки не ниже 44px, одна колонка на мобильном', () => {
     expect(html).not.toContain('truncate')

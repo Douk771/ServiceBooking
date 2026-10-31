@@ -192,19 +192,6 @@ if ! check_operator_requisites; then
 fi
 echo "    OK"
 
-# Cycle 48 (R48-3, DO-48-3): the public contact mailbox must be proven to work before the release shows it to everyone.
-check_support_mailbox() {
-  [ "$(env_file_value .env SUPPORT_MAILBOX_VERIFIED)" = "true" ]
-}
-
-echo "==> Precheck: cycle 48 support mailbox verified (SUPPORT_MAILBOX_VERIFIED=true in .env)"
-if ! check_support_mailbox; then
-  echo "ERROR: support@ezbook.ru ещё не проверен (M48-05). После проверки допишите SUPPORT_MAILBOX_VERIFIED=true в .env — DEPLOY.md §35.2." >&2
-  echo "Nothing has been changed on this host yet — no rollback needed." >&2
-  exit 1
-fi
-echo "    OK"
-
 # Cycle 48 (§48.7.4, DO-48-3): /contacts and /payment-info become reserved first segments on goods/dom/bani. A live non-salon company
 # with such an address would lose its page, so the deploy stops until the superadmin renames it. READ-ONLY. Fail-closed: any psql
 # error refuses the deploy. The report is printed to the log on EVERY rollout (the customer reads it without host access).

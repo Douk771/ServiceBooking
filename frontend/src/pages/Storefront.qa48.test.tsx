@@ -40,7 +40,7 @@ describe.each(SITES)('QA-48-01 /contacts на %s (US-48-02)', (site) => {
     expect(text).toContain('10 рабочих дней')
     expect(text).toContain('по рабочим дням с 10:00 до 18:00 по барнаульскому времени (МСК+4)')
     expect(screen.getByRole('link', { name: '+7 913 225 89 15' })).toHaveAttribute('href', 'tel:+79132258915')
-    expect(screen.getByRole('link', { name: 'support@ezbook.ru' })).toHaveAttribute('href', 'mailto:support@ezbook.ru')
+    expect(screen.getByRole('link', { name: 'ezbook.privacy@yandex.ru' })).toHaveAttribute('href', 'mailto:ezbook.privacy@yandex.ru')
     expect(screen.getAllByRole('link', { name: 'ezbook.privacy@yandex.ru' })[0]).toHaveAttribute('href', 'mailto:ezbook.privacy@yandex.ru')
     expect(screen.getByRole('link', { name: 'форму обращения' })).toHaveAttribute('href', '/data-request')
     expect(screen.getByRole('link', { name: 'Соглашение с компанией' })).toHaveAttribute('href', '/terms-owner')
@@ -58,7 +58,7 @@ describe.each(SITES)('QA-48-01 /contacts на %s (US-48-02)', (site) => {
 
   it('ezbook.privacy@ подписан как адрес официальных обращений (включая отказ и возврат), а не «только для ПДн»', () => {
     mount(<ContactsPage site={site} />)
-    expect(document.body.textContent).toMatch(/Официальные обращения:.*отказ от договора и возврат денег/)
+    expect(document.body.textContent).toMatch(/E-mail:.*официальные обращения: претензии, отказ от договора и возврат денег/)
     expect(document.body.textContent).not.toMatch(/только для (обращений по )?(персональн|ПДн)/i)
   })
 })
@@ -102,7 +102,7 @@ describe.each(SITES)('QA-48-02 /payment-info на %s (US-48-03)', (site) => {
     expect(screen.getAllByRole('link', { name: /Контакты и реквизиты/ })[0]).toHaveAttribute('href', '/contacts')
     const mails = screen.getAllByRole('link').map((a) => a.getAttribute('href'))
     expect(mails).toContain('mailto:ezbook.privacy@yandex.ru')
-    expect(mails).toContain('mailto:support@ezbook.ru')
+    expect(mails).toContain('mailto:ezbook.privacy@yandex.ru')
     const price = screen.getAllByRole('link', { name: /Тарифы и цены/ })[0]
     // dom/bani своей /pricing не имеют: ссылка абсолютная на сайт «Записи» (в тесте адрес берётся из окружения, в сборке — https://ezbook.ru)
     const href = price.getAttribute('href') ?? ''
@@ -124,7 +124,7 @@ describe('QA-48-03 подвал ezbook (US-48-01)', () => {
     const footer = screen.getByRole('contentinfo')
     expect(footer.textContent).toContain(`${FIO}, самозанятый (плательщик НПД), ИНН ${INN}, г. Барнаул`)
     expect(within(footer).getByRole('link', { name: '+7 913 225 89 15' })).toHaveAttribute('href', 'tel:+79132258915')
-    expect(within(footer).getByRole('link', { name: 'support@ezbook.ru' })).toHaveAttribute('href', 'mailto:support@ezbook.ru')
+    expect(within(footer).getByRole('link', { name: 'ezbook.privacy@yandex.ru' })).toHaveAttribute('href', 'mailto:ezbook.privacy@yandex.ru')
     expect(within(footer).getByRole('link', { name: 'Контакты и реквизиты' })).toHaveAttribute('href', '/contacts')
     expect(within(footer).getByRole('link', { name: 'Оплата и возврат' })).toHaveAttribute('href', '/payment-info')
     expect(within(footer).getByRole('link', { name: 'Политика обработки персональных данных' })).toHaveAttribute('href', '/privacy')
