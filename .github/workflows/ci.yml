@@ -417,6 +417,8 @@ jobs:
       - name: Check storefront pages nginx vhosts (cycle 48)
         working-directory: .
         run: |
+          # Индекс apt на раннере бывает устаревшим: без update install получает 404 на уже заменённую версию пакета.
+          sudo apt-get update -qq >/dev/null
           sudo apt-get install -y --no-install-recommends nginx-light >/dev/null
           sudo systemctl stop nginx || true
           PATH=/usr/sbin:$PATH bash deploy/nginx/test-storefront-pages.sh
@@ -425,6 +427,8 @@ jobs:
       - name: Check dom nginx log masking
         working-directory: .
         run: |
+          # Индекс apt на раннере бывает устаревшим: без update install получает 404 на уже заменённую версию пакета.
+          sudo apt-get update -qq >/dev/null
           sudo apt-get install -y --no-install-recommends nginx-light >/dev/null
           sudo systemctl stop nginx || true
           PATH=/usr/sbin:$PATH bash deploy/nginx/test-dom-masking.sh
