@@ -27,20 +27,23 @@ public class PricingNoticeTests
         OrdersPricingCatalogBuilder.NoticeTemplate.Should().Be(Template("derivedOrders"));
     }
 
+    // LEGAL_REVIEW_CYCLE48.md «Поправка 31.10.2026 (2)»: «Заказы» и «Запись» показывают один и тот же короткий текст.
     [Fact]
-    public void OrdersTemplate_IsTheZapisOneWithoutOptions() =>
-        OrdersPricingCatalogBuilder.NoticeTemplate.Should().Be(PricingCatalogBuilder.NoticeTemplate.Replace("заявку на тариф и опции", "заявку на тариф"));
+    public void OrdersTemplate_IsTheZapisOne() =>
+        OrdersPricingCatalogBuilder.NoticeTemplate.Should().Be(PricingCatalogBuilder.NoticeTemplate);
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void DefaultNotice_HasNoPlaceholders_AndCarriesTheSourceTerms(bool orders)
+    public void DefaultNotice_HasNoPlaceholders_AndPointsToPaymentInfo_WithoutTheInvoicePath(bool orders)
     {
         var notice = orders ? OrdersPricingCatalogBuilder.DefaultNotice : PricingCatalogBuilder.DefaultNotice;
 
         notice.Should().NotContain("{{").And.NotContain("}}");
-        notice.Should().Contain(OperatorPublicRequisites.Get("СРОК_СЧЁТА"));
-        notice.Should().Contain(OperatorPublicRequisites.Get("СРОК_АКТИВАЦИИ"));
+        notice.Should().Contain("в кабинете").And.Contain("«Оплата и возврат»");
+        // The detailed "request → invoice → bank transfer" path is only on /payment-info now.
+        notice.Should().NotContain("заявку").And.NotContain("счёт").And.NotContain("банковским переводом").And.NotContain("→");
+        notice.Should().NotContain(OperatorPublicRequisites.Get("СРОК_СЧЁТА"));
     }
 
     [Theory]

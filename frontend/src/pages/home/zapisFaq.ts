@@ -5,12 +5,13 @@ import { STOREFRONT_PAGES } from '../../utils/storefrontMarkup'
 /**
  * FAQ «Записи» (ARCHITECTURE_CYCLE46_ZAPIS_LANDING.md §46.9). Тексты утверждены заказчиком 20.10.2026 как окончательные,
  * эталон — contracts/cycle46/zapis-landing.json. Сначала вопросы владельца салона, затем клиента. Без цен (они меняются в админке)
- * и юридических обещаний; сроки счёта и активации в первом ответе — значения единого источника (цикл 48).
+ * и юридических обещаний; первый ответ — шаблон из contracts/cycle48/storefront-pages.json (цикл 48).
  */
 export const zapisFaq: FaqItems = [
   {
     question: 'Сколько стоит EZBOOK для салона?',
-    // Цикл 48 (Q48-6): сроки — значения единого источника реквизитов; шаблон — contracts/cycle48/storefront-pages.json (faq.zapisPriceAnswer).
+    // Цикл 48 (Q48-6, поправка 31.10.2026 (2)): шаблон — contracts/cycle48/storefront-pages.json (faq.zapisPriceAnswer). Сроков в нём больше нет
+    // (путь «заявка → счёт» — только на /payment-info), но подстановка оставлена: шаблон по-прежнему из общего источника.
     answer: fillOperatorTemplate(STOREFRONT_PAGES.faq.zapisPriceAnswer),
     link: { to: '/pricing', label: 'Тарифы и цены' },
   },

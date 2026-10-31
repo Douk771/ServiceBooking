@@ -121,15 +121,15 @@ public class Cycle48StorefrontQaTests(TestDatabaseFixture fixture) : ApiTestBase
     }
 
     [Fact, TestCase("CY48-QA-3")]
-    public async Task Notice_DescribesTheOfferPath_RequestInvoicePayActivation_AndDoesNotPromiseCardsOrAutoRenewal()
+    public async Task Notice_IsShortAndNeutral_PointsToPaymentInfo_AndDoesNotPromiseCards()
     {
+        // LEGAL_REVIEW_CYCLE48.md «Поправка 31.10.2026 (2)»: the detailed path (request → invoice → payment) is only on /payment-info.
         await ApplyCatalogAsync();
         foreach (var url in new[] { "/api/pricing", "/api/pricing/orders" })
         {
             var notice = (await GetJsonAsync(url)).GetProperty("notice").GetString()!;
-            notice.Should().Contain("заявку").And.Contain("счёт").And.Contain("банковским переводом").And.Contain("тариф включится");
-            notice.Should().Contain("не позднее следующего рабочего дня", "СРОК_СЧЁТА подставлен").And.Contain("не позднее 2 рабочих дней");
-            notice.Should().Contain("Автопродления нет");
+            notice.Should().Be("Подключить платный тариф можно в кабинете после регистрации. Как оплатить и как вернуть деньги — на странице «Оплата и возврат».");
+            notice.Should().NotContain("заявку").And.NotContain("счёт").And.NotContain("банковским переводом");
             notice.Should().NotContain("{{").And.NotContain("}}");
             notice.Should().NotMatchRegex("(?i)картой|свяжемся");
         }

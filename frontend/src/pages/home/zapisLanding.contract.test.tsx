@@ -51,8 +51,8 @@ describe('zapisLanding = contracts/cycle46/zapis-landing.json (CY46-08)', () => 
     expect(strip(zapisFaq)).toEqual(filled)
   })
 
-  it('CY48-08: contract version 48.0.0; the first answer is the storefront-pages.json template', () => {
-    expect(contract.version).toBe('48.0.0')
+  it('CY48-08: contract version 48.1.0; the first answer is the storefront-pages.json template', () => {
+    expect(contract.version).toBe('48.1.0')
     expect(contract.faq[0].answer).toBe(storefrontPages.faq.zapisPriceAnswer)
     expect(zapisFaq[0].answer).toBe(fillOperatorTemplate(storefrontPages.faq.zapisPriceAnswer))
     expect(zapisFaq[0].answer).not.toContain('{{')

@@ -414,8 +414,10 @@ public class PricingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var dto = await GetPublicPricingOkAsync();
 
         dto.Notice.Should().NotBeNullOrWhiteSpace();
-        // Cycle 48 (ТЛ48-01, LEGAL_REVIEW_CYCLE48.md §2.4): the notice describes the real path — request, invoice, payment, activation; "администратор" is gone.
-        dto.Notice.Should().Contain("заявку").And.Contain("счёт").And.Contain("оплатите");
+        // Cycle 48 (LEGAL_REVIEW_CYCLE48.md §2.4, «Поправка 31.10.2026 (2)»): a short neutral line — connect in the cabinet,
+        // payment and refunds on /payment-info; the detailed request → invoice path lives only there. "администратор" is gone.
+        dto.Notice.Should().Contain("в кабинете").And.Contain("«Оплата и возврат»");
+        dto.Notice.Should().NotContain("администратор").And.NotContain("банковским переводом");
     }
 
     [Fact, TestCase("PRC-018")]

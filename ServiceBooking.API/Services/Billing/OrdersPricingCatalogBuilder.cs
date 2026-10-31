@@ -12,11 +12,12 @@ namespace ServiceBooking.API.Services.Billing;
 /// </summary>
 public static class OrdersPricingCatalogBuilder
 {
-    /// <summary>Byte-for-byte <c>contracts/cycle48/storefront-pages.json</c> <c>pricing.notice.derivedOrders</c> (CY48-B2).</summary>
+    /// <summary>Byte-for-byte <c>contracts/cycle48/storefront-pages.json</c> <c>pricing.notice.derivedOrders</c> (CY48-B2);
+    /// since «Поправка 31.10.2026 (2)» the same text as <see cref="PricingCatalogBuilder.NoticeTemplate"/>.</summary>
     public const string NoticeTemplate =
-        "Как подключить платный тариф: зарегистрируйтесь и отправьте в кабинете заявку на тариф → мы пришлём счёт {{СРОК_СЧЁТА}} на e-mail или телефон из профиля → оплатите счёт банковским переводом → тариф включится {{СРОК_АКТИВАЦИИ}}. Автопродления нет: каждый следующий месяц оплачивается новым счётом.";
+        "Подключить платный тариф можно в кабинете после регистрации. Как оплатить и как вернуть деньги — на странице «Оплата и возврат».";
 
-    /// <summary>The notice with the operator's invoice and activation terms substituted (computed, see
+    /// <summary>The notice with any operator requisites substituted (computed, see
     /// <see cref="PricingCatalogBuilder.DefaultNotice"/>).</summary>
     public static string DefaultNotice => OperatorPublicRequisites.Fill(NoticeTemplate);
 

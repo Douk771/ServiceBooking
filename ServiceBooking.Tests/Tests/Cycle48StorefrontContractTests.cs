@@ -120,7 +120,7 @@ public class Cycle48StorefrontContractTests(TestDatabaseFixture fixture) : Cycle
         }
 
         var notice = zapis.GetProperty("notice").GetString()!;
-        notice.Should().NotBe(TaxNote).And.Contain("счёт", "the storefront notice is the long offer-path text");
+        notice.Should().NotBe(TaxNote).And.Contain("«Оплата и возврат»", "the storefront notice is the short pointer to /payment-info (LEGAL «Поправка 31.10.2026 (2)»)");
         zapis.GetProperty("messengerAddonsNote").GetProperty("taxNote").GetString().Should().NotBe(notice, "taxNote is not the notice (LEGAL §2.6)");
         subscription.GetProperty("messengerAddonsNote").GetProperty("taxNote").GetString().Should().NotBe(notice);
         orders.GetProperty("notice").GetString().Should().NotBe(TaxNote);

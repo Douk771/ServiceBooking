@@ -48,8 +48,9 @@ describe('storefront-pages.json vs LEGAL_REVIEW_CYCLE48.md', () => {
     expect(missing, `not found in LEGAL_REVIEW_CYCLE48.md:\n${missing.join('\n')}`).toEqual([])
   })
 
-  it('«Заказы» notice is the «Записи» notice minus «и опции»', () => {
+  // «Поправка 31.10.2026 (2)»: «Заказы» показывают тот же короткий текст, что и «Запись».
+  it('«Заказы» notice is the «Записи» notice', () => {
     const { zapis, derivedOrders } = pagesJson.pricing.notice
-    expect(derivedOrders).toBe(zapis.replace('заявку на тариф и опции', 'заявку на тариф'))
+    expect(derivedOrders).toBe(zapis)
   })
 })

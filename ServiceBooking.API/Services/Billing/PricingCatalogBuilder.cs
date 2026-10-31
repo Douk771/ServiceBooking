@@ -13,14 +13,15 @@ namespace ServiceBooking.API.Services.Billing;
 /// </summary>
 public static class PricingCatalogBuilder
 {
-    /// <summary>Text above the price grid, with {{…}} placeholders for the operator requisites. Byte-for-byte
-    /// <c>contracts/cycle48/storefront-pages.json</c> <c>pricing.notice.zapis</c> (CY48-B2); the terms come from
-    /// the single source <c>contracts/legal/operator-public.json</c> (ARCHITECTURE_CYCLE48_STOREFRONT.md §48.8.1).</summary>
+    /// <summary>Text above the price grid. Byte-for-byte <c>contracts/cycle48/storefront-pages.json</c>
+    /// <c>pricing.notice.zapis</c> (CY48-B2). Since LEGAL_REVIEW_CYCLE48.md «Поправка 31.10.2026 (2)» it is a short neutral
+    /// line without {{…}} placeholders: the detailed "request → invoice → payment" path lives only on /payment-info. It is
+    /// still passed through <see cref="OperatorPublicRequisites.Fill"/> so a future placeholder needs no code change.</summary>
     public const string NoticeTemplate =
-        "Как подключить платный тариф: зарегистрируйтесь и отправьте в кабинете заявку на тариф и опции → мы пришлём счёт {{СРОК_СЧЁТА}} на e-mail или телефон из профиля → оплатите счёт банковским переводом → тариф включится {{СРОК_АКТИВАЦИИ}}. Автопродления нет: каждый следующий месяц оплачивается новым счётом.";
+        "Подключить платный тариф можно в кабинете после регистрации. Как оплатить и как вернуть деньги — на странице «Оплата и возврат».";
 
-    /// <summary>The notice with the operator's invoice and activation terms substituted. Computed, not a constant: the
-    /// terms are values of the source file, not text in code.</summary>
+    /// <summary>The notice with any operator requisites substituted (ARCHITECTURE_CYCLE48_STOREFRONT.md §48.8.1). Computed,
+    /// not a constant: values come from <c>contracts/legal/operator-public.json</c>, not from code.</summary>
     public static string DefaultNotice => OperatorPublicRequisites.Fill(NoticeTemplate);
 
     /// <summary>Short tax remark of a messenger line ("Условия · {taxNote}") — a constant, NOT the price-list notice
