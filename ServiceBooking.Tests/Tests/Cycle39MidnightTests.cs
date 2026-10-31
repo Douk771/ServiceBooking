@@ -172,9 +172,15 @@ public class Cycle39MidnightTests(TestDatabaseFixture fixture) : Cycle39TestBase
     public async Task MonthBorder_SessionAcrossMonthEnd_BelongsToLastDayOfMonth_TwoDatesToGuest()
     {
         var (_, svc, _, _) = await SceneAsync();
-        // ближайший последний день месяца не ближе 5 дней
+        // ближайший последний день месяца не ближе 5 дней, выпадающий на пятницу или субботу: окно до 01:00 следующих суток есть только
+        // у них (в будни — 08:00–22:00). Раньше брался просто ближайший конец месяца, и тест проходил лишь в месяцы, где тот был Пт/Сб.
         var d = InDays(5);
         d = new DateOnly(d.Year, d.Month, DateTime.DaysInMonth(d.Year, d.Month));
+        while (d.DayOfWeek is not (DayOfWeek.Friday or DayOfWeek.Saturday))
+        {
+            var m = d.AddDays(1);
+            d = new DateOnly(m.Year, m.Month, DateTime.DaysInMonth(m.Year, m.Month));
+        }
         var q = await QuoteServiceAsync(svc.Id, d, 1380, 2); // 23:00–01:00 следующего месяца
         q.Ok.Should().BeTrue(string.Join("; ", q.Problems.Select(p => p.Message)));
         q.Time!.BusinessDate.Should().Be(d);

@@ -315,7 +315,8 @@ public class Cycle43AccountActionsTests(TestDatabaseFixture fixture) : Cycle43Te
         var responses = await Task.WhenAll(ExtendAsync(one, a.AccountId, "Max", 1, 490, "А"), ExtendAsync(two, a.AccountId, "Max", 1, 490, "Б"));
         responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.OK, "no 500 from the unique index, no refusal: the second waits for the first");
 
-        ShouldBeNear((await RowAsync(a.AccountId, "Max"))!.PaidUntilUtc, DateTime.UtcNow.AddMonths(2), "two months of one month each");
+        // Two one-month steps: from 31.10 that is 30.11 → 30.12, not 31.12.
+        ShouldBeNear((await RowAsync(a.AccountId, "Max"))!.PaidUntilUtc, DateTime.UtcNow.AddMonths(1).AddMonths(1), "two months of one month each");
         (await DbAsync(db => db.ChannelOptionChangeLogs.CountAsync(l => l.BillingAccountId == a.AccountId))).Should().Be(2);
         (await DbAsync(db => db.SubscriptionChangeLogs.CountAsync(l => l.BillingAccountId == a.AccountId && l.Comment!.Contains("MAX")))).Should().Be(2);
         (await DbAsync(db => db.AccountSubscriptionOptions.CountAsync(r => r.BillingAccountId == a.AccountId && r.Option.Code == MaxCode))).Should().Be(1, "one row per option and account");

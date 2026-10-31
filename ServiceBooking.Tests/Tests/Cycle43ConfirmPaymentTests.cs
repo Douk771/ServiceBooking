@@ -186,7 +186,8 @@ public class Cycle43ConfirmPaymentTests(TestDatabaseFixture fixture) : Cycle43Te
 
         var responses = await Task.WhenAll(Confirm(one, channelId, new { months = 1 }), ExtendAsync(two, a.AccountId, "Max", 1, 490));
         responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.OK, "one lock of the account serves both paths");
-        (await RowAsync(a.AccountId, "Max"))!.PaidUntilUtc.Should().BeCloseTo(DateTime.UtcNow.AddMonths(2), TimeSpan.FromMinutes(3));
+        // Two one-month steps, not one two-month step: from 31.10 that is 30.11 → 30.12, not 31.12.
+        (await RowAsync(a.AccountId, "Max"))!.PaidUntilUtc.Should().BeCloseTo(DateTime.UtcNow.AddMonths(1).AddMonths(1), TimeSpan.FromMinutes(3));
         (await DbAsync(db => db.ChannelOptionChangeLogs.CountAsync(l => l.BillingAccountId == a.AccountId))).Should().Be(2);
     }
 
