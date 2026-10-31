@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PricingPage } from './PricingPage'
 import type { PublicPricingDto, PricingPlanDto } from '../types/pricing'
 import { OPERATOR } from '../utils/operatorRequisites'
+import { useAuthStore } from '../store/authStore'
 import forbidden from '../../../contracts/cycle48/forbidden-phrases.json'
 
 // Cycle 28 (FE-4, API_CONTRACT_CYCLE28.md §601): the page is fed the five-plan catalog exactly as the contract describes it
@@ -54,6 +55,7 @@ const card = (name: string) => screen.getByRole('heading', { level: 3, name }).p
 
 beforeEach(() => {
   getPublicPricing.mockReset().mockResolvedValue(CATALOG)
+  useAuthStore.setState({ user: null, token: null })
 })
 
 describe('PricingPage — five-plan catalog (cycle 28)', () => {
@@ -68,13 +70,13 @@ describe('PricingPage — five-plan catalog (cycle 28)', () => {
     expect(within(card('Сеть')).getByText(/3\s900\s₽\/мес/)).toBeInTheDocument()
   })
 
-  it('the trial carries its badge and is a separate card from the free plan', async () => {
+  it('the trial is a separate card from the free plan, its name is not repeated by the badge', async () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: 'Пробный период' })
 
-    // The badge and the heading are both "Пробный период": one span badge + one heading inside the same card.
+    // Поправка витрины 31.10.2026: the badge equals the plan name here, so only the heading says «Пробный период».
     const trialCard = card('Пробный период')
-    expect(within(trialCard).getAllByText('Пробный период')).toHaveLength(2)
+    expect(within(trialCard).getAllByText('Пробный период')).toHaveLength(1)
     expect(within(card('Бесплатный')).queryByText('Пробный период')).not.toBeInTheDocument()
   })
 
@@ -92,6 +94,43 @@ describe('PricingPage — five-plan catalog (cycle 28)', () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: 'Студия' })
     expect(screen.queryByText('Дополнительные опции')).not.toBeInTheDocument()
+  })
+})
+
+// Поправка витрины 31.10.2026: у каждой карточки своя кнопка; оплату они не обещают и ничего не подключают сами.
+describe('PricingPage — plan card buttons', () => {
+  const PAID = ['Студия', 'Салон', 'Сеть']
+  const FREE = ['Бесплатный', 'Пробный период']
+
+  it('guest: every card has a button to the registration (as the bottom CTA); the bottom CTA stays', async () => {
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: 'Студия' })
+    for (const name of PAID) {
+      const link = within(card(name)).getByRole('link', { name: `Подключить тариф «${name}»` })
+      expect(link).toHaveTextContent(/^Подключить$/)
+      expect(link).toHaveAttribute('href', '/register')
+    }
+    for (const name of FREE) {
+      const link = within(card(name)).getByRole('link', { name: `Начать бесплатно: тариф «${name}»` })
+      expect(link).toHaveTextContent(/^Начать бесплатно$/)
+      expect(link).toHaveAttribute('href', '/register')
+    }
+    expect(screen.getByRole('link', { name: 'Зарегистрировать компанию' })).toHaveAttribute('href', '/register')
+  })
+
+  it('owner: paid plans lead to «Ваша подписка» (/billing), free ones to the cabinet', async () => {
+    useAuthStore.setState({ user: { id: 'u', roles: ['CompanyOwner'] } as never, token: 't' })
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: 'Студия' })
+    for (const name of PAID) expect(screen.getByRole('link', { name: `Подключить тариф «${name}»` })).toHaveAttribute('href', '/billing')
+    for (const name of FREE) expect(screen.getByRole('link', { name: `Начать бесплатно: тариф «${name}»` })).toHaveAttribute('href', '/cabinet')
+  })
+
+  it('signed in without a company: «Подключить» leads to the cabinet, not to /billing it cannot open', async () => {
+    useAuthStore.setState({ user: { id: 'u', roles: ['Client'] } as never, token: 't' })
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: 'Студия' })
+    expect(screen.getByRole('link', { name: 'Подключить тариф «Салон»' })).toHaveAttribute('href', '/cabinet')
   })
 })
 

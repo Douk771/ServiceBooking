@@ -9,6 +9,9 @@ export function PricingPage() {
       site="zapis"
       documentTitle="Тарифы и цены — EZBOOK"
       cta={{ kind: 'auth-route', guestTo: '/register', authedTo: '/register', label: 'Зарегистрировать компанию' }}
+      // Кнопки карточек: гость — регистрация (как нижний CTA); вошедший владелец — «Ваша подписка» (/billing, там заявка на тариф),
+      // остальные вошедшие — /cabinet (без компании он сам ведёт на /cabinet/new). Выбранный тариф не передаётся: /billing параметра не читает.
+      planCta={{ guestTo: '/register', paidAuthedTo: '/billing', freeAuthedTo: '/cabinet', paidRoles: ['CompanyOwner', 'SuperAdmin'] }}
     />
   )
 }

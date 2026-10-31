@@ -54,6 +54,30 @@ describe('goods PricingPage (T38-14)', () => {
   })
 })
 
+// Поправка витрины 31.10.2026: у каждой карточки своя кнопка; оплату они не обещают и ничего не подключают сами.
+describe('goods PricingPage — plan card buttons', () => {
+  it('guest: «Начать бесплатно» on the free plan, «Подключить» on paid ones — all to the registration of the bottom CTA', async () => {
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: 'Лавка' })
+    const free = screen.getByRole('link', { name: 'Начать бесплатно: тариф «Бесплатный»' })
+    expect(free).toHaveTextContent('Начать бесплатно')
+    expect(free).toHaveAttribute('href', '/register?returnTo=%2Fcabinet%2Fnew')
+    for (const name of ['Лавка', 'Магазин', 'Сеть магазинов']) {
+      const link = screen.getByRole('link', { name: `Подключить тариф «${name}»` })
+      expect(link).toHaveTextContent('Подключить')
+      expect(link).toHaveAttribute('href', '/register?returnTo=%2Fcabinet%2Fnew')
+    }
+    expect(screen.getByRole('link', { name: 'Подключить магазин' })).toBeInTheDocument()
+  })
+  it('signed in: paid plans lead to the subscription screen of the cabinet, the free one to the cabinet', async () => {
+    useAuthStore.setState({ user: { id: 'u', roles: ['Client'] } as never, token: 't' })
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: 'Лавка' })
+    expect(screen.getByRole('link', { name: 'Подключить тариф «Магазин»' })).toHaveAttribute('href', '/cabinet/subscription')
+    expect(screen.getByRole('link', { name: 'Начать бесплатно: тариф «Бесплатный»' })).toHaveAttribute('href', '/cabinet')
+  })
+})
+
 // CY48-10: the note under the grid is on the «Заказы» page too (ARCHITECTURE_CYCLE48 §48.8.2, п. 6.13.4).
 describe('goods PricingPage — note under the grid (cycle 48)', () => {
   it('has the terms links on this domain and the tax reservation; the server notice stays', async () => {

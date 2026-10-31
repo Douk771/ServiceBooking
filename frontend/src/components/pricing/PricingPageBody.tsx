@@ -5,10 +5,10 @@ import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import type { AuthRouteAction } from '../landing/types'
-import { PlanCard } from './PlanCard'
+import { PlanCard, type PlanCardAction } from './PlanCard'
 import { PricingTermsNote } from './PricingTermsNote'
 import { OptionRow } from './OptionRow'
-import { usePricingGrid, type PricingLine } from './pricingLine'
+import { usePricingGrid, type PricingLine, type PricingPlanView } from './pricingLine'
 
 // Cycle 28 (FE-4, ARCHITECTURE_CYCLE28.md §582.3): the catalog is five plans since «Записи» got its grid (free, trial,
 // Студия, Салон, Сеть). Two columns from `md`, three from `lg`, all five in a row from `xl`, where the container is
@@ -29,17 +29,44 @@ const gridClass = (count: number) => `${PRICING_GRID_BASE} ${XL_COLS[count] ?? '
  * That is an expected state (API_CONTRACT_CYCLE7.md §39), not an error: the page renders a plain "not available
  * yet" notice instead of an error screen.
  */
+/**
+ * Куда ведут кнопки карточек тарифов (поправка витрины 31.10.2026). Кнопки сами ничего не подключают и не оплачивают:
+ * гость попадает на регистрацию, вошедший — в кабинет, на экран подписки (там заявка на тариф) или на главную кабинета.
+ */
+export interface PlanCtaTargets {
+  /** Гость, любой тариф: туда же, куда нижний CTA для гостя. */
+  guestTo: string
+  /** Вошедший, платный тариф: экран подписки в кабинете. */
+  paidAuthedTo: string
+  /** Вошедший, бесплатный тариф или пробный период: кабинет. */
+  freeAuthedTo: string
+  /** Если задано, экран подписки открыт только этим ролям; вошедший без них идёт в `freeAuthedTo` (кабинет сам отправит дальше). */
+  paidRoles?: readonly string[]
+}
+
+const isFreePlan = (plan: PricingPlanView) => plan.isFree || plan.isTrial || plan.pricePerMonth === 0
+
+function planAction(plan: PricingPlanView, targets: PlanCtaTargets, authed: boolean, canOpenPaid: boolean): PlanCardAction {
+  if (isFreePlan(plan)) {
+    return { to: authed ? targets.freeAuthedTo : targets.guestTo, label: 'Начать бесплатно', ariaLabel: `Начать бесплатно: тариф «${plan.name}»` }
+  }
+  const to = !authed ? targets.guestTo : canOpenPaid ? targets.paidAuthedTo : targets.freeAuthedTo
+  return { to, label: 'Подключить', ariaLabel: `Подключить тариф «${plan.name}»` }
+}
+
 interface Props {
   line: PricingLine
   /** Сайт, на котором открыта страница: от него зависят ссылки подписи под сеткой (цикл 48). */
   site: 'zapis' | 'goods'
   documentTitle: string
   cta: AuthRouteAction
+  planCta: PlanCtaTargets
 }
 
-export function PricingPageBody({ line, site, documentTitle, cta }: Props) {
+export function PricingPageBody({ line, site, documentTitle, cta, planCta }: Props) {
   const { data, isLoading, isError, error, refetch, isRefetching } = usePricingGrid(line)
   const authed = useAuthStore((s) => s.isAuthenticated())
+  const canOpenPaid = useAuthStore((s) => !planCta.paidRoles || planCta.paidRoles.some((r) => s.hasRole(r)))
 
   useEffect(() => {
     document.title = documentTitle
@@ -98,7 +125,13 @@ export function PricingPageBody({ line, site, documentTitle, cta }: Props) {
 
       <div className={`${gridClass(sortedPlans.length)} mb-16`}>
         {sortedPlans.map((plan) => (
-          <PlanCard key={plan.id} plan={plan} messengerAddons={data.messengerAddons} messengerAddonsNote={data.messengerAddonsNote} />
+          <PlanCard
+            key={plan.id}
+            plan={plan}
+            action={planAction(plan, planCta, authed, canOpenPaid)}
+            messengerAddons={data.messengerAddons}
+            messengerAddonsNote={data.messengerAddonsNote}
+          />
         ))}
       </div>
 
