@@ -1,0 +1,632 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 49 («Видимость салона в каталоге по услугам и сотрудникам + пункт
+# «Подписка» в шапке»; ezbook.ru).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл, порядок проверок и тексты — API_CONTRACT_CYCLE49_LISTING_SUBSCRIPTION.md
+# (§49.20–§49.30), решения — ARCHITECTURE_CYCLE49_LISTING_SUBSCRIPTION.md (§49.0–§49.14), требования — SPEC.md цикла 49.
+# При расхождении по ФОРМЕ прав ЭТОТ файл.
+#
+# Что описано (дельта цикла, не весь API). Новых маршрутов НЕТ, миграций НЕТ:
+#   ФОРМА   GET|PUT /api/companies/{id}/catalog-listing  — два новых кода пунктов чек-листа салона (NoActiveServices,
+#                                                           NoServiceProviders) и новое обязательное поле conditionsText;
+#   ФОРМА   GET     /api/billing/subscription (Записи)   — availablePlans для линии «Записи» больше не null, а список тарифов;
+#   СМЫСЛ   GET     /api/companies, /api/companies/public — салон без активной услуги или без оказывающего услуги участника
+#                                                           в списки не попадает (форма прежняя, описана частично);
+#   БЕЗ ИЗМЕНЕНИЙ (описаны, потому что их читает новый код фронта и тесты цикла):
+#           GET|PUT /api/shops/{shopId}/catalog-listing  — магазин НЕ получает conditionsText и новых кодов;
+#           GET     /api/companies/my                    — вход пункта «Подписка» в шапке (A49-1);
+#           POST    /api/billing/subscription/request    — заявка на тариф «Записи» из нового блока.
+#
+# Ключевые слова — только из набора валидатора ServiceBooking.Tests/Infrastructure/OpenApiContract.cs:
+# никаких oneOf/anyOf/const/uniqueItems. Nullable-ссылка — через allOf + nullable. Внешних $ref нет.
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle49/openapi.yaml --port 4049
+#             npm run types:api:cycle49   (openapi-typescript -> src/types/api-cycle49.generated.ts)
+#   backend   npm run contracts:json      (cycle49 -> contracts/cycle49/openapi.json для OpenApiContract.Load("cycle49"))
+#   QA        schemathesis run contracts/cycle49/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle49/openapi.yaml
+
+info:
+  title: ServiceBooking API — цикл 49 (видимость салона в каталоге, тарифы «Записи» на экране подписки)
+  version: "49.0.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта без изменений: camelCase; enum — строкой; деньги — number; 400 и осознанные 409 — голая строка
+    (text/plain); 401/404 — пустое тело, 404 не оракул; 403 демо-стенда — голая строка; 409 блока каталога при запрете
+    тарифом — JSON {code, message}. Текст, который видит человек, собирает СЕРВЕР, фронт печатает его без изменений.
+
+    ГЛАВНЫЕ ПРАВИЛА ЦИКЛА, ЗАКРЕПЛЁННЫЕ ФОРМОЙ:
+      1. Салон виден в каталоге ⇔ активен ∧ есть активная услуга ∧ есть участник с ролью Master или CompanyOwner и
+         ProvidesServices = true ∧ тариф разрешает показ ∧ владелец включил показ. Привязка мастера к услуге не нужна.
+      2. Чек-лист салона: SalonBlocked (только если заблокирован) → NoActiveServices (всегда) → NoServiceProviders
+         (всегда) → NotAllowedByPlan (только если тариф не разрешает) → HiddenByOwner (всегда). visible ⇔ все done ⇔
+         салон есть в GET /api/companies и GET /api/companies/public.
+      3. conditionsText есть ТОЛЬКО у салона и всегда; у магазина поля нет вовсе (не null — отсутствует).
+      4. availablePlans линии «Записи»: активные публичные тарифы линии, кроме пробного и бесплатного.
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4049
+    description: prism mock по этой схеме
+
+tags:
+  - name: salon-catalog
+    description: Показ салона в каталоге ezbook.ru — переключатель, статус и чек-лист (кабинет салона, вкладка «Настройки»).
+  - name: shop-catalog
+    description: Показ магазина в каталоге goods.ezbook.ru — без изменений, описан для проверки, что новое поле его не задело.
+  - name: salon-directory
+    description: Анонимные списки салонов ezbook.ru и список салонов владельца. Форма прежняя.
+  - name: owner-billing
+    description: Экран «Ваша подписка» линии «Записи» (/billing) и заявка на тариф или опции.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CompanyId:
+      name: id
+      in: path
+      required: true
+      description: Id компании (GUID).
+      schema: { type: string, format: uuid }
+    ShopId:
+      name: shopId
+      in: path
+      required: true
+      description: Id магазина (компании Kind = Orders).
+      schema: { type: string, format: uuid }
+
+  responses:
+    PlainTextError:
+      description: Осознанный отказ — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    Unauthorized:
+      description: Нет или недействителен токен. Тело пустое.
+    Forbidden:
+      description: Нет прав. Тело пустое.
+    NotFound:
+      description: Не найдено (или не ваше — ответ тот же). Тело пустое.
+    DemoForbidden:
+      description: Демо-стенд — действие запрещено (DemoForbiddenFilter). Голая строка.
+      content:
+        text/plain:
+          schema: { type: string }
+    UnsupportedMediaType:
+      description: Нет тела или Content-Type не application/json (отвечает фреймворк, тело пустое).
+    LegalGate:
+      description: Требуется принять новую редакцию правовых документов (LegalConsentFilter / RequiresOwnerTerms).
+      content:
+        text/plain:
+          schema: { type: string }
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+
+  schemas:
+    # ─────────────────────────────── блок каталога: салон (ИЗМЕНЕНО) ───────────────────────────────
+    SalonListingCheckCode:
+      type: string
+      description: |
+        Коды пунктов чек-листа салона. На сервере это общий enum CatalogListingCheckCode, в конец которого добавлены
+        NoActiveServices и NoServiceProviders (в БД не хранится). Маршрут салона отдаёт только эти пять значений:
+          SalonBlocked       — «Салон заблокирован администратором» (только если салон неактивен, всегда done=false);
+          NoActiveServices   — «Есть услуги» (всегда; done = есть хотя бы одна услуга с IsActive = true);
+          NoServiceProviders — «Есть сотрудники, оказывающие услуги» (всегда; done = есть участник Master или
+                               CompanyOwner с ProvidesServices = true; участник Client не считается);
+          NotAllowedByPlan   — «Показ в каталоге не входит в ваш тариф» (только если тариф не разрешает, всегда done=false);
+          HiddenByOwner      — «Показ включен в настройках» (всегда; done = showInCatalog).
+      enum: [SalonBlocked, NoActiveServices, NoServiceProviders, NotAllowedByPlan, HiddenByOwner]
+    SalonListingCheckDto:
+      type: object
+      additionalProperties: false
+      required: [code, text, done]
+      properties:
+        code: { $ref: '#/components/schemas/SalonListingCheckCode' }
+        text: { type: string, minLength: 1, example: 'Есть услуги' }
+        done: { type: boolean }
+    SalonCatalogListingDto:
+      type: object
+      additionalProperties: false
+      description: |
+        Та же форма, что у магазина, плюс conditionsText. Порядок пунктов фиксирован: SalonBlocked (если есть) →
+        NoActiveServices → NoServiceProviders → NotAllowedByPlan (если есть) → HiddenByOwner. visible ⇔ все пункты done.
+        В чек-листе нет имён сотрудников и названий услуг — только коды, тексты условий и done.
+      required: [showInCatalog, allowedByPlan, visible, statusText, notAllowedByPlanText, conditionsText, checklist]
+      properties:
+        showInCatalog: { type: boolean, description: 'Настройка владельца (Company.ShowInPublicListing).' }
+        allowedByPlan: { type: boolean, description: 'Тариф разрешает показ (= CompanyDto.planAllowsPublicListing).' }
+        visible:
+          type: boolean
+          description: 'true ⇔ салон есть в GET /api/companies и в GET /api/companies/public прямо сейчас.'
+        statusText:
+          type: string
+          minLength: 1
+          description: '«Салон виден в каталоге ezbook.ru» | «Салона сейчас нет в каталоге».'
+          example: Салона сейчас нет в каталоге
+        notAllowedByPlanText:
+          type: string
+          nullable: true
+          description: |
+            null, если тариф разрешает показ. Иначе — подпись под недоступным переключателем:
+            «Показ в каталоге не входит в ваш тариф — повысьте тариф, чтобы включить».
+        conditionsText:
+          type: string
+          minLength: 1
+          description: |
+            НОВОЕ (цикл 49). Поясняющий текст над списком пунктов, есть всегда (и когда салон виден):
+            «Салон появится в каталоге ezbook.ru, только когда выполнены все условия ниже.»
+          example: Салон появится в каталоге ezbook.ru, только когда выполнены все условия ниже.
+        checklist:
+          type: array
+          minItems: 3
+          maxItems: 5
+          items: { $ref: '#/components/schemas/SalonListingCheckDto' }
+
+    # ─────────────────────────────── блок каталога: магазин (без изменений) ───────────────────────────────
+    ShopListingCheckCode:
+      type: string
+      description: 'Без изменений с цикла 25/31. Новые коды салона маршрут магазина НЕ отдаёт.'
+      enum: [ShopBlocked, NoWorkingHours, NoPublishedProducts, NotAllowedByPlan, HiddenByOwner]
+    ShopListingCheckDto:
+      type: object
+      additionalProperties: false
+      required: [code, text, done]
+      properties:
+        code: { $ref: '#/components/schemas/ShopListingCheckCode' }
+        text: { type: string, minLength: 1, example: 'Показ включен в настройках' }
+        done: { type: boolean }
+    ShopCatalogListingDto:
+      type: object
+      additionalProperties: false
+      description: |
+        CatalogListingDto циклов 25/31 без изменений. Поля conditionsText в ответе магазина НЕТ (сервер не пишет его,
+        когда значение null — JsonIgnore WhenWritingNull). additionalProperties: false это и проверяет.
+      required: [showInCatalog, allowedByPlan, visible, statusText, notAllowedByPlanText, checklist]
+      properties:
+        showInCatalog: { type: boolean }
+        allowedByPlan: { type: boolean }
+        visible: { type: boolean }
+        statusText: { type: string, minLength: 1, example: 'Магазин виден в каталоге goods.ezbook.ru' }
+        notAllowedByPlanText: { type: string, nullable: true, example: 'Показ в каталоге не входит в ваш тариф' }
+        checklist:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { $ref: '#/components/schemas/ShopListingCheckDto' }
+
+    # ─────────────────────────────── общее для обоих блоков ───────────────────────────────
+    CatalogListingInput:
+      type: object
+      required: [showInCatalog]
+      properties:
+        showInCatalog: { type: boolean, description: 'true — показывать, false — скрыть.' }
+    CatalogListingConflictDto:
+      type: object
+      additionalProperties: false
+      description: 'Отказ включить показ, когда тариф не разрешает. На сервере — CatalogConflictDto.'
+      required: [code, message]
+      properties:
+        code: { type: string, enum: [CatalogListingNotAllowedByPlan] }
+        message: { type: string, minLength: 1 }
+
+    # ─────────────────────────────── списки салонов (форма прежняя, описана частично) ───────────────────────────────
+    CompanyListItem:
+      type: object
+      additionalProperties: true
+      description: |
+        CompanyDto (циклы 7/9/28…) — описаны только поля, на которые опирается цикл 49. Остальные поля прежние.
+      required: [id, name, slug, showInPublicListing, publicListingEnabled]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1 }
+        slug: { type: string, minLength: 1 }
+        showInPublicListing: { type: boolean, description: 'Настройка владельца «Показывать в каталоге».' }
+        publicListingEnabled:
+          type: boolean
+          description: |
+            УТОЧНЕНО (цикл 49, A49-2): = showInPublicListing ∧ тариф разрешает показ. С цикла 49 это НЕ то же самое, что
+            «салон в каталоге»: каталог дополнительно требует активную услугу и оказывающего услуги участника. Истина
+            о присутствии в каталоге — только SalonCatalogListingDto.visible. Значение поля не меняется.
+    PagedCompanyList:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, total, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CompanyListItem' }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0, description: 'Число салонов по новому правилу (с учётом city/search).' }
+        hasNext: { type: boolean }
+
+    # ─────────────────────────────── подписка «Записи» (ИЗМЕНЕНО: availablePlans) ───────────────────────────────
+    SubscribedPlanDto:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, pricePerMonth, includes]
+      properties:
+        id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 'Id тарифа подписки (AccountSubscription.PlanConfigId); null — подписки нет (бесплатный уровень).'
+        name: { type: string, minLength: 1 }
+        description: { type: string, nullable: true }
+        pricePerMonth: { type: number, minimum: 0 }
+        includes:
+          type: array
+          items: { type: string }
+    ServicesAvailablePlanDto:
+      type: object
+      additionalProperties: false
+      description: |
+        НОВОЕ ДЛЯ ЛИНИИ «ЗАПИСИ» (на сервере — тот же AvailablePlanDto, что у «Заказов»/«Домов»/«Бань»). Поля maxHouses и
+        maxResources у «Записи» отсутствуют (сервер их не пишет при null).
+      required: [planId, name, pricePerMonth, description, highlights, limitsText]
+      properties:
+        planId: { type: string, format: uuid }
+        name: { type: string, minLength: 1, example: 'Сеть' }
+        pricePerMonth: { type: number, minimum: 0, example: 3900 }
+        description: { type: string, nullable: true }
+        highlights:
+          type: array
+          maxItems: 10
+          items: { type: string, minLength: 1 }
+        limitsText:
+          type: string
+          minLength: 1
+          description: |
+            Лимиты одной строкой (BillingTexts.ServicesPlanLimitsText): «до N точки|точек · до M сотрудника|сотрудников»;
+            без лимита — «точки без ограничения», «сотрудники без ограничения».
+          example: до 3 точек · до 10 сотрудников
+    SubscriptionRequestItemDto:
+      type: object
+      additionalProperties: false
+      required: [optionId, name, quantity, retired]
+      properties:
+        optionId: { type: string, format: uuid }
+        name: { type: string, minLength: 1 }
+        quantity: { type: integer, minimum: 1 }
+        retired: { type: boolean }
+    SubscriptionRequestDto:
+      type: object
+      additionalProperties: false
+      description: |
+        Открытая заявка аккаунта (одна на аккаунт). Форма циклов 7/17/19/24 без изменений.
+        Уточнение цикла 49 (только экран «Записи», line = Services): estimatedMonthlyPrice считается от цены
+        ЗАПРОШЕННОГО тарифа, если desiredPlanId не null (раньше — от текущего).
+      required: [id, status, createdAt, desiredPlanId, desiredPlanName, estimatedMonthlyPrice, items, comment,
+                 irreversibilityNotice, retiredOptionsNotice, line]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [Pending] }
+        createdAt: { type: string, format: date-time }
+        desiredPlanId: { type: string, format: uuid, nullable: true }
+        desiredPlanName: { type: string, nullable: true }
+        estimatedMonthlyPrice: { type: number, minimum: 0 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SubscriptionRequestItemDto' }
+        comment: { type: string, nullable: true }
+        irreversibilityNotice: { type: string, nullable: true }
+        retiredOptionsNotice: { type: string, nullable: true }
+        line: { type: string, enum: [Services, Orders, Stays, Baths] }
+    TrialPlanChangeView:
+      type: object
+      additionalProperties: true
+      description: 'TrialStateDto (цикл 18) — описано только поле, которое читает новый блок тарифов.'
+      required: [planChangeNotice]
+      properties:
+        planChangeNotice:
+          type: string
+          nullable: true
+          description: 'Не null при открытом пробном периоде: показывается ДО отправки заявки на тариф (US-49-06).'
+    OwnerSubscriptionServicesDto:
+      type: object
+      additionalProperties: true
+      description: |
+        OwnerSubscriptionDto линии «Записи» (циклы 7/18/23/24/40/43). Описаны поля, на которые опирается цикл 49;
+        остальные прежние. Изменение формы одно: availablePlans у «Записи» — массив (раньше null).
+      required: [status, statusText, plan, pendingRequest, canRequestChanges, trial, line, availablePlans]
+      properties:
+        status: { type: string, enum: [Free, Active, Expired] }
+        statusText: { type: string, minLength: 1 }
+        plan: { $ref: '#/components/schemas/SubscribedPlanDto' }
+        pendingRequest:
+          nullable: true
+          allOf: [ { $ref: '#/components/schemas/SubscriptionRequestDto' } ]
+        canRequestChanges: { type: boolean }
+        trial:
+          nullable: true
+          allOf: [ { $ref: '#/components/schemas/TrialPlanChangeView' } ]
+        line: { type: string, enum: [Services] }
+        availablePlans:
+          type: array
+          description: |
+            Активные (IsActive) публичные (IsPublic) тарифы линии «Записи», кроме системного пробного (IsSystemTrial) и
+            системного бесплатного (IsSystemFree). Порядок: SortOrder, затем PricePerMonth. Может быть пустым массивом.
+          items: { $ref: '#/components/schemas/ServicesAvailablePlanDto' }
+    RequestedOptionInput:
+      type: object
+      additionalProperties: false
+      required: [optionId, quantity]
+      properties:
+        optionId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+    SubscriptionRequestInput:
+      type: object
+      additionalProperties: false
+      description: |
+        Форма прежняя. Повторная отправка ПЕРЕЗАПИСЫВАЕТ открытую заявку целиком (и тариф, и опции) — поэтому клиент
+        «Записи» сам переносит в новую заявку то, что уже было в открытой (API_CONTRACT §49.26.2).
+      properties:
+        planId: { type: string, format: uuid, nullable: true }
+        options:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/RequestedOptionInput' }
+        comment: { type: string, nullable: true, maxLength: 500 }
+        line:
+          type: string
+          nullable: true
+          enum: [Services, Orders, Stays, Baths]
+          description: 'Не передан — «Записи». Экран «Записи» поле не передаёт.'
+
+paths:
+  # ═══════════════════════════════ блок каталога салона (ИЗМЕНЕНО) ═══════════════════════════════
+  /api/companies/{id}/catalog-listing:
+    parameters: [ { $ref: '#/components/parameters/CompanyId' } ]
+    get:
+      tags: [salon-catalog]
+      operationId: getSalonCatalogListingCycle49
+      summary: Виден ли салон в каталоге ezbook.ru и почему — с пунктами про услуги и сотрудников (владелец, SuperAdmin)
+      description: |
+        Порядок проверок без изменений (цикл 31): 401 → 451 → 404 (нет компании ИЛИ не владелец и не SuperAdmin) →
+        409 text/plain (это магазин, CompanyKindGuard) → 200. Заблокированный салон владельцу доступен.
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Состояние показа салона.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SalonCatalogListingDto' }
+              example:
+                showInCatalog: true
+                allowedByPlan: true
+                visible: false
+                statusText: Салона сейчас нет в каталоге
+                notAllowedByPlanText: null
+                conditionsText: Салон появится в каталоге ezbook.ru, только когда выполнены все условия ниже.
+                checklist:
+                  - { code: NoActiveServices, text: Есть услуги, done: false }
+                  - { code: NoServiceProviders, text: 'Есть сотрудники, оказывающие услуги', done: true }
+                  - { code: HiddenByOwner, text: Показ включен в настройках, done: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/PlainTextError' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+    put:
+      tags: [salon-catalog]
+      operationId: putSalonCatalogListingCycle49
+      summary: Показывать ли салон в каталоге ezbook.ru — сохраняется сразу (владелец, SuperAdmin)
+      description: |
+        Порядок проверок без изменений (цикл 31): 401 → 451 → 415/400 (фреймворк) → 404 → 409 text/plain (магазин) →
+        400 text/plain «Не указано, показывать ли салон в каталоге» → 409 JSON CatalogListingNotAllowedByPlan
+        (включение при тарифе без показа) → 200. Включить показ МОЖНО без услуг и без оказывающих услуги — ответ 200,
+        visible=false, невыполненные пункты видны в checklist. Других причин для 409 нет.
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CatalogListingInput' }
+      responses:
+        '200':
+          description: Сохранено; состояние показа после сохранения.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SalonCatalogListingDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            Два случая с разным телом:
+              * text/plain — компания является магазином (CompanyKindGuard);
+              * application/json — тариф не разрешает показ (включить нельзя).
+          content:
+            text/plain:
+              schema: { type: string, example: 'Это магазин: записи, услуги и расписание для него недоступны.' }
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogListingConflictDto' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+
+  # ═══════════════════════════════ блок каталога магазина (без изменений) ═══════════════════════════════
+  /api/shops/{shopId}/catalog-listing:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [shop-catalog]
+      operationId: getShopCatalogListingCycle49
+      summary: Виден ли магазин в каталоге goods и почему — без изменений (владелец и персонал магазина)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Состояние показа магазина. Без conditionsText.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopCatalogListingDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [shop-catalog]
+      operationId: putShopCatalogListingCycle49
+      summary: Показывать ли магазин в каталоге goods (владелец) — без изменений
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CatalogListingInput' }
+      responses:
+        '200':
+          description: Сохранено; состояние показа после сохранения. Без conditionsText.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopCatalogListingDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Тариф не разрешает показ.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogListingConflictDto' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+
+  # ═══════════════════════════════ списки салонов (смысл изменён, форма прежняя) ═══════════════════════════════
+  /api/companies:
+    get:
+      tags: [salon-directory]
+      operationId: getSalonCatalogAllCycle49
+      summary: Все салоны каталога ezbook.ru (анонимно) — по новому правилу видимости
+      description: |
+        Возвращает ровно те салоны, у которых SalonCatalogListingDto.visible = true (правило §49.3 архитектуры, SQL-двойник
+        SalonListingQuery.VisibleInSalonCatalog). Форма CompanyDto прежняя.
+      responses:
+        '200':
+          description: Салоны каталога.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CompanyListItem' }
+
+  /api/companies/public:
+    get:
+      tags: [salon-directory]
+      operationId: getSalonCatalogPublicCycle49
+      summary: Страница каталога салонов ezbook.ru (анонимно) — по новому правилу видимости
+      description: |
+        Фильтр по городу, поиск и пагинация — как в цикле 9: всё в SQL, неизвестный cityId — пустая страница, page и
+        pageSize клампятся, а не отвергаются. total считает только салоны, видимые по новому правилу.
+      parameters:
+        - name: cityId
+          in: query
+          required: false
+          schema: { type: integer }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 200 }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        '200':
+          description: Страница каталога.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PagedCompanyList' }
+
+  /api/companies/my:
+    get:
+      tags: [salon-directory]
+      operationId: getMyCompaniesCycle49
+      summary: Активные компании, где вызывающий — владелец (без kind — только салоны). Без изменений
+      description: |
+        Без изменений. Цикл 49 использует ответ БЕЗ параметра kind как признак «владелец хотя бы одного салона» для
+        пункта «Подписка» в шапке (A49-1): непустой массив ⇒ пункт виден. Заблокированные салоны (IsActive = false)
+        сюда не попадают, как и раньше.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          description: Не передан — Services. Шапка «Записи» его не передаёт.
+          schema: { type: string, enum: [Services, Orders, Stays, Baths] }
+      responses:
+        '200':
+          description: Компании владельца (может быть пустым массивом).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CompanyListItem' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ═══════════════════════════════ подписка «Записи» ═══════════════════════════════
+  /api/billing/subscription:
+    get:
+      tags: [owner-billing]
+      operationId: getOwnerSubscriptionServicesCycle49
+      summary: Экран «Ваша подписка» линии «Записи» — теперь со списком тарифов «Записи» (availablePlans)
+      description: |
+        Описан только ответ линии «Записи» (line не передан или Services). Ответы line=Orders/Stays/Baths — контракты
+        циклов 24/37/42, без изменений. 404 — у пользователя нет биллинг-аккаунта («У вас нет подписки…» на фронте).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: line
+          in: query
+          required: false
+          description: Не передан — Services. Здесь описано только значение Services.
+          schema: { type: string, enum: [Services] }
+      responses:
+        '200':
+          description: Подписка «Записи».
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnerSubscriptionServicesDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/billing/subscription/request:
+    post:
+      tags: [owner-billing]
+      operationId: submitSubscriptionRequestCycle49
+      summary: Заявка на тариф и (или) опции — без изменений; новый вызывающий — блок «Тарифы «Записи»»
+      description: |
+        Без изменений (циклы 7/24/48). Порядок: 401 → 403 (демо) → 404 (нет аккаунта) → 400 (комментарий > 500,
+        неизвестная линия, количество < 1, опция не найдена / выведена / переключатель с количеством ≠ 1, тариф не найден
+        или неактивен, тариф другой линии «Этот тариф из другой линейки») → 409 text/plain (открыта заявка ДРУГОЙ линии)
+        → 200 с открытой заявкой. Повтор ПЕРЕЗАПИСЫВАЕТ открытую заявку той же линии целиком. После успеха — сигнал
+        оператору (цикл 48), ответ от него не зависит.
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscriptionRequestInput' }
+      responses:
+        '200':
+          description: Открытая заявка после сохранения.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubscriptionRequestDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/DemoForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/PlainTextError' }
