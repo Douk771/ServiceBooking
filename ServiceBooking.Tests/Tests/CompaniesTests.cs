@@ -20,8 +20,10 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     [Fact, TestCase("CO-001")]
     public async Task GetAll_OnlyReturnsActiveCompanies()
     {
-        var (_, activeCompany) = await CreateOwnerWithCompanyAsync();
-        var (_, inactiveCompany) = await CreateOwnerWithCompanyAsync();
+        var (activeCompanyOwner, activeCompany) = await CreateOwnerWithCompanyAsync();
+        await CreateServiceAsync(activeCompanyOwner.Token, activeCompany.Id); // цикл 49: салон в каталоге только с активной услугой
+        var (inactiveCompanyOwner, inactiveCompany) = await CreateOwnerWithCompanyAsync();
+        await CreateServiceAsync(inactiveCompanyOwner.Token, inactiveCompany.Id); // цикл 49: салон в каталоге только с активной услугой
 
         var admin = await LoginAsSuperAdminAsync();
         var deactivate = await AuthedClient(admin.Token).PutAsJsonAsync($"/api/admin/companies/{inactiveCompany.Id}",
@@ -162,8 +164,10 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     [Fact, TestCase("CO-011")]
     public async Task GetAll_ReflectsOnlineBookingEnabledPerCompany()
     {
-        var (_, freeCompany) = await CreateOwnerWithCompanyAsync(allowSelfBooking: true, onlineBooking: false);
-        var (_, paidCompany) = await CreateOwnerWithCompanyAsync(allowSelfBooking: true);
+        var (freeCompanyOwner, freeCompany) = await CreateOwnerWithCompanyAsync(allowSelfBooking: true, onlineBooking: false);
+        await CreateServiceAsync(freeCompanyOwner.Token, freeCompany.Id); // цикл 49: салон в каталоге только с активной услугой
+        var (paidCompanyOwner, paidCompany) = await CreateOwnerWithCompanyAsync(allowSelfBooking: true);
+        await CreateServiceAsync(paidCompanyOwner.Token, paidCompany.Id); // цикл 49: салон в каталоге только с активной услугой
         await SetSubscriptionAsync(paidCompany.Id);
 
         var response = await AnonymousClient().GetAsync("/api/companies");
@@ -265,30 +269,36 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         // against an empty database (which both implementations would trivially agree on).
 
         // Should end up public: never subscribed — Free baseline (AllowPublicListing defaults true).
-        var (_, freeCompany) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        var (freeCompanyOwner, freeCompany) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        await CreateServiceAsync(freeCompanyOwner.Token, freeCompany.Id); // цикл 49: салон в каталоге только с активной услугой
 
         // Should end up public: fully-featured paid plan (AllowPublicListing defaults true there too).
-        var (_, paidCompany) = await CreateOwnerWithCompanyAsync();
+        var (paidCompanyOwner, paidCompany) = await CreateOwnerWithCompanyAsync();
+        await CreateServiceAsync(paidCompanyOwner.Token, paidCompany.Id); // цикл 49: салон в каталоге только с активной услугой
 
         // Should end up public: subscription expired -> falls back to the Free baseline, which still
         // allows public listing (mirrors GetAll_ExpiredPaidSubscription_KeepsCompanyListed... above).
-        var (_, expiredCompany) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        var (expiredCompanyOwner, expiredCompany) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        await CreateServiceAsync(expiredCompanyOwner.Token, expiredCompany.Id); // цикл 49: салон в каталоге только с активной услугой
         var expiredConfigId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
         await SetSubscriptionAsync(expiredCompany.Id, expiredConfigId, paidUntil: DateTime.UtcNow.AddDays(-1));
 
         // Should NOT end up public: owner opted out, even on a fully-featured plan.
         var (optOutOwner, optOutCompany) = await CreateOwnerWithCompanyAsync();
+        await CreateServiceAsync(optOutOwner.Token, optOutCompany.Id); // цикл 49: салон в каталоге только с активной услугой
         var optOutResponse = await AuthedClient(optOutOwner.Token).PutAsJsonAsync(
             $"/api/companies/{optOutCompany.Id}", new { showInPublicListing = false });
         optOutResponse.EnsureSuccessStatusCode();
 
         // Should NOT end up public: tariff disallows it even though the owner wants to be listed.
-        var (_, tariffHiddenCompany) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        var (tariffHiddenCompanyOwner, tariffHiddenCompany) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        await CreateServiceAsync(tariffHiddenCompanyOwner.Token, tariffHiddenCompany.Id); // цикл 49: салон в каталоге только с активной услугой
         var hiddenConfigId = await CreateTestPlanConfigAsync(allowPublicListing: false);
         await SetSubscriptionAsync(tariffHiddenCompany.Id, hiddenConfigId);
 
         // Should NOT end up public: deactivated by an admin — excluded from GetAll entirely too.
-        var (_, inactiveCompany) = await CreateOwnerWithCompanyAsync();
+        var (inactiveCompanyOwner, inactiveCompany) = await CreateOwnerWithCompanyAsync();
+        await CreateServiceAsync(inactiveCompanyOwner.Token, inactiveCompany.Id); // цикл 49: салон в каталоге только с активной услугой
         var admin = await LoginAsSuperAdminAsync();
         var deactivate = await AuthedClient(admin.Token).PutAsJsonAsync($"/api/admin/companies/{inactiveCompany.Id}",
             new { name = inactiveCompany.Name, isActive = false, allowSelfBooking = true });
@@ -515,7 +525,8 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     {
         // An expired subscription resolves to the free baseline "Старт", which allows public listing
         // (so the company stays in the directory) and, since cycle 28 (Q28-1), online booking as well.
-        var (_, company) = await CreateOwnerWithCompanyAsync(allowSelfBooking: true);
+        var (companyOwner, company) = await CreateOwnerWithCompanyAsync(allowSelfBooking: true);
+        await CreateServiceAsync(companyOwner.Token, company.Id); // цикл 49: салон в каталоге только с активной услугой
         await SetSubscriptionAsync(company.Id, paidUntil: DateTime.UtcNow.AddDays(-1));
 
         var response = await AnonymousClient().GetAsync("/api/companies");

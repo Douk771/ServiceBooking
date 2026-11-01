@@ -368,6 +368,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     {
         var admin = await LoginAsSuperAdminAsync();
         var (owner, company) = await CreateOwnerWithCompanyAsync();
+        await CreateServiceAsync(owner.Token, company.Id); // цикл 49: салон в каталоге только с активной услугой
 
         var publicListBefore = await AnonymousClient().GetAsync("/api/companies");
         var before = await publicListBefore.Content.ReadFromJsonAsync<List<CompanyDto>>();

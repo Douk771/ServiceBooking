@@ -119,6 +119,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     {
         var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (owner, company) = await CreateOwnerWithCompanyAsync();
+        await CreateServiceAsync(owner.Token, company.Id); // цикл 49: салон в каталоге только с активной услугой
         var marker = Unique("ГдеТоУлица");
         var withAddress = AuthedFor(factory, owner.Token);
         (await withAddress.PutJsonAsync($"/api/companies/{company.Id}/address", new { address = marker }))
@@ -145,6 +146,7 @@ public class CompanyAddressTests(TestDatabaseFixture fixture) : ApiTestBase(fixt
     {
         var factory = Fixture.ClassHost("addr", cs => new CompanyAddressTestFactory(cs));
         var (owner, company) = await CreateOwnerWithCompanyAsync();
+        await CreateServiceAsync(owner.Token, company.Id); // цикл 49: салон в каталоге только с активной услугой
         var marker = Unique("проездМонтажников");
         var client = AuthedFor(factory, owner.Token);
 

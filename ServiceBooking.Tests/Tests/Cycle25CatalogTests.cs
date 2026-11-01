@@ -244,7 +244,8 @@ public class Cycle25CatalogTests(TestDatabaseFixture fixture) : Cycle25TestBase(
         var city = await CityAsync(15);
         var host = Fixture.ClassHost("catalog", cs => new CatalogTestFactory(cs));
         var shop = await VisibleShopAsync(city, "Магазин Витрина");
-        var (_, salon) = await CreateOwnerWithCompanyAsync();
+        var (salonOwner, salon) = await CreateOwnerWithCompanyAsync();
+        await CreateServiceAsync(salonOwner.Token, salon.Id); // цикл 49: салон в каталоге только с активной услугой
         await WithDbAsync(async db =>
         {
             var c = await db.Companies.SingleAsync(x => x.Id == salon.Id);

@@ -68,18 +68,26 @@ public class Cycle31CatalogListingTests(TestDatabaseFixture fixture) : Cycle25Te
             await db.SaveChangesAsync();
         });
 
+    /// <summary>Цикл 49: салон «для каталога» — с активной услугой (владелец уже сотрудник с ProvidesServices по умолчанию).</summary>
+    private async Task<(AuthResponseDto Owner, CompanyDto Company)> SalonWithServiceAsync(bool attachPlan = true)
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync(attachPlan: attachPlan);
+        await CreateServiceAsync(owner.Token, company.Id);
+        return (owner, company);
+    }
+
     private async Task<(AuthResponseDto Owner, CompanyDto Company)> NoListingPlanSalonAsync()
     {
-        var (owner, company) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        var (owner, company) = await SalonWithServiceAsync(attachPlan: false);
         var plan = await CreateTestPlanConfigAsync(allowPublicListing: false);
         await SetSubscriptionAsync(company.Id, plan);
         return (owner, company);
     }
 
     [Fact, TestCase("CY31-01")]
-    public async Task Owner_AllOk_Visible_SingleDoneItem()
+    public async Task Owner_AllOk_Visible_AllItemsDone()
     {
-        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var (owner, company) = await SalonWithServiceAsync();
         await SetShowAsync(company.Id, true);
         var e = await GetOkAsync(owner.Token, company.Id);
         e.GetProperty("visible").GetBoolean().Should().BeTrue();
@@ -89,21 +97,20 @@ public class Cycle31CatalogListingTests(TestDatabaseFixture fixture) : Cycle25Te
         e.TryGetProperty("notAllowedByPlanText", out var np).Should().BeTrue("поле всегда присутствует");
         np.ValueKind.Should().Be(JsonValueKind.Null);
         var items = e.GetProperty("checklist").EnumerateArray().ToArray();
-        items.Should().HaveCount(1);
-        items[0].GetProperty("code").GetString().Should().Be("HiddenByOwner");
-        items[0].GetProperty("text").GetString().Should().Be(HiddenByOwnerText);
-        items[0].GetProperty("done").GetBoolean().Should().BeTrue();
+        items.Select(i => i.GetProperty("code").GetString()).Should().Equal("NoActiveServices", "NoServiceProviders", "HiddenByOwner");
+        items.Should().OnlyContain(i => i.GetProperty("done").GetBoolean());
+        items[2].GetProperty("text").GetString().Should().Be(HiddenByOwnerText);
     }
 
     [Fact, TestCase("CY31-02")]
     public async Task Owner_ShowOff_NotVisible_ItemNotDone()
     {
-        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var (owner, company) = await SalonWithServiceAsync();
         await SetShowAsync(company.Id, false);
         var e = await GetOkAsync(owner.Token, company.Id);
         e.GetProperty("visible").GetBoolean().Should().BeFalse();
         e.GetProperty("statusText").GetString().Should().Be(OffText);
-        var item = e.GetProperty("checklist").EnumerateArray().Single();
+        var item = e.GetProperty("checklist").EnumerateArray().Single(i => i.GetProperty("code").GetString() == "HiddenByOwner");
         item.GetProperty("text").GetString().Should().Be(HiddenByOwnerText);
         item.GetProperty("done").GetBoolean().Should().BeFalse();
     }
@@ -117,24 +124,25 @@ public class Cycle31CatalogListingTests(TestDatabaseFixture fixture) : Cycle25Te
         e.GetProperty("allowedByPlan").GetBoolean().Should().BeFalse();
         e.GetProperty("visible").GetBoolean().Should().BeFalse();
         e.GetProperty("notAllowedByPlanText").GetString().Should().Be(PlanText);
-        Codes(e).Should().Equal("NotAllowedByPlan", "HiddenByOwner");
+        Codes(e).Should().Equal("NoActiveServices", "NoServiceProviders", "NotAllowedByPlan", "HiddenByOwner");
         var items = e.GetProperty("checklist").EnumerateArray().ToArray();
-        items[0].GetProperty("text").GetString().Should().Be("Показ в каталоге не входит в ваш тариф");
-        items[0].GetProperty("done").GetBoolean().Should().BeFalse();
-        items[1].GetProperty("done").GetBoolean().Should().BeTrue();
+        items[2].GetProperty("text").GetString().Should().Be("Показ в каталоге не входит в ваш тариф");
+        items[2].GetProperty("done").GetBoolean().Should().BeFalse();
+        items[3].GetProperty("done").GetBoolean().Should().BeTrue();
     }
 
     [Fact, TestCase("CY31-04")]
-    public async Task InactiveSalon_FirstItemSalonBlocked_AllThreeNotDone()
+    public async Task InactiveSalon_FirstItemSalonBlocked_AllBlockingItemsNotDone()
     {
         var (owner, company) = await NoListingPlanSalonAsync();
         await SetShowAsync(company.Id, false);
         await SetActiveAsync(company.Id, false);
         var e = await GetOkAsync(owner.Token, company.Id);
-        Codes(e).Should().Equal("SalonBlocked", "NotAllowedByPlan", "HiddenByOwner");
+        Codes(e).Should().Equal("SalonBlocked", "NoActiveServices", "NoServiceProviders", "NotAllowedByPlan", "HiddenByOwner");
         var items = e.GetProperty("checklist").EnumerateArray().ToArray();
         items[0].GetProperty("text").GetString().Should().Be("Салон заблокирован администратором");
-        items.Should().OnlyContain(i => !i.GetProperty("done").GetBoolean());
+        items.Where(i => i.GetProperty("code").GetString() is "SalonBlocked" or "NotAllowedByPlan" or "HiddenByOwner")
+            .Should().OnlyContain(i => !i.GetProperty("done").GetBoolean());
         e.GetProperty("visible").GetBoolean().Should().BeFalse();
     }
 
@@ -146,7 +154,7 @@ public class Cycle31CatalogListingTests(TestDatabaseFixture fixture) : Cycle25Te
         foreach (var planAllows in new[] { true, false })
         foreach (var show in new[] { true, false })
         {
-            var (owner, company) = await CreateOwnerWithCompanyAsync(attachPlan: planAllows ? true : false);
+            var (owner, company) = await SalonWithServiceAsync(attachPlan: planAllows);
             if (!planAllows) await SetSubscriptionAsync(company.Id, plan);
             await SetShowAsync(company.Id, show);
             await SetActiveAsync(company.Id, active);
@@ -165,7 +173,7 @@ public class Cycle31CatalogListingTests(TestDatabaseFixture fixture) : Cycle25Te
     [Fact, TestCase("CY31-06")]
     public async Task Put_TrueFalse_AppearsAndDisappearsInCatalogs_Idempotent()
     {
-        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var (owner, company) = await SalonWithServiceAsync();
         await SetShowAsync(company.Id, false);
         (await InGetAllAsync(company.Id)).Should().BeFalse();
 

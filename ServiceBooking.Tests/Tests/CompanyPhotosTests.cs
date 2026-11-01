@@ -233,6 +233,7 @@ public class CompanyPhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fixtu
     public async Task GetAll_ReturnsOnlyCover_NotTheFullPhotosArray()
     {
         var (owner, company) = await CreateOwnerWithCompanyAsync();
+        await CreateServiceAsync(owner.Token, company.Id); // цикл 49: салон в каталоге только с активной услугой
         // Public listing requires ShowInPublicListing/AllowPublicListing — defaults keep it visible for
         // a freshly created company, matching the existing GetAll test conventions in CompaniesTests.cs.
         var upload = await AuthedClient(owner.Token).PostAsync($"/api/companies/{company.Id}/photos", JpegUpload());
@@ -272,6 +273,7 @@ public class CompanyPhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fixtu
         // regression of the same shape (a field filled on one listing endpoint but not the other) fails
         // here regardless of which field it is.
         var (owner, company) = await CreateOwnerWithCompanyAsync();
+        await CreateServiceAsync(owner.Token, company.Id); // цикл 49: салон в каталоге только с активной услугой
         var upload = await AuthedClient(owner.Token).PostAsync($"/api/companies/{company.Id}/photos", JpegUpload());
         var photo = await upload.Content.ReadJsonAsync<CompanyPhotoDto>();
 
