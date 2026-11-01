@@ -350,3 +350,102 @@ describe('BillingPage — messengers block (cycle 43)', () => {
     expect(screen.queryByTestId('messengers-block')).not.toBeInTheDocument()
   })
 })
+
+// Cycle 49 (API_CONTRACT_CYCLE49 §49.25–§49.27, CY49-F4) — «Тарифы «Записи»» on /billing.
+describe('BillingPage — cycle 49: «Записи» plans', () => {
+  const plans = [
+    { planId: 'p1', name: 'Салон', pricePerMonth: 1490, description: 'Для одной точки', highlights: ['Онлайн-запись'], limitsText: 'до 1 точки · до 5 сотрудников' },
+    { planId: 'p2', name: 'Сеть', pricePerMonth: 3900, description: null, highlights: [], limitsText: 'точки без ограничения · сотрудники без ограничения' },
+  ]
+  const sub = (over: Record<string, unknown> = {}) =>
+    makeSubscription({ line: 'Services', availablePlans: plans, plan: { id: 'p1', name: 'Салон', pricePerMonth: 1490 }, trial: null, ...over } as Partial<OwnerSubscriptionDto>)
+
+  beforeEach(() => {
+    submitRequest.mockReset().mockResolvedValue({})
+  })
+
+  it('shows the block, the title and the document title; the current plan has a label and no button', async () => {
+    getSubscription.mockResolvedValueOnce(sub())
+    renderWithProviders(<BillingPage />)
+    const block = await screen.findByTestId('available-plans')
+    expect(within(block).getByRole('heading', { name: 'Тарифы «Записи»' })).toBeInTheDocument()
+    expect(within(block).getByText('Ваш тариф')).toBeInTheDocument()
+    expect(within(block).queryByRole('button', { name: 'Запросить тариф «Салон»' })).toBeNull()
+    expect(within(block).getByRole('button', { name: 'Запросить тариф «Сеть»' })).toBeInTheDocument()
+    expect(within(block).getByText('до 1 точки · до 5 сотрудников')).toBeInTheDocument()
+    expect(document.title).toBe('Ваша подписка — ezbook · Записи')
+  })
+
+  it('an expired plan is not «current» and can be requested again', async () => {
+    getSubscription.mockResolvedValueOnce(sub({ status: 'Expired' }))
+    renderWithProviders(<BillingPage />)
+    const block = await screen.findByTestId('available-plans')
+    expect(within(block).queryByText('Ваш тариф')).toBeNull()
+    expect(within(block).getByRole('button', { name: 'Запросить тариф «Салон»' })).toBeInTheDocument()
+  })
+
+  it('without canRequestChanges there are no request buttons', async () => {
+    getSubscription.mockResolvedValueOnce(sub({ canRequestChanges: false }))
+    renderWithProviders(<BillingPage />)
+    const block = await screen.findByTestId('available-plans')
+    expect(within(block).queryByRole('button')).toBeNull()
+  })
+
+  it('a plan request without a trial notice is sent at once, carrying the options of the open request and no line', async () => {
+    getSubscription.mockResolvedValue(
+      sub({
+        pendingRequest: { line: 'Services', desiredPlanId: null, desiredPlanName: null, estimatedMonthlyPrice: 1900, items: [{ optionId: 'o1', name: 'X', quantity: 2 }, { optionId: 'o2', name: 'Y', quantity: 1, retired: true }] },
+      }),
+    )
+    renderWithProviders(<BillingPage />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Запросить тариф «Сеть»' }))
+    expect(submitRequest).toHaveBeenCalledWith({ planId: 'p2', options: [{ optionId: 'o1', quantity: 2 }] })
+  })
+
+  it('a requested plan shows «Заявка отправлена» without a button, and the pending card prints «Тариф: …»', async () => {
+    getSubscription.mockResolvedValueOnce(
+      sub({ pendingRequest: { line: 'Services', desiredPlanId: 'p2', desiredPlanName: 'Сеть', estimatedMonthlyPrice: 3900, items: [] } }),
+    )
+    renderWithProviders(<BillingPage />)
+    const block = await screen.findByTestId('available-plans')
+    expect(within(block).getByText('Заявка отправлена')).toBeInTheDocument()
+    expect(within(block).queryByRole('button', { name: 'Запросить тариф «Сеть»' })).toBeNull()
+    expect(screen.getByText('Тариф: Сеть')).toBeInTheDocument()
+  })
+
+  it('with a trial notice the request waits for «Отправить заявку»; «Отменить» sends nothing', async () => {
+    getSubscription.mockResolvedValue(sub({ status: 'Free', trial: { planChangeNotice: 'Пробный период закончится.' } }))
+    renderWithProviders(<BillingPage />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Запросить тариф «Сеть»' }))
+    expect(submitRequest).not.toHaveBeenCalled()
+    const confirm = screen.getByTestId('plan-confirm')
+    expect(within(confirm).getByText('Пробный период закончится.')).toBeInTheDocument()
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Отменить' }))
+    expect(screen.queryByTestId('plan-confirm')).toBeNull()
+    expect(submitRequest).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Запросить тариф «Сеть»' }))
+    await userEvent.click(within(screen.getByTestId('plan-confirm')).getByRole('button', { name: 'Отправить заявку' }))
+    expect(submitRequest).toHaveBeenCalledWith({ planId: 'p2', options: [] })
+  })
+
+  it('a request error is printed from the server text', async () => {
+    getSubscription.mockResolvedValue(sub())
+    submitRequest.mockRejectedValue({ isAxiosError: true, response: { status: 409, data: 'У вас уже есть заявка на смену тарифа «Заказы» — отмените её.' } })
+    renderWithProviders(<BillingPage />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Запросить тариф «Сеть»' }))
+    expect(await screen.findByText(/У вас уже есть заявка на смену тарифа/)).toBeInTheDocument()
+  })
+
+  it('the options request carries the plan of the open Services request', async () => {
+    getSubscription.mockResolvedValue(
+      sub({
+        availableOptions: [{ optionId: 'o9', name: 'Опция', kind: 'Flag', availabilityText: 'ок', canRequest: true, maxQuantity: null }],
+        pendingRequest: { line: 'Services', desiredPlanId: 'p2', desiredPlanName: 'Сеть', estimatedMonthlyPrice: 3900, items: [] },
+      } as Record<string, unknown>),
+    )
+    renderWithProviders(<BillingPage />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Добавить' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить заявку' }))
+    expect(submitRequest).toHaveBeenCalledWith({ options: [{ optionId: 'o9', quantity: 1 }], planId: 'p2' })
+  })
+})

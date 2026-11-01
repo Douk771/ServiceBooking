@@ -17,6 +17,8 @@ import { TrialActivationTerms } from '../components/billing/TrialActivationTerms
 import { OperatorDetailsSection } from '../components/billing/OperatorDetailsSection'
 import { BillingNoticesSummary } from '../components/billing/BillingNoticesSummary'
 import { MessengersBlock } from '../components/billing/MessengersBlock'
+import { AvailablePlansBlock } from '../components/billing/AvailablePlansBlock'
+import { buildOptionsRequest, buildPlanRequest } from '../utils/servicesRequest'
 import type { NotificationTransport } from '../types'
 
 /**
@@ -49,6 +51,8 @@ export function BillingPage({ line = 'Services', notificationsHref = defaultNoti
   const queryKey = isLine ? ['owner-subscription', line] : ['owner-subscription']
   const [requestError, setRequestError] = useState('')
   const [trialError, setTrialError] = useState('')
+  // Cycle 49: a «Записи» plan waiting for the trial-notice confirmation (§49.27.3).
+  const [confirmPlanId, setConfirmPlanId] = useState<string | null>(null)
   const [desiredOptions, setDesiredOptions] = useState<Record<string, number> | null>(null)
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
@@ -58,14 +62,19 @@ export function BillingPage({ line = 'Services', notificationsHref = defaultNoti
   })
 
   useEffect(() => {
-    document.title = isBaths ? 'Ваша подписка — EZBOOK Бани' : isStays ? 'Ваша подписка — ezbook · Дома' : isOrders ? 'Ваша подписка — ezbook · Заказы' : 'Ваша подписка — ServiceBooking'
+    document.title = isBaths ? 'Ваша подписка — EZBOOK Бани' : isStays ? 'Ваша подписка — ezbook · Дома' : isOrders ? 'Ваша подписка — ezbook · Заказы' : 'Ваша подписка — ezbook · Записи'
   }, [isOrders, isStays, isBaths])
 
   // Cycle 24 (L14): a plan of the «Заказы» line (cycle 37: «Дома») is requested straight from `availablePlans`.
   const planRequestMut = useMutation({
-    mutationFn: (planId: string) => billingApi.submitRequest({ line: isBaths ? 'Baths' : isStays ? 'Stays' : 'Orders', planId, options: [] }),
+    mutationFn: (planId: string) =>
+      isLine
+        ? billingApi.submitRequest({ line: isBaths ? 'Baths' : isStays ? 'Stays' : 'Orders', planId, options: [] })
+        : // Cycle 49 (§49.26.2): «Записи» carries over the options of its open request; `line` is not sent.
+          billingApi.submitRequest(buildPlanRequest(planId, data?.pendingRequest)),
     onSuccess: () => {
       setRequestError('')
+      setConfirmPlanId(null)
       qc.invalidateQueries({ queryKey: ['owner-subscription'] })
     },
     onError: (err: unknown) => setRequestError(getBillingErrorMessage(err, 'Не удалось отправить заявку.')),
@@ -82,10 +91,10 @@ export function BillingPage({ line = 'Services', notificationsHref = defaultNoti
 
   const requestMut = useMutation({
     mutationFn: (options: Record<string, number>) =>
-      billingApi.submitRequest({
-        options: Object.entries(options).map(([optionId, quantity]) => ({ optionId, quantity })),
-        ...(isLine ? { line } : {}),
-      }),
+      billingApi.submitRequest(isLine
+        ? { options: Object.entries(options).map(([optionId, quantity]) => ({ optionId, quantity })), line }
+        : // Cycle 49 (§49.26.2): keep the plan of the open «Записи» request.
+          buildOptionsRequest(options, data?.pendingRequest)),
     onSuccess: () => {
       setRequestError('')
       setDesiredOptions(null)
@@ -365,40 +374,36 @@ export function BillingPage({ line = 'Services', notificationsHref = defaultNoti
         </Card>
       )}
 
-      {isLine && data.availablePlans && data.availablePlans.length > 0 && (
-        <Card className="p-[26px] mb-6" data-testid="available-plans">
-          <h2 className="text-[15.5px] font-semibold text-ink mb-4">{isBaths ? 'Тарифы «Бань»' : isStays ? 'Тарифы «Домов»' : 'Тарифы «Заказов»'}</h2>
-          <ul className="grid gap-4">
-            {data.availablePlans.map((p) => (
-              <li key={p.planId} className="flex items-start justify-between gap-4 flex-wrap">
-                <div className="min-w-0">
-                  <p className="font-semibold text-ink">
-                    {p.name} · <span className="font-normal">{formatMonthlyPrice(p.pricePerMonth)}</span>
-                  </p>
-                  {p.description && <p className="text-sm text-ink-soft mt-0.5">{p.description}</p>}
-                  {p.highlights && p.highlights.length > 0 && (
-                    <ul className="text-sm text-ink-soft list-disc pl-5 mt-1">
-                      {p.highlights.map((h) => (
-                        <li key={h}>{h}</li>
-                      ))}
-                    </ul>
-                  )}
-                  <p className="text-xs text-muted mt-1">{p.limitsText}</p>
-                </div>
-                {data.canRequestChanges && (
-                  <Button size="sm" variant="secondary" className="min-h-[44px]" loading={planRequestMut.isPending && planRequestMut.variables === p.planId} onClick={() => planRequestMut.mutate(p.planId)} aria-label={`Запросить тариф «${p.name}»`}>
-                    Запросить
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </Card>
+      {data.availablePlans && data.availablePlans.length > 0 && (
+        <AvailablePlansBlock
+          title={isBaths ? 'Тарифы «Бань»' : isStays ? 'Тарифы «Домов»' : isOrders ? 'Тарифы «Заказов»' : 'Тарифы «Записи»'}
+          plans={data.availablePlans}
+          canRequest={data.canRequestChanges}
+          inFlightPlanId={planRequestMut.isPending ? planRequestMut.variables : null}
+          onRequest={(planId) => {
+            if (!isLine && data.trial?.planChangeNotice) setConfirmPlanId(planId)
+            else planRequestMut.mutate(planId)
+          }}
+          {...(isLine
+            ? {}
+            : {
+                // Cycle 49 (§49.25.2): «current» only with an active subscription; «sent» only for a request of this line.
+                currentPlanId: data.status === 'Active' ? data.plan.id : null,
+                pendingPlanId: data.pendingRequest?.line === 'Services' ? data.pendingRequest.desiredPlanId : null,
+                confirmPlanId,
+                confirmNotice: data.trial?.planChangeNotice ?? null,
+                onConfirm: (planId: string) => planRequestMut.mutate(planId),
+                onCancelConfirm: () => setConfirmPlanId(null),
+              })}
+        />
       )}
 
       {data.pendingRequest && !isEditing && (
         <Card className="p-[26px] mb-6 border border-line">
           <h2 className="text-[15.5px] font-semibold text-ink mb-2">Заявка на рассмотрении</h2>
+          {!isLine && data.pendingRequest.desiredPlanName && (
+            <p className="text-sm text-ink-soft mb-2">Тариф: {data.pendingRequest.desiredPlanName}</p>
+          )}
           {data.pendingRequest.items && data.pendingRequest.items.length > 0 && (
             <ul className="grid gap-1 mb-3 text-sm">
               {data.pendingRequest.items.map((i) => (
