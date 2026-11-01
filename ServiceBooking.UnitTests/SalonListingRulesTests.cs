@@ -5,43 +5,55 @@ using Xunit;
 
 namespace ServiceBooking.UnitTests;
 
+/// <summary>CY49-B1 — truth table 2^5 for the salon catalog rule.</summary>
 public class SalonListingRulesTests
 {
-    [Theory]
-    [InlineData(true, true, true, true)]
-    [InlineData(true, true, false, false)]
-    [InlineData(true, false, true, false)]
-    [InlineData(true, false, false, false)]
-    [InlineData(false, true, true, false)]
-    [InlineData(false, true, false, false)]
-    [InlineData(false, false, true, false)]
-    [InlineData(false, false, false, false)]
-    public void Visible_OnlyWhenActive_AllowedByPlan_AndOwnerOptedIn(bool active, bool plan, bool owner, bool visible)
+    public static IEnumerable<object[]> AllCombinations()
     {
-        var r = SalonListingRules.Evaluate(new SalonListingInput(active, plan, owner));
-        r.Visible.Should().Be(visible);
+        for (var mask = 0; mask < 32; mask++)
+            yield return [(mask & 1) != 0, (mask & 2) != 0, (mask & 4) != 0, (mask & 8) != 0, (mask & 16) != 0];
+    }
+
+    [Theory]
+    [MemberData(nameof(AllCombinations))]
+    public void Visible_IffAllFiveConditionsHold(bool active, bool service, bool provider, bool plan, bool owner)
+    {
+        var r = SalonListingRules.Evaluate(new SalonListingInput(active, service, provider, plan, owner));
+        r.Visible.Should().Be(active && service && provider && plan && owner);
         r.Visible.Should().Be(r.Checklist.All(c => c.Done));
+
+        var codes = r.Checklist.Select(c => c.Code).ToList();
+        var expected = new List<CatalogListingCheckCode>();
+        if (!active) expected.Add(CatalogListingCheckCode.SalonBlocked);
+        expected.Add(CatalogListingCheckCode.NoActiveServices);
+        expected.Add(CatalogListingCheckCode.NoServiceProviders);
+        if (!plan) expected.Add(CatalogListingCheckCode.NotAllowedByPlan);
+        expected.Add(CatalogListingCheckCode.HiddenByOwner);
+        codes.Should().Equal(expected);
+
+        r.Checklist.Single(c => c.Code == CatalogListingCheckCode.NoActiveServices).Done.Should().Be(service);
+        r.Checklist.Single(c => c.Code == CatalogListingCheckCode.NoServiceProviders).Done.Should().Be(provider);
+        r.Checklist.Single(c => c.Code == CatalogListingCheckCode.HiddenByOwner).Done.Should().Be(owner);
     }
 
     [Fact]
-    public void Checklist_ListsBlockedAndPlanItemsOnlyWhenTheyApply_InOrder()
+    public void Texts_AreTheConstants()
     {
-        var all = SalonListingRules.Evaluate(new SalonListingInput(false, false, false));
-        all.Checklist.Select(c => c.Code).Should().Equal(
-            CatalogListingCheckCode.SalonBlocked, CatalogListingCheckCode.NotAllowedByPlan, CatalogListingCheckCode.HiddenByOwner);
-
-        var ok = SalonListingRules.Evaluate(new SalonListingInput(true, true, true));
-        ok.Checklist.Should().ContainSingle().Which.Code.Should().Be(CatalogListingCheckCode.HiddenByOwner);
+        var items = SalonListingRules.Evaluate(new SalonListingInput(false, false, false, false, true)).Checklist;
+        items.Single(c => c.Code == CatalogListingCheckCode.SalonBlocked).Text.Should().Be("Салон заблокирован администратором");
+        items.Single(c => c.Code == CatalogListingCheckCode.NoActiveServices).Text.Should().Be("Есть услуги");
+        items.Single(c => c.Code == CatalogListingCheckCode.NoServiceProviders).Text.Should().Be("Есть сотрудники, оказывающие услуги");
+        items.Single(c => c.Code == CatalogListingCheckCode.NotAllowedByPlan).Text.Should().Be(CatalogListingRules.NotAllowedByPlanText);
+        items.Single(c => c.Code == CatalogListingCheckCode.HiddenByOwner).Text.Should().Be(CatalogListingRules.HiddenByOwnerText);
+        SalonListingRules.ConditionsText.Should().Be("Салон появится в каталоге ezbook.ru, только когда выполнены все условия ниже.");
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void HiddenByOwnerText_IsTheSame_WhateverTheSwitch(bool owner)
+    [Fact]
+    public void NewCodes_AreAppendedAtTheEndOfTheEnum()
     {
-        var item = SalonListingRules.Evaluate(new SalonListingInput(true, true, owner)).Checklist.Single();
-        item.Text.Should().Be("Показ включен в настройках");
-        item.Done.Should().Be(owner);
+        ((int)CatalogListingCheckCode.SalonBlocked).Should().Be(5);
+        ((int)CatalogListingCheckCode.NoActiveServices).Should().Be(6);
+        ((int)CatalogListingCheckCode.NoServiceProviders).Should().Be(7);
     }
 
     [Theory]
@@ -49,14 +61,4 @@ public class SalonListingRulesTests
     [InlineData(false, "Салона сейчас нет в каталоге")]
     public void StatusText_MatchesVisibility(bool visible, string text) =>
         SalonListingRules.StatusText(visible).Should().Be(text);
-
-    [Fact]
-    public void ChecklistTexts_AreTakenFromCatalogListingRules_AndBlockedText()
-    {
-        var items = SalonListingRules.Evaluate(new SalonListingInput(false, false, true)).Checklist;
-        items.Single(c => c.Code == CatalogListingCheckCode.SalonBlocked).Text.Should().Be(SalonListingRules.SalonBlockedText);
-        items.Single(c => c.Code == CatalogListingCheckCode.NotAllowedByPlan).Text.Should().Be(CatalogListingRules.NotAllowedByPlanText);
-        items.Single(c => c.Code == CatalogListingCheckCode.HiddenByOwner).Text.Should().Be(CatalogListingRules.HiddenByOwnerText);
-        SalonListingRules.SalonBlockedText.Should().Be("Салон заблокирован администратором");
-    }
 }

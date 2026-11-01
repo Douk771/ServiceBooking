@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Catalog;
 using ServiceBooking.API.DTOs.Orders;
 using ServiceBooking.API.Services;
@@ -25,7 +26,7 @@ public class CompanyCatalogListingController(AppDbContext db, SubscriptionResolv
     {
         var (company, error) = await LoadAsync(id, ct);
         if (error is not null) return error;
-        return Ok(Build(company!, await IsAllowedByPlanAsync(company!.Id)));
+        return Ok(await BuildAsync(company!, await IsAllowedByPlanAsync(company!.Id), ct));
     }
 
     /// <summary>Switching ON is refused (409, JSON) when the tariff does not allow it; OFF always works.</summary>
@@ -45,7 +46,7 @@ public class CompanyCatalogListingController(AppDbContext db, SubscriptionResolv
 
         company!.ShowInPublicListing = show;
         await db.SaveChangesAsync(ct);
-        return Ok(Build(company, allowed));
+        return Ok(await BuildAsync(company, allowed, ct));
     }
 
     private async Task<(Company? Company, ActionResult? Error)> LoadAsync(Guid id, CancellationToken ct)
@@ -59,12 +60,15 @@ public class CompanyCatalogListingController(AppDbContext db, SubscriptionResolv
     private async Task<bool> IsAllowedByPlanAsync(Guid companyId) =>
         (await subscriptionResolver.GetEffectivePlanAsync(companyId)).AllowPublicListing;
 
-    private static CatalogListingDto Build(Company company, bool allowed)
+    private async Task<CatalogListingDto> BuildAsync(Company company, bool allowed, CancellationToken ct)
     {
-        var verdict = SalonListingRules.Evaluate(new SalonListingInput(company.IsActive, allowed, company.ShowInPublicListing));
+        var hasService = await db.Services.AsNoTracking().Where(s => s.CompanyId == company.Id).AnyAsync(SalonListingQuery.ActiveService, ct);
+        var hasProvider = await db.CompanyMembers.AsNoTracking().Where(m => m.CompanyId == company.Id).AnyAsync(SalonListingQuery.ServiceProvider, ct);
+        var verdict = SalonListingRules.Evaluate(new SalonListingInput(company.IsActive, hasService, hasProvider, allowed, company.ShowInPublicListing));
         return new CatalogListingDto(
             company.ShowInPublicListing, allowed, verdict.Visible, SalonListingRules.StatusText(verdict.Visible),
             allowed ? null : SalonListingRules.NotAllowedByPlanHintText,
-            verdict.Checklist.Select(c => new CatalogListingCheckDto(c.Code, c.Text, c.Done)).ToList());
+            verdict.Checklist.Select(c => new CatalogListingCheckDto(c.Code, c.Text, c.Done)).ToList(),
+            SalonListingRules.ConditionsText);
     }
 }

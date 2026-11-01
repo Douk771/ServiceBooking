@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using ServiceBooking.API.Services.Shops;
 
 namespace ServiceBooking.API.DTOs.Catalog;
@@ -18,6 +19,7 @@ public sealed record GoodsCatalogPageDto(
 public sealed record CatalogListingCheckDto(CatalogListingCheckCode Code, string Text, bool Done);
 
 public sealed record CatalogListingDto(
-    bool ShowInCatalog, bool AllowedByPlan, bool Visible, string StatusText, string? NotAllowedByPlanText, List<CatalogListingCheckDto> Checklist);
+    bool ShowInCatalog, bool AllowedByPlan, bool Visible, string StatusText, string? NotAllowedByPlanText, List<CatalogListingCheckDto> Checklist,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ConditionsText = null);
 
 public sealed record CatalogListingInputDto(bool? ShowInCatalog);

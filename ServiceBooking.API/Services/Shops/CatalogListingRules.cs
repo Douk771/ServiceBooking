@@ -7,7 +7,9 @@ public enum CatalogListingCheckCode
     NoPublishedProducts,
     NotAllowedByPlan,
     HiddenByOwner,
-    SalonBlocked // Cycle 31 (ARCHITECTURE_CYCLE31.md §31.5): salon checklist only; the shop route never emits it.
+    SalonBlocked, // Cycle 31 (ARCHITECTURE_CYCLE31.md §31.5): salon checklist only; the shop route never emits it.
+    NoActiveServices, // Cycle 49: salon checklist only; the shop route never emits it.
+    NoServiceProviders // Cycle 49: salon checklist only; the shop route never emits it.
 }
 
 public sealed record CatalogListingCheck(CatalogListingCheckCode Code, string Text, bool Done);

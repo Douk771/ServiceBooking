@@ -27,8 +27,8 @@ public record CompanyDto(
     bool AllowMailing,
     // Owner's own opt-out from the public directory — independent of the tariff's AllowPublicListing.
     bool ShowInPublicListing,
-    // Computed: true only when both the owner wants to be listed AND the tariff allows it — mirrors
-    // OnlineBookingEnabled's pattern. This is what GET /api/companies actually filters on.
+    // Computed: owner opt-in ∧ plan allows. Since cycle 49 this is NOT catalog presence (the catalog also needs an
+    // active service and a service provider) — the truth is GET …/catalog-listing `visible`.
     bool PublicListingEnabled,
     // Computed: true only when the owner turned on RequirePrepayment AND the tariff allows online
     // payment — see BookingsController.Create, which uses this exact combination.
