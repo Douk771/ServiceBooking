@@ -1,7 +1,53 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `5b58691a` (HEAD ветки `cycle/049-listing-services-and-subscription-tab`; код = `develop` `d32a5278`), дата: 2026-11-01.**
-**Следующий diff отсчитывайте от `5b58691a`.** (Сам коммит с этой правкой идёт следом и кода не меняет.)
+**Актуально по состоянию на коммит: `e1e320dd` (HEAD ветки `cycle/049-listing-services-and-subscription-tab`, закрытие цикла 49; в `develop` не влит), дата: 2026-11-01.**
+**Следующий diff отсчитывайте от `e1e320dd`.** (Сам коммит с этой правкой идёт следом; кода он не меняет, только переносит `SPEC.md` → `SPEC_CYCLE49_LISTING_SUBSCRIPTION.md`.)
+
+**Обновление на `e1e320dd` (закрытие цикла 49 «Каталог салонов по услугам и сотрудникам + пункт «Подписка»», режим «обновление»).** ✔ `git log 5b58691a..HEAD`: 19 коммитов
+(docs SPEC/ARCHITECTURE/API_CONTRACT, BE-49-0…3, FE-49-0…3, DO-49-1…3, QA-49-0…2); `git diff --stat`: 55 файлов, +5 285/−135 (из них ~2 700 строк — контракт `contracts/cycle49/openapi.yaml|json` и генерат `api-cycle49.generated.ts`).
+Источник намерения: `SPEC_CYCLE49_LISTING_SUBSCRIPTION.md` (бывший корневой `SPEC.md`, заархивирован этим коммитом по конвенции суффиксов в корне), `ARCHITECTURE_CYCLE49_LISTING_SUBSCRIPTION.md` (§49.x),
+`API_CONTRACT_CYCLE49_LISTING_SUBSCRIPTION.md` (§49.2x). **codebase-analyst ничего не запускал** (ни vitest, ни `dotnet test`, ни сборку, ни `redocly`, ни SQL-отчёт). **Выкат не выполнялся** (см. «До выката» ниже).
+
+**Что изменилось в коде (цикл 49), кратко:**
+- **БД и миграции: не менялись. Новых HTTP-эндпоинтов нет**, новых переменных приложения нет. Меняется содержимое ответов `GET|PUT /api/companies/{id}/catalog-listing`, `GET /api/companies`, `GET /api/companies/public` (меньше салонов) и `GET /api/billing/subscription` (линия «Записи»).
+- **Новое правило видимости салона в каталоге ezbook.ru** (`Services/Companies/SalonListingRules.cs` + SQL-двойник `SalonListingQuery.cs`): видим ⇔ активен ∧ **есть активная услуга** ∧ **есть участник с ролью `Master` или `CompanyOwner` и `ProvidesServices = true`** ∧ тариф разрешает ∧ владелец включил показ (пять условий).
+  Оба новых условия — единственные выражения `SalonListingQuery.ActiveService` (`s => s.IsActive`) и `SalonListingQuery.ServiceProvider` (`m => m.ProvidesServices && (Role == Master || Role == CompanyOwner)`); их используют и `VisibleInSalonCatalog` (два `EXISTS` в SQL), и `CompanyCatalogListingController.BuildAsync` (два `AnyAsync` для чек-листа).
+  Привязка мастера к услуге (`MasterService`) **не требуется**; роль `Client` с `ProvidesServices` не считается. `SalonListingInput` теперь `(IsActive, HasActiveService, HasServiceProvider, AllowedByPlan, ShowInPublicListing)`.
+- **Чек-лист блока «Каталог ezbook.ru»:** порядок `SalonBlocked` (только если не активен) → **`NoActiveServices`** «Есть услуги» (всегда, `done` = есть активная услуга) → **`NoServiceProviders`** «Есть сотрудники, оказывающие услуги» (всегда) → `NotAllowedByPlan` (только при отказе) → `HiddenByOwner` (всегда).
+  Новые коды добавлены в **общий** enum `Services/Shops/CatalogListingRules.cs` `CatalogListingCheckCode` (магазин их не выдаёт). `CatalogListingDto` получил необязательное поле **`conditionsText`** («Салон появится в каталоге ezbook.ru, только когда выполнены все условия ниже.»; `JsonIgnore WhenWritingNull` — у салона приходит всегда, у магазина поля нет).
+  `CompanyDto.publicListingEnabled` **не** приведено к новому правилу (по-прежнему «показ включён ∧ тариф разрешает»); комментарий в `CompanyDto.cs` говорит, что истина о присутствии в каталоге — `visible` из `…/catalog-listing`.
+- **Фронт, блок каталога** (`components/company/CatalogListingCard.tsx`, `pages/owner/SalonCatalogListingSection.tsx`): строка `conditionsText` (`data-testid="listing-conditions"`) над списком; невыполненный пункт — «✗» `text-danger` (было «○» `text-muted`) — это видно и у магазина goods.
+  Свежесть: `refetchOnMount: 'always'` у запроса `['company-catalog-listing', id]`; новый `pages/owner/salonCatalogListingCache.ts` (`invalidateSalonCatalogListing`) вызывается в `CompanyManagePage.tsx` после создания/правки/удаления услуги, `providesServices`, добавления/удаления участника.
+  `SalonCatalogListingDto` во фронте теперь читается из `api-cycle49.generated.ts` (было cycle31). Генераты goods (`api-cycle25`/`cycle31`) не перегенерировались.
+- **Пункт «Подписка» в шапке «Записи»** (`components/layout/Navbar.tsx`): `NavLink` на `/billing` после «Кабинет», в широкой шапке и в мобильном меню (`min-h-[44px]`, закрывает меню), активный — `text-gold-dark`; отступы шапки `gap-5 lg:gap-7`.
+  Показ — новый хук `hooks/useOwnsSalon.ts`: `GET /companies/my` (ключ `['my-companies']`, общий с кабинетом, `staleTime` 5 мин), запрос только при роли `CompanyOwner`; `true`, если список не пуст; пока грузится/ошибка — `false`. Шапки goods/dom/bani (`GoodsNavbar`, `DomNavbar`, `BaniNavbar`) **не менялись** — карта «Где сейчас у владельца подписка» в блоке `d32a5278` ниже верна для них, а для `Navbar` устарела в части «ссылки на `/billing` нет».
+- **`/billing` «Записи»: тарифы, на которые можно подать заявку.** `OwnerSubscriptionService` (ветка «Записи») теперь заполняет `availablePlans` (было `null`): `SubscriptionPlanConfigs` с `Line = Services ∧ IsActive ∧ IsPublic ∧ !IsSystemTrial ∧ !IsSystemFree`, порядок `SortOrder` → цена, `highlights` по `\n` (не более `PricingCatalogBuilder.MaxHighlights`), `limitsText` — новый `BillingTexts.ServicesPlanLimitsText(companies, employees)` («до 3 точек · до 10 сотрудников», `null` → «… без ограничения»). Явно ставится `Line: "Services"`.
+  Оценка открытой заявки (`estimatedMonthlyPrice`) для заявки линии «Записи» считается **от цены запрошенного тарифа** (`account.RequestedPlan?.PricePerMonth`, иначе текущего); для заявки другой линии на этом экране — от текущего.
+  Фронт: новый общий компонент `components/billing/AvailablePlansBlock.tsx` (заменил инлайн-карточку тарифов «Заказов»/«Домов»/«Бань» в `BillingPage.tsx`; только «Записи» передаёт метки «Ваш тариф» при `status = Active`, «Заявка отправлена» и подтверждение при `trial.planChangeNotice`);
+  `components/billing/servicesRequest.ts` — `buildPlanRequest` (тариф + опции открытой заявки «Записи», без `retired`) и `buildOptionsRequest` (опции + `planId` открытой заявки «Записи»): сервер хранит одну заявку на аккаунт и перезаписывает её целиком. В карточке «Заявка на рассмотрении» «Записи» — строка «Тариф: …».
+  `document.title` `/billing` «Записи» — «Ваша подписка — ezbook · Записи» (было «— ServiceBooking»). `api/billing.ts`: тип `OwnerSubscriptionCycle49Patch` (`availablePlans`, `pendingRequest.line`).
+- **Контракт:** `contracts/cycle49/openapi.yaml` + сгенерированный `openapi.json` (в `frontend/scripts/contracts-to-json.mjs`), `npm run types:api:cycle49` → `frontend/src/types/api-cycle49.generated.ts`; `contracts/redocly.yaml` (комментарий). CI (`ci.yml`): cycle49 добавлен в `redocly lint`, в «Generated API types must match» и «Contract JSON must match».
+- **Деплой (DO-49-2/3):** в `deploy/deploy-remote.sh` новая пре-проверка `check_cycle49_catalog` (после проверки слагов цикла 48, до любых изменений на машине; пропуск, если postgres не запущен — первый выкат): печатает в лог **каждого** выката read-only отчёт `deploy/checks/cycle49-catalog-report.sql` (блок 1: `visible_now`/`visible_after`/`disappearing`; блок 2: пропадающие салоны — имя, slug, причина, `is_showcase`; без контактов),
+  затем `deploy/checks/cycle49-catalog-empty.sql` (строка ⇔ `visible_now > 0 ∧ visible_after = 0`). Строка есть → **стоп** «Новое правило каталога скрывает все салоны — нужно решение заказчика (DEPLOY.md §36)», обход — **`CYCLE49_EMPTY_CATALOG_ACCEPTED=true` в `.env` машины** (переменная только для скрипта, не для приложения; в `.env.production.example` ✔ `git diff` не добавлялась). Ошибка `psql` → отказ (fail-closed).
+  SQL дублирует правило руками (`Kind = 0`, `Role IN (1, 2)`, условие подписки); согласие с кодом — тест CY49-D1. `DEPLOY.md` **§36** (36.1–36.5: что выкатывается, блокеры, ручной запуск отчёта, шаги после выката, откат `deploy/rollback.sh` — данные не менялись).
+- **Тесты цикла 49 (не запускались мной; команды — §7.2):**
+  - C# unit: `ServiceBooking.UnitTests/SalonListingRulesTests.cs` (CY49-B1, таблица 2⁵), `UnitTests/Cycle49/ServicesPlanLimitsTextTests.cs` (CY49-B8).
+  - C# интеграционные (PostgreSQL/Testcontainers): `ServiceBooking.Tests/Tests/Cycle49CatalogVisibilityTests.cs` (QA, CY49-01…14), `Cycle49BillingPlansTests.cs` (CY49-B6/B7), `Cycle49ContractTests.cs` (`CY49-CONTRACT`, ответы против `contracts/cycle49/openapi.json`), `Cycle49CatalogReportSqlTests.cs` (CY49-D1; **часть с запуском настоящего `psql` пропускается с сообщением в консоль, если ни один docker-контейнер не публикует порт тестового Postgres**).
+  - Осознанно поправлены старые: фикстуры «салон для каталога» получили активную услугу (`AdminTests`, `CompaniesTests`, `CompanyAddressTests`, `CompanyPhotosTests`, `Cycle25CatalogTests`, `Cycle31CatalogListingTests` — ожидания чек-листа с новыми кодами), `Cycle24TariffTests` (для «Записи» `availablePlans` теперь массив).
+  - vitest: `CatalogListingCard.test.tsx` (CY49-F1), `SalonCatalogListingSection.test.tsx` + `CompanyManagePage.test.tsx` (CY49-F2), `Navbar.test.tsx` (CY49-F3), `BillingPage.test.tsx` + `servicesRequest.test.ts` (CY49-F4) — в существующих областях `contracts/cycle36/test-areas.json` (файл не менялся).
+  - `TEST_CATALOG.md`: раздел «Цикл 49 — видимость салона в каталоге, QA» в конце файла — CY49-01…14, CY49-B6, CY49-B7 (статус «зелёный» — слова QA, не проверялось), **CY49-M06** (ручная, `EXPLAIN ANALYZE` запроса каталога на 1 500 салонах: оба `EXISTS` по индексам `IX_Services_CompanyId` / `IX_CompanyMembers_CompanyId_UserId`, 2,3 мс — «пройдено», индексов не добавляли).
+    Не внесены в каталог: CY49-B1, B8, CY49-CONTRACT, CY49-D1, CY49-F1…F4 (есть только в коде и в `ARCHITECTURE_CYCLE49…` §49.9.1). **ID CY49-B2…B5 из §49.9.1 в коде нет** (файла `Cycle49CatalogListingTests.cs` нет; матрицу и частные случаи покрывают CY49-01…14, контракт — `CY49-CONTRACT`); отдельной проверки CY49-B5 «демо-салоны витрины видны в демо-каталоге» по ID не найдено.
+
+**До выката (не код; выкат не делался):**
+- **L49-1** — ответ legal-counsel (SPEC §7) не получен/не зафиксирован в репозитории (DEPLOY.md §36.2 п. 2).
+- **M49-05** — SQL-отчёт `cycle49-catalog-report.sql` вручную на бою (read-only, DEPLOY.md §36.3) и **решение заказчика по Q49-1 записать в DEPLOY.md §36.2** — сейчас там «_не записано_». Салоны без активной услуги или без оказывающего услуги участника пропадут из каталога сразу после выката (переключателя правила нет, A49-3).
+- Ручные M49-01…04 (шапка 375/1280 px, блок каталога, сценарий «новый салон», заявка при пробном) в `TEST_CATALOG.md` не отмечены; DEPLOY.md §36.4 велит пройти их на бою после выката.
+
+**Долг и хвосты цикла — см. §9.17.** Документация цикла — §10.5 (запись «На `e1e320dd`»). `CHANGELOG.md`, `README.md`, `docs/owner.md` в этом диапазоне не менялись (их параллельно правят product-analyst и technical-writer; codebase-analyst их не трогал).
+
+*Ниже — блоки предыдущих обновлений (`5b58691a`, `d32a5278`, `7a7527fa`, …), сохранены для истории.*
+
+*(Прежняя шапка: актуально на `5b58691a`, 2026-11-01, старт цикла 49.)*
 
 **Повторный прогон codebase-analyst на старте цикла 49 (2026-11-01, режим «обновление»).** ✔ `git diff --stat d32a5278..5b58691a`: один файл — `CURRENT_STATE.md` (коммит `5b58691a` — предыдущий прогон этой же роли). Код, БД, миграции, эндпоинты, тесты, CI с `d32a5278` **не менялись**; `develop` = `origin/develop` = `d32a5278`. Корневого `SPEC.md` цикла 49 по-прежнему нет. Блок ниже («Обновление на `d32a5278`») остаётся актуальным без правок. codebase-analyst ничего не запускал.
 
@@ -1093,6 +1139,9 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
   `CompanyAccess.CanManageCompanyAsync`), магазин → 409 строкой (`CompanyKindGuard.RejectShop`), `PUT` без `showInCatalog`
   → 400 `SalonListingRules.MissingValueText`, включение на тарифе без показа → 409 JSON
   `{code: CatalogListingNotAllowedByPlan, message}`. Подробно — §5.8.
+  **С цикла 49** (✔ на `e1e320dd`): чек-лист салона всегда содержит `NoActiveServices` и `NoServiceProviders`, в ответе есть `conditionsText`;
+  `PUT showInCatalog=true` без услуг → 200 с `visible=false`. Каталоги `GET /api/companies` и `GET /api/companies/public` отдают только салоны,
+  прошедшие пять условий (шапка документа, блок `e1e320dd`).
 - Сотрудники — auth: `GET|POST /api/Companies/{id}/members`,
   `PUT /api/Companies/{id}/members/{memberId}/{provides-services,services,commission}`, `DELETE /api/Companies/{id}/members/{memberId}`.
 - Push персоналу — auth: `GET|PUT /api/companies/{companyId}/staff-push-settings`.
@@ -1169,6 +1218,7 @@ ezbook.ru), магазин (`CompanyKind.Orders = 1`, goods.ezbook.ru) или «
 
 **Биллинг владельца (auth)**
 - `GET /api/billing/subscription`, `POST|DELETE /api/billing/subscription/request`.
+  **С цикла 49** (✔ на `e1e320dd`): для линии «Записи» `availablePlans` — массив тарифов для заявки (`limitsText`), `estimatedMonthlyPrice` заявки «Записи» считается от запрошенного тарифа.
 - `GET|POST /api/billing/trial`, `POST /api/billing/trial/terms-acknowledgement`.
 - `GET|PUT /api/billing/operator-details`.
 - `GET /api/pricing` — anon, витрина тарифов «Записи» (только `Line == Services`; 404 при выключенном `pricing.public-enabled`
@@ -2163,7 +2213,8 @@ node-типы: `shots.test.ts`, `seed-goods-demo.test.ts`, `BuyersBlock.qa.test.
 Два новых ключа `RateLimits` имеют значения по умолчанию в коде. Ниже — факты по коду. Там, где код отличается от
 архитектуры, это сказано явно.
 
-**Сервер: одно правило видимости салона (R-3).**
+**Сервер: одно правило видимости салона (R-3).** ⚠️ **Цикл 49 изменил правило** (пять условий: + активная услуга, + участник Master/CompanyOwner с `ProvidesServices`;
+чек-лист + `NoActiveServices`, `NoServiceProviders`, `conditionsText`; согласие правила и SQL проверяют CY49-11 и CY49-D1) — актуальное описание в шапке документа (блок `e1e320dd`); ниже — состояние цикла 31.
 - `Services/Companies/SalonListingRules.cs` — чистое правило (`SalonListingInput(IsActive, AllowedByPlan,
   ShowInPublicListing)` → `CatalogListingResult`). Видим ⇔ активен ∧ тариф разрешает ∧ владелец включил показ. Пункты
   чек-листа по порядку:
@@ -5099,6 +5150,22 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
 - **Цикл 48 (оплата картой, этап A) стартует без закоммиченного брифа:** `BRIEF_CARD_PAYMENTS.md` в рабочей копии untracked. В коде нет ни одного платёжного провайдера для оплаты тарифов
   картой (бриф: Робокасса отказала окончательно 25.10.2026, цель — Продамус); ✔ `grep` по `ServiceBooking.*` и фронтам: упоминаний Robokassa/Prodamus/YooKassa/CloudPayments нет; тарифы, как и раньше, назначает суперадмин вручную по заявке (§1, «Интеграций, которых нет»).
 
+### 9.17 Долг и риски цикла 49 (каталог салонов по услугам и сотрудникам, «Подписка» в шапке) — ✔ по коду и документам на `e1e320dd` (в `develop` не влит, НЕ выкачен), ничего не запускалось
+
+- **R49-A. Выкат не выполнен, ждёт внешних условий:** ответ legal-counsel по **L49-1**; **M49-05** — SQL-отчёт `deploy/checks/cycle49-catalog-report.sql` на бою (read-only, DEPLOY.md §36.3) и **решение заказчика по Q49-1 в DEPLOY.md §36.2** (сейчас «_не записано_»).
+  Переключателя правила нет: после выката салоны без активной услуги или без оказывающего услуги участника пропадают из каталога сразу. Если пропадут все, `deploy-remote.sh` остановит выкат; обход `CYCLE49_EMPTY_CATALOG_ACCEPTED=true` в `.env` — только после письменного решения заказчика.
+  При `total = 0` главная «Записи» прячет каталог целиком (поведение `HomePage`, см. R46 в §9.16).
+- **C49-1 (долг из `ARCHITECTURE_CYCLE49…` §49.12).** «Ожидаемый итог» (`estimatedMonthlyPrice`) заявки на тариф на экранах подписки **«Заказов», «Домов», «Бань» и в админке** по-прежнему считается **от текущей цены** тарифа, а не от запрошенного; от запрошенного считает только ветка «Записи» `OwnerSubscriptionService` (BE-49-3). В цикле намеренно не чинилось (SPEC: экраны других линий не меняются).
+- **Заявка с деактивированным тарифом (замечание ревью, не исправлено).** Если тариф открытой заявки «Записи» потом сняли с продажи/выключили, `servicesRequest.buildOptionsRequest` всё равно подставляет его `desiredPlanId` в тело заявки на опции → сервер отвечает **400**; на экране у владельца нет пути поменять только опции — выход только **отменой заявки** (`DELETE /api/billing/subscription/request`) и новой подачей. Тестом не покрыто.
+- **Флак `NotificationDispatchExtraTests.Budget_InterruptedPass_DoesNotDuplicateAlreadySentRows_RemainderStaysPending_SummaryIsHonest`** (`ServiceBooking.Tests`) — по отчётам цикла периодически падает **под нагрузкой** (полный параллельный прогон), отдельно проходит; к коду цикла 49 не относится, причина не разбиралась. ↪ со слов команды, codebase-analyst не запускал.
+- **SQL-двойник правила в трёх местах.** Правило видимости живёт в `SalonListingRules` (C#), `SalonListingQuery` (LINQ → SQL) и **вручную** в `deploy/checks/cycle49-catalog-report.sql` + `cycle49-catalog-empty.sql` (числа `Kind = 0`, `Role IN (1, 2)`, условие действующей подписки скопировано). Расхождение ловит только CY49-D1, а его часть с настоящим `psql` **молча пропускается** (сообщение в консоль), если тестовый Postgres не опубликован docker-контейнером — в такой среде отчёт не проверяется вовсе.
+- **`CompanyDto.publicListingEnabled` ≠ «салон в каталоге»** (R49-8). Поле осталось «показ включён ∧ тариф разрешает»; предупреждение только в комментарии и в описании контракта. Любой новый код, который будет фильтровать по нему, разойдётся с каталогом.
+- **Общий enum `CatalogListingCheckCode` расширен** (`NoActiveServices`, `NoServiceProviders`), генераты goods (`api-cycle25`/`api-cycle31.generated.ts`) не перегенерированы — защита только `tsc` всех приложений в CI и тем, что маршрут магазина эти коды не выдаёт. Глиф «✗» `text-danger` вместо «○» в `CatalogListingCard` поменял вид и у магазинов goods (сверка вида не зафиксирована).
+- **«Подписка» в шапке зависит от `GET /companies/my`:** пока запрос грузится или упал, пункта нет (мигание при входе); владелец, у которого все салоны заблокированы, пункта не видит (R49-10, принято); другие шапки (`GoodsNavbar`, `DomNavbar`, `BaniNavbar`) пункта по-прежнему не имеют.
+- **Тесты по ID архитектуры и по каталогу разошлись:** ID CY49-B2…B5 из §49.9.1 в коде нет (покрытие перенесено в QA CY49-01…14 / `CY49-CONTRACT`; явной проверки CY49-B5 «демо-салоны видны в демо-каталоге» не найдено — при этом новое правило требует у демо-салонов активных услуг и оказывающих услуги участников; генератор `Cycle28*`/`ShowcaseDataset` в цикле не менялся, что демо-салоны проходят правило, codebase-analyst не проверял).
+  В `TEST_CATALOG.md` нет строк CY49-B1, B8, CY49-CONTRACT, CY49-D1, CY49-F1…F4; ручные M49-01…04 не отмечены. Статусы «зелёный» — слова QA.
+- **Нет rate limit на `POST /api/billing/subscription/request`** (хвост R48-H) — теперь кнопка «Запросить» на тариф есть и у «Записи», а каждая заявка шлёт сигнал в GlitchTip.
+
 ## 10. Что уже существует в документации и тест-кейсах (дополнять существующее, параллельных версий не заводить)
 
 ### 10.1 Краткая продуктовая документация
@@ -5395,6 +5462,11 @@ jsdom; `src/utils/pushWorker.test.ts` возвращён на jsdom — в Node 
   проверки описаны только в SPEC §9 и `DEPLOY.md` §34 п. 5.
 
 ### 10.5 Документы циклов
+- **На `e1e320dd`** (✔ `ls`, `wc -l`, `git diff --stat`; цикл 49): корневой `SPEC.md` (228 строк, дата 2026-11-01, Q49-1…5, US-49-01…06, L49-1/L49-2, R49-*, A49-1…5, ручные M49-01…05)
+  **перенесён этим коммитом в `SPEC_CYCLE49_LISTING_SUBSCRIPTION.md`** (корневого `SPEC.md` до следующего цикла нет). В корне под архивными именами: `ARCHITECTURE_CYCLE49_LISTING_SUBSCRIPTION.md` (499 строк, §49.x: правило §49.3,
+  шапка §49.5, `/billing` §49.6, выкат §49.7, тесты §49.9, задачи BE/FE/DO/QA/DOC-49-*, риски §49.12 с долгом C49-1, отклонения от SPEC §49.13), `API_CONTRACT_CYCLE49_LISTING_SUBSCRIPTION.md` (265 строк, §49.2x),
+  `contracts/cycle49/openapi.yaml|json`, `DEPLOY.md` §36, раздел «Цикл 49» в конце `TEST_CATALOG.md`. `LEGAL_REVIEW_CYCLE49*` нет (L49-1 не закрыт). `docs/history/` по-прежнему нет — архив по конвенции суффиксов `*_CYCLEnn*` в корне.
+  Корневые `ARCHITECTURE.md`/`API_CONTRACT.md` — по-прежнему цикл 3. Задача DOC-49-1 (`docs/owner.md`, `CHANGELOG.md`) на `e1e320dd` не закоммичена — её делают параллельно technical-writer и product-analyst.
 - **На `69bafa0`** (✔ `ls`, `wc -l`): корневой `SPEC.md` — по-прежнему **спека цикла 43** (цикл 44 его не трогал, как и корневые `ARCHITECTURE.md`/
   `API_CONTRACT.md`). Цикл 44 положил документы сразу под архивными именами: `SPEC_CYCLE44_PRODUCTS_LANDING.md` (288 строк: решение заказчика
   19.10.2026, Q44-1…11, US-44-01…10, критерии, НФТ, A44-1…7, R44-1…8, кейсы QA), `ARCHITECTURE_CYCLE44_PRODUCTS_LANDING.md` (600 строк, §44.0–§44.17:
