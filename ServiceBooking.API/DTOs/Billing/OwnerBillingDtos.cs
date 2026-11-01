@@ -29,7 +29,7 @@ public record OwnerSubscriptionDto(
     // notice (Т3) and the activation button all have a field to read.
     TrialStateDto? Trial = null,
     // Cycle 24 (API_CONTRACT_CYCLE24.md §485.1) — the line the screen is built for and, for "Заказы", the month counter and the plans to ask for [legal L14].
-    // For the "Записи" line: Line = Services, Orders = null, AvailablePlans = null (the answer is the cycle-23 one plus these three fields).
+    // For the "Записи" line: Line = Services, Orders = null; since cycle 49 AvailablePlans is the array of plans to ask for (no trial, no free tier, only on sale).
     // Line is a STRING carrying the enum name (the CompanyDto.Kind convention): clients that read this DTO without a string-enum converter keep working.
     string Line = nameof(Core.Enums.CompanyKind.Services), OrdersUsageDto? Orders = null,
     IReadOnlyList<AvailablePlanDto>? AvailablePlans = null,

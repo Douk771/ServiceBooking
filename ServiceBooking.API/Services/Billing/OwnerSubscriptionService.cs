@@ -140,7 +140,20 @@ public class OwnerSubscriptionService(
         // needs its real name to explain what won't be applied on approval, not "—".
         var requestKnownOptions = await db.SubscriptionOptions.ToListAsync();
         var pendingRequest = BuildPendingRequestDto(
-            account, requestKnownOptions, planDto.PricePerMonth, currentPlanWithdrawn, sub?.PlanConfigId);
+            account, requestKnownOptions,
+            // Cycle 49 (§49.6.1): a plan-change request is estimated from the REQUESTED plan's price (only a "Записи" plan counts on this screen).
+            account.RequestedLine is null or CompanyKind.Services ? account.RequestedPlan?.PricePerMonth ?? planDto.PricePerMonth : planDto.PricePerMonth,
+            currentPlanWithdrawn, sub?.PlanConfigId);
+
+        // Cycle 49 (§49.6.1): the plans a "Записи" owner can ask for — on sale, not the trial, not the system free tier.
+        var availablePlans = (await db.SubscriptionPlanConfigs.AsNoTracking()
+                .Where(p => p.Line == CompanyKind.Services && p.IsActive && p.IsPublic && !p.IsSystemTrial && !p.IsSystemFree)
+                .OrderBy(p => p.SortOrder).ThenBy(p => p.PricePerMonth).ToListAsync())
+            .Select(p => new AvailablePlanDto(
+                p.Id, p.Name, p.PricePerMonth, p.Description,
+                string.IsNullOrWhiteSpace(p.Highlights) ? [] : p.Highlights.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(PricingCatalogBuilder.MaxHighlights).ToList(),
+                BillingTexts.ServicesPlanLimitsText(p.MaxCompanies, p.MaxEmployees)))
+            .ToList();
 
         var lastRejectedRequest = account.LastRejectionReason is not null && account.LastRejectedAtUtc.HasValue
             ? new RejectedRequestDto(account.LastRejectionReason, account.LastRejectedAtUtc.Value)
@@ -158,6 +171,7 @@ public class OwnerSubscriptionService(
             "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays, isExpiringSoon,
             usageDto, coveredCompanies, warning, availableOptions, pendingRequest, CanRequestChanges: true,
             LastRejectedRequest: lastRejectedRequest, Trial: trial,
+            Line: nameof(CompanyKind.Services), AvailablePlans: availablePlans,
             MessengerAddons: addons, MessengerAddonsNote: addonsNote,
             Messengers: await BuildMessengersAsync(account, CompanyKind.Services, messaging));
     }

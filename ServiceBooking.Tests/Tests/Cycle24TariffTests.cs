@@ -166,7 +166,7 @@ public class Cycle24TariffTests(TestDatabaseFixture fixture) : Cycle24TestBase(f
     }
 
     [Fact, TestCase("CY24-73")]
-    public async Task SubscriptionScreen_ServicesLineUnchanged_OrdersFieldsNullForServices()
+    public async Task SubscriptionScreen_ServicesLine_OrdersFieldNull_AvailablePlansIsArray()
     {
         var owner = await RegisterAsync();
         await CreateCompanyAsync(owner.Token);
@@ -178,7 +178,8 @@ public class Cycle24TariffTests(TestDatabaseFixture fixture) : Cycle24TestBase(f
             var sub = await J(await c.GetAsync(url));
             sub.GetProperty("line").GetString().Should().Be("Services");
             sub.GetProperty("orders").ValueKind.Should().Be(JsonValueKind.Null);
-            sub.GetProperty("availablePlans").ValueKind.Should().Be(JsonValueKind.Null);
+            // Cycle 49 (§49.9.2): «Записи» now lists the plans to ask for — an array, without the trial and the free tier.
+            sub.GetProperty("availablePlans").ValueKind.Should().Be(JsonValueKind.Array);
         }
         (await c.GetAsync("/api/billing/subscription?line=Nope")).StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.NotFound);
     }

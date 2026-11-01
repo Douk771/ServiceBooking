@@ -54,6 +54,18 @@ public static class BillingTexts
         return string.Join(" · ", parts);
     }
 
+    /// <summary>Cycle 49 (§49.6.1): the limits of a "Записи" tariff in one line: "до 3 точек · до 10 сотрудников"; null = no limit.</summary>
+    public static string ServicesPlanLimitsText(int? companies, int? employees)
+    {
+        static string Word(int n, string one, string few, string many) => ServiceBooking.API.Services.Shops.ShopTimeTexts.Plural(n, one, few, many);
+        var parts = new List<string>
+        {
+            companies is { } c ? $"до {c} {Word(c, "точки", "точек", "точек")}" : "точки без ограничения",
+            employees is { } e ? $"до {e} {Word(e, "сотрудника", "сотрудников", "сотрудников")}" : "сотрудники без ограничения"
+        };
+        return string.Join(" · ", parts);
+    }
+
     public static string ShopsUsedText(int used, int? limit) =>
         limit is null ? $"Магазинов: {used} (без ограничения)" : $"Открыто {used} из {limit} магазинов, доступных на тарифе.";
 
