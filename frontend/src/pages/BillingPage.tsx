@@ -18,7 +18,7 @@ import { OperatorDetailsSection } from '../components/billing/OperatorDetailsSec
 import { BillingNoticesSummary } from '../components/billing/BillingNoticesSummary'
 import { MessengersBlock } from '../components/billing/MessengersBlock'
 import { AvailablePlansBlock } from '../components/billing/AvailablePlansBlock'
-import { buildOptionsRequest, buildPlanRequest } from '../utils/servicesRequest'
+import { buildOptionsRequest, buildPlanRequest } from '../components/billing/servicesRequest'
 import type { NotificationTransport } from '../types'
 
 /**

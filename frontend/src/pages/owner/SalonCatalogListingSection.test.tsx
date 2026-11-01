@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SalonCatalogListingSection } from './SalonCatalogListingSection'
+import { invalidateSalonCatalogListing } from './salonCatalogListingCache'
 import type { SalonCatalogListingDto } from '../../types'
 
 const get = vi.fn()
@@ -89,5 +90,14 @@ describe('SalonCatalogListingSection', () => {
     first.unmount()
     render(ui)
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+  })
+})
+
+describe('invalidateSalonCatalogListing', () => {
+  it('CY49-F2: invalidates only the listing key of the given company', () => {
+    const qc = new QueryClient()
+    const spy = vi.spyOn(qc, 'invalidateQueries')
+    invalidateSalonCatalogListing(qc, 'co7')
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['company-catalog-listing', 'co7'] })
   })
 })
