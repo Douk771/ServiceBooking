@@ -75,4 +75,19 @@ describe('SalonCatalogListingSection', () => {
     renderIt()
     expect(await screen.findByText('Не удалось загрузить настройку каталога.')).toBeInTheDocument()
   })
+
+  it('CY49-F2: a second mount re-reads the block even when the cache is fresh and shows conditionsText', async () => {
+    get.mockResolvedValue(dto({ conditionsText: 'Нужны все условия.' }))
+    const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 60_000 } } })
+    const ui = (
+      <QueryClientProvider client={qc}>
+        <SalonCatalogListingSection companyId="co1" />
+      </QueryClientProvider>
+    )
+    const first = render(ui)
+    expect(await screen.findByTestId('listing-conditions')).toHaveTextContent('Нужны все условия.')
+    first.unmount()
+    render(ui)
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+  })
 })

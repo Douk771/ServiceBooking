@@ -43,7 +43,7 @@ describe('CatalogListingCard', () => {
     expect(screen.getByRole('heading', { level: 3, name: 'Каталог ezbook.ru' })).toBeInTheDocument()
   })
 
-  it('checklist shows ✓/○ hidden from readers and an sr-only state', () => {
+  it('checklist shows ✓/✗ hidden from readers and an sr-only state', () => {
     renderCard({
       data: view({ checklist: [{ code: 'A', text: 'Первое', done: true }, { code: 'B', text: 'Второе', done: false }] }),
     })
@@ -91,5 +91,36 @@ describe('CatalogListingCard', () => {
   it('cycle 32: default heading class is the serif title', () => {
     renderCard()
     expect(screen.getByRole('heading', { name: 'Каталог ezbook.ru' })).toHaveClass('font-serif', 'text-xl')
+  })
+
+  it('CY49-F1: marks the unmet item with ✗ and the met one with ✓', () => {
+    renderCard({
+      data: view({ checklist: [{ code: 'A', text: 'Первое', done: true }, { code: 'B', text: 'Второе', done: false }] }),
+    })
+    const checks = screen.getAllByTestId('listing-check')
+    expect(checks[0]).toHaveTextContent('✓')
+    expect(checks[1]).toHaveTextContent('✗')
+    expect(checks[1]).not.toHaveTextContent('○')
+    expect(checks[1]).toHaveTextContent('— не выполнено')
+  })
+
+  it('CY49-F1: prints conditionsText between the status and the checklist, and nothing when it is absent or null', () => {
+    renderCard({ data: view({ conditionsText: 'Нужны все условия.' }) })
+    const cond = screen.getByTestId('listing-conditions')
+    expect(cond).toHaveTextContent('Нужны все условия.')
+    const status = screen.getByTestId('listing-status')
+    const list = screen.getByRole('list')
+    expect(status.compareDocumentPosition(cond) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(cond.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('CY49-F1: no conditions paragraph for null or missing text (shop)', () => {
+    const { unmount } = render(
+      <CatalogListingCard title="t" switchLabel="s" headingId="h1" data={view({ conditionsText: null })} isLoading={false} onRetry={vi.fn()} saving={false} onToggle={vi.fn()} />,
+    )
+    expect(screen.queryByTestId('listing-conditions')).not.toBeInTheDocument()
+    unmount()
+    renderCard()
+    expect(screen.queryByTestId('listing-conditions')).not.toBeInTheDocument()
   })
 })

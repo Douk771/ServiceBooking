@@ -93,6 +93,21 @@ describe('MembersTab — US-62 "provides services" toggle', () => {
     expect(screen.queryByText(/будущие записи/)).not.toBeInTheDocument()
   })
 
+  it('CY49-F2: a successful "provides services" change invalidates the catalog listing of the company', async () => {
+    updateMemberProvidesServices.mockResolvedValue({})
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const spy = vi.spyOn(qc, 'invalidateQueries')
+    render(
+      <QueryClientProvider client={qc}>
+        <MembersTab companyId="co1" />
+      </QueryClientProvider>,
+    )
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Оказывает услуги' }))
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['company-catalog-listing', 'co1'] })),
+    )
+  })
+
   it('shows the server warning and lets the owner confirm turning it off with future bookings', async () => {
     updateMemberProvidesServices
       .mockRejectedValueOnce({

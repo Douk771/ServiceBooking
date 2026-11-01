@@ -8,6 +8,8 @@ export interface CatalogListingView {
   visible: boolean
   statusText: string
   notAllowedByPlanText?: string | null
+  /** Cycle 49: salon only — explains that every condition below must hold. The shop never sends it. */
+  conditionsText?: string | null
   checklist: { code: string; text: string; done: boolean }[]
 }
 
@@ -85,6 +87,11 @@ export function CatalogListingCard({
           <p className="mt-2 text-sm text-ink-soft" role="status" data-testid="listing-status">
             {data.statusText}
           </p>
+          {data.conditionsText && (
+            <p className="mt-2 text-sm text-ink-soft" data-testid="listing-conditions">
+              {data.conditionsText}
+            </p>
+          )}
           {data.checklist.length > 0 && (
             <ul className="mt-3 flex flex-col gap-1.5 text-sm" aria-label="Что нужно для показа в каталоге">
               {data.checklist.map((c) => (
@@ -94,8 +101,8 @@ export function CatalogListingCard({
                   data-testid="listing-check"
                   data-done={c.done ? 'true' : 'false'}
                 >
-                  <span aria-hidden="true" className={c.done ? 'text-success' : 'text-muted'}>
-                    {c.done ? '✓' : '○'}
+                  <span aria-hidden="true" className={c.done ? 'text-success' : 'text-danger'}>
+                    {c.done ? '✓' : '✗'}
                   </span>
                   <span className={c.done ? 'text-ink-soft' : 'text-ink'}>
                     {c.text}

@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
 import { companiesApi } from '../../api/companies'
 import { servicesApi } from '../../api/services'
+import { invalidateSalonCatalogListing } from './salonCatalogListingCache'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
@@ -102,6 +103,7 @@ function ServicesTab({ companyId }: { companyId: string }) {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['services', companyId] })
+      void invalidateSalonCatalogListing(qc, companyId)
       closeForm()
     },
     onError: (err: unknown) =>
@@ -119,6 +121,7 @@ function ServicesTab({ companyId }: { companyId: string }) {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['services', companyId] })
+      void invalidateSalonCatalogListing(qc, companyId)
       closeForm()
     },
     onError: (err: unknown) =>
@@ -130,6 +133,7 @@ function ServicesTab({ companyId }: { companyId: string }) {
     onSuccess: () => {
       setDeleteError('')
       qc.invalidateQueries({ queryKey: ['services', companyId] })
+      void invalidateSalonCatalogListing(qc, companyId)
     },
     onError: (err: unknown) =>
       setDeleteError(getCompanyManageErrorMessage(err, 'Не удалось удалить услугу. Попробуйте снова.')),
@@ -327,6 +331,7 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
       setPendingConfirm(false)
       setProvidesServices(vars.value)
       qc.invalidateQueries({ queryKey: ['company-members', companyId] })
+      void invalidateSalonCatalogListing(qc, companyId)
     },
     onError: (err: unknown) => {
       const { message, needsConfirmation } = getProvidesServicesErrorMessage(err)
@@ -564,6 +569,7 @@ export function MembersTab({ companyId }: { companyId: string }) {
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['company-members', companyId] })
+      void invalidateSalonCatalogListing(qc, companyId)
       setShowAdd(false)
       reset()
     },
@@ -574,6 +580,7 @@ export function MembersTab({ companyId }: { companyId: string }) {
     onSuccess: () => {
       setRemoveError('')
       qc.invalidateQueries({ queryKey: ['company-members', companyId] })
+      void invalidateSalonCatalogListing(qc, companyId)
     },
     onError: (err: unknown) => setRemoveError(getCompanyManageErrorMessage(err, 'Не удалось удалить сотрудника.')),
   })

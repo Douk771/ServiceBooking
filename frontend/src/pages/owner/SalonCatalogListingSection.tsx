@@ -11,7 +11,10 @@ import { getCatalogListingErrorMessage } from '../../utils/catalogListingError'
 export function SalonCatalogListingSection({ companyId }: { companyId: string }) {
   const qc = useQueryClient()
   const key = ['company-catalog-listing', companyId]
-  const q = useQuery({ queryKey: key, queryFn: () => companyCatalogListingApi.get(companyId), retry: false })
+  const q = useQuery({ queryKey: key, queryFn: () => companyCatalogListingApi.get(companyId), retry: false,
+    // Cycle 49 (A49-5): the Services/Members tabs unmount on switch, so re-read on every mount of the block.
+    refetchOnMount: 'always',
+  })
   const save = useMutation({
     mutationFn: (show: boolean) => companyCatalogListingApi.put(companyId, show),
     onSuccess: (dto) => {
