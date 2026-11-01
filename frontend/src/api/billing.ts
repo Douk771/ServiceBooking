@@ -6,6 +6,7 @@ import type { components as Cycle20Schemas } from '../types/api-cycle20.generate
 import type { components as Cycle24Schemas } from '../types/api-cycle24.generated'
 import type { components as Cycle37Schemas } from '../types/api-cycle37.generated'
 import type { components as Cycle40Schemas } from '../types/api-cycle40.generated'
+import type { components as Cycle49Schemas } from '../types/api-cycle49.generated'
 import type { OwnerMessengersBlock } from '../types'
 
 /**
@@ -74,10 +75,17 @@ export type OwnerSubscriptionCycle40Patch = Pick<Cycle40Schemas['schemas']['Owne
 /** Cycle 43 (§43.31): the owner's messengers block. `options[]`/`totalMonthlyPrice` no longer carry WhatsApp / MAX — the block has its own `monthlyTotal`. `null`/absent = nothing to show. */
 export type OwnerSubscriptionCycle43Patch = { messengers?: OwnerMessengersBlock | null }
 
+/** Cycle 49 (API_CONTRACT_CYCLE49 §49.25): for the «Записи» line `availablePlans` is an array (was `null`) and the pending request carries `line`. */
+export type ServicesAvailablePlanDto = Cycle49Schemas['schemas']['ServicesAvailablePlanDto']
+export type OwnerSubscriptionCycle49Patch = {
+  availablePlans?: AvailablePlanDto[] | ServicesAvailablePlanDto[] | null
+  pendingRequest?: (SubscriptionRequestDto & { line?: Cycle49Schemas['schemas']['SubscriptionRequestDto']['line'] }) | null
+}
+
 export const billingApi = {
   /** GET /api/billing/subscription. 404 means the caller owns no company (not an error state). */
-  getSubscription: (line?: BillingLine): Promise<OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch> & OwnerSubscriptionCycle40Patch & OwnerSubscriptionCycle43Patch> => {
-    type Body = OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch> & OwnerSubscriptionCycle40Patch & OwnerSubscriptionCycle43Patch
+  getSubscription: (line?: BillingLine): Promise<OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch> & OwnerSubscriptionCycle40Patch & OwnerSubscriptionCycle43Patch & OwnerSubscriptionCycle49Patch> => {
+    type Body = OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch> & OwnerSubscriptionCycle40Patch & OwnerSubscriptionCycle43Patch & OwnerSubscriptionCycle49Patch
     // ezbook never sends `line` (server default `Services`): that request is exactly the pre-cycle-24 one, no config object.
     const request = line && line !== 'Services' ? api.get<Body>('/billing/subscription', { params: { line } }) : api.get<Body>('/billing/subscription')
     return request.then((r) => r.data)
