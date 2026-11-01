@@ -233,6 +233,52 @@ echo "==> Precheck: cycle 48 reserved addresses (no live shop/house/bath at /con
 check_cycle48_slugs || exit 1
 echo "    OK"
 
+# Cycle 49 (ARCHITECTURE_CYCLE49_LISTING_SUBSCRIPTION.md §49.7, API_CONTRACT_CYCLE49_LISTING_SUBSCRIPTION.md §49.29, DO-49-2): the salon
+# catalog now also requires an active service and a service-providing Master/CompanyOwner. The report of salons that disappear is printed
+# on EVERY rollout. If the new rule hides ALL currently visible salons, the deploy stops until the customer decides and
+# CYCLE49_EMPTY_CATALOG_ACCEPTED=true is set in .env (DEPLOY.md §36). READ-ONLY. Fail-closed: any psql error refuses the deploy.
+check_cycle49_catalog() {
+  local dc=(docker compose -f docker-compose.prod.yml --env-file .env)
+  local report="deploy/checks/cycle49-catalog-report.sql"
+  local stop_sql="deploy/checks/cycle49-catalog-empty.sql"
+
+  if [ -z "$("${dc[@]}" ps --status running -q postgres 2>/dev/null)" ]; then
+    echo "    SKIPPED: postgres service is not running (first deploy)"
+    return 0
+  fi
+
+  echo "    --- cycle49 report for the customer ---"
+  if ! "${dc[@]}" exec -T postgres psql -U postgres -d servicebooking -v ON_ERROR_STOP=1 < "$report"; then
+    echo "ERROR: could not run $report — refusing to deploy (fail-closed)." >&2
+    echo "Nothing has been changed on this host yet — no rollback needed." >&2
+    return 1
+  fi
+  echo "    --- end of report ---"
+
+  local rows
+  if ! rows="$("${dc[@]}" exec -T postgres psql -U postgres -d servicebooking -v ON_ERROR_STOP=1 -At -F ' | ' < "$stop_sql")"; then
+    echo "ERROR: could not run $stop_sql — refusing to deploy (fail-closed)." >&2
+    echo "Nothing has been changed on this host yet — no rollback needed." >&2
+    return 1
+  fi
+
+  if [ -n "$rows" ]; then
+    echo "visible_now | visible_after: $rows"
+    if grep -qE '^CYCLE49_EMPTY_CATALOG_ACCEPTED=true[[:space:]]*$' .env 2>/dev/null; then
+      echo "WARNING: новое правило каталога скрывает все салоны, но CYCLE49_EMPTY_CATALOG_ACCEPTED=true задан в .env — продолжаем." >&2
+      return 0
+    fi
+    echo "ERROR: Новое правило каталога скрывает все салоны — нужно решение заказчика (DEPLOY.md §36)." >&2
+    echo "Nothing has been changed on this host yet — no rollback needed." >&2
+    return 1
+  fi
+  return 0
+}
+
+echo "==> Precheck: cycle 49 salon catalog (report of salons the new rule hides; stop if it hides all)"
+check_cycle49_catalog || exit 1
+echo "    OK"
+
 # Cycle 19 (ARCHITECTURE_CYCLE19.md §385.3, DO-2): cycle 19 retires the "extra employees / extra
 # companies" limit options. A still-live purchase of one would silently lose its extra limit on this
 # release, so the deploy stops until the customer decides (DEPLOY.md "Выкат цикла 19"). READ-ONLY:
