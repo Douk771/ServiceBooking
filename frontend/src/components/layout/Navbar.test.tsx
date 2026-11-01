@@ -8,6 +8,8 @@ import { useAuthStore } from '../../store/authStore'
 
 const navigate = vi.fn()
 const unsubscribeCurrentDeviceOnLogout = vi.fn()
+const getMy = vi.fn()
+vi.mock('../../api/companies', () => ({ companiesApi: { getMy: () => getMy() } }))
 
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>()
@@ -73,5 +75,101 @@ describe('Navbar — logout (§105.5 rubezh 2)', () => {
 
     await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('/'))
     expect(useAuthStore.getState().token).toBeNull()
+  })
+})
+
+// Cycle 49 (API_CONTRACT_CYCLE49 §49.27.1, CY49-F3) — «Подписка» for salon owners.
+describe('Navbar — «Подписка» (cycle 49)', () => {
+  const setUser = (roles: string[] | null) =>
+    useAuthStore.setState(roles ? { user: { id: 'u1', firstName: 'А', lastName: 'Б', roles } as never, token: 't' } : { user: null, token: null })
+
+  function renderAt(path = '/') {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={[path]}>
+          <Navbar />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+  }
+
+  beforeEach(() => {
+    getMy.mockReset().mockResolvedValue([])
+  })
+
+  const matrix: [string, string[] | null, unknown[], boolean][] = [
+    ['guest', null, [], false],
+    ['client', ['Client'], [], false],
+    ['master without a salon', ['Master'], [], false],
+    ['owner of a shop/house/bath only', ['CompanyOwner'], [], false],
+    ['SuperAdmin without a salon', ['SuperAdmin'], [], false],
+    ['salon owner', ['CompanyOwner'], [{ id: 'c1' }], true],
+    ['master of salon A and owner of salon B', ['Master', 'CompanyOwner'], [{ id: 'c1' }], true],
+    ['SuperAdmin with own salon', ['SuperAdmin', 'CompanyOwner'], [{ id: 'c1' }], true],
+  ]
+
+  it.each(matrix)('wide header, %s', async (_n, roles, companies, visible) => {
+    setUser(roles)
+    getMy.mockResolvedValue(companies)
+    renderAt()
+    if (visible) expect(await screen.findByRole('link', { name: 'Подписка' })).toHaveAttribute('href', '/billing')
+    else {
+      await new Promise((r) => setTimeout(r, 20))
+      expect(screen.queryByRole('link', { name: 'Подписка' })).toBeNull()
+    }
+  })
+
+  it.each(matrix)('mobile menu, %s', async (_n, roles, companies, visible) => {
+    setUser(roles)
+    getMy.mockResolvedValue(companies)
+    renderAt()
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть меню' }))
+    const links = () => screen.queryAllByRole('link', { name: 'Подписка' })
+    if (visible) await vi.waitFor(() => expect(links().length).toBeGreaterThan(0))
+    else {
+      await new Promise((r) => setTimeout(r, 20))
+      expect(links()).toHaveLength(0)
+    }
+  })
+
+  it('does not call /companies/my without the CompanyOwner role', async () => {
+    setUser(['Master', 'Client'])
+    renderAt()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(getMy).not.toHaveBeenCalled()
+  })
+
+  it('is hidden while the request fails', async () => {
+    setUser(['CompanyOwner'])
+    getMy.mockRejectedValue(new Error('x'))
+    renderAt()
+    await vi.waitFor(() => expect(getMy).toHaveBeenCalled())
+    expect(screen.queryByRole('link', { name: 'Подписка' })).toBeNull()
+  })
+
+  it('stands right after «Кабинет» and is aria-current on /billing', async () => {
+    setUser(['CompanyOwner'])
+    getMy.mockResolvedValue([{ id: 'c1' }])
+    renderAt('/billing')
+    const sub = await screen.findByRole('link', { name: 'Подписка' })
+    expect(sub).toHaveAttribute('aria-current', 'page')
+    const cab = screen.getByRole('link', { name: 'Кабинет' })
+    expect(cab.compareDocumentPosition(sub) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(cab.nextElementSibling).toBe(sub)
+  })
+
+  it('a click in the mobile menu closes it', async () => {
+    setUser(['CompanyOwner'])
+    getMy.mockResolvedValue([{ id: 'c1' }])
+    renderAt()
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть меню' }))
+    const links = await vi.waitFor(() => {
+      const l = screen.getAllByRole('link', { name: 'Подписка' })
+      expect(l).toHaveLength(2)
+      return l
+    })
+    await userEvent.click(links[1])
+    expect(screen.getByRole('button', { name: 'Открыть меню' })).toBeInTheDocument()
   })
 })

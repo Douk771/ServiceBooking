@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../store/authStore'
 import { clearUserCache } from '../../utils/clearUserCache'
@@ -7,12 +7,14 @@ import { unsubscribeCurrentDeviceOnLogout } from '../../hooks/useWebPush'
 import { Icon } from '../ui/Icon'
 import { PricingNavLink } from '../pricing/PricingNavLink'
 import { zapisPricingLine } from '../pricing/zapisPricingLine'
+import { useOwnsSalon } from '../../hooks/useOwnsSalon'
 
 export function Navbar() {
   const { user, logout, isAuthenticated, hasRole } = useAuthStore()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [menuOpen, setMenuOpen] = useState(false)
+  const ownsSalon = useOwnsSalon()
 
   const closeMenu = () => setMenuOpen(false)
   // Clears every cached query on logout — otherwise, on a shared computer, the next person to log
@@ -65,7 +67,7 @@ export function Navbar() {
         </Link>
 
         {/* Desktop nav */}
-        <div className="hidden md:flex items-center gap-7">
+        <div className="hidden md:flex items-center gap-5 lg:gap-7">
           <PricingNavLink line={zapisPricingLine} className={navLinkClass} />
           {isAuthenticated() ? (
             <>
@@ -81,6 +83,11 @@ export function Navbar() {
                 <Link to="/cabinet" className={navLinkClass}>
                   Кабинет
                 </Link>
+              )}
+              {ownsSalon && (
+                <NavLink to="/billing" className={({ isActive }) => `${navLinkClass}${isActive ? ' text-gold-dark' : ''}`}>
+                  Подписка
+                </NavLink>
               )}
               {isAdmin && (
                 <Link to="/admin" className={navLinkClass}>
@@ -157,6 +164,15 @@ export function Navbar() {
                 <Link to="/cabinet" className={mobileLinkClass} onClick={closeMenu}>
                   Кабинет
                 </Link>
+              )}
+              {ownsSalon && (
+                <NavLink
+                  to="/billing"
+                  onClick={closeMenu}
+                  className={({ isActive }) => `${mobileLinkClass} min-h-[44px]${isActive ? ' text-gold-dark' : ''}`}
+                >
+                  Подписка
+                </NavLink>
               )}
               {isAdmin && (
                 <Link to="/admin" className={mobileLinkClass} onClick={closeMenu}>
