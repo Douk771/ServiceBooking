@@ -125,7 +125,7 @@ public class Cycle42ReminderTests(TestDatabaseFixture fixture) : Cycle39TestBase
         first.Events.Should().Be(1);
         first.Pushes.Should().ContainSingle();
         var push = JsonDocument.Parse(first.Pushes[0].Payload).RootElement;
-        push.GetProperty("title").GetString().Should().Be("EZBOOK Бани");
+        push.GetProperty("title").GetString().Should().Be("ИЗИБУК Бани");
         push.GetProperty("body").GetString().Should().Be("Скоро ваш сеанс — откройте бронь");
         push.GetProperty("url").GetString().Should().Be($"/s/{token}");
         push.GetProperty("body").GetString().Should().NotContain("Анна").And.NotContain("http");

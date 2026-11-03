@@ -17,8 +17,8 @@ const TARGETS = [
   { dir: 'dist-bani', site: 'bani', noindex: true },
 ]
 const PAGES = [
-  { key: 'contacts', dir: 'contacts', title: 'Контакты и реквизиты — EZBOOK' },
-  { key: 'paymentInfo', dir: 'payment-info', title: 'Оплата и возврат — EZBOOK' },
+  { key: 'contacts', dir: 'contacts', title: 'Контакты и реквизиты — ИЗИБУК' },
+  { key: 'paymentInfo', dir: 'payment-info', title: 'Оплата и возврат — ИЗИБУК' },
 ]
 
 function fail(reason) {

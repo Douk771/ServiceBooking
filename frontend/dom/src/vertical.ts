@@ -45,8 +45,8 @@ export const staysVertical: SlotVertical = {
     fetchText: (key) => stayLegalTextsApi.get(key as StayTextKey),
   },
   words: {
-    brandTitle: 'ezbook · Дома',
-    brandName: 'ezbook Дома',
+    brandTitle: 'изибук · Дома',
+    brandName: 'изибук Дома',
     chooseResource: 'Выбрать дом',
     notOrderingFallback: 'Можно добавить к брони дома',
     servicesEmptyText: 'Добавьте первую: название, потом расписание, цены и правила. Опубликованную услугу можно будет добавлять к броням домов.',

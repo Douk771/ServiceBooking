@@ -12,7 +12,7 @@ export function GoodsFooter() {
       <div className="max-w-[1180px] mx-auto px-4 sm:px-8 py-6 flex flex-col items-center gap-3 text-xs text-ink-soft">
         <OperatorRequisitesLine linkMode="router" site="goods" />
         <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
-          <span>© {new Date().getFullYear()} ezbook · Заказы</span>
+          <span>© {new Date().getFullYear()} изибук · Заказы</span>
           <Link to="/privacy" className="hover:text-ink transition-colors">
             Политика обработки персональных данных
           </Link>

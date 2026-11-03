@@ -43,7 +43,7 @@ export function HousePage() {
   const house = query.data
 
   useEffect(() => {
-    if (house) document.title = `${house.name} — ${house.company.name} · ezbook Дома`
+    if (house) document.title = `${house.name} — ${house.company.name} · изибук Дома`
   }, [house])
 
   const initial = useMemo(() => {

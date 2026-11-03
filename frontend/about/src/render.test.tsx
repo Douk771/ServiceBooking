@@ -47,7 +47,7 @@ describe('CY44-02 renderSite', () => {
     expect(report.hiddenHosts).toEqual(['bani.ezbook.ru'])
     for (const host of report.hiddenHosts) expect(html).not.toContain(host)
     expect(html).not.toContain('#product-bani')
-    expect(html).not.toContain('EZBOOK Бани')
+    expect(html).not.toContain('ИЗИБУК Бани')
   })
 
   it('testing card: badge text, no business action and no call to join', () => {
@@ -70,7 +70,7 @@ describe('CY44-02 renderSite', () => {
   it('all hidden except one: the hidden ones are in no place (cards, nav, footer, chooser, hosts)', () => {
     const html = renderSite({ ...base, products: withStatuses({ zapis: 'hidden', goods: 'live', dom: 'hidden', bani: 'hidden' }) }).files['index.html']
     expect(cards(html)).toEqual(['goods'])
-    for (const hidden of ['zapis.', 'EZBOOK Запись', 'EZBOOK Дома', 'EZBOOK Бани', 'dom.ezbook.ru', 'bani.ezbook.ru', 'demo.visit.ezbook.ru', '#product-zapis', '#product-dom']) {
+    for (const hidden of ['zapis.', 'ИЗИБУК Запись', 'ИЗИБУК Дома', 'ИЗИБУК Бани', 'dom.ezbook.ru', 'bani.ezbook.ru', 'demo.visit.ezbook.ru', '#product-zapis', '#product-dom']) {
       expect(html, hidden).not.toContain(hidden)
     }
   })
@@ -86,7 +86,7 @@ describe('CY44-02 renderSite', () => {
     expect(links.length).toBe(10)
     for (const a of links) {
       expect(a).not.toMatch(/\starget=/)
-      expect(a).toMatch(/<span class="sr-only"> — EZBOOK [А-Яа-я]+<\/span><\/a>$/)
+      expect(a).toMatch(/<span class="sr-only"> — ИЗИБУК [А-Яа-я]+<\/span><\/a>$/)
       expect(a).toContain('min-h-[44px]')
     }
   })
@@ -142,7 +142,7 @@ describe('CY44-02 renderSite', () => {
     const nf = files['404.html']
     expect(nf).toContain('<meta name="robots" content="noindex"/>')
     expect(nf).not.toContain('rel="canonical"')
-    expect(nf).toContain('<title>Страница не найдена — EZBOOK</title>')
+    expect(nf).toContain('<title>Страница не найдена — ИЗИБУК</title>')
     expect(nf).toContain('href="/"')
     expect(nf).not.toContain('<script')
     expect((nf.match(/<h1[\s>]/g) ?? []).length).toBe(1)

@@ -18,7 +18,7 @@ export const bathsVertical: SlotVertical & {
   pushSite: PushSite
 } = {
   kind: 'Baths',
-  brand: 'EZBOOK Бани',
+  brand: 'ИЗИБУК Бани',
   appName: 'Бани',
   pushSite: 'Baths' as PushSite,
   api: createSlotApi('/baths'),
@@ -51,8 +51,8 @@ export const bathsVertical: SlotVertical & {
     // fetchText omitted: the shared reader of `GET /api/legal/texts/{key}`
   },
   words: {
-    brandTitle: 'EZBOOK Бани',
-    brandName: 'EZBOOK Бани',
+    brandTitle: 'ИЗИБУК Бани',
+    brandName: 'ИЗИБУК Бани',
     chooseResource: 'Выбрать баню',
     notOrderingFallback: 'Бронируется вместе с баней',
     servicesEmptyText: 'Добавьте первую баню: название, вместимость, расписание, цены и правила. Опубликованная баня появится в каталоге.',

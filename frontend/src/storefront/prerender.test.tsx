@@ -39,8 +39,8 @@ describe.each(SITES)('renderNoscript(%s)', (site) => {
 
 describe.each(SITES)('renderPage(%s)', (site) => {
   it.each([
-    ['contacts', 'Контакты и реквизиты — EZBOOK'],
-    ['paymentInfo', 'Оплата и возврат — EZBOOK'],
+    ['contacts', 'Контакты и реквизиты — ИЗИБУК'],
+    ['paymentInfo', 'Оплата и возврат — ИЗИБУК'],
   ] as const)('%s: title, one h1, INN, nothing unfilled', (page, title) => {
     const result = renderPage(site, page)
     expect(result.title).toBe(title)

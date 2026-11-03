@@ -8,7 +8,7 @@ describeWorkerRouting({ name: 'bani', source: baniWorker, origin: 'https://bani.
 
 describe('bani worker: defaults of the «Бани» pushes', () => {
   it('has the one spelling of the brand and no order wording', () => {
-    expect(baniWorker).toContain("'EZBOOK Бани'")
+    expect(baniWorker).toContain("'ИЗИБУК Бани'")
     expect(baniWorker).not.toContain('ezbook · Бани')
     expect(baniWorker).not.toMatch(/Новый заказ/)
   })

@@ -59,7 +59,7 @@ public class StaffMaxTextsTests
     [Fact]
     public void BotReplies_AreTheContractTexts()
     {
-        StaffMaxTexts.AlreadyLinked.Should().Be("Этот чат уже подключён к заказам ezbook.");
+        StaffMaxTexts.AlreadyLinked.Should().Be("Этот чат уже подключён к заказам изибук.");
         StaffMaxTexts.LinkExpired.Should().StartWith("Ссылка устарела.");
         StaffMaxTexts.Disabled.Should().Be("Сообщения о заказах в MAX пока не включены.");
         StaffMaxTexts.NoShops.Should().Be("Вы больше не состоите ни в одном магазине — подключать нечего.");

@@ -13,7 +13,7 @@ public class ServiceWordingStaysBytesTests
     [Fact]
     public void Fixed_strings_are_the_old_ones()
     {
-        W.GuestPushTitle.Should().Be("ezbook · Дома");
+        W.GuestPushTitle.Should().Be("изибук · Дома");
         W.RefundTerminal.Should().Be("Заказ уже завершён — отменять нечего");
         W.OrderAlreadyCancelled.Should().Be("Заказ уже отменён");
         W.ServiceOrderDone.Should().Be("Заказ завершён — уведомления не нужны");

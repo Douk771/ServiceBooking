@@ -37,7 +37,7 @@ describe('goods PricingPage (T38-14)', () => {
     await screen.findByRole('heading', { level: 3, name: 'Лавка' })
     const names = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)
     expect(names).toEqual(['Бесплатный', 'Лавка', 'Магазин', 'Сеть магазинов'])
-    expect(document.title).toBe('Тарифы и цены — EZBOOK Заказы')
+    expect(document.title).toBe('Тарифы и цены — ИЗИБУК Заказы')
   })
   it('404 shows the not-published notice', async () => {
     get.mockResolvedValue(null)

@@ -56,7 +56,7 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('push', (event) => {
-  let data = { title: 'EZBOOK Бани', body: '', tag: undefined, url: '/cabinet' }
+  let data = { title: 'ИЗИБУК Бани', body: '', tag: undefined, url: '/cabinet' }
   try {
     if (event.data) data = { ...data, ...event.data.json() }
   } catch {
@@ -64,7 +64,7 @@ self.addEventListener('push', (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'EZBOOK Бани', {
+    self.registration.showNotification(data.title || 'ИЗИБУК Бани', {
       body: data.body || '',
       // `tag` collapses repeats for the same booking (`s-<bookingId>` staff, `sg-<bookingId>` guest) into one notification.
       tag: data.tag,

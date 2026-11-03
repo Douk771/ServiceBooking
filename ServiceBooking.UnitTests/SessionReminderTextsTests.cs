@@ -31,7 +31,7 @@ public class SessionReminderTextsTests
     public void Guest_push_is_signed_ezbook_bani_and_has_no_personal_data()
     {
         var push = ServiceNotificationTexts.GuestPush(NotificationType.ServiceGuestSessionReminder, Guid.NewGuid(), "/s/tok", forOrder: true, ServiceWording.Baths);
-        push.Title.Should().Be("EZBOOK Бани");
+        push.Title.Should().Be("ИЗИБУК Бани");
         push.Body.Should().Be("Скоро ваш сеанс — откройте бронь");
         push.Url.Should().Be("/s/tok");
     }

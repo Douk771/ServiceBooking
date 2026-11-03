@@ -7,7 +7,7 @@ export function PricingPage() {
     <PricingPageBody
       line={zapisPricingLine}
       site="zapis"
-      documentTitle="Тарифы и цены — EZBOOK"
+      documentTitle="Тарифы и цены — ИЗИБУК"
       cta={{ kind: 'auth-route', guestTo: '/register', authedTo: '/register', label: 'Зарегистрировать компанию' }}
       // Кнопки карточек: гость — регистрация (как нижний CTA); вошедший владелец — «Ваша подписка» (/billing, там заявка на тариф),
       // остальные вошедшие — /cabinet (без компании он сам ведёт на /cabinet/new). Выбранный тариф не передаётся: /billing параметра не читает.

@@ -61,7 +61,7 @@ export function OrderPage() {
   useEffect(() => {
     if (order) document.title = `Заказ № ${order.number} — ${order.shop.name}`
     return () => {
-      document.title = 'ezbook · Заказы'
+      document.title = 'изибук · Заказы'
     }
   }, [order])
 

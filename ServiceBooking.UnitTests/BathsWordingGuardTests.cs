@@ -58,7 +58,7 @@ public class BathsWordingGuardTests
     [Fact]
     public void Title_and_time_mark_follow_the_decisions()
     {
-        W.GuestPushTitle.Should().Be("EZBOOK Бани");
+        W.GuestPushTitle.Should().Be("ИЗИБУК Бани");
         W.GuestTimeSuffix("Барнаул").Should().Be(" (время местное)");
     }
 

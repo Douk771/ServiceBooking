@@ -62,7 +62,7 @@ export function BillingPage({ line = 'Services', notificationsHref = defaultNoti
   })
 
   useEffect(() => {
-    document.title = isBaths ? 'Ваша подписка — EZBOOK Бани' : isStays ? 'Ваша подписка — ezbook · Дома' : isOrders ? 'Ваша подписка — ezbook · Заказы' : 'Ваша подписка — ezbook · Записи'
+    document.title = isBaths ? 'Ваша подписка — ИЗИБУК Бани' : isStays ? 'Ваша подписка — изибук · Дома' : isOrders ? 'Ваша подписка — изибук · Заказы' : 'Ваша подписка — изибук · Записи'
   }, [isOrders, isStays, isBaths])
 
   // Cycle 24 (L14): a plan of the «Заказы» line (cycle 37: «Дома») is requested straight from `availablePlans`.

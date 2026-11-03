@@ -69,10 +69,10 @@ describe('stay landing guard (T41-03)', () => {
     expect(all).not.toMatch(/Шерегеш|город/iu)
   })
 
-  it('brand is EZBOOK Дома, never «ezbook ·»', () => {
+  it('brand is ИЗИБУК Дома, never «ezbook ·»', () => {
     expect(all).not.toMatch(/ezbook ·/i)
-    expect(JSON.stringify({ ...stayLanding, faq: null }).match(/EZBOOK Дома/g)).toBeNull()
-    expect(JSON.stringify(stayFaq).match(/EZBOOK Дома/g)).toHaveLength(1)
+    expect(JSON.stringify({ ...stayLanding, faq: null }).match(/ИЗИБУК Дома/g)).toBeNull()
+    expect(JSON.stringify(stayFaq).match(/ИЗИБУК Дома/g)).toHaveLength(1)
   })
 
   it('owner buttons go to the registration / cabinet', () => {

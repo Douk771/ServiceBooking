@@ -92,7 +92,7 @@ export function OrdersScreenPage() {
   useEffect(() => {
     document.title = boardTitle(attention, shop.name)
     return () => {
-      document.title = 'ezbook · Заказы'
+      document.title = 'изибук · Заказы'
     }
   }, [attention, shop.name])
 

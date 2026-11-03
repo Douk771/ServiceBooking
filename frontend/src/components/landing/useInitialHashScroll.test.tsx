@@ -7,14 +7,14 @@ function Probe() {
   return (
     <>
       <section id="biz-title">Для бизнеса</section>
-      <section id="companies">Салоны на EZBOOK</section>
+      <section id="companies">Салоны на ИЗИБУК</section>
     </>
   )
 }
 
 function LateProbe({ show }: { show: boolean }) {
   useInitialHashScroll()
-  return show ? <section id="companies">Салоны на EZBOOK</section> : null
+  return show ? <section id="companies">Салоны на ИЗИБУК</section> : null
 }
 
 /** jsdom has no layout and no ResizeObserver: the test drives both — the target's top and the «page resized» callback. */

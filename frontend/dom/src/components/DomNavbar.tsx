@@ -5,7 +5,7 @@ import { useAuthStore } from '@/store/authStore'
 import { unsubscribeCurrentDeviceOnLogout } from '@/hooks/useWebPush'
 import { Icon } from '@/components/ui/Icon'
 
-/** «ezbook · Дома» (SPEC US-37-02). Signed-in: «Мои брони», «Кабинет», профиль, выход. */
+/** «изибук · Дома» (SPEC US-37-02). Signed-in: «Мои брони», «Кабинет», профиль, выход. */
 export function DomNavbar() {
   const { user, logout, isAuthenticated } = useAuthStore()
   const navigate = useNavigate()
@@ -33,12 +33,12 @@ export function DomNavbar() {
   return (
     <nav className="sticky top-0 z-40 bg-cream/90 backdrop-blur-md border-b border-line">
       <div className="max-w-[1180px] mx-auto px-4 sm:px-8 h-[68px] flex items-center justify-between">
-        <Link to="/" onClick={closeMenu} className="flex items-center gap-3 shrink-0" aria-label="ezbook · Дома">
+        <Link to="/" onClick={closeMenu} className="flex items-center gap-3 shrink-0" aria-label="изибук · Дома">
           <span className="w-[38px] h-[38px] rounded-full bg-ink flex items-center justify-center shrink-0">
             <Icon name="home" size={18} className="text-cream" strokeWidth={1.6} />
           </span>
           <span className="flex items-center gap-2.5">
-            <span className="font-serif text-[22px] text-ink leading-none">ezbook</span>
+            <span className="font-serif text-[22px] text-ink leading-none">изибук</span>
             <span className="text-line-strong leading-none" aria-hidden="true">
               ·
             </span>

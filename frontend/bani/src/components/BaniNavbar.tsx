@@ -6,7 +6,7 @@ import { unsubscribeCurrentDeviceOnLogout } from '@/hooks/useWebPush'
 import { Icon } from '@/components/ui/Icon'
 import { bathsVertical } from '../vertical'
 
-/** «EZBOOK Бани». Signed-in: «Мои брони», «Кабинет», профиль, выход. */
+/** «ИЗИБУК Бани». Signed-in: «Мои брони», «Кабинет», профиль, выход. */
 export function BaniNavbar() {
   const { user, logout, isAuthenticated } = useAuthStore()
   const navigate = useNavigate()
@@ -38,7 +38,7 @@ export function BaniNavbar() {
             <Icon name="home" size={18} className="text-cream" strokeWidth={1.6} />
           </span>
           <span className="flex items-baseline gap-2">
-            <span className="font-serif text-[22px] text-ink leading-none uppercase tracking-wide">ezbook</span>
+            <span className="font-serif text-[22px] text-ink leading-none uppercase tracking-wide">изибук</span>
             <span className="text-[13px] font-semibold tracking-wide uppercase text-gold-dark leading-none">Бани</span>
           </span>
         </Link>

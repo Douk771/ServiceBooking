@@ -19,9 +19,9 @@ export const zapisLanding: BusinessFirstLandingConfig = {
     intro:
       'Клиент сам выбирает услугу, мастера и свободное время, а запись сразу появляется в расписании. Не нужно отвечать на звонки и сверять тетрадь с мессенджерами.',
     primaryAction: { kind: 'auth-route', guestTo: '/register?returnTo=%2Fcabinet%2Fnew', authedTo: '/cabinet/new', label: 'Подключить салон' },
-    clientLink: { lead: 'Ищете, куда записаться?', action: { kind: 'anchor', href: '#companies', label: 'Салоны на EZBOOK' } },
+    clientLink: { lead: 'Ищете, куда записаться?', action: { kind: 'anchor', href: '#companies', label: 'Салоны на ИЗИБУК' } },
   },
-  catalog: { id: 'companies', ariaLabel: 'Салоны на EZBOOK' },
+  catalog: { id: 'companies', ariaLabel: 'Салоны на ИЗИБУК' },
   business: {
     eyebrow: 'Для салона',
     title: 'Все записи и расписание мастеров — в одном месте',
@@ -32,7 +32,7 @@ export const zapisLanding: BusinessFirstLandingConfig = {
       { kind: 'route', to: '/cabinet', label: 'Войти в кабинет' },
     ],
     benefits: [
-      'Страница салона с онлайн-записью и место в каталоге EZBOOK.',
+      'Страница салона с онлайн-записью и место в каталоге ИЗИБУК.',
       'Расписание мастеров по датам и шаблоны рабочей недели.',
       'Перенос и отмена записи клиентом — по вашим правилам.',
       'База клиентов с заметками и фото.',
@@ -66,7 +66,7 @@ export const zapisLanding: BusinessFirstLandingConfig = {
         'Получить напоминание накануне визита.',
         'Оставить отзыв после визита.',
       ],
-      note: 'Оплата — в салоне, EZBOOK деньги клиентов не принимает.',
+      note: 'Оплата — в салоне, ИЗИБУК деньги клиентов не принимает.',
     },
     screenshot: bookingFlowCarousel,
   },

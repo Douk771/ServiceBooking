@@ -49,7 +49,7 @@ export function testVertical(api: { publicServices?: object; orders?: object }):
       },
       fetchText: () => Promise.reject(new Error('no server text in tests')),
     },
-    words: { brandTitle: 'EZBOOK Бани', brandName: 'EZBOOK Бани', chooseResource: 'Выбрать баню', notOrderingFallback: '', servicesEmptyText: '', stayBookingLabel: '' },
+    words: { brandTitle: 'ИЗИБУК Бани', brandName: 'ИЗИБУК Бани', chooseResource: 'Выбрать баню', notOrderingFallback: '', servicesEmptyText: '', stayBookingLabel: '' },
     features: { stayMode: false, capacity: true, houseBookingsToggle: false, photoPeopleNotice: true },
     NotFound: ({ title }) => <p>{title ?? 'Не найдено'}</p>,
     useCabinetCompany: () => ({ company: { id: 'c', myPermissions: [] }, refresh: () => undefined }),

@@ -138,7 +138,7 @@ describe('HomePage — единый шаблон (T38-10)', () => {
     await screen.findByText(LONG)
     const frame = container.querySelector('#companies') as HTMLElement
     expect(frame.contains(screen.getByText(LONG))).toBe(true)
-    expect(screen.getByRole('link', { name: 'Салоны на EZBOOK' })).toHaveAttribute('href', '#companies')
+    expect(screen.getByRole('link', { name: 'Салоны на ИЗИБУК' })).toHaveAttribute('href', '#companies')
     expect(screen.queryByRole('link', { name: 'Как записываются клиенты' })).toBeNull()
     expect(container.querySelector('footer')).toBeNull()
     expect(container.querySelectorAll('h1')).toHaveLength(1)

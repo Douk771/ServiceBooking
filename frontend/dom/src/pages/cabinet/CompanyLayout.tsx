@@ -39,9 +39,9 @@ export function CompanyLayout() {
   const refresh = useCallback(() => void qc.invalidateQueries({ queryKey: companyKey(companyId) }), [qc, companyId])
 
   useEffect(() => {
-    if (company) document.title = `${company.name} — кабинет · ezbook Дома`
+    if (company) document.title = `${company.name} — кабинет · изибук Дома`
     return () => {
-      document.title = 'ezbook · Дома'
+      document.title = 'изибук · Дома'
     }
   }, [company])
 

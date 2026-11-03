@@ -47,10 +47,10 @@ describe('DemoBanner (API_CONTRACT_CYCLE28.md §600, L28-3)', () => {
       key: 'DemoBanner',
       version: 'v1',
       isDraft: false,
-      contentHtml: '<p>Это демо-стенд EZBOOK.</p>',
+      contentHtml: '<p>Это демо-стенд ИЗИБУК.</p>',
     })
     renderWithProviders(<DemoBanner compact />)
-    await waitFor(() => expect(screen.getByTestId('demo-banner')).toHaveTextContent('Это демо-стенд EZBOOK.'))
+    await waitFor(() => expect(screen.getByTestId('demo-banner')).toHaveTextContent('Это демо-стенд ИЗИБУК.'))
   })
 })
 

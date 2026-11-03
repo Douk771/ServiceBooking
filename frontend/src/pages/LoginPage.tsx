@@ -76,7 +76,7 @@ export function LoginPage() {
           <span className="w-[38px] h-[38px] rounded-full bg-ink flex items-center justify-center shrink-0">
             <Icon name="calendar" size={18} className="text-cream" strokeWidth={1.6} />
           </span>
-          <span className="font-serif text-xl text-ink">EZBOOK</span>
+          <span className="font-serif text-xl text-ink">ИЗИБУК</span>
         </Link>
 
         <div className="bg-white border border-line rounded-3xl p-11 shadow-soft">

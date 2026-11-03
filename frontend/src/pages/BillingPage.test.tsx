@@ -300,7 +300,7 @@ describe('BillingPage — line Baths (cycle 42)', () => {
     expect(getSubscription).toHaveBeenCalledWith('Baths')
     expect(screen.getByTestId('baths-usage')).toHaveTextContent('Опубликовано ресурсов: 4 из 3')
     expect(screen.getByText('Тариф действует на все ваши бани сразу; он ограничивает число опубликованных ресурсов.')).toBeInTheDocument()
-    expect(document.title).toBe('Ваша подписка — EZBOOK Бани')
+    expect(document.title).toBe('Ваша подписка — ИЗИБУК Бани')
   })
 
   it('requests a plan of the Baths line', async () => {
@@ -373,7 +373,7 @@ describe('BillingPage — cycle 49: «Записи» plans', () => {
     expect(within(block).queryByRole('button', { name: 'Запросить тариф «Салон»' })).toBeNull()
     expect(within(block).getByRole('button', { name: 'Запросить тариф «Сеть»' })).toBeInTheDocument()
     expect(within(block).getByText('до 1 точки · до 5 сотрудников')).toBeInTheDocument()
-    expect(document.title).toBe('Ваша подписка — ezbook · Записи')
+    expect(document.title).toBe('Ваша подписка — изибук · Записи')
   })
 
   it('an expired plan is not «current» and can be requested again', async () => {

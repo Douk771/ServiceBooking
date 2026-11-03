@@ -4,12 +4,12 @@ import indexHtml from '../index.html?raw'
 import manifest from '../public/manifest.webmanifest?raw'
 import { bathsVertical } from './vertical'
 
-// Q42-7: the brand is «EZBOOK Бани» in one spelling everywhere (header, footer, manifest, <title>, push).
+// Q42-7: the brand is «ИЗИБУК Бани» in one spelling everywhere (header, footer, manifest, <title>, push).
 describe('bani brand', () => {
   it('is spelled once: vertical, <title>, manifest name', () => {
-    expect(bathsVertical.brand).toBe('EZBOOK Бани')
-    expect(indexHtml).toContain('<title>EZBOOK Бани</title>')
-    expect(JSON.parse(manifest).name).toBe('EZBOOK Бани')
+    expect(bathsVertical.brand).toBe('ИЗИБУК Бани')
+    expect(indexHtml).toContain('<title>ИЗИБУК Бани</title>')
+    expect(JSON.parse(manifest).name).toBe('ИЗИБУК Бани')
   })
 
   it('has no old «ezbook · Бани» spelling', () => {

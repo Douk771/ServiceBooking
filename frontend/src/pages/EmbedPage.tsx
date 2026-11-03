@@ -132,7 +132,7 @@ export function EmbedPage() {
       <p className="text-center text-xs text-muted mt-6">
         Powered by{' '}
         <a href="/" className="hover:text-muted transition-colors">
-          EZBOOK
+          ИЗИБУК
         </a>
         {' · '}
         <a href="/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-muted transition-colors">

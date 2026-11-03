@@ -57,7 +57,7 @@ export function ZapisCompanyCatalog() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-baseline sm:justify-between mb-6 md:mb-10">
         <div>
           <h2 className="font-serif text-[32px] font-medium mb-2 text-ink">
-            Салоны на EZBOOK
+            Салоны на ИЗИБУК
           </h2>
           <p className="text-[15px] text-ink-soft">
             Выберите салон и запишитесь онлайн

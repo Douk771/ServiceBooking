@@ -40,7 +40,7 @@ export function CompanyPage() {
   const company = query.data
 
   useEffect(() => {
-    if (company) document.title = `${company.name} — ezbook · Дома`
+    if (company) document.title = `${company.name} — изибук · Дома`
   }, [company])
 
   if (query.isLoading) {

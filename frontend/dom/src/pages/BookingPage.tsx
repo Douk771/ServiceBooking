@@ -73,7 +73,7 @@ export function BookingPage() {
   useEffect(() => {
     if (booking) document.title = `Бронь — ${booking.house.name}`
     return () => {
-      document.title = 'ezbook · Дома'
+      document.title = 'изибук · Дома'
     }
   }, [booking])
 

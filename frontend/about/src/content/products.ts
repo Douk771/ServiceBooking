@@ -9,7 +9,7 @@ import type { ProductCard } from './types'
 export const PRODUCTS: readonly ProductCard[] = [
   {
     key: 'zapis',
-    name: 'EZBOOK Запись',
+    name: 'ИЗИБУК Запись',
     status: 'live',
     icon: 'scissors',
     forWhom: 'Салоны, барбершопы, студии и частные мастера',
@@ -27,7 +27,7 @@ export const PRODUCTS: readonly ProductCard[] = [
   },
   {
     key: 'goods',
-    name: 'EZBOOK Заказы',
+    name: 'ИЗИБУК Заказы',
     status: 'live',
     icon: 'shopping-bag',
     forWhom: 'Магазины, кафе, столовые и пекарни с самовывозом',
@@ -45,7 +45,7 @@ export const PRODUCTS: readonly ProductCard[] = [
   },
   {
     key: 'dom',
-    name: 'EZBOOK Дома',
+    name: 'ИЗИБУК Дома',
     status: 'live',
     icon: 'home',
     forWhom: 'Владельцы домов и гостевых домов, посуточная аренда',
@@ -61,7 +61,7 @@ export const PRODUCTS: readonly ProductCard[] = [
   },
   {
     key: 'bani',
-    name: 'EZBOOK Бани',
+    name: 'ИЗИБУК Бани',
     status: 'live',
     icon: 'clock',
     forWhom: 'Бани и сауны с почасовой записью',

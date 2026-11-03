@@ -34,9 +34,9 @@ export function CompanyLayout() {
   useBookingsRevision(companyId, !!company && can(company.myPermissions, 'ViewBookings'))
 
   useEffect(() => {
-    if (company) document.title = `${company.name} — кабинет · EZBOOK Бани`
+    if (company) document.title = `${company.name} — кабинет · ИЗИБУК Бани`
     return () => {
-      document.title = 'EZBOOK Бани'
+      document.title = 'ИЗИБУК Бани'
     }
   }, [company])
 

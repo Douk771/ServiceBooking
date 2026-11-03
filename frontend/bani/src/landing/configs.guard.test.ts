@@ -78,8 +78,8 @@ describe('bani landing guard', () => {
     expect(baniLanding.hero.layout).toBe('panel')
     expect(baniLanding.hero.backdrop).toBe('none')
     expect(baniLanding.hero.facts).toHaveLength(3)
-    expect(JSON.stringify({ ...baniLanding, faq: null }).match(/EZBOOK Бани/g)).toBeNull()
-    expect(JSON.stringify(baniFaq).match(/EZBOOK Бани/g)).toHaveLength(1)
+    expect(JSON.stringify({ ...baniLanding, faq: null }).match(/ИЗИБУК Бани/g)).toBeNull()
+    expect(JSON.stringify(baniFaq).match(/ИЗИБУК Бани/g)).toHaveLength(1)
     expect(all).not.toMatch(/ezbook ·/i)
   })
 

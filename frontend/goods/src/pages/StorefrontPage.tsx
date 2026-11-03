@@ -116,7 +116,7 @@ export function StorefrontPage() {
   useEffect(() => {
     if (shop) document.title = `${shop.name} — заказ онлайн`
     return () => {
-      document.title = 'ezbook · Заказы'
+      document.title = 'изибук · Заказы'
     }
   }, [shop])
 

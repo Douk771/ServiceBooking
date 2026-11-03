@@ -23,7 +23,7 @@ describe('CY44-05 ProductsPageLink', () => {
     vi.stubEnv('DEV', false)
     vi.stubEnv('VITE_PRODUCTS_PAGE_LINK', 'on')
     render(<ProductsPageLink />)
-    const a = screen.getByRole('link', { name: 'Все продукты EZBOOK' })
+    const a = screen.getByRole('link', { name: 'Все продукты ИЗИБУК' })
     expect(a).toHaveAttribute('href', 'https://about.ezbook.ru/')
     expect(a).not.toHaveAttribute('target')
   })

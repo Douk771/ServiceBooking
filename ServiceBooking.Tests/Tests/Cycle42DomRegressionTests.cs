@@ -270,7 +270,7 @@ public class Cycle42DomRegressionTests(TestDatabaseFixture fixture) : Cycle42Tes
         var cancel = (await WithDbAsync(db => db.StaffPushNotifications.AsNoTracking().Where(n => n.StayServiceOrderId == orderId && n.Type == NotificationType.StaffServiceSessionCancelledByGuest).ToListAsync())).Single();
         Regex.IsMatch(JsonDocument.Parse(cancel.Payload).RootElement.GetProperty("body").GetString()!, @"^Гость отменил сеанс · Баня, " + StaffTime + "$").Should().BeTrue();
 
-        // гостю: заголовок «ezbook · Дома», «заказа» (не «брони»), ссылка относительная
+        // гостю: заголовок «изибук · Дома», «заказа» (не «брони»), ссылка относительная
         var other = await OrderOkAsync(svc.Id, InDays(11), 720, 2, client: host.Client(), phone: UniquePhone());
         (await host.Client().PostJsonAsync($"/api/stays/service-orders/public/{other.Token}/push-subscription",
             new PushSubscriptionInput($"https://push.example.test/cy42-dom-guest/{Guid.NewGuid():N}", new PushKeysInput("k1", "k2"), null))).StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -282,7 +282,7 @@ public class Cycle42DomRegressionTests(TestDatabaseFixture fixture) : Cycle42Tes
         var guestRow = (await WithDbAsync(db => db.StayGuestPushNotifications.AsNoTracking().Where(n => n.StayServiceOrderId == (db.StayServiceOrders.Where(x => x.PublicToken == other.Token).Select(x => x.Id).First())).ToListAsync()))
             .Single(n => n.Type == NotificationType.ServiceGuestConfirmed);
         var gp = JsonDocument.Parse(guestRow.Payload).RootElement;
-        gp.GetProperty("title").GetString().Should().Be("ezbook · Дома");
+        gp.GetProperty("title").GetString().Should().Be("изибук · Дома");
         gp.GetProperty("body").GetString().Should().Be("Статус вашего заказа изменился");
         gp.GetProperty("url").GetString().Should().Be($"/s/{other.Token}");
     }

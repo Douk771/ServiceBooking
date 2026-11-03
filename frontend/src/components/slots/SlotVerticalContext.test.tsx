@@ -34,7 +34,7 @@ const vertical = (over: Partial<SlotVertical> = {}): SlotVertical => ({
     fallbacks: { BathBookingNotice: { short: '<p>Запасной текст бань</p>', full: null } },
     fetchText: () => Promise.reject(new Error('404')),
   },
-  words: { brandTitle: 'EZBOOK Бани', brandName: 'EZBOOK Бани', chooseResource: 'К комплексу', notOrderingFallback: '', servicesEmptyText: '', stayBookingLabel: '' },
+  words: { brandTitle: 'ИЗИБУК Бани', brandName: 'ИЗИБУК Бани', chooseResource: 'К комплексу', notOrderingFallback: '', servicesEmptyText: '', stayBookingLabel: '' },
   features: { stayMode: false, capacity: true, houseBookingsToggle: false, photoPeopleNotice: true },
   NotFound: () => null,
   useCabinetCompany: () => ({ company: { id: 'c1', myPermissions: [] }, refresh: () => undefined }),
@@ -55,7 +55,7 @@ describe('SlotVerticalProvider', () => {
   it('gives the screen the words of its vertical, also through inVertical', () => {
     const Wrapped = inVertical(vertical(), Probe)
     render(<Wrapped />)
-    expect(screen.getByText('EZBOOK Бани')).toBeInTheDocument()
+    expect(screen.getByText('ИЗИБУК Бани')).toBeInTheDocument()
   })
 })
 

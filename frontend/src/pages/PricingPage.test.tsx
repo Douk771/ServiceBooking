@@ -147,10 +147,10 @@ describe('PricingPage — states', () => {
     expect(await screen.findByRole('button', { name: 'Попробовать снова' })).toBeInTheDocument()
   })
 
-  it('the tab title names the product EZBOOK, not the internal project name', async () => {
+  it('the tab title names the product ИЗИБУК, not the internal project name', async () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: 'Студия' })
-    expect(document.title).toBe('Тарифы и цены — EZBOOK')
+    expect(document.title).toBe('Тарифы и цены — ИЗИБУК')
   })
 })
 

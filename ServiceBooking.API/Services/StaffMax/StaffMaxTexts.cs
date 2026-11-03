@@ -22,7 +22,7 @@ public static class StaffMaxTexts
                "Отключить можно в кабинете goods.ezbook.ru → «Уведомления на это устройство» или остановив этого бота.";
     }
 
-    public const string AlreadyLinked = "Этот чат уже подключён к заказам ezbook.";
+    public const string AlreadyLinked = "Этот чат уже подключён к заказам изибук.";
 
     public const string LinkExpired = "Ссылка устарела. Получите новую в кабинете goods.ezbook.ru → «Уведомления на это устройство».";
 

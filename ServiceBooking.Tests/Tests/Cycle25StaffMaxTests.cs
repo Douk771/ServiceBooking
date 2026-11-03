@@ -218,7 +218,7 @@ public class Cycle25StaffMaxTests(TestDatabaseFixture fixture) : Cycle25TestBase
         // повтор той же ссылки (повторное «Начать») — не дубль привязки
         mx.BotClient.SentMessages.Clear();
         (await Webhook(client, Start(payload, "sender-1", chat))).StatusCode.Should().Be(HttpStatusCode.OK);
-        mx.BotClient.SentMessages.Single().Text.Should().Be("Этот чат уже подключён к заказам ezbook.");
+        mx.BotClient.SentMessages.Single().Text.Should().Be("Этот чат уже подключён к заказам изибук.");
         (await WithDbAsync(db => db.StaffMaxLinks.CountAsync(l => l.UserId == shop.Owner.UserId))).Should().Be(1);
     }
 

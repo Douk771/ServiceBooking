@@ -8,7 +8,7 @@ describeWorkerRouting({ name: 'dom', source: domWorker, origin: 'https://dom.ezb
 
 describe('dom worker: defaults of the «Дома» pushes (API_CONTRACT_CYCLE37.md §37.33)', () => {
   it('has the dom title and no order wording', () => {
-    expect(domWorker).toContain("'ezbook · Дома'")
+    expect(domWorker).toContain("'изибук · Дома'")
     expect(domWorker).not.toMatch(/Новый заказ/)
   })
 

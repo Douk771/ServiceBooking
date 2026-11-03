@@ -175,7 +175,7 @@ public class Cycle39NotificationsTests(TestDatabaseFixture fixture) : Cycle39Tes
         foreach (var row in all)
         {
             var payload = JsonDocument.Parse(row.Payload).RootElement;
-            payload.GetProperty("title").GetString().Should().Be("ezbook · Дома");
+            payload.GetProperty("title").GetString().Should().Be("изибук · Дома");
             var body = payload.GetProperty("body").GetString()!;
             body.Should().NotContain("Секретная").And.NotContain("9054441122").And.NotContain("Тайная").And.NotContain("₽").And.NotContain("Авария").And.NotContainEquivalentOf("баня");
             payload.GetProperty("url").GetString().Should().StartWith("/s/", "ссылка на страницу заказа лежит в зашифрованной нагрузке, не в тексте");

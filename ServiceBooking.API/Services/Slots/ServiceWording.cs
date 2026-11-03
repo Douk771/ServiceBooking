@@ -6,7 +6,7 @@ namespace ServiceBooking.API.Services.Slots;
 /// <summary>
 /// ARCHITECTURE_CYCLE42.md §42.4.4 — the words of a vertical in the strings of the slot engine («заказ» at «Дома», «бронь» at «Бани»).
 /// <see cref="Stays"/> returns the strings of cycles 39–41 byte for byte (they are produced by the legacy <see cref="ServiceTexts"/> members);
-/// <see cref="Baths"/> speaks of a «бронь», signs the push «EZBOOK Бани» and marks the guest's time as local.
+/// <see cref="Baths"/> speaks of a «бронь», signs the push «ИЗИБУК Бани» and marks the guest's time as local.
 /// </summary>
 public sealed record ServiceWording(
     CompanyKind Kind,
@@ -40,7 +40,7 @@ public sealed record ServiceWording(
 
     public static readonly ServiceWording Baths = new(
         CompanyKind.Baths,
-        "EZBOOK Бани",
+        "ИЗИБУК Бани",
         "Бронь уже завершена — отменять нечего",
         "Бронь уже отменена",
         "Бронь завершена — уведомления не нужны",

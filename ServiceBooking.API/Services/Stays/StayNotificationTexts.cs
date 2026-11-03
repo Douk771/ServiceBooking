@@ -18,7 +18,7 @@ public static class StayNotificationTexts
 {
     private static readonly string[] Months = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 
-    public const string GuestPushTitle = "ezbook · Дома";
+    public const string GuestPushTitle = "изибук · Дома";
 
     public static string Short(DateOnly d) => $"{d.Day} {Months[d.Month - 1]}";
 

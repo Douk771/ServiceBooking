@@ -7,7 +7,7 @@ export function PricingPage() {
     <PricingPageBody
       line={ordersPricingLine}
       site="goods"
-      documentTitle="Тарифы и цены — EZBOOK Заказы"
+      documentTitle="Тарифы и цены — ИЗИБУК Заказы"
       cta={{ kind: 'auth-route', guestTo: '/register?returnTo=%2Fcabinet%2Fnew', authedTo: '/cabinet/new', label: 'Подключить магазин' }}
       // Кнопки карточек: гость — регистрация (как нижний CTA); вошедший — «Ваша подписка» в кабинете или сам кабинет.
       // Выбранный тариф не передаётся: /cabinet/subscription параметра не читает.

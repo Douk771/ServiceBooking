@@ -128,7 +128,7 @@ public class Cycle37NotificationsTests(TestDatabaseFixture fixture) : Cycle37Tes
         {
             n.Payload.Should().NotContain("Тайный").And.NotContain("7654321").And.NotContain("Лесная").And.NotContain("Сбербанк");
             var p = JsonDocument.Parse(n.Payload).RootElement;
-            p.GetProperty("title").GetString().Should().Be("ezbook · Дома");
+            p.GetProperty("title").GetString().Should().Be("изибук · Дома");
             p.GetProperty("url").GetString().Should().Be($"/b/{booked.Token}");
         }
         queued.Select(n => n.IdempotencyKey).Should().OnlyHaveUniqueItems();

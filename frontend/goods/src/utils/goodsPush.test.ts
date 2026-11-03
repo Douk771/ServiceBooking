@@ -10,7 +10,7 @@ describe('goodsPushMessage', () => {
     for (const reason of ALL) {
       const text = goodsPushMessage(reason)
       expect(text.length, reason).toBeGreaterThan(20)
-      expect(text).not.toMatch(/салон|записи|EZBOOK/i)
+      expect(text).not.toMatch(/салон|записи|ИЗИБУК|EZBOOK/i)
     }
   })
   it('tells the buyer to choose messages next time for every device-side cause', () => {

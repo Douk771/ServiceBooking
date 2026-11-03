@@ -16,7 +16,7 @@ namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
 /// Цикл 42, «Бани»: уведомления о бронях (CY42-94…99). Писано по SPEC_CYCLE42_BANI.md (US-42-22), API_CONTRACT_CYCLE42.md §42.36 и LEGAL_REVIEW_CYCLE42.md, без чтения
-/// реализации: ссылки ведут на bani, заголовок push гостю — «EZBOOK Бани», слово гостю — «бронь», в push нет ПДн, адреса, сумм и токена, банщику уведомления не идут.
+/// реализации: ссылки ведут на bani, заголовок push гостю — «ИЗИБУК Бани», слово гостю — «бронь», в push нет ПДн, адреса, сумм и токена, банщику уведомления не идут.
 /// Хост — <see cref="StaysTestFactory"/> (Web Push включён, отправитель записывающий, часы подменяются).
 /// </summary>
 public class Cycle42NotificationsTests(TestDatabaseFixture fixture) : Cycle42TestBase(fixture)
@@ -152,7 +152,7 @@ public class Cycle42NotificationsTests(TestDatabaseFixture fixture) : Cycle42Tes
         final.Select(r => r.Payload).Should().OnlyContain(p => !p.Contains("Секретная") && !p.Contains("9054441122") && !p.Contains(b.Token));
     }
 
-    // ── CY42-95: гостю — заголовок «EZBOOK Бани», слово «бронь», без ПДн ──────────
+    // ── CY42-95: гостю — заголовок «ИЗИБУК Бани», слово «бронь», без ПДн ──────────
 
     [Fact, TestCase("CY42-95")]
     public async Task GuestPush_TitleEzbookBani_WordBron_NoPersonalDataAddressAmountsOrToken_Lifecycle()
@@ -184,7 +184,7 @@ public class Cycle42NotificationsTests(TestDatabaseFixture fixture) : Cycle42Tes
         foreach (var row in rows)
         {
             var payload = Payload(row.Payload);
-            payload.GetProperty("title").GetString().Should().Be("EZBOOK Бани", row.Type.ToString());
+            payload.GetProperty("title").GetString().Should().Be("ИЗИБУК Бани", row.Type.ToString());
             var body = payload.GetProperty("body").GetString()!;
             body.Should().NotContain("Секретная").And.NotContain("9054441122").And.NotContain("Тайная").And.NotContain("₽").And.NotContain("Авария").And.NotContain("Сбербанк")
                 .And.NotContain(first.Token).And.NotContain(second.Token).And.NotContain("http").And.NotContain("Русская", "название ресурса в push не нужно");
@@ -364,7 +364,7 @@ public class Cycle42NotificationsTests(TestDatabaseFixture fixture) : Cycle42Tes
             Regex.IsMatch(digitsText, @"\d{4,}").Should().BeFalse("в тексте push нет длинных чисел (телефон, карта, сумма): " + digitsText);
         }
         var reminder = guestRows.Single(r => r.Type == NotificationType.ServiceGuestSessionReminder);
-        Payload(reminder.Payload).GetProperty("title").GetString().Should().Be("EZBOOK Бани");
+        Payload(reminder.Payload).GetProperty("title").GetString().Should().Be("ИЗИБУК Бани");
         Payload(reminder.Payload).GetProperty("body").GetString().Should().Be("Скоро ваш сеанс — откройте бронь");
         Payload(reminder.Payload).GetProperty("url").GetString().Should().Be($"/s/{b.Token}");
     }

@@ -50,7 +50,7 @@ export type ProductCard = LiveProduct | TestingProduct | HiddenProduct
 
 export interface PageCopy {
   meta: { title: string; description: string }
-  brand: 'EZBOOK'
+  brand: 'ИЗИБУК'
   hero: { title: string; subtitle: string }
   productsHeading: string
   testingBadge: 'Тестовый режим'

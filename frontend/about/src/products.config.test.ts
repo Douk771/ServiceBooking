@@ -48,7 +48,7 @@ describe('CY44-01 PRODUCTS config', () => {
     expect(p.features.length).toBeGreaterThanOrEqual(3)
     expect(p.features.length).toBeLessThanOrEqual(5)
     for (const t of [p.name, p.forWhom, p.forClients, p.clientAction.label, ...p.features]) expect(t.trim()).not.toBe('')
-    expect(p.name.startsWith('EZBOOK ')).toBe(true)
+    expect(p.name.startsWith('ИЗИБУК ')).toBe(true)
   })
 
   it.each(PRODUCTS.map((p) => [p.key, p] as const))('%s: relative paths without scheme, host or "//"', (_key, p) => {

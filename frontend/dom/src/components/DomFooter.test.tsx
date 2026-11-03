@@ -5,7 +5,7 @@ import { fillOperatorTemplate, OPERATOR, telHref } from '@/utils/operatorRequisi
 import { STOREFRONT_PAGES } from '@/utils/storefrontMarkup'
 import { DomFooter } from './DomFooter'
 
-// CY44-05: the footer shows the «Все продукты EZBOOK» link when enabled and keeps its legal links.
+// CY44-05: the footer shows the «Все продукты ИЗИБУК» link when enabled and keeps its legal links.
 afterEach(() => vi.unstubAllEnvs())
 
 describe('DomFooter products link', () => {
@@ -17,7 +17,7 @@ describe('DomFooter products link', () => {
         <DomFooter />
       </MemoryRouter>,
     )
-    expect(screen.getByRole('link', { name: 'Все продукты EZBOOK' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Все продукты ИЗИБУК' })).toHaveAttribute(
       'href',
       'https://about.ezbook.ru/',
     )

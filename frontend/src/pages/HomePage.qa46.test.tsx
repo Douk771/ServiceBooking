@@ -82,7 +82,7 @@ describe('US-46-01: первый экран для владельца', () => {
     const { container } = renderPage()
     await screen.findByText('Салон красоты')
     expect(screen.queryByRole('link', { name: 'Как записываются клиенты' })).toBeNull()
-    const link = screen.getByRole('link', { name: 'Салоны на EZBOOK' })
+    const link = screen.getByRole('link', { name: 'Салоны на ИЗИБУК' })
     expect(link).toHaveAttribute('href', '#companies')
     const line = link.parentElement as HTMLElement
     expect(line.textContent).toContain('Ищете, куда записаться?')
@@ -157,7 +157,7 @@ describe('US-46-02: порядок блоков', () => {
   it('ни одно предложение не повторяется дословно в двух блоках (кроме двух разрешённых)', async () => {
     const { container } = renderPage()
     await screen.findByText('Салон красоты')
-    const allowed = new Set(['Подключить салон', 'Салоны на EZBOOK'])
+    const allowed = new Set(['Подключить салон', 'Салоны на ИЗИБУК'])
     const seen = new Map<string, string>()
     const dups: string[] = []
     const roots = Array.from(container.querySelectorAll('main > *')).filter((e) => e.tagName === 'SECTION' || e.querySelector('h1'))
@@ -185,7 +185,7 @@ describe('US-46-03/04: блоки «клиенты» и «как начать»'
     expect(t).toContain('Все записи и расписание мастеров — в одном месте')
     expect(t).toContain('Клиенты записываются по ссылке, со страницы салона в каталоге или через форму на вашем сайте. Каждая запись сразу попадает в расписание нужного мастера.')
     for (const f of [
-      'Страница салона с онлайн-записью и место в каталоге EZBOOK.',
+      'Страница салона с онлайн-записью и место в каталоге ИЗИБУК.',
       'Расписание мастеров по датам и шаблоны рабочей недели.',
       'Перенос и отмена записи клиентом — по вашим правилам.',
       'База клиентов с заметками и фото.',
@@ -238,7 +238,7 @@ describe('US-46-03/04: блоки «клиенты» и «как начать»'
       'Получить напоминание накануне визита.',
       'Оставить отзыв после визита.',
     ])
-    expect(container.textContent).toContain('Оплата — в салоне, EZBOOK деньги клиентов не принимает.')
+    expect(container.textContent).toContain('Оплата — в салоне, ИЗИБУК деньги клиентов не принимает.')
   })
 
   it('«Как начать принимать записи»: 3 шага владельца после блока клиентов и перед FAQ', async () => {
@@ -264,7 +264,7 @@ describe('US-46-05: каталог', () => {
     const { container } = renderPage()
     await screen.findByText('Салон красоты')
     const cat = container.querySelector('#companies') as HTMLElement
-    expect(within(cat).getByRole('heading', { level: 2, name: 'Салоны на EZBOOK' })).toBeInTheDocument()
+    expect(within(cat).getByRole('heading', { level: 2, name: 'Салоны на ИЗИБУК' })).toBeInTheDocument()
     expect(cat.textContent).toContain('Выберите салон и запишитесь онлайн')
     expect(cat.textContent?.toLowerCase()).not.toContain('проверен')
     const input = within(cat).getByPlaceholderText('Поиск по названию или адресу')
@@ -314,7 +314,7 @@ describe('US-46-07/08: тексты и FAQ', () => {
     await screen.findByText('Салон красоты')
     const qs = Array.from(container.querySelectorAll('#faq h3 > button')).map((b) => b.textContent!.trim())
     expect(qs).toEqual([
-      'Сколько стоит EZBOOK для салона?',
+      'Сколько стоит ИЗИБУК для салона?',
       'Можно ли принимать записи на своём сайте?',
       'Нужно ли клиенту регистрироваться, чтобы записаться?',
       'Может ли клиент сам перенести или отменить запись?',

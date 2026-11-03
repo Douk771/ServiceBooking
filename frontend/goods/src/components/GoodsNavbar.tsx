@@ -7,7 +7,7 @@ import { Icon } from '@/components/ui/Icon'
 import { PricingNavLink } from '@/components/pricing/PricingNavLink'
 import { ordersPricingLine } from '../pricing/ordersPricingLine'
 
-/** "ezbook · Заказы" (SPEC US-23-04). Signed-in: «Мои заказы», «Кабинет», профиль, выход. */
+/** "изибук · Заказы" (SPEC US-23-04). Signed-in: «Мои заказы», «Кабинет», профиль, выход. */
 export function GoodsNavbar() {
   const { user, logout, isAuthenticated } = useAuthStore()
   const navigate = useNavigate()
@@ -36,12 +36,12 @@ export function GoodsNavbar() {
   return (
     <nav className="sticky top-0 z-40 bg-cream/90 backdrop-blur-md border-b border-line">
       <div className="max-w-[1180px] mx-auto px-4 sm:px-8 h-[68px] flex items-center justify-between">
-        <Link to="/" onClick={closeMenu} className="flex items-center gap-3 shrink-0" aria-label="ezbook · Заказы">
+        <Link to="/" onClick={closeMenu} className="flex items-center gap-3 shrink-0" aria-label="изибук · Заказы">
           <span className="w-[38px] h-[38px] rounded-full bg-ink flex items-center justify-center shrink-0">
             <Icon name="shopping-bag" size={18} className="text-cream" strokeWidth={1.6} />
           </span>
           <span className="flex items-center gap-2.5">
-            <span className="font-serif text-[22px] text-ink leading-none">ezbook</span>
+            <span className="font-serif text-[22px] text-ink leading-none">изибук</span>
             <span className="text-line-strong leading-none" aria-hidden="true">
               ·
             </span>

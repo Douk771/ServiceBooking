@@ -15,7 +15,7 @@ const RULES: Array<[string, RegExp]> = [
   ['React state/effect hook', /\buse(State|Effect|Reducer|LayoutEffect|Ref|Context|Memo|Callback)\b/],
   ['react-router', /react-router/],
   ['storage / cookie / service worker', /localStorage|sessionStorage|document\.cookie|serviceWorker/],
-  ['wrong brand spelling', /ezbook\s·|Ezbook/],
+  ['wrong brand spelling', /ezbook\s·|Ezbook|EZBOOK/],
   ['window/document access', /\b(window|document)\./],
 ]
 
