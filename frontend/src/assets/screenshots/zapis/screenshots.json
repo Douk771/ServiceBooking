@@ -59,8 +59,8 @@
       "2x": "bookings-desktop-2x.webp"
     },
     "bytes": {
-      "1x": 27600,
-      "2x": 61930
+      "1x": 26668,
+      "2x": 60166
     },
     "bookingCount": 4
   },
@@ -71,7 +71,7 @@
       "2x": "bookings-phone-2x.webp"
     },
     "bytes": {
-      "2x": 56040
+      "2x": 54110
     }
   }
 }
